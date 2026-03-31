@@ -1,5 +1,9 @@
 # History
 
+## 2026-03-31 — Add 256×256 icon.png
+
+Added `custom_components/unifi_alerts/icon.png` (256×256 PNG) required by HACS and HA for display in the integrations UI and HACS browser. Closed the corresponding TODO item.
+
 ## 2026-03-31 — Fix coroutine-never-awaited warning in coordinator tests
 
 Replaced plain `MagicMock()` for `hass.async_create_task` with a helper that calls `coro.close()`, cleanly discarding the `_auto_clear` coroutine and eliminating the `RuntimeWarning`.

@@ -10,9 +10,6 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 **Problem:** The CI `hassfest` action validates the integration against HA's integration quality rules. It may flag issues not caught locally — run it on the first push and fix any failures before tagging a release.
 **Common failures:** missing `quality_scale` in `manifest.json`, incorrect `iot_class`, missing `icon.png`.
 
-### Add `icon.png`
-HACS and HA both expect `custom_components/unifi_alerts/icon.png` (256×256 PNG). Without it, the integration shows a generic icon in the UI and HACS browser.
-
 ---
 
 ## 🟡 High-value improvements
