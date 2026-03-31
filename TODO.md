@@ -6,6 +6,18 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 
 ## 🔴 Must-fix before first publish
 
+### 1. Establish development instructions & a contributing guide
+**Problem:** The README currently lacks any developer instructions. This creates friction for contributors and may lead to issues and PRs that don't meet the project's standards.
+**Fix:** Create a `DEVELOPING.md` file with:
+- Local development setup (Python version, venv, installing dependencies)
+- Running the test suite
+- Code style guidelines (e.g. black, isort)
+- Branching and PR process (e.g. feature branches, commit message format)
+- How to run `hassfest` and interpret results
+- How to test the config flow and webhook handling manually in HA
+- Any other project-specific conventions (e.g. how to update `strings.json` and `translations/en.json` together)
+**Reference:** See contributing guides of popular HA integrations for examples
+
 ### 2. Webhook URL display in UI
 **Problem:** After setup, the user has no way to find the generated webhook URLs inside HA's UI. They are logged at INFO level but that's not user-friendly.
 **Fix:** Add a diagnostics platform (`diagnostics.py`) that exposes the webhook URLs, or use a `persistent_notification` during `async_setup_entry` to surface them. The diagnostics approach is preferred for HACS.

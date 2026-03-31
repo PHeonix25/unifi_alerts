@@ -1,10 +1,17 @@
+# Byte-compiled / optimised / DLL files
 __pycache__/
 *.pyc
 *.pyo
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
-dist/
 *.egg-info/
-unifi_alerts.zip
+
+
+# Ignore virtual environments
+.venv/
+venv/
+
+# Ignore development files
+dist/
 .env

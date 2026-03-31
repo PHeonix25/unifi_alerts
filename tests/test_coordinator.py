@@ -111,8 +111,12 @@ class TestRollupProperties:
     def test_rollup_last_alert_returns_most_recent(self):
         coord = make_coordinator()
         coord.async_set_updated_data = MagicMock()
-        coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN, "first"))
-        coord.push_alert(CATEGORY_SECURITY_THREAT, make_alert(CATEGORY_SECURITY_THREAT, "second"))
+        t1 = datetime(2024, 1, 1, 10, 0, 0)
+        t2 = datetime(2024, 1, 1, 10, 0, 1)
+        first = UniFiAlert(category=CATEGORY_NETWORK_WAN, message="first", received_at=t1)
+        second = UniFiAlert(category=CATEGORY_SECURITY_THREAT, message="second", received_at=t2)
+        coord.push_alert(CATEGORY_NETWORK_WAN, first)
+        coord.push_alert(CATEGORY_SECURITY_THREAT, second)
         last = coord.rollup_last_alert
         assert last is not None
         assert last.message == "second"

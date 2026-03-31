@@ -4,12 +4,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
+from aiohttp.web import Request
 from homeassistant.components.webhook import (
     async_register,
     async_unregister,
     async_generate_url,
 )
-from homeassistant.core import HomeAssistant, Request
+from homeassistant.core import HomeAssistant
 
 from .const import (
     ALL_CATEGORIES,
