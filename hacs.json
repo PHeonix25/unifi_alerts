@@ -1,0 +1,7 @@
+{
+  "name": "UniFi Alerts",
+  "content_in_root": false,
+  "zip_release": false,
+  "filename": "unifi_alerts.zip",
+  "render_readme": true
+}
