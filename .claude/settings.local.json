@@ -1,11 +1,21 @@
 {
+  "defaultShell": "powershell",
+  "env": {
+    "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(pytest:*)",
       "Bash(python:*)",
-      "Bash(powershell -Command \"& '.\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/ -v\")"
+      "Bash(powershell -Command \"& '.\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/ -v\")",
+      "Bash(powershell -Command \"& '.\\\\.venv\\\\Scripts\\\\python.exe' -\")",
+      "Bash(powershell -Command \"& '.\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/ -v 2>&1 | Select-String -Pattern 'PASSED|FAILED|ERROR|passed|failed|error'\")",
+      "Bash(powershell -Command \"& '.\\\\.venv\\\\Scripts\\\\python.exe' -m ruff check custom_components/\")",
+      "Bash(powershell -Command \"& '.\\\\.venv\\\\Scripts\\\\python.exe' -m ruff check custom_components/ --fix\")",
+      "Bash(powershell -Command \"& '.\\\\.venv\\\\Scripts\\\\python.exe' -m ruff format --check custom_components/\")",
+      "Bash(powershell -Command \"& '.\\\\.venv\\\\Scripts\\\\python.exe' -m ruff format custom_components/\")"
     ]
   }
 }

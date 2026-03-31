@@ -1,9 +1,12 @@
 """Sensor platform for UniFi Alerts."""
+
 from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceEntryType
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -36,9 +39,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class UniFiCategoryMessageSensor(
-    CoordinatorEntity[UniFiAlertsCoordinator], SensorEntity
-):
+class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEntity):
     """Sensor whose state is the last alert message for a category."""
 
     _attr_has_entity_name = True
@@ -88,9 +89,7 @@ class UniFiCategoryMessageSensor(
         }
 
 
-class UniFiCategoryCountSensor(
-    CoordinatorEntity[UniFiAlertsCoordinator], SensorEntity
-):
+class UniFiCategoryCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEntity):
     """Sensor whose state is the number of open (unarchived) alarms for a category."""
 
     _attr_has_entity_name = True
@@ -121,9 +120,7 @@ class UniFiCategoryCountSensor(
         return state is not None and state.enabled
 
 
-class UniFiRollupCountSensor(
-    CoordinatorEntity[UniFiAlertsCoordinator], SensorEntity
-):
+class UniFiRollupCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEntity):
     """Sensor: total open alert count across all enabled categories."""
 
     _attr_has_entity_name = True
@@ -156,11 +153,11 @@ class UniFiRollupCountSensor(
         return attrs
 
 
-def _device_info(entry: ConfigEntry) -> dict:
-    return {
-        "identifiers": {(DOMAIN, entry.entry_id)},
-        "name": "UniFi Alerts",
-        "manufacturer": "Ubiquiti",
-        "model": "UniFi Network Controller",
-        "entry_type": "service",
-    }
+def _device_info(entry: ConfigEntry) -> DeviceInfo:
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="UniFi Alerts",
+        manufacturer="Ubiquiti",
+        model="UniFi Network Controller",
+        entry_type=DeviceEntryType.SERVICE,
+    )

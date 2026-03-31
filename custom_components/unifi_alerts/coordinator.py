@@ -1,22 +1,22 @@
 """DataUpdateCoordinator for UniFi Alerts."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
-import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    ALL_CATEGORIES,
     CONF_CLEAR_TIMEOUT,
-    CONF_POLL_INTERVAL,
     CONF_ENABLED_CATEGORIES,
+    CONF_POLL_INTERVAL,
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
-    ALL_CATEGORIES,
     DOMAIN,
 )
 from .models import CategoryState, UniFiAlert
@@ -129,21 +129,15 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
     @property
     def any_alerting(self) -> bool:
-        return any(
-            s.is_alerting for s in self._category_states.values() if s.enabled
-        )
+        return any(s.is_alerting for s in self._category_states.values() if s.enabled)
 
     @property
     def rollup_alert_count(self) -> int:
-        return sum(
-            s.alert_count for s in self._category_states.values() if s.enabled
-        )
+        return sum(s.alert_count for s in self._category_states.values() if s.enabled)
 
     @property
     def rollup_open_count(self) -> int:
-        return sum(
-            s.open_count for s in self._category_states.values() if s.enabled
-        )
+        return sum(s.open_count for s in self._category_states.values() if s.enabled)
 
     @property
     def rollup_last_alert(self) -> UniFiAlert | None:
@@ -165,9 +159,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             existing.cancel()
 
         delay = self._clear_timeout_minutes * 60
-        self._clear_tasks[category] = self.hass.async_create_task(
-            self._auto_clear(category, delay)
-        )
+        self._clear_tasks[category] = self.hass.async_create_task(self._auto_clear(category, delay))
 
     async def _auto_clear(self, category: str, delay_seconds: int) -> None:
         await asyncio.sleep(delay_seconds)

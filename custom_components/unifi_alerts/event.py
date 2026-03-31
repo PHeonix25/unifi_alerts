@@ -3,11 +3,14 @@
 Event entities fire once per alert and carry no persistent state — ideal
 for automations that should trigger on *each* alert rather than a state change.
 """
+
 from __future__ import annotations
 
-from homeassistant.components.event import EventEntity, EventDeviceClass
+from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceEntryType
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -37,9 +40,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class UniFiAlertEventEntity(
-    CoordinatorEntity[UniFiAlertsCoordinator], EventEntity
-):
+class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEntity):
     """Fires an HA event each time an alert is received for this category.
 
     The event type is always "alert_received". The payload carries the
@@ -47,7 +48,7 @@ class UniFiAlertEventEntity(
     """
 
     _attr_has_entity_name = True
-    _attr_device_class = EventDeviceClass.BUTTON   # closest semantic match
+    _attr_device_class = EventDeviceClass.BUTTON  # closest semantic match
     _attr_event_types = ["alert_received"]
 
     def __init__(
@@ -102,11 +103,11 @@ class UniFiAlertEventEntity(
         return state is not None and state.enabled
 
 
-def _device_info(entry: ConfigEntry) -> dict:
-    return {
-        "identifiers": {(DOMAIN, entry.entry_id)},
-        "name": "UniFi Alerts",
-        "manufacturer": "Ubiquiti",
-        "model": "UniFi Network Controller",
-        "entry_type": "service",
-    }
+def _device_info(entry: ConfigEntry) -> DeviceInfo:
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="UniFi Alerts",
+        manufacturer="Ubiquiti",
+        model="UniFi Network Controller",
+        entry_type=DeviceEntryType.SERVICE,
+    )

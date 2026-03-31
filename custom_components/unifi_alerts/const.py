@@ -1,4 +1,5 @@
 """Constants for the UniFi Alerts integration."""
+
 from __future__ import annotations
 
 DOMAIN = "unifi_alerts"
@@ -19,9 +20,9 @@ CONF_VERIFY_SSL = "verify_ssl"
 AUTH_METHOD_USERPASS = "userpass"
 AUTH_METHOD_APIKEY = "apikey"
 
-DEFAULT_POLL_INTERVAL = 60          # seconds
-DEFAULT_CLEAR_TIMEOUT = 30          # minutes
-DEFAULT_VERIFY_SSL = False           # self-signed certs are common
+DEFAULT_POLL_INTERVAL = 60  # seconds
+DEFAULT_CLEAR_TIMEOUT = 30  # minutes
+DEFAULT_VERIFY_SSL = False  # self-signed certs are common
 
 # ──────────────────────────────────────────────
 # Category identifiers
@@ -122,8 +123,10 @@ UNIFI_KEY_TO_CATEGORY: dict[str, str] = {
 # Webhook IDs — one per category, auto-registered by the integration
 WEBHOOK_ID_PREFIX = "unifi_alerts_"
 
+
 def webhook_id_for_category(category: str) -> str:
     return f"{WEBHOOK_ID_PREFIX}{category}"
+
 
 # Runtime data keys (stored in hass.data[DOMAIN][entry_id])
 DATA_COORDINATOR = "coordinator"

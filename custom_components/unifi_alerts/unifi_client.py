@@ -1,4 +1,5 @@
 """Async HTTP client for the UniFi Network controller."""
+
 from __future__ import annotations
 
 import logging
@@ -9,8 +10,8 @@ import aiohttp
 from .const import (
     AUTH_METHOD_APIKEY,
     AUTH_METHOD_USERPASS,
-    CONF_AUTH_METHOD,
     CONF_API_KEY,
+    CONF_AUTH_METHOD,
     CONF_PASSWORD,
     CONF_USERNAME,
     CONF_VERIFY_SSL,
@@ -62,9 +63,7 @@ class UniFiClient:
 
         method = self._config.get(CONF_AUTH_METHOD)
 
-        if method == AUTH_METHOD_APIKEY or (
-            method is None and self._config.get(CONF_API_KEY)
-        ):
+        if method == AUTH_METHOD_APIKEY or (method is None and self._config.get(CONF_API_KEY)):
             try:
                 await self._verify_api_key()
                 self._auth_method = AUTH_METHOD_APIKEY
@@ -162,9 +161,7 @@ class UniFiClient:
 
     async def _login_userpass(self) -> None:
         login_url = (
-            f"{self._base}/api/auth/login"
-            if self._is_unifi_os
-            else f"{self._base}/api/login"
+            f"{self._base}/api/auth/login" if self._is_unifi_os else f"{self._base}/api/login"
         )
         payload = {
             "username": self._config.get(CONF_USERNAME, ""),
@@ -205,5 +202,5 @@ class UniFiClient:
         # Fallback: check subsystem field
         subsystem = alarm.get("subsystem", "").lower()
         if subsystem in ("lan", "wlan"):
-            return None   # too broad — skip unless key matched
+            return None  # too broad — skip unless key matched
         return None

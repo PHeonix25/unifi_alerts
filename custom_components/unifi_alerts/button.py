@@ -1,9 +1,12 @@
 """Button platform for UniFi Alerts — manual alert clear buttons."""
+
 from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceEntryType
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
@@ -79,11 +82,11 @@ class UniFiClearAllButton(ButtonEntity):
         self._coordinator.async_set_updated_data(self._coordinator.category_states)
 
 
-def _device_info(entry: ConfigEntry) -> dict:
-    return {
-        "identifiers": {(DOMAIN, entry.entry_id)},
-        "name": "UniFi Alerts",
-        "manufacturer": "Ubiquiti",
-        "model": "UniFi Network Controller",
-        "entry_type": "service",
-    }
+def _device_info(entry: ConfigEntry) -> DeviceInfo:
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="UniFi Alerts",
+        manufacturer="Ubiquiti",
+        model="UniFi Network Controller",
+        entry_type=DeviceEntryType.SERVICE,
+    )

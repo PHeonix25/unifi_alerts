@@ -1,4 +1,5 @@
 """Binary sensor platform for UniFi Alerts."""
+
 from __future__ import annotations
 
 from homeassistant.components.binary_sensor import (
@@ -7,6 +8,8 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceEntryType
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -38,9 +41,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class UniFiCategoryBinarySensor(
-    CoordinatorEntity[UniFiAlertsCoordinator], BinarySensorEntity
-):
+class UniFiCategoryBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], BinarySensorEntity):
     """Binary sensor that is ON when a given category has an active alert."""
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
@@ -95,9 +96,7 @@ class UniFiCategoryBinarySensor(
         return attrs
 
 
-class UniFiRollupBinarySensor(
-    CoordinatorEntity[UniFiAlertsCoordinator], BinarySensorEntity
-):
+class UniFiRollupBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], BinarySensorEntity):
     """Binary sensor that is ON if ANY enabled category is alerting."""
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
@@ -136,11 +135,11 @@ class UniFiRollupBinarySensor(
         return attrs
 
 
-def _device_info(entry: ConfigEntry) -> dict:
-    return {
-        "identifiers": {(DOMAIN, entry.entry_id)},
-        "name": "UniFi Alerts",
-        "manufacturer": "Ubiquiti",
-        "model": "UniFi Network Controller",
-        "entry_type": "service",
-    }
+def _device_info(entry: ConfigEntry) -> DeviceInfo:
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="UniFi Alerts",
+        manufacturer="Ubiquiti",
+        model="UniFi Network Controller",
+        entry_type=DeviceEntryType.SERVICE,
+    )

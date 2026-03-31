@@ -1,4 +1,5 @@
 """Data models for UniFi Alerts."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -21,7 +22,7 @@ class UniFiAlert:
     severity: str = ""
 
     @classmethod
-    def from_webhook_payload(cls, category: str, payload: dict) -> "UniFiAlert":
+    def from_webhook_payload(cls, category: str, payload: dict) -> UniFiAlert:
         """Build an alert from a raw UniFi Alarm Manager webhook POST body."""
         message = (
             payload.get("message")
@@ -36,20 +37,18 @@ class UniFiAlert:
             received_at=datetime.now(),
             raw=payload,
             key=payload.get("key", ""),
-            device_name=payload.get("device_name") or payload.get("ap_name") or payload.get("sw_name") or "",
+            device_name=payload.get("device_name")
+            or payload.get("ap_name")
+            or payload.get("sw_name")
+            or "",
             site=payload.get("site_name") or payload.get("site") or "",
             severity=payload.get("severity") or payload.get("subsystem") or "",
         )
 
     @classmethod
-    def from_api_alarm(cls, category: str, alarm: dict) -> "UniFiAlert":
+    def from_api_alarm(cls, category: str, alarm: dict) -> UniFiAlert:
         """Build an alert from a polled UniFi controller alarm record."""
-        message = (
-            alarm.get("msg")
-            or alarm.get("message")
-            or alarm.get("key")
-            or "Unknown alert"
-        )
+        message = alarm.get("msg") or alarm.get("message") or alarm.get("key") or "Unknown alert"
         # UniFi stores timestamps as epoch milliseconds in some fields
         ts = alarm.get("datetime") or alarm.get("timestamp")
         try:
@@ -77,8 +76,8 @@ class CategoryState:
     enabled: bool = True
     is_alerting: bool = False
     last_alert: UniFiAlert | None = None
-    alert_count: int = 0          # incremented by webhooks
-    open_count: int = 0           # set by polling (unarchived alarms)
+    alert_count: int = 0  # incremented by webhooks
+    open_count: int = 0  # set by polling (unarchived alarms)
     last_cleared_at: datetime | None = None
 
     def apply_alert(self, alert: UniFiAlert) -> None:

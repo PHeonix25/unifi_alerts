@@ -69,6 +69,10 @@ README.md                         # user-facing install and setup guide
 - All `const.py` additions go in the appropriate labelled section with a comment.
 - Tests use `MagicMock` / `AsyncMock` for the UniFi client — never make real HTTP calls in tests.
 
+## Working style
+
+- **Never assume — always ask.** If anything about the task, scope, or approach is unclear, ask before proceeding. Do not guess intent.
+
 ## Before making changes
 
 1. Check `TODO.md` for context on what's known to be incomplete or broken.

@@ -1,14 +1,16 @@
 """Webhook registration and dispatch for UniFi Alerts."""
+
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Callable
 
 from aiohttp.web import Request
 from homeassistant.components.webhook import (
+    async_generate_url,
     async_register,
     async_unregister,
-    async_generate_url,
 )
 from homeassistant.core import HomeAssistant
 
@@ -68,10 +70,8 @@ class WebhookManager:
 
     def unregister_all(self) -> None:
         for webhook_id in self._registered:
-            try:
+            with contextlib.suppress(Exception):
                 async_unregister(self._hass, webhook_id)
-            except Exception:  # noqa: BLE001
-                pass
         self._registered.clear()
 
     def _make_handler(self, category: str):
@@ -84,13 +84,11 @@ class WebhookManager:
         ) -> None:
             try:
                 payload = await request.json()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 # Fall back gracefully — UniFi can send GET with no body
                 payload = {}
 
-            _LOGGER.debug(
-                "Webhook received for category %s: %s", category, payload
-            )
+            _LOGGER.debug("Webhook received for category %s: %s", category, payload)
             alert = UniFiAlert.from_webhook_payload(category, payload)
             self._push_callback(category, alert)
 
