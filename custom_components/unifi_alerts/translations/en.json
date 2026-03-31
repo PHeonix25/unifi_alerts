@@ -1,0 +1,58 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to UniFi Controller",
+        "description": "Enter your UniFi Network controller address and credentials. The integration will auto-detect whether to use an API key or username/password.\n\nSee the [documentation]({docs_url}) for help.",
+        "data": {
+          "controller_url": "Controller URL (e.g. https://192.168.1.1)",
+          "username": "Username (leave blank if using API key)",
+          "password": "Password",
+          "api_key": "API Key (UniFi OS only — leave blank if using username/password)",
+          "verify_ssl": "Verify SSL certificate"
+        }
+      },
+      "categories": {
+        "title": "Configure Alert Categories",
+        "description": "Choose which alert types to monitor. Each enabled category gets its own set of sensors and a dedicated webhook URL (shown after setup).",
+        "data": {
+          "cat_network_device": "Network: Device offline/online",
+          "cat_network_wan": "Network: WAN offline/latency",
+          "cat_network_client": "Network: Client connect/disconnect",
+          "cat_security_threat": "Security: Threat / IDS detected",
+          "cat_security_honeypot": "Security: Honeypot triggered",
+          "cat_security_firewall": "Security: Firewall block",
+          "cat_power": "Power: PoE / power loss",
+          "poll_interval": "Polling interval (seconds)",
+          "clear_timeout": "Auto-clear timeout (minutes)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the controller. Check the URL and that the controller is online.",
+      "invalid_auth": "Invalid credentials. Check your username/password or API key.",
+      "unknown": "An unexpected error occurred. Check the Home Assistant logs."
+    },
+    "abort": {
+      "already_configured": "This UniFi controller is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Update Alert Categories",
+        "data": {
+          "cat_network_device": "Network: Device offline/online",
+          "cat_network_wan": "Network: WAN offline/latency",
+          "cat_network_client": "Network: Client connect/disconnect",
+          "cat_security_threat": "Security: Threat / IDS detected",
+          "cat_security_honeypot": "Security: Honeypot triggered",
+          "cat_security_firewall": "Security: Firewall block",
+          "cat_power": "Power: PoE / power loss",
+          "poll_interval": "Polling interval (seconds)",
+          "clear_timeout": "Auto-clear timeout (minutes)"
+        }
+      }
+    }
+  }
+}

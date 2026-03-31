@@ -1,0 +1,12 @@
+{
+  "domain": "unifi_alerts",
+  "name": "UniFi Alerts",
+  "version": "1.0.0",
+  "documentation": "https://github.com/YOUR_USERNAME/unifi_alerts",
+  "issue_tracker": "https://github.com/YOUR_USERNAME/unifi_alerts/issues",
+  "requirements": ["aiohttp>=3.9.0"],
+  "dependencies": [],
+  "codeowners": ["@YOUR_USERNAME"],
+  "iot_class": "local_push",
+  "config_flow": true
+}
