@@ -1,5 +1,13 @@
 # History
 
+## 2026-03-31 — Fix coroutine-never-awaited warning in coordinator tests
+
+Replaced plain `MagicMock()` for `hass.async_create_task` with a helper that calls `coro.close()`, cleanly discarding the `_auto_clear` coroutine and eliminating the `RuntimeWarning`.
+
+## 2026-03-31 — Fix asyncio_default_fixture_loop_scope deprecation warning
+
+Added `asyncio_default_fixture_loop_scope = function` to `pytest.ini` to silence the pytest-asyncio deprecation warning about unset fixture loop scope.
+
 ## 2026-03-31 — Config flow duplicate entry guard + full lint/type pass
 
 Added `async_set_unique_id` + `_abort_if_unique_id_configured` to config flow step 1 so re-adding the same controller URL aborts cleanly. Fixed all pre-existing ruff (unused imports, unsorted imports, SIM105) and mypy errors (DeviceInfo return types, TypedDict context key). Established and validated the full local dev pipeline: pytest (48/48), ruff lint, ruff format, mypy — all clean on Windows. Added `tests/test_config_flow.py` with 4 tests. Removed completed item from TODO.md.
