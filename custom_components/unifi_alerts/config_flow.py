@@ -84,7 +84,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=schema,
             errors=errors,
             description_placeholders={
-                "docs_url": "https://github.com/YOUR_USERNAME/unifi_alerts"
+                "docs_url": "https://github.com/PHeonix25/unifi_alerts"
             },
         )
 

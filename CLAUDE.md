@@ -60,7 +60,6 @@ README.md                         # user-facing install and setup guide
 - **`iot_class: local_push`** must stay in `manifest.json` — this is accurate and affects HA's energy/performance classification.
 - **Webhooks are `local_only: True`** — do not remove this without a documented reason.
 - **Category state lives only in the coordinator** — entities must not cache state themselves.
-- **`YOUR_USERNAME`** appears in `manifest.json` and `README.md` and must be replaced with the real GitHub username before publishing.
 
 ## Coding conventions
 
