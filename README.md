@@ -1,7 +1,7 @@
 # UniFi Alerts — Home Assistant Integration
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
-[![GitHub Release](https://img.shields.io/github/v/release/YOUR_USERNAME/unifi_alerts)](https://github.com/YOUR_USERNAME/unifi_alerts/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/PHeonix25/unifi_alerts)](https://github.com/PHeonix25/unifi_alerts/releases)
 
 Aggregates **UniFi Network controller alerts** into Home Assistant sensors, binary sensors, and event entities. Supports real-time push via UniFi Alarm Manager webhooks and polling for historical/count data.
 
@@ -22,7 +22,7 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 ### Alert categories
 
 | Category | Covers |
-|---|---|
+| --- | --- |
 | Network: Device offline/online | APs, switches, gateways disconnecting/reconnecting |
 | Network: WAN offline/latency | WAN failover, internet access events |
 | Network: Client connect/disconnect | Wireless and wired client join/leave |
@@ -38,7 +38,7 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 ### Via HACS (recommended)
 
 1. Open HACS → **Integrations** → ⋮ → **Custom repositories**
-2. Add `https://github.com/YOUR_USERNAME/unifi_alerts` with category **Integration**
+2. Add `https://github.com/PHeonix25/unifi_alerts` with category **Integration**
 3. Click **Download** on the UniFi Alerts card
 4. Restart Home Assistant
 
@@ -79,7 +79,7 @@ For each enabled category, create an alarm in **UniFi Network → Settings → N
 For each enabled category (example: `network_device`):
 
 | Entity | ID pattern | Type |
-|---|---|---|
+| --- | --- | --- |
 | Binary sensor | `binary_sensor.unifi_alerts_network_device` | ON = alert active |
 | Message sensor | `sensor.unifi_alerts_network_device_last_message` | Last alert text |
 | Count sensor | `sensor.unifi_alerts_network_device_open_count` | Open alarm count |
@@ -89,7 +89,7 @@ For each enabled category (example: `network_device`):
 Plus rollup entities:
 
 | Entity | ID | Type |
-|---|---|---|
+| --- | --- | --- |
 | Rollup binary | `binary_sensor.unifi_alerts_any_alert` | Any category alerting |
 | Rollup count | `sensor.unifi_alerts_total_open_alerts` | Total open count |
 | Clear all button | `button.unifi_alerts_clear_all` | Clear everything |
@@ -117,6 +117,6 @@ automation:
 
 ## Contributing
 
-Issues and PRs welcome at [github.com/YOUR_USERNAME/unifi_alerts](https://github.com/YOUR_USERNAME/unifi_alerts).
+Issues and PRs welcome at [github.com/PHeonix25/unifi_alerts](https://github.com/PHeonix25/unifi_alerts).
 
 The UniFi event key → category mappings in `const.py` are community-sourced and incomplete. If you see unrecognised alerts in your HA logs, please open an issue with the raw `key` value.
