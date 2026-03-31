@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+dist/
+*.egg-info/
+unifi_alerts.zip
+.env
