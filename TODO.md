@@ -27,15 +27,6 @@ HACS and HA both expect `custom_components/unifi_alerts/icon.png` (256×256 PNG)
 - `async_unload_entry` → entities removed, webhooks unregistered
 **Reference:** See `TESTING.md` for fixture pattern.
 
-### Config flow: duplicate entry guard
-**Problem:** If the user tries to add the same controller URL twice, a second entry is created. `ConfigFlow` has an `async_set_unique_id` mechanism to prevent this.
-**Fix:** In `async_step_user`, call:
-```python
-await self.async_set_unique_id(controller_url)
-self._abort_if_unique_id_configured()
-```
-Use the normalised controller URL as the unique ID.
-
 ### Config flow: webhook URL display post-setup
 **Problem:** Users need to know their webhook URLs to configure UniFi Alarm Manager. These are only visible via diagnostics currently.
 **Fix:** After `async_create_entry`, consider a `async_step_finish` step or a re-auth flow that displays the URLs inline in the config flow UI.
