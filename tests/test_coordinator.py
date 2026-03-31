@@ -21,7 +21,12 @@ from custom_components.unifi_alerts.models import CategoryState, UniFiAlert
 def make_coordinator(hass=None, enabled=None):
     if hass is None:
         hass = MagicMock()
-        hass.async_create_task = MagicMock(return_value=MagicMock())
+
+        def _create_task(coro, **kwargs):
+            coro.close()  # discard the coroutine cleanly — no "never awaited" warning
+            return MagicMock()
+
+        hass.async_create_task = _create_task
 
     client = MagicMock()
     client.categorise_alarms = AsyncMock(return_value={})
