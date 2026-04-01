@@ -9,7 +9,7 @@
       "Bash(pytest:*)",
       "Bash(python:*)",
       "Bash(py -m pytest tests/ -v)",
-      "Bash(~/.venv/bin/pytest tests/ -v)",
+      "Bash(.venv/Scripts/pytest tests/ -v)",
       "Bash(.venv/Scripts/ruff check:*)",
       "Bash(.venv/Scripts/ruff format:*)",
       "Bash(.venv/Scripts/mypy custom_components/ --ignore-missing-imports)",

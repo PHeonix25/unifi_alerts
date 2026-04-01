@@ -28,10 +28,6 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 **Problem:** `UniFiClient.fetch_alarms()` hardcodes `site="default"`. Users with multi-site UniFi deployments cannot monitor secondary sites.
 **Fix:** Add a `CONF_SITE` config entry key, defaulting to `"default"`. Expose it as an optional field in the config flow (advanced section or a separate step). Pass it through to `fetch_alarms()` and `categorise_alarms()`.
 
-### Coordinator: handle `HA_stop` gracefully
-**Problem:** When HA stops, in-flight auto-clear `asyncio.Task` objects may log cancellation errors.
-**Fix:** In `async_unload_entry` (or a coordinator `async_shutdown` method), cancel all pending tasks in `_clear_tasks` before teardown.
-
 ---
 
 ## 🟢 Nice-to-have
