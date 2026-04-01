@@ -80,6 +80,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         entry_data = hass.data[DOMAIN].pop(entry.entry_id, {})
+        coordinator = entry_data.get(DATA_COORDINATOR)
+        if coordinator:
+            await coordinator.async_shutdown()
         unregister = entry_data.get(DATA_UNREGISTER_WEBHOOKS)
         if unregister:
             unregister()

@@ -129,3 +129,35 @@ class TestRollupProperties:
     def test_rollup_last_alert_none_when_no_alerts(self):
         coord = make_coordinator()
         assert coord.rollup_last_alert is None
+
+
+class TestShutdown:
+    def _make_coordinator_with_real_tasks(self):
+        """Return a coordinator whose _clear_tasks holds cancellable MagicMocks."""
+        hass = MagicMock()
+        task_mock = MagicMock()
+        task_mock.done.return_value = False
+
+        def _create_task(coro, **kwargs):
+            coro.close()
+            return task_mock
+
+        hass.async_create_task = _create_task
+        coord = make_coordinator(hass=hass)
+        coord.async_set_updated_data = MagicMock()
+        return coord, task_mock
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cancels_pending_tasks(self):
+        coord, task_mock = self._make_coordinator_with_real_tasks()
+        coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
+        await coord.async_shutdown()
+        task_mock.cancel.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_clears_tasks_dict(self):
+        coord, _ = self._make_coordinator_with_real_tasks()
+        coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
+        assert len(coord._clear_tasks) == 1
+        await coord.async_shutdown()
+        assert len(coord._clear_tasks) == 0

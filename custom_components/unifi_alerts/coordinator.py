@@ -168,3 +168,10 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             state.clear()
             _LOGGER.debug("Auto-cleared category %s after timeout", category)
             self.async_set_updated_data(self._category_states)
+
+    async def async_shutdown(self) -> None:
+        """Cancel all pending auto-clear tasks. Call during entry unload."""
+        for task in self._clear_tasks.values():
+            if not task.done():
+                task.cancel()
+        self._clear_tasks.clear()
