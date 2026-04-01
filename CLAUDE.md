@@ -24,14 +24,14 @@ A Home Assistant custom integration (`domain: unifi_alerts`) that aggregates Uni
 
 ```
 custom_components/unifi_alerts/   # integration source
-  __init__.py                     # entry setup/teardown, platform forwarding
+  __init__.py                     # entry setup/teardown, platform forwarding; unload order: coordinator.async_shutdown() → unregister webhooks → client.close()
   manifest.json                   # HA metadata (domain, version, iot_class)
   const.py                        # all constants, category defs, UniFi key→category map
   models.py                       # UniFiAlert and CategoryState dataclasses
   unifi_client.py                 # async HTTP client, auth auto-detect
-  coordinator.py                  # DataUpdateCoordinator, owns all category state
+  coordinator.py                  # DataUpdateCoordinator, owns all category state; async_shutdown() cancels pending clear tasks on unload
   webhook_handler.py              # registers HA webhooks, dispatches to coordinator
-  config_flow.py                  # two-step UI setup + options flow
+  config_flow.py                  # three-step UI setup (credentials → categories → webhook URLs) + options flow
   binary_sensor.py                # per-category + rollup binary sensors
   sensor.py                       # message, count, and rollup count sensors
   event.py                        # event entities, fire per alert

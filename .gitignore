@@ -15,3 +15,6 @@ venv/
 # Ignore development files
 dist/
 .env
+
+# Claude Code auto-memory internal state
+.claude/auto-memory/
