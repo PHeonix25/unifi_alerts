@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.components.webhook import async_generate_url
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
@@ -26,6 +27,7 @@ from .const import (
     DEFAULT_POLL_INTERVAL,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
+    webhook_id_for_category,
 )
 from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
 
@@ -41,6 +43,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         self._controller_url: str = ""
         self._detected_auth_method: str | None = None
         self._credentials: dict[str, Any] = {}
+        self._entry_data: dict[str, Any] = {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Step 1: controller URL + credentials."""
@@ -90,17 +93,14 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         """Step 2: choose which alert categories to enable."""
         if user_input is not None:
             enabled = [cat for cat in ALL_CATEGORIES if user_input.get(f"cat_{cat}", False)]
-            data = {
+            self._entry_data = {
                 **self._credentials,
                 CONF_ENABLED_CATEGORIES: enabled,
                 CONF_POLL_INTERVAL: user_input.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
                 CONF_CLEAR_TIMEOUT: user_input.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT),
                 CONF_AUTH_METHOD: self._detected_auth_method,
             }
-            return self.async_create_entry(
-                title=f"UniFi Alerts ({self._controller_url})",
-                data=data,
-            )
+            return await self.async_step_finish()
 
         # Build a schema with one boolean per category
         fields: dict = {}
@@ -119,6 +119,26 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="categories",
             data_schema=schema,
             description_placeholders={cat: CATEGORY_LABELS[cat] for cat in ALL_CATEGORIES},
+        )
+
+    async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Step 3: display webhook URLs, then create the entry on submit."""
+        if user_input is not None:
+            return self.async_create_entry(
+                title=f"UniFi Alerts ({self._controller_url})",
+                data=self._entry_data,
+            )
+
+        enabled: list[str] = self._entry_data.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
+        url_lines = [
+            f"**{CATEGORY_LABELS[cat]}**\n`{async_generate_url(self.hass, webhook_id_for_category(cat))}`"
+            for cat in ALL_CATEGORIES
+            if cat in enabled
+        ]
+        return self.async_show_form(
+            step_id="finish",
+            data_schema=vol.Schema({}),
+            description_placeholders={"webhook_url_list": "\n\n".join(url_lines)},
         )
 
     @staticmethod
@@ -163,8 +183,14 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             int, vol.Range(min=1, max=1440)
         )
 
+        url_lines = [
+            f"**{CATEGORY_LABELS[cat]}**\n`{async_generate_url(self.hass, webhook_id_for_category(cat))}`"
+            for cat in ALL_CATEGORIES
+            if cat in current_enabled
+        ]
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(fields),
             errors=errors,
+            description_placeholders={"webhook_url_list": "\n\n".join(url_lines)},
         )

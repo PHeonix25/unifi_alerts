@@ -6,9 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.data_entry_flow import AbortFlow
 
-from custom_components.unifi_alerts.config_flow import UniFiAlertsConfigFlow
+from custom_components.unifi_alerts.config_flow import UniFiAlertsConfigFlow, UniFiAlertsOptionsFlow
 from custom_components.unifi_alerts.const import (
+    ALL_CATEGORIES,
     CONF_CONTROLLER_URL,
+    CONF_ENABLED_CATEGORIES,
     CONF_PASSWORD,
     CONF_USERNAME,
 )
@@ -113,3 +115,84 @@ async def test_no_duplicate_proceeds_to_categories() -> None:
     assert result == categories_result
     flow.async_set_unique_id.assert_called_once()
     flow._abort_if_unique_id_configured.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_categories_proceeds_to_finish() -> None:
+    """Submitting categories should proceed to the finish step, not create the entry."""
+    flow = _make_flow()
+    flow._controller_url = "https://192.168.1.1"
+    flow._detected_auth_method = "userpass"
+    flow._credentials = dict(_VALID_INPUT)
+
+    finish_result = {"type": "form", "step_id": "finish"}
+    flow.async_step_finish = AsyncMock(return_value=finish_result)
+
+    cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+    result = await flow.async_step_categories(cat_input)
+
+    assert result == finish_result
+    flow.async_step_finish.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_finish_shows_webhook_urls() -> None:
+    """async_step_finish with no input should show a form with webhook URL placeholders."""
+    flow = _make_flow()
+    flow._controller_url = "https://192.168.1.1"
+    flow._entry_data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES}
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "finish"})
+
+    fake_url = "http://homeassistant.local:8123/api/webhook/unifi_alerts_network_device"
+    with patch(
+        "custom_components.unifi_alerts.config_flow.async_generate_url",
+        return_value=fake_url,
+    ):
+        result = await flow.async_step_finish(user_input=None)
+
+    assert result["step_id"] == "finish"
+    call_kwargs = flow.async_show_form.call_args.kwargs
+    assert "description_placeholders" in call_kwargs
+    assert fake_url in call_kwargs["description_placeholders"]["webhook_url_list"]
+
+
+@pytest.mark.asyncio
+async def test_finish_submit_creates_entry() -> None:
+    """async_step_finish with empty input (form submitted) should create the config entry."""
+    flow = _make_flow()
+    flow._controller_url = "https://192.168.1.1"
+    flow._entry_data = {
+        CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+        **_VALID_INPUT,
+    }
+    flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+
+    result = await flow.async_step_finish(user_input={})
+
+    flow.async_create_entry.assert_called_once()
+    call_kwargs = flow.async_create_entry.call_args.kwargs
+    assert call_kwargs["title"] == "UniFi Alerts (https://192.168.1.1)"
+    assert call_kwargs["data"] is flow._entry_data
+
+
+@pytest.mark.asyncio
+async def test_options_init_includes_webhook_urls() -> None:
+    """Options flow init should include webhook_url_list in description_placeholders."""
+    config_entry = MagicMock()
+    config_entry.data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES}
+
+    flow = UniFiAlertsOptionsFlow(config_entry)
+    flow.hass = MagicMock()
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
+
+    fake_url = "http://homeassistant.local:8123/api/webhook/unifi_alerts_network_device"
+    with patch(
+        "custom_components.unifi_alerts.config_flow.async_generate_url",
+        return_value=fake_url,
+    ):
+        result = await flow.async_step_init(user_input=None)
+
+    assert result["step_id"] == "init"
+    call_kwargs = flow.async_show_form.call_args.kwargs
+    assert "description_placeholders" in call_kwargs
+    assert fake_url in call_kwargs["description_placeholders"]["webhook_url_list"]

@@ -14,7 +14,7 @@
       },
       "categories": {
         "title": "Configure Alert Categories",
-        "description": "Choose which alert types to monitor. Each enabled category gets its own set of sensors and a dedicated webhook URL (shown after setup).",
+        "description": "Choose which alert types to monitor. Each enabled category gets its own set of sensors and a dedicated webhook URL (shown in the next step).",
         "data": {
           "cat_network_device": "Network: Device offline/online",
           "cat_network_wan": "Network: WAN offline/latency",
@@ -26,6 +26,10 @@
           "poll_interval": "Polling interval (seconds)",
           "clear_timeout": "Auto-clear timeout (minutes)"
         }
+      },
+      "finish": {
+        "title": "Webhook URLs",
+        "description": "Setup is complete. Enter these webhook URLs in UniFi Alarm Manager — one URL per category:\n\n{webhook_url_list}"
       }
     },
     "error": {
@@ -41,6 +45,7 @@
     "step": {
       "init": {
         "title": "Update Alert Categories",
+        "description": "Current webhook URLs for your enabled categories:\n\n{webhook_url_list}",
         "data": {
           "cat_network_device": "Network: Device offline/online",
           "cat_network_wan": "Network: WAN offline/latency",

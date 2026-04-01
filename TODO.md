@@ -24,10 +24,6 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 - `async_unload_entry` → entities removed, webhooks unregistered
 **Reference:** See `TESTING.md` for fixture pattern.
 
-### Config flow: webhook URL display post-setup
-**Problem:** Users need to know their webhook URLs to configure UniFi Alarm Manager. These are only visible via diagnostics currently.
-**Fix:** After `async_create_entry`, consider a `async_step_finish` step or a re-auth flow that displays the URLs inline in the config flow UI.
-
 ### Multi-site support
 **Problem:** `UniFiClient.fetch_alarms()` hardcodes `site="default"`. Users with multi-site UniFi deployments cannot monitor secondary sites.
 **Fix:** Add a `CONF_SITE` config entry key, defaulting to `"default"`. Expose it as an optional field in the config flow (advanced section or a separate step). Pass it through to `fetch_alarms()` and `categorise_alarms()`.
