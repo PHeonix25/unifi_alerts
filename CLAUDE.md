@@ -73,8 +73,23 @@ README.md                         # user-facing install and setup guide
 
 - **Never assume — always ask.** If anything about the task, scope, or approach is unclear, ask before proceeding. Do not guess intent.
 
+## Resuming an interrupted session
+
+Interruptions (timeouts, hibernation, re-login) are common. When a new conversation starts mid-task, always do this before anything else:
+
+1. **Read `HISTORY.md`** — the last entry describes what was most recently completed.
+2. **Run `git status` and `git diff HEAD`** — uncommitted changes show exactly what was in-flight.
+3. **Read `TODO.md`** — the top remaining item is what was probably being worked on.
+4. **Check the venv** — run `Test-Path .venv\Scripts\pytest.exe` in PowerShell. If `False`, recreate it:
+   ```powershell
+   py -3.12 -m venv .venv
+   .venv\Scripts\pip install pytest pytest-asyncio aiohttp homeassistant ruff mypy --quiet
+   ```
+5. **Resume from where the diff left off** — do not re-do already-applied changes. Pick up at the next pending step (usually: run tests, fix lint, commit).
+
 ## Before making changes
 
 1. Check `TODO.md` for context on what's known to be incomplete or broken.
-2. Run `pytest tests/ -v` and confirm it passes before and after your change.
-3. Run `ruff check custom_components/` and `ruff format --check custom_components/` before committing.
+2. Run `.venv\Scripts\pytest tests/ -v` and confirm it passes before and after your change.
+3. Run `.venv\Scripts\ruff check custom_components/` and `.venv\Scripts\ruff format --check custom_components/` before committing.
+4. All test/lint/format commands use the `.venv` in the repo root — never the system Python.

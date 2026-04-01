@@ -1,0 +1,63 @@
+name: Unclassified UniFi event key
+description: Report a UniFi event key that isn't being categorised by the integration
+title: "[Unclassified key] EVT_??_???"
+labels: ["event-key", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping expand the event key map!
+
+        To find the unclassified key, enable debug logging for `custom_components.unifi_alerts` in
+        `configuration.yaml`:
+        ```yaml
+        logger:
+          default: warning
+          logs:
+            custom_components.unifi_alerts: debug
+        ```
+        Then look for log lines containing `Unclassified UniFi event key`.
+
+  - type: input
+    id: key
+    attributes:
+      label: Event key
+      description: The full value of the `key` field from the log (e.g. `EVT_AP_Restarted`)
+      placeholder: "EVT_??_???"
+    validations:
+      required: true
+
+  - type: input
+    id: controller
+    attributes:
+      label: Controller type and firmware version
+      description: "e.g. UDM Pro firmware 3.2.7, or self-hosted UniFi Network 8.0.24"
+      placeholder: "UDM Pro, firmware 3.x.x"
+    validations:
+      required: true
+
+  - type: textarea
+    id: message
+    attributes:
+      label: Alert message
+      description: The human-readable message text from the alert, if available
+      placeholder: "WAN port transitioned from connected to disconnected"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Suggested category
+      description: Which category do you think this event belongs to?
+      options:
+        - "Network: Device offline/online (network_device)"
+        - "Network: WAN offline/latency (network_wan)"
+        - "Network: Client connect/disconnect (network_client)"
+        - "Security: Threat / IDS detected (security_threat)"
+        - "Security: Honeypot triggered (security_honeypot)"
+        - "Security: Firewall block (security_firewall)"
+        - "Power: PoE / power loss (power)"
+        - "Not sure"
+    validations:
+      required: true

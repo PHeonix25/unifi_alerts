@@ -199,6 +199,12 @@ class UniFiClient:
         for prefix, category in UNIFI_KEY_TO_CATEGORY.items():
             if key.startswith(prefix):
                 return category
+        if key:
+            _LOGGER.debug(
+                "Unclassified UniFi event key %r — consider reporting it at "
+                "https://github.com/PHeonix25/unifi_alerts/issues",
+                key,
+            )
         # Fallback: check subsystem field
         subsystem = alarm.get("subsystem", "").lower()
         if subsystem in ("lan", "wlan"):

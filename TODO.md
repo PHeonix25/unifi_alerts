@@ -28,14 +28,6 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 **Problem:** Users need to know their webhook URLs to configure UniFi Alarm Manager. These are only visible via diagnostics currently.
 **Fix:** After `async_create_entry`, consider a `async_step_finish` step or a re-auth flow that displays the URLs inline in the config flow UI.
 
-### Expand `UNIFI_KEY_TO_CATEGORY` map
-**Problem:** The current event key map in `const.py` is based on community sources and is incomplete. Users with different controller configurations or firmware versions will see unclassified alerts.
-**Fix:**
-- Add debug logging that prints unclassified keys at `_LOGGER.debug` level (already done in `unifi_client.py` — verify this is working)
-- Create a GitHub issue template asking users to report their key values
-- Add keys as they're reported, with a test case each time
-- Consult: https://ubntwiki.com/products/software/unifi-controller/api
-
 ### Multi-site support
 **Problem:** `UniFiClient.fetch_alarms()` hardcodes `site="default"`. Users with multi-site UniFi deployments cannot monitor secondary sites.
 **Fix:** Add a `CONF_SITE` config entry key, defaulting to `"default"`. Expose it as an optional field in the config flow (advanced section or a separate step). Pass it through to `fetch_alarms()` and `categorise_alarms()`.
