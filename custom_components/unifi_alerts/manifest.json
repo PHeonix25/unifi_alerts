@@ -1,12 +1,12 @@
 {
   "domain": "unifi_alerts",
   "name": "UniFi Alerts",
-  "version": "1.0.0",
+  "codeowners": ["@PHeonix25"],
+  "config_flow": true,
+  "dependencies": [],
   "documentation": "https://github.com/PHeonix25/unifi_alerts",
+  "iot_class": "local_push",
   "issue_tracker": "https://github.com/PHeonix25/unifi_alerts/issues",
   "requirements": ["aiohttp>=3.9.0"],
-  "dependencies": [],
-  "codeowners": ["@PHeonix25"],
-  "iot_class": "local_push",
-  "config_flow": true
+  "version": "1.0.0"
 }

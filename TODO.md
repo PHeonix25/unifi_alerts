@@ -4,14 +4,6 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 
 ---
 
-## 🔴 Must-fix before first publish
-
-### `hassfest` validation
-**Problem:** The CI `hassfest` action validates the integration against HA's integration quality rules. It may flag issues not caught locally — run it on the first push and fix any failures before tagging a release.
-**Common failures:** missing `quality_scale` in `manifest.json`, incorrect `iot_class`, missing `icon.png`.
-
----
-
 ## 🟡 High-value improvements
 
 ### Integration tests with the `hass` fixture
