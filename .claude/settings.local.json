@@ -4,6 +4,7 @@
   },
   "permissions": {
     "allow": [
+      "Bash(gh run:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(pytest:*)",
