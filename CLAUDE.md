@@ -25,14 +25,14 @@ A Home Assistant custom integration (`domain: unifi_alerts`) that aggregates Uni
 
 ```
 custom_components/unifi_alerts/   # integration source
-  __init__.py                     # entry setup/teardown, platform forwarding; unload order: coordinator.async_shutdown() → unregister webhooks → client.close()
+  __init__.py                     # entry setup/teardown, platform forwarding; emits _LOGGER.warning when SSL verification is disabled; unload order: coordinator.async_shutdown() → unregister webhooks → client.close()
   manifest.json                   # HA metadata (domain, version, iot_class); do NOT add "homeassistant" min-version key — it is not in the HA manifest schema and breaks hassfest
-  const.py                        # all constants, category defs, UniFi key→category map
+  const.py                        # all constants, category defs, UniFi key→category map; DEFAULT_VERIFY_SSL = True (secure by default); CONF_WEBHOOK_SECRET = "webhook_secret"
   models.py                       # UniFiAlert and CategoryState dataclasses
   unifi_client.py                 # async HTTP client, auth auto-detect
   coordinator.py                  # DataUpdateCoordinator, owns all category state; async_shutdown() cancels pending clear tasks on unload
-  webhook_handler.py              # registers HA webhooks, dispatches to coordinator
-  config_flow.py                  # three-step UI setup (credentials → categories → webhook URLs) + options flow
+  webhook_handler.py              # registers HA webhooks (POST-only), dispatches to coordinator; rejects requests missing/wrong ?token= with HTTP 401; bearer secret from CONF_WEBHOOK_SECRET
+  config_flow.py                  # three-step UI setup (credentials → categories → webhook URLs with token) + options flow; generates CONF_WEBHOOK_SECRET via secrets.token_urlsafe(32) on first auth; network_device and network_client default OFF
   diagnostics.py                  # HA diagnostics platform; redacts password/api_key/username, exposes webhook URLs + coordinator state
   binary_sensor.py                # per-category + rollup binary sensors
   sensor.py                       # message, count, and rollup count sensors
@@ -45,6 +45,7 @@ tests/
   test_models.py
   test_coordinator.py
   test_unifi_client.py
+  test_config_flow.py             # config flow steps, webhook URL token display, options flow defaults
   test_diagnostics.py             # diagnostics platform: redaction, webhook URL exposure, coordinator state
 .github/workflows/
   ci.yml                          # hassfest + HACS validate + ruff + mypy + pytest
@@ -62,7 +63,9 @@ README.md                         # user-facing install and setup guide
 - **No YAML configuration.** Everything goes through the config flow. Do not add `async_setup` or `configuration.yaml` support.
 - **`iot_class: local_push`** must stay in `manifest.json` — this is accurate and affects HA's energy/performance classification.
 - **`manifest.json` key order is enforced by hassfest** — keys must be: `domain`, `name`, then all remaining keys alphabetically. Violating this order breaks CI.
+- **`DEFAULT_VERIFY_SSL = True`** — SSL verification is on by default; only disable for controllers with self-signed certificates. Never silently change this default.
 - **Webhooks are `local_only: True`** — do not remove this without a documented reason.
+- **Webhook bearer token auth is mandatory** — every inbound webhook request must be validated against `CONF_WEBHOOK_SECRET` via `?token=` query param. Never remove this check or accept requests that fail it.
 - **Category state lives only in the coordinator** — entities must not cache state themselves.
 
 ## Coding conventions
