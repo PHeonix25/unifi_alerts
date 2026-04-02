@@ -104,8 +104,10 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         # Build a schema with one boolean per category
         fields: dict = {}
+        # Default noisy client/device categories to OFF; exceptional events ON
+        _chatty = {"network_device", "network_client"}
         for cat in ALL_CATEGORIES:
-            fields[vol.Optional(f"cat_{cat}", default=True)] = bool
+            fields[vol.Optional(f"cat_{cat}", default=(cat not in _chatty))] = bool
 
         fields[vol.Optional(CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL)] = vol.All(
             int, vol.Range(min=10, max=3600)

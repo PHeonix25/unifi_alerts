@@ -26,10 +26,10 @@ All blocking bugs, security issues, and UX gaps that will immediately affect new
 
 ### UX / Documentation
 
-- [ ] Credential form gives no guidance on API key vs username/password (`config_flow.py`, `strings.json`)
-- [ ] Local-only webhook constraint is undocumented — cloud console users get silent failure (`README.md`)
-- [ ] All 7 categories default ON — client/device events will flood busy home networks (`config_flow.py`)
-- [ ] README setup buries the "copy webhook URLs" step — make it a numbered step (`README.md`)
+- [x] Credential form gives no guidance on API key vs username/password (`config_flow.py`, `strings.json`)
+- [x] Local-only webhook constraint is undocumented — cloud console users get silent failure (`README.md`)
+- [x] All 7 categories default ON — client/device events will flood busy home networks (`config_flow.py`)
+- [x] README setup buries the "copy webhook URLs" step — make it a numbered step (`README.md`)
 
 ### Quick wins (one-liners, no reason to defer)
 

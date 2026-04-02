@@ -1,5 +1,12 @@
 # History
 
+## 2026-04-02 — V1 documentation & UX: 4 required items
+
+- `config_flow.py` — default `network_device` and `network_client` categories to OFF; these fire on every device reboot and every phone joining Wi-Fi respectively, causing immediate alert fatigue for new users
+- `strings.json` + `translations/en.json` — rewrote `user` step description with clear API key vs username/password guidance (where to find an API key, which controllers support each method); added SSL verification warning; rewrote `categories` step description with noise warning for chatty categories and plain-English explanations of polling interval and auto-clear timeout; fixed `finish` step description ("Setup is complete" → "click Submit to save") so users don't close the dialog before the entry is created
+- `README.md` — made webhook URL retrieval step 5 in the numbered setup list (was a buried afterthought paragraph); added auth method guidance in step 2; added `⚠️ Local network required` callout in Configuring UniFi Alarm Manager
+- All 4 v1.0 UX/documentation items checked off in ROADMAP.md (111 tests still passing)
+
 ## 2026-04-02 — V1 quick wins: 5 one-liner fixes
 
 - `models.py:33` — replaced `str(payload)` fallback with `"Unknown alert"` to prevent raw webhook payload leaking into alert message and event entity attributes

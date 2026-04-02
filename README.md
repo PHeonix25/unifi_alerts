@@ -52,14 +52,19 @@ Copy `custom_components/unifi_alerts/` into your HA `config/custom_components/` 
 
 1. Go to **Settings → Devices & Services → Add Integration** → search **UniFi Alerts**
 2. Enter your controller URL (e.g. `https://192.168.1.1`) and credentials
-3. Select the alert categories you want to monitor
+   - **API key** (UDM Pro, UCG Ultra, and other UniFi OS devices): generate one in **Settings → Admins & Users → API Keys**, leave Username/Password blank
+   - **Username / password** (older controllers, Cloud Key): fill in Username and Password, leave API Key blank
+3. Select the alert categories you want to monitor (see table above — client/device categories are noisy by default)
 4. Configure polling interval and auto-clear timeout
+5. **Copy the webhook URLs** shown on the final screen into UniFi Alarm Manager (see next section). Click **Submit** to save — the integration is not created until you click Submit.
 
-After setup, check **Settings → Devices & Services → UniFi Alerts → Configure** to find your generated webhook URLs. You'll need one per enabled category.
+> You can always retrieve your webhook URLs later from **Settings → Devices & Services → UniFi Alerts → Configure**.
 
 ---
 
 ## Configuring UniFi Alarm Manager
+
+> ⚠️ **Local network required:** Webhook URLs are local-network only. Your UniFi controller must be on the same local network as your Home Assistant instance. Cloud-hosted controllers or remote access via Nabu Casa cannot reach these endpoints.
 
 For each enabled category, create an alarm in **UniFi Network → Settings → Notifications → Alarm Manager**:
 
@@ -67,7 +72,7 @@ For each enabled category, create an alarm in **UniFi Network → Settings → N
 2. Set the trigger(s) matching the category (see table above)
 3. Set scope (specific devices or network-wide)
 4. Under **Action**, choose **Webhook → Custom Webhook → POST**
-5. Paste the webhook URL shown in the HA integration page
+5. Paste the webhook URL from the HA integration page
 6. Click **Create**
 
 > **Tip:** Use **Test Alarm** in UniFi to verify the webhook reaches HA before saving.

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to UniFi Controller",
-        "description": "Enter your UniFi Network controller address and credentials. The integration will auto-detect whether to use an API key or username/password.\n\nSee the [documentation]({docs_url}) for help.",
+        "description": "Enter your UniFi Network controller address and credentials. The integration will auto-detect which method to use.\n\n**API key** (UniFi OS consoles — UDM Pro, UCG Ultra, etc.): leave Username and Password blank. Generate a key in **Settings → Admins & Users → API Keys**.\n\n**Username / password** (older controllers or Cloud Key): fill in Username and Password, leave API Key blank.\n\n⚠️ SSL verification is disabled by default — appropriate for controllers with self-signed certificates. Enable it if your controller has a trusted certificate.",
         "data": {
           "controller_url": "Controller URL (e.g. https://192.168.1.1)",
           "username": "Username (leave blank if using API key)",
@@ -14,7 +14,7 @@
       },
       "categories": {
         "title": "Configure Alert Categories",
-        "description": "Choose which alert types to monitor. Each enabled category gets its own set of sensors and a dedicated webhook URL (shown in the next step).",
+        "description": "Choose which alert types to monitor. Each enabled category gets its own sensors and a dedicated webhook URL (shown in the next step).\n\n⚠️ **Network: Client connect/disconnect** and **Network: Device offline/online** fire very frequently on active home networks. Leave these OFF unless you specifically need them.\n\n**Polling interval**: how often to fetch open-alarm counts from the controller as a backup to webhooks (lower = more accurate, higher = less load).\n**Auto-clear timeout**: minutes before an active sensor automatically resets to OFF if no further alert arrives.",
         "data": {
           "cat_network_device": "Network: Device offline/online",
           "cat_network_wan": "Network: WAN offline/latency",
@@ -29,7 +29,7 @@
       },
       "finish": {
         "title": "Webhook URLs",
-        "description": "Setup is complete. Enter these webhook URLs in UniFi Alarm Manager — one URL per category:\n\n{webhook_url_list}"
+        "description": "Copy these webhook URLs into UniFi Alarm Manager — one per enabled category — then click **Submit** to save the integration.\n\n{webhook_url_list}\n\nYou can always retrieve these URLs later via **Settings → Devices & Services → UniFi Alerts → Configure**."
       }
     },
     "error": {
