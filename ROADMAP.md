@@ -33,11 +33,11 @@ All blocking bugs, security issues, and UX gaps that will immediately affect new
 
 ### Quick wins (one-liners, no reason to defer)
 
-- [ ] `str(payload)` fallback stores raw payload in alert message — replace with `"Unknown alert"` (`models.py:33`)
-- [ ] Username not redacted in diagnostics output — add `CONF_USERNAME` to `_TO_REDACT` (`diagnostics.py:21`)
-- [ ] `CONF_VERIFY_SSL` raw string in `__init__.py:36` — use the constant
-- [ ] `hacs.json` contradicts itself: `zip_release: false` but `filename` set — remove `filename`
-- [ ] `diagnostics.py` uses `__import__("logging")` — replace with standard `import logging`
+- [x] `str(payload)` fallback stores raw payload in alert message — replace with `"Unknown alert"` (`models.py:33`)
+- [x] Username not redacted in diagnostics output — add `CONF_USERNAME` to `_TO_REDACT` (`diagnostics.py:21`)
+- [x] `CONF_VERIFY_SSL` raw string in `__init__.py:36` — use the constant
+- [x] `hacs.json` contradicts itself: `zip_release: false` but `filename` set — remove `filename`
+- [x] `diagnostics.py` uses `__import__("logging")` — replace with standard `import logging`
 
 ---
 

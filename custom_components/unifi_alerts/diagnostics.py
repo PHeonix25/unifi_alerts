@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
@@ -11,14 +12,15 @@ from homeassistant.core import HomeAssistant
 from .const import (
     CONF_API_KEY,
     CONF_PASSWORD,
+    CONF_USERNAME,
     DATA_COORDINATOR,
     DATA_WEBHOOK_IDS,
     DOMAIN,
 )
 
-_LOGGER = __import__("logging").getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
-_TO_REDACT: set[str] = {CONF_PASSWORD, CONF_API_KEY}
+_TO_REDACT: set[str] = {CONF_PASSWORD, CONF_API_KEY, CONF_USERNAME}
 
 
 async def async_get_config_entry_diagnostics(

@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
+    CONF_VERIFY_SSL,
     DATA_COORDINATOR,
     DATA_UNREGISTER_WEBHOOKS,
     DATA_WEBHOOK_IDS,
@@ -33,7 +34,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up UniFi Alerts from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
-    session = async_get_clientsession(hass, verify_ssl=entry.data.get("verify_ssl", False))
+    session = async_get_clientsession(hass, verify_ssl=entry.data.get(CONF_VERIFY_SSL, False))
     client = UniFiClient(session, entry.data["controller_url"], dict(entry.data))
 
     try:

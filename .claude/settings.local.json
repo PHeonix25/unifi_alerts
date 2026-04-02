@@ -20,7 +20,8 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:ui.com)",
       "WebFetch(domain:help.ui.com)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(.venv/Scripts/pytest:*)"
     ]
   },
   "defaultShell": "powershell"

@@ -117,4 +117,4 @@ async def test_diagnostics_preserves_non_sensitive_config() -> None:
     result = await async_get_config_entry_diagnostics(hass, entry)
 
     assert result["config_entry"]["controller_url"] == "https://192.168.1.1"
-    assert result["config_entry"]["username"] == "admin"
+    assert result["config_entry"]["username"] == "**REDACTED**"

@@ -29,7 +29,7 @@ class UniFiAlert:
             or payload.get("msg")
             or payload.get("text")
             or payload.get("description")
-            or str(payload)
+            or "Unknown alert"
         )
         return cls(
             category=category,

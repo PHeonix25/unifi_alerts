@@ -1,5 +1,14 @@
 # History
 
+## 2026-04-02 — V1 quick wins: 5 one-liner fixes
+
+- `models.py:33` — replaced `str(payload)` fallback with `"Unknown alert"` to prevent raw webhook payload leaking into alert message and event entity attributes
+- `diagnostics.py` — replaced `__import__("logging")` with standard `import logging`; added `CONF_USERNAME` to `_TO_REDACT` so usernames (often email addresses) are redacted in diagnostics output shared in bug reports
+- `__init__.py:36` — replaced raw `"verify_ssl"` string with `CONF_VERIFY_SSL` constant
+- `hacs.json` — removed contradictory `filename` field (`zip_release: false` makes it unused)
+- Updated `test_diagnostics.py` to assert username is now redacted (111 tests passing)
+- Checked off all 5 quick wins in `ROADMAP.md`
+
 ## 2026-04-02 — Pre-V1 review: add ROADMAP.md and expand TODO with multi-reviewer findings
 
 Three parallel reviews (senior engineer, security architect, product owner) identified 8 blocking items and 4 UX gaps that must be resolved before tagging v1.0.0. Full findings documented in `TODO.md`. Created `ROADMAP.md` chunking all TODOs into v1.0/v1.1/v1.2/v2.0 releases with visual checklists. Added `cd` working-directory convention to `CLAUDE.md`. Updated reference table in `CLAUDE.md` with `ROADMAP.md` entry.
