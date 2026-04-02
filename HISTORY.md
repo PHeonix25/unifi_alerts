@@ -1,5 +1,9 @@
 # History
 
+## 2026-04-02 — Pre-V1 review: add ROADMAP.md and expand TODO with multi-reviewer findings
+
+Three parallel reviews (senior engineer, security architect, product owner) identified 8 blocking items and 4 UX gaps that must be resolved before tagging v1.0.0. Full findings documented in `TODO.md`. Created `ROADMAP.md` chunking all TODOs into v1.0/v1.1/v1.2/v2.0 releases with visual checklists. Added `cd` working-directory convention to `CLAUDE.md`. Updated reference table in `CLAUDE.md` with `ROADMAP.md` entry.
+
 ## 2026-04-02 — Fix CI: hassfest manifest key order + HACS validation
 
 Fixed two CI failures on the `main` branch:

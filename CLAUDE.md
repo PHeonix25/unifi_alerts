@@ -19,13 +19,14 @@ A Home Assistant custom integration (`domain: unifi_alerts`) that aggregates Uni
 | `UNIFI.md` | Understand the UniFi API, auth methods, alarm payloads, and event key taxonomy |
 | `TESTING.md` | Run, write, or extend tests |
 | `TODO.md` | Find the prioritised backlog of next steps |
+| `ROADMAP.md` | See which TODOs are planned for each release (v1.0, v1.1, v1.2, v2.0) |
 
 ## Repository layout
 
 ```
 custom_components/unifi_alerts/   # integration source
   __init__.py                     # entry setup/teardown, platform forwarding; unload order: coordinator.async_shutdown() → unregister webhooks → client.close()
-  manifest.json                   # HA metadata (domain, version, iot_class)
+  manifest.json                   # HA metadata (domain, version, iot_class); do NOT add "homeassistant" min-version key — it is not in the HA manifest schema and breaks hassfest
   const.py                        # all constants, category defs, UniFi key→category map
   models.py                       # UniFiAlert and CategoryState dataclasses
   unifi_client.py                 # async HTTP client, auth auto-detect
@@ -58,6 +59,7 @@ README.md                         # user-facing install and setup guide
 - **All I/O is async.** No blocking calls anywhere. Use `aiohttp` for HTTP, never `requests`.
 - **No YAML configuration.** Everything goes through the config flow. Do not add `async_setup` or `configuration.yaml` support.
 - **`iot_class: local_push`** must stay in `manifest.json` — this is accurate and affects HA's energy/performance classification.
+- **`manifest.json` key order is enforced by hassfest** — keys must be: `domain`, `name`, then all remaining keys alphabetically. Violating this order breaks CI.
 - **Webhooks are `local_only: True`** — do not remove this without a documented reason.
 - **Category state lives only in the coordinator** — entities must not cache state themselves.
 
@@ -72,6 +74,11 @@ README.md                         # user-facing install and setup guide
 ## Working style
 
 - **Never assume — always ask.** If anything about the task, scope, or approach is unclear, ask before proceeding. Do not guess intent.
+- **Move into the working directory at the start of every session** — avoids needing path prefixes on every command.
+- Always run tests before committing — never commit broken code. If tests are failing, fix them before committing.
+- Always run ruff lint and format checks before committing — maintain a clean codebase.
+- Always update `HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
+- Always update `TODO.md` by removing completed items and adding new ones as needed. This is the primary source of truth for what is pending work. Do not rely on memory or Git history alone.
 
 ## Resuming an interrupted session
 
