@@ -14,6 +14,7 @@ from .const import (
     DATA_COORDINATOR,
     DATA_UNREGISTER_WEBHOOKS,
     DATA_WEBHOOK_IDS,
+    DEFAULT_VERIFY_SSL,
     DOMAIN,
 )
 from .coordinator import UniFiAlertsCoordinator
@@ -34,7 +35,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up UniFi Alerts from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
-    session = async_get_clientsession(hass, verify_ssl=entry.data.get(CONF_VERIFY_SSL, False))
+    verify_ssl: bool = entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+    if not verify_ssl:
+        _LOGGER.warning(
+            "SSL certificate verification is disabled for %s. "
+            "This is a security risk — only use this for controllers with self-signed certificates.",
+            entry.data.get("controller_url", "unknown"),
+        )
+    session = async_get_clientsession(hass, verify_ssl=verify_ssl)
     client = UniFiClient(session, entry.data["controller_url"], dict(entry.data))
 
     try:

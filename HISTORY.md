@@ -1,5 +1,11 @@
 # History
 
+## 2026-04-02 — Security: flip SSL default to True + warn when disabled
+
+- `const.py` — changed `DEFAULT_VERIFY_SSL` from `False` to `True`; secure-by-default, users with self-signed certs must explicitly disable it (UI copy already explains this)
+- `__init__.py` — imported `DEFAULT_VERIFY_SSL` for use as fallback; emit `_LOGGER.warning` at setup time when SSL verification is disabled so the security tradeoff is always visible in the HA log
+- 111 tests passing
+
 ## 2026-04-02 — V1 documentation & UX: 4 required items
 
 - `config_flow.py` — default `network_device` and `network_client` categories to OFF; these fire on every device reboot and every phone joining Wi-Fi respectively, causing immediate alert fatigue for new users

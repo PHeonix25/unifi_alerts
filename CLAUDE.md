@@ -33,6 +33,7 @@ custom_components/unifi_alerts/   # integration source
   coordinator.py                  # DataUpdateCoordinator, owns all category state; async_shutdown() cancels pending clear tasks on unload
   webhook_handler.py              # registers HA webhooks, dispatches to coordinator
   config_flow.py                  # three-step UI setup (credentials → categories → webhook URLs) + options flow
+  diagnostics.py                  # HA diagnostics platform; redacts password/api_key/username, exposes webhook URLs + coordinator state
   binary_sensor.py                # per-category + rollup binary sensors
   sensor.py                       # message, count, and rollup count sensors
   event.py                        # event entities, fire per alert
@@ -44,6 +45,7 @@ tests/
   test_models.py
   test_coordinator.py
   test_unifi_client.py
+  test_diagnostics.py             # diagnostics platform: redaction, webhook URL exposure, coordinator state
 .github/workflows/
   ci.yml                          # hassfest + HACS validate + ruff + mypy + pytest
   release.yml                     # zips and attaches release asset on GitHub release

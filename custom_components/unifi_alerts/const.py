@@ -22,7 +22,7 @@ AUTH_METHOD_APIKEY = "apikey"
 
 DEFAULT_POLL_INTERVAL = 60  # seconds
 DEFAULT_CLEAR_TIMEOUT = 30  # minutes
-DEFAULT_VERIFY_SSL = False  # self-signed certs are common
+DEFAULT_VERIFY_SSL = True  # disable in config flow if controller has a self-signed cert
 
 # ──────────────────────────────────────────────
 # Category identifiers

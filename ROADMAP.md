@@ -21,7 +21,7 @@ All blocking bugs, security issues, and UX gaps that will immediately affect new
 
 ### Security
 
-- [ ] SSL verification disabled by default — silent MITM risk (`const.py:25`)
+- [x] SSL verification disabled by default — silent MITM risk (`const.py:25`)
 - [ ] No webhook authentication — any LAN device can inject alert state (`webhook_handler.py:61`)
 
 ### UX / Documentation
