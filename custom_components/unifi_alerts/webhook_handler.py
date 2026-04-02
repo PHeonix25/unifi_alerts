@@ -6,7 +6,7 @@ import contextlib
 import logging
 from collections.abc import Callable
 
-from aiohttp.web import Request
+from aiohttp.web import Request, Response
 from homeassistant.components.webhook import (
     async_generate_url,
     async_register,
@@ -17,6 +17,7 @@ from homeassistant.core import HomeAssistant
 from .const import (
     ALL_CATEGORIES,
     CONF_ENABLED_CATEGORIES,
+    CONF_WEBHOOK_SECRET,
     DOMAIN,
     webhook_id_for_category,
 )
@@ -44,6 +45,7 @@ class WebhookManager:
     def register_all(self) -> dict[str, str]:
         """Register webhooks for all enabled categories. Returns {category: url}."""
         enabled = self._config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
+        secret: str = self._config.get(CONF_WEBHOOK_SECRET, "")
         urls: dict[str, str] = {}
 
         for category in ALL_CATEGORIES:
@@ -51,20 +53,20 @@ class WebhookManager:
                 continue
             webhook_id = webhook_id_for_category(category)
             # Wrap category in closure to avoid late-binding
-            handler = self._make_handler(category)
+            handler = self._make_handler(category, secret)
             async_register(
                 self._hass,
                 DOMAIN,
                 f"UniFi Alerts — {category}",
                 webhook_id,
                 handler,
-                allowed_methods=["GET", "POST"],
+                allowed_methods=["POST"],
                 local_only=True,
             )
             self._registered.append(webhook_id)
-            url = async_generate_url(self._hass, webhook_id)
-            urls[category] = url
-            _LOGGER.debug("Registered webhook for %s: %s", category, url)
+            base_url = async_generate_url(self._hass, webhook_id)
+            urls[category] = f"{base_url}?token={secret}" if secret else base_url
+            _LOGGER.debug("Registered webhook for %s", category)
 
         return urls
 
@@ -74,22 +76,29 @@ class WebhookManager:
                 async_unregister(self._hass, webhook_id)
         self._registered.clear()
 
-    def _make_handler(self, category: str):
+    def _make_handler(self, category: str, secret: str):
         """Return an async webhook handler bound to a specific category."""
 
         async def handle_webhook(
             hass: HomeAssistant,
             webhook_id: str,
             request: Request,
-        ) -> None:
+        ) -> Response | None:
+            if secret and request.query.get("token") != secret:
+                _LOGGER.warning(
+                    "Webhook request for category %s rejected: missing or invalid token",
+                    category,
+                )
+                return Response(status=401)
+
             try:
                 payload = await request.json()
             except Exception:  # noqa: BLE001
-                # Fall back gracefully — UniFi can send GET with no body
                 payload = {}
 
             _LOGGER.debug("Webhook received for category %s: %s", category, payload)
             alert = UniFiAlert.from_webhook_payload(category, payload)
             self._push_callback(category, alert)
+            return None
 
         return handle_webhook

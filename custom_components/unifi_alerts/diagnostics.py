@@ -13,6 +13,7 @@ from .const import (
     CONF_API_KEY,
     CONF_PASSWORD,
     CONF_USERNAME,
+    CONF_WEBHOOK_SECRET,
     DATA_COORDINATOR,
     DATA_WEBHOOK_IDS,
     DOMAIN,
@@ -20,7 +21,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-_TO_REDACT: set[str] = {CONF_PASSWORD, CONF_API_KEY, CONF_USERNAME}
+_TO_REDACT: set[str] = {CONF_PASSWORD, CONF_API_KEY, CONF_USERNAME, CONF_WEBHOOK_SECRET}
 
 
 async def async_get_config_entry_diagnostics(
@@ -34,7 +35,10 @@ async def async_get_config_entry_diagnostics(
     """
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
     coordinator = entry_data.get(DATA_COORDINATOR)
-    webhook_urls: dict[str, str] = entry_data.get(DATA_WEBHOOK_IDS, {})
+    # Strip token query params so secrets are not exposed in shared diagnostics output
+    webhook_urls: dict[str, str] = {
+        cat: url.split("?")[0] for cat, url in entry_data.get(DATA_WEBHOOK_IDS, {}).items()
+    }
 
     coordinator_info: dict[str, Any]
     if coordinator is not None:

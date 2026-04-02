@@ -1,5 +1,14 @@
 # History
 
+## 2026-04-02 — Security: per-entry webhook bearer token authentication
+
+- `const.py` — added `CONF_WEBHOOK_SECRET = "webhook_secret"`
+- `config_flow.py` — generate `secrets.token_urlsafe(32)` on first auth and store in `entry.data`; append `?token=<secret>` to all displayed webhook URLs in both the finish step and options flow
+- `webhook_handler.py` — pass secret into `_make_handler()`; reject requests with missing/wrong token with HTTP 401 and a warning log; also removed `"GET"` from `allowed_methods` (was firing spurious alerts on health-check GETs — fixes two v1.0 items in one)
+- `diagnostics.py` — added `CONF_WEBHOOK_SECRET` to `_TO_REDACT`; strip `?token=...` from webhook URLs in diagnostics output so secrets are not exposed in shared bug reports
+- `tests/test_config_flow.py` — updated two URL tests to include a fake secret in entry data and assert the token appears in displayed URLs
+- 111 tests passing
+
 ## 2026-04-02 — Security: flip SSL default to True + warn when disabled
 
 - `const.py` — changed `DEFAULT_VERIFY_SSL` from `False` to `True`; secure-by-default, users with self-signed certs must explicitly disable it (UI copy already explains this)

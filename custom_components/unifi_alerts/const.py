@@ -16,6 +16,7 @@ CONF_POLL_INTERVAL = "poll_interval"
 CONF_CLEAR_TIMEOUT = "clear_timeout"
 CONF_ENABLED_CATEGORIES = "enabled_categories"
 CONF_VERIFY_SSL = "verify_ssl"
+CONF_WEBHOOK_SECRET = "webhook_secret"
 
 AUTH_METHOD_USERPASS = "userpass"
 AUTH_METHOD_APIKEY = "apikey"

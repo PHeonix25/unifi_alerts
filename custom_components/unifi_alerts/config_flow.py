@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from typing import Any
 
 import voluptuous as vol
@@ -23,6 +24,7 @@ from .const import (
     CONF_POLL_INTERVAL,
     CONF_USERNAME,
     CONF_VERIFY_SSL,
+    CONF_WEBHOOK_SECRET,
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_VERIFY_SSL,
@@ -68,7 +70,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 self._controller_url = url
                 self._detected_auth_method = auth_method
-                self._credentials = user_input
+                self._credentials = {**user_input, CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32)}
                 return await self.async_step_categories()
 
         schema = vol.Schema(
@@ -132,8 +134,9 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
         enabled: list[str] = self._entry_data.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
+        secret: str = self._entry_data.get(CONF_WEBHOOK_SECRET, "")
         url_lines = [
-            f"**{CATEGORY_LABELS[cat]}**\n`{async_generate_url(self.hass, webhook_id_for_category(cat))}`"
+            f"**{CATEGORY_LABELS[cat]}**\n`{async_generate_url(self.hass, webhook_id_for_category(cat))}?token={secret}`"
             for cat in ALL_CATEGORIES
             if cat in enabled
         ]
@@ -185,8 +188,9 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             int, vol.Range(min=1, max=1440)
         )
 
+        secret: str = self._config_entry.data.get(CONF_WEBHOOK_SECRET, "")
         url_lines = [
-            f"**{CATEGORY_LABELS[cat]}**\n`{async_generate_url(self.hass, webhook_id_for_category(cat))}`"
+            f"**{CATEGORY_LABELS[cat]}**\n`{async_generate_url(self.hass, webhook_id_for_category(cat))}?token={secret}`"
             for cat in ALL_CATEGORIES
             if cat in current_enabled
         ]

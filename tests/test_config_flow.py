@@ -13,6 +13,7 @@ from custom_components.unifi_alerts.const import (
     CONF_ENABLED_CATEGORIES,
     CONF_PASSWORD,
     CONF_USERNAME,
+    CONF_WEBHOOK_SECRET,
 )
 
 
@@ -140,7 +141,8 @@ async def test_finish_shows_webhook_urls() -> None:
     """async_step_finish with no input should show a form with webhook URL placeholders."""
     flow = _make_flow()
     flow._controller_url = "https://192.168.1.1"
-    flow._entry_data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES}
+    fake_secret = "test-secret-token"
+    flow._entry_data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES, CONF_WEBHOOK_SECRET: fake_secret}
     flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "finish"})
 
     fake_url = "http://homeassistant.local:8123/api/webhook/unifi_alerts_network_device"
@@ -153,7 +155,9 @@ async def test_finish_shows_webhook_urls() -> None:
     assert result["step_id"] == "finish"
     call_kwargs = flow.async_show_form.call_args.kwargs
     assert "description_placeholders" in call_kwargs
-    assert fake_url in call_kwargs["description_placeholders"]["webhook_url_list"]
+    url_list = call_kwargs["description_placeholders"]["webhook_url_list"]
+    assert fake_url in url_list
+    assert f"?token={fake_secret}" in url_list
 
 
 @pytest.mark.asyncio
@@ -178,8 +182,10 @@ async def test_finish_submit_creates_entry() -> None:
 @pytest.mark.asyncio
 async def test_options_init_includes_webhook_urls() -> None:
     """Options flow init should include webhook_url_list in description_placeholders."""
+    fake_secret = "options-test-secret"
     config_entry = MagicMock()
-    config_entry.data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES}
+    config_entry.data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES, CONF_WEBHOOK_SECRET: fake_secret}
+    config_entry.options = {}
 
     flow = UniFiAlertsOptionsFlow(config_entry)
     flow.hass = MagicMock()
@@ -195,4 +201,6 @@ async def test_options_init_includes_webhook_urls() -> None:
     assert result["step_id"] == "init"
     call_kwargs = flow.async_show_form.call_args.kwargs
     assert "description_placeholders" in call_kwargs
-    assert fake_url in call_kwargs["description_placeholders"]["webhook_url_list"]
+    url_list = call_kwargs["description_placeholders"]["webhook_url_list"]
+    assert fake_url in url_list
+    assert f"?token={fake_secret}" in url_list
