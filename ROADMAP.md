@@ -2,7 +2,7 @@
 
 This file maps TODO items to planned releases. Items within each release are ordered by priority — complete them top-to-bottom. Check off each item as it is merged to `main`.
 
-> **Current status:** Pre-release. CI is green (hassfest + HACS + lint + tests). Blocking bugs and security issues must be resolved before tagging v1.0.0.
+> **Current status:** v1.0.0 ready. All blocking bugs, security issues, and UX gaps are resolved. CI is green (hassfest + HACS + lint + tests). Ready to tag v1.0.0.
 
 ---
 
@@ -12,12 +12,12 @@ All blocking bugs, security issues, and UX gaps that will immediately affect new
 
 ### Bugs
 
-- [ ] Webhook GET health-checks fire spurious alerts (`webhook_handler.py:80`)
-- [ ] Options flow reads `entry.data` instead of `entry.options` — saved settings lost (`config_flow.py:170`)
-- [ ] Manual clear button does not cancel pending auto-clear task (`button.py:55`, `coordinator.py:155`)
-- [ ] First-refresh failure gives no `ConfigEntryNotReady` — entry fails permanently with no retry (`__init__.py:43`)
-- [ ] Polling increments `alert_count` on existing open alarms — event entity misfires every cycle (`coordinator.py:87`)
-- [ ] `datetime.now()` produces timezone-naive datetimes — breaks HA automation time comparisons (`models.py:36,57,90`)
+- [x] Webhook GET health-checks fire spurious alerts (`webhook_handler.py:80`)
+- [x] Options flow reads `entry.data` instead of `entry.options` — saved settings lost (`config_flow.py:170`)
+- [x] Manual clear button does not cancel pending auto-clear task (`button.py:55`, `coordinator.py:155`)
+- [x] First-refresh failure gives no `ConfigEntryNotReady` — entry fails permanently with no retry (`__init__.py:43`)
+- [x] Polling increments `alert_count` on existing open alarms — event entity misfires every cycle (`coordinator.py:87`)
+- [x] `datetime.now()` produces timezone-naive datetimes — breaks HA automation time comparisons (`models.py:36,57,90`)
 
 ### Security
 

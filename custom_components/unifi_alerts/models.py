@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 
 @dataclass
@@ -34,7 +34,7 @@ class UniFiAlert:
         return cls(
             category=category,
             message=str(message)[:255],
-            received_at=datetime.now(),
+            received_at=datetime.now(UTC),
             raw=payload,
             key=payload.get("key", ""),
             device_name=payload.get("device_name")
@@ -52,9 +52,9 @@ class UniFiAlert:
         # UniFi stores timestamps as epoch milliseconds in some fields
         ts = alarm.get("datetime") or alarm.get("timestamp")
         try:
-            received_at = datetime.fromisoformat(str(ts)) if ts else datetime.now()
+            received_at = datetime.fromisoformat(str(ts)) if ts else datetime.now(UTC)
         except (ValueError, TypeError):
-            received_at = datetime.now()
+            received_at = datetime.now(UTC)
 
         return cls(
             category=category,
@@ -87,4 +87,4 @@ class CategoryState:
 
     def clear(self) -> None:
         self.is_alerting = False
-        self.last_cleared_at = datetime.now()
+        self.last_cleared_at = datetime.now(UTC)

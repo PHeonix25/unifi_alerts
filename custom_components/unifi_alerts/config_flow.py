@@ -172,11 +172,18 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                 },
             )
 
-        current_enabled: list[str] = self._config_entry.data.get(
-            CONF_ENABLED_CATEGORIES, ALL_CATEGORIES
+        current_enabled: list[str] = self._config_entry.options.get(
+            CONF_ENABLED_CATEGORIES,
+            self._config_entry.data.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES),
         )
-        current_poll: int = self._config_entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
-        current_clear: int = self._config_entry.data.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT)
+        current_poll: int = self._config_entry.options.get(
+            CONF_POLL_INTERVAL,
+            self._config_entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
+        )
+        current_clear: int = self._config_entry.options.get(
+            CONF_CLEAR_TIMEOUT,
+            self._config_entry.data.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT),
+        )
 
         fields: dict = {}
         for cat in ALL_CATEGORIES:

@@ -7,6 +7,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
@@ -49,12 +50,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await client.authenticate()
     except Exception as err:  # noqa: BLE001
         _LOGGER.error("Failed to authenticate to UniFi controller: %s", err)
-        return False
+        raise ConfigEntryNotReady(f"Could not connect to UniFi controller: {err}") from err
 
     coordinator = UniFiAlertsCoordinator(hass, client, dict(entry.data) | dict(entry.options))
 
     # Perform an initial poll so entities have data before first render
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception as err:  # noqa: BLE001
+        raise ConfigEntryNotReady(f"Initial data fetch failed: {err}") from err
 
     # Register webhooks and capture the generated URLs for display
     webhook_manager = WebhookManager(

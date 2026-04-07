@@ -1,5 +1,43 @@
 # History
 
+## 2026-04-07 — v1.0.0 blocking bugs resolved (6 fixes, 10 new tests)
+
+All remaining must-fix items from the v1.0.0 roadmap are now closed. 121 tests passing.
+
+### `models.py` — UTC-aware datetimes everywhere
+- Imported `UTC` from `datetime` (Python 3.11+).
+- Replaced all three `datetime.now()` calls with `datetime.now(UTC)`: `from_webhook_payload` `received_at`, `from_api_alarm` fallback `received_at` (both the missing-ts and the parse-error branches), and `CategoryState.clear` `last_cleared_at`.
+- HA automation time comparisons and entity attribute timestamps are now consistent with HA's own UTC-based clock.
+
+### `config_flow.py` — options flow reads `entry.options` first
+- `UniFiAlertsOptionsFlow.async_step_init` now reads `current_enabled`, `current_poll`, and `current_clear` from `entry.options` with a fallback to `entry.data`. Previously it always read from `entry.data`, so any settings saved via the options flow were silently discarded on the next visit to the Configure screen.
+
+### `coordinator.py` — `cancel_clear` + polling does not increment `alert_count`
+- Added `cancel_clear(category)` public method: cancels the pending asyncio task for a given category and removes it from `_clear_tasks`.
+- Changed the polling code path (`_async_update_data`) to set `state.is_alerting = True` and `state.last_alert` directly instead of calling `state.apply_alert()`. This means `alert_count` is only ever incremented by real webhook-pushed events, not by repeated poll cycles that find the same unarchived alarm. Prevents spurious event entity triggers every poll cycle.
+
+### `button.py` — manual clear cancels the pending auto-clear task
+- `UniFiClearCategoryButton.async_press` now calls `self._coordinator.cancel_clear(self._category)` before `state.clear()` so the scheduled auto-clear task cannot fire after a manual clear and accidentally wipe a freshly-arriving alert.
+- `UniFiClearAllButton.async_press` now calls `cancel_clear` for each alerting category before clearing its state.
+
+### `__init__.py` — `ConfigEntryNotReady` on startup failure
+- Imported `ConfigEntryNotReady` from `homeassistant.exceptions`.
+- Auth failure now raises `ConfigEntryNotReady` (instead of returning `False`) so HA schedules a retry on the standard back-off schedule rather than marking the entry as permanently failed.
+- `async_config_entry_first_refresh` is now wrapped in `try/except` and re-raises as `ConfigEntryNotReady` so poll failures during setup are also retried.
+
+### Tests — 10 new tests (121 total)
+- `test_models.py`: 4 new tests asserting `received_at` and `last_cleared_at` are UTC-aware across all code paths.
+- `test_coordinator.py`: `TestCancelClear` (3 tests — cancels task, removes from dict, no-op when absent); `TestPollingPath` (2 tests — polling does not increment `alert_count`, polling does not re-fire when already alerting).
+- `test_config_flow.py`: 1 new test asserting options flow schema defaults reflect `entry.options` values over `entry.data` values.
+
+### `pytest.ini` — suppress third-party deprecation warnings
+- Added `filterwarnings` to suppress `DeprecationWarning` from `josepy`, `acme`, and `homeassistant.components.http`. All three warnings came from third-party packages pulled in transitively by the `homeassistant` test dependency; none originated in integration code. Test run is now `121 passed, 0 warnings`.
+
+### Documentation
+- `ROADMAP.md`: all 6 v1.0 bug items marked `[x]`; status line updated to "v1.0.0 ready".
+- `TODO.md`: entire "🔴 Must-fix before V1 tag" section removed (all items resolved).
+- `CLAUDE.md`: updated module descriptions for `__init__.py`, `models.py`, `coordinator.py`, and `config_flow.py` to reflect all behavioural changes.
+
 ## 2026-04-02 — Security: per-entry webhook bearer token authentication
 
 - `const.py` — added `CONF_WEBHOOK_SECRET = "webhook_secret"`
