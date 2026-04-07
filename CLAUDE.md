@@ -84,6 +84,7 @@ README.md                         # user-facing install and setup guide
 - Always run ruff lint and format checks before committing — maintain a clean codebase.
 - Always update `HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
 - Always update `TODO.md` by removing completed items and adding new ones as needed. This is the primary source of truth for what is pending work. Do not rely on memory or Git history alone.
+- At the end of the day, make sure there are no commits outstanding, no changes locally that need to be pushed, and that the `auto-memory\dirty-files` file is empty (if it exists on disk). This ensures a clean slate for the next session.
 
 ## Resuming an interrupted session
 
