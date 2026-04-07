@@ -86,7 +86,11 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 # treat the most recent one as the active alert
                 if alerts and not state.is_alerting:
                     most_recent = max(alerts, key=lambda a: a.received_at)
-                    state.apply_alert(most_recent)
+                    # Use direct assignment instead of apply_alert() so that
+                    # poll-detected alerts do not increment alert_count.  Only
+                    # webhook-pushed alerts (real new events) should do that.
+                    state.is_alerting = True
+                    state.last_alert = most_recent
                     self._schedule_clear(cat)
 
         # Zeroise open_count for categories with no polled alarms
@@ -160,6 +164,12 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         delay = self._clear_timeout_minutes * 60
         self._clear_tasks[category] = self.hass.async_create_task(self._auto_clear(category, delay))
+
+    def cancel_clear(self, category: str) -> None:
+        """Cancel any pending auto-clear task for the given category."""
+        existing = self._clear_tasks.pop(category, None)
+        if existing and not existing.done():
+            existing.cancel()
 
     async def _auto_clear(self, category: str, delay_seconds: int) -> None:
         await asyncio.sleep(delay_seconds)

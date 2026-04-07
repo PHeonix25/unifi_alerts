@@ -1,7 +1,7 @@
 """Tests for data models."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -55,6 +55,24 @@ class TestUniFiAlert:
         alert = UniFiAlert.from_api_alarm(CATEGORY_SECURITY_THREAT, alarm)
         assert isinstance(alert.received_at, datetime)
 
+    def test_from_webhook_payload_received_at_is_timezone_aware(self):
+        """received_at must be UTC-aware so HA time comparisons work."""
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": "test"})
+        assert alert.received_at.tzinfo is not None
+        assert alert.received_at.tzinfo == timezone.utc
+
+    def test_from_api_alarm_fallback_received_at_is_timezone_aware(self):
+        """Fallback datetime (no ts field) must still be UTC-aware."""
+        alarm = {"msg": "test"}
+        alert = UniFiAlert.from_api_alarm(CATEGORY_SECURITY_THREAT, alarm)
+        assert alert.received_at.tzinfo is not None
+
+    def test_from_api_alarm_bad_ts_fallback_is_timezone_aware(self):
+        """Fallback datetime (bad ts) must still be UTC-aware."""
+        alarm = {"msg": "test", "datetime": "not-a-date"}
+        alert = UniFiAlert.from_api_alarm(CATEGORY_SECURITY_THREAT, alarm)
+        assert alert.received_at.tzinfo is not None
+
 
 class TestCategoryState:
     def test_initial_state(self):
@@ -83,3 +101,10 @@ class TestCategoryState:
         state.clear()
         assert state.is_alerting is False
         assert state.last_cleared_at is not None
+
+    def test_clear_last_cleared_at_is_timezone_aware(self):
+        """last_cleared_at must be UTC-aware."""
+        state = CategoryState(category=CATEGORY_NETWORK_WAN, is_alerting=True)
+        state.clear()
+        assert state.last_cleared_at is not None
+        assert state.last_cleared_at.tzinfo is not None

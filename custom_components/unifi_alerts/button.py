@@ -53,6 +53,7 @@ class UniFiClearCategoryButton(ButtonEntity):
         self._attr_device_info = _device_info(entry)
 
     async def async_press(self) -> None:
+        self._coordinator.cancel_clear(self._category)
         state = self._coordinator.get_category_state(self._category)
         if state:
             state.clear()
@@ -76,8 +77,9 @@ class UniFiClearAllButton(ButtonEntity):
         self._attr_device_info = _device_info(entry)
 
     async def async_press(self) -> None:
-        for state in self._coordinator.category_states.values():
+        for category, state in self._coordinator.category_states.items():
             if state.is_alerting:
+                self._coordinator.cancel_clear(category)
                 state.clear()
         self._coordinator.async_set_updated_data(self._coordinator.category_states)
 

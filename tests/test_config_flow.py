@@ -204,3 +204,49 @@ async def test_options_init_includes_webhook_urls() -> None:
     url_list = call_kwargs["description_placeholders"]["webhook_url_list"]
     assert fake_url in url_list
     assert f"?token={fake_secret}" in url_list
+
+
+@pytest.mark.asyncio
+async def test_options_init_reads_entry_options_over_data() -> None:
+    """Options flow must prefer entry.options over entry.data for saved settings."""
+    from custom_components.unifi_alerts.const import (
+        CONF_CLEAR_TIMEOUT,
+        CONF_POLL_INTERVAL,
+        DEFAULT_CLEAR_TIMEOUT,
+        DEFAULT_POLL_INTERVAL,
+    )
+
+    config_entry = MagicMock()
+    # entry.data has the original values from initial setup
+    config_entry.data = {
+        CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+        CONF_WEBHOOK_SECRET: "secret",
+        CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
+        CONF_CLEAR_TIMEOUT: DEFAULT_CLEAR_TIMEOUT,
+    }
+    # entry.options has the values from the last options save — these must win
+    saved_poll = 120
+    saved_clear = 60
+    saved_enabled = [ALL_CATEGORIES[0]]
+    config_entry.options = {
+        CONF_ENABLED_CATEGORIES: saved_enabled,
+        CONF_POLL_INTERVAL: saved_poll,
+        CONF_CLEAR_TIMEOUT: saved_clear,
+    }
+
+    flow = UniFiAlertsOptionsFlow(config_entry)
+    flow.hass = MagicMock()
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
+
+    with patch("custom_components.unifi_alerts.config_flow.async_generate_url", return_value="http://x"):
+        await flow.async_step_init(user_input=None)
+
+    call_kwargs = flow.async_show_form.call_args.kwargs
+    schema = call_kwargs["data_schema"]
+    # The schema's defaults must reflect the options values, not the data values
+    schema_defaults = {str(k): k.default() for k in schema.schema}
+    assert schema_defaults.get(CONF_POLL_INTERVAL) == saved_poll
+    assert schema_defaults.get(CONF_CLEAR_TIMEOUT) == saved_clear
+    assert schema_defaults.get(f"cat_{ALL_CATEGORIES[0]}") is True
+    # A category not in saved_enabled should default to False
+    assert schema_defaults.get(f"cat_{ALL_CATEGORIES[1]}") is False
