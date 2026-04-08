@@ -1,5 +1,20 @@
 # History
 
+## 2026-04-08 — CI housekeeping: GitHub Actions upgraded to Node.js 24
+
+- `actions/checkout`: `@v4` → `@v6`
+- `actions/setup-python`: `@v5` → `@v6`
+- `softprops/action-gh-release`: `@v2` → `@v2.6.1`
+
+All three were generating "Node.js 20 deprecated" warnings in CI output. `home-assistant/actions/hassfest@master` and `hacs/action@main` are Docker-based and unaffected.
+
+## 2026-04-08 — Tagged and released v1-pre1
+
+- Pushed three uncommitted commits from the session to `origin/main`.
+- Tagged `v1-pre1` and created a pre-release on GitHub.
+- Initial release workflow run failed with `Resource not accessible by integration` — the `GITHUB_TOKEN` lacked `contents: write` permission to upload release assets. Fixed by adding `permissions: contents: write` at the workflow level in `release.yml`.
+- Deleted and recreated the tag and release so a fresh workflow run would pick up the permissions fix. Second run succeeded and attached `unifi_alerts.zip`.
+
 ## 2026-04-08 — Post-v1 must-fix bugs: 4 items resolved (9 new tests, 130 total)
 
 Four "must-fix" items from the v1-pre backlog resolved across two parallel worktrees, reconciled and committed together.
