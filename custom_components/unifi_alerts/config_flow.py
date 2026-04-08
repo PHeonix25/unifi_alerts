@@ -73,15 +73,31 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._credentials = {**user_input, CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32)}
                 return await self.async_step_categories()
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_CONTROLLER_URL, default="https://192.168.1.1"): str,
-                vol.Optional(CONF_USERNAME): str,
-                vol.Optional(CONF_PASSWORD): str,
-                vol.Optional(CONF_API_KEY): str,
-                vol.Optional(CONF_VERIFY_SSL, default=DEFAULT_VERIFY_SSL): bool,
-            }
-        )
+        if user_input is not None:
+            # Rebuild schema with submitted values as defaults so the user
+            # doesn't have to re-enter everything on a validation error.
+            schema = vol.Schema(
+                {
+                    vol.Required(CONF_CONTROLLER_URL, default=user_input[CONF_CONTROLLER_URL]): str,
+                    vol.Optional(CONF_USERNAME, default=user_input.get(CONF_USERNAME, "")): str,
+                    vol.Optional(CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, "")): str,
+                    vol.Optional(CONF_API_KEY, default=user_input.get(CONF_API_KEY, "")): str,
+                    vol.Optional(
+                        CONF_VERIFY_SSL,
+                        default=user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+                    ): bool,
+                }
+            )
+        else:
+            schema = vol.Schema(
+                {
+                    vol.Required(CONF_CONTROLLER_URL, default="https://192.168.1.1"): str,
+                    vol.Optional(CONF_USERNAME): str,
+                    vol.Optional(CONF_PASSWORD): str,
+                    vol.Optional(CONF_API_KEY): str,
+                    vol.Optional(CONF_VERIFY_SSL, default=DEFAULT_VERIFY_SSL): bool,
+                }
+            )
         return self.async_show_form(
             step_id="user",
             data_schema=schema,
@@ -135,15 +151,16 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         enabled: list[str] = self._entry_data.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         secret: str = self._entry_data.get(CONF_WEBHOOK_SECRET, "")
-        url_lines = [
-            f"**{CATEGORY_LABELS[cat]}**\n`{async_generate_url(self.hass, webhook_id_for_category(cat))}?token={secret}`"
-            for cat in ALL_CATEGORIES
-            if cat in enabled
-        ]
+        fields: dict = {}
+        for cat in ALL_CATEGORIES:
+            if cat in enabled:
+                url = (
+                    f"{async_generate_url(self.hass, webhook_id_for_category(cat))}?token={secret}"
+                )
+                fields[vol.Optional(f"webhook_url_{cat}", default=url)] = str
         return self.async_show_form(
             step_id="finish",
-            data_schema=vol.Schema({}),
-            description_placeholders={"webhook_url_list": "\n\n".join(url_lines)},
+            data_schema=vol.Schema(fields),
         )
 
     @staticmethod
@@ -196,14 +213,11 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
         )
 
         secret: str = self._config_entry.data.get(CONF_WEBHOOK_SECRET, "")
-        url_lines = [
-            f"**{CATEGORY_LABELS[cat]}**\n`{async_generate_url(self.hass, webhook_id_for_category(cat))}?token={secret}`"
-            for cat in ALL_CATEGORIES
-            if cat in current_enabled
-        ]
+        for cat in ALL_CATEGORIES:
+            url = f"{async_generate_url(self.hass, webhook_id_for_category(cat))}?token={secret}"
+            fields[vol.Optional(f"webhook_url_{cat}", default=url)] = str
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(fields),
             errors=errors,
-            description_placeholders={"webhook_url_list": "\n\n".join(url_lines)},
         )

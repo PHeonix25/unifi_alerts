@@ -4,37 +4,6 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 
 ---
 
-## 🔴 Must-fix (found in v1.0 real-world testing)
-
-### [BUG] strings.json `user` step description incorrectly warns SSL is disabled by default
-**File:** `strings.json` (and `translations/en.json`)
-**Problem:** The `user` step description contains `⚠️ SSL verification is disabled by default — appropriate for controllers with self-signed certificates. Enable it if your controller has a trusted certificate.` This was accurate when `DEFAULT_VERIFY_SSL = False` but is now wrong since the default was flipped to `True`. Users see a warning that doesn't apply to their configuration.
-**Fix:** Remove the `⚠️` SSL sentence from the `user` step description in both `strings.json` and `translations/en.json`. Update to reflect that SSL is **on** by default and should only be disabled for self-signed certificates.
-
-### [BUG] Config flow user step resets all fields to defaults on validation error
-**File:** `config_flow.py:76–90`
-**Problem:** When `async_step_user` hits a validation error (invalid auth, cannot connect), it rebuilds `data_schema` with hardcoded defaults (`default="https://192.168.1.1"`, etc.) instead of pre-filling with the submitted values. The user must re-enter every field.
-**Fix:** On the error path, pass `user_input` values as `default=` when reconstructing each schema field. Apply the same pattern to any other config flow step that rebuilds a schema on error.
-
-### [BUG] Auth errors with local IP surface generic "invalid credentials" — poor diagnostics for UCG-Ultra and similar
-**File:** `unifi_client.py:133–181`, `config_flow.py:63–69`, `strings.json`
-**Problem:** Multiple distinct failure modes collapse into the same unhelpful error:
-1. **HTTP to UCG-Ultra**: `_detect_unifi_os` uses `allow_redirects=False`, so an HTTP→HTTPS redirect returns a 3xx with no `x-csrf-token` → `_is_unifi_os = False` → login POSTs to the wrong endpoint (`/api/login` instead of `/api/auth/login`) → 404 or redirect loop → re-raised as `CannotConnectError`, sometimes misreported as auth failure.
-2. **UCG-Ultra returns HTTP 400**: The `_login_userpass` code treats HTTP 400 the same as 401/403 (`raise InvalidAuthError`). UCG-Ultra returns 400 for structurally valid but rejected requests (e.g. missing `remember` field), so 400 ≠ bad credentials.
-3. **No diagnostic detail in the UI**: The user sees `"Invalid credentials. Check your username/password or API key."` regardless of the underlying cause — wrong URL, wrong endpoint, SSL failure, or actual bad password.
-**Fix:**
-- In `_detect_unifi_os`: allow redirects and re-check the final response (or follow the redirect URL to HTTPS and re-test). Log the detection result with the final URL and status at `DEBUG`.
-- In `_login_userpass`: separate HTTP 400 from 401/403. Raise a new `BadRequestError` (or a descriptive `CannotConnectError`) for 400 with a message indicating the request was rejected (likely wrong endpoint or malformed payload).
-- In `config_flow.py`: catch the new error type and show a more prescriptive message — e.g. `"Controller rejected the login request (HTTP 400). Check the controller URL format and that it includes the correct port."` Log the endpoint URL and response status at `WARNING` on every auth failure so users can find it in HA logs.
-- Add a new `strings.json` error key `invalid_auth_detail` (or expand `invalid_auth`) with placeholder for the diagnostic message.
-
-### [UX] Webhook URLs in finish step are not selectable — hard to copy/paste
-**File:** `config_flow.py:138–147`, `strings.json` (finish + options init steps), `translations/en.json`
-**Problem:** Webhook URLs are embedded as markdown inside `description_placeholders`. HA config flow dialogs do not allow easy text selection within description blocks, so users cannot reliably copy individual URLs.
-**Fix:** In `async_step_finish`, add each enabled category's webhook URL as a `vol.Optional` string field pre-filled with the URL value in `data_schema`. On submit, ignore those field values (proceed with `async_create_entry` using `self._entry_data` regardless of what the user typed). Apply the same pattern to the options flow `init` step so the URLs there are also copyable. Remove the URL list from `description_placeholders` once the fields are in place (or keep a short header line).
-
----
-
 ## 🟡 High-value improvements
 
 ### [SECURITY] Unvalidated controller URL allows SSRF

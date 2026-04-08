@@ -1,6 +1,7 @@
 """Tests for the UniFi HTTP client."""
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,7 +16,11 @@ from custom_components.unifi_alerts.const import (
     CATEGORY_SECURITY_THREAT,
     CATEGORY_POWER,
 )
-from custom_components.unifi_alerts.unifi_client import UniFiClient
+from custom_components.unifi_alerts.unifi_client import (
+    CannotConnectError,
+    InvalidAuthError,
+    UniFiClient,
+)
 
 
 def make_client(config: dict | None = None) -> UniFiClient:
@@ -151,3 +156,103 @@ class TestHeaders:
         client._auth_method = "apikey"
         headers = client._headers()
         assert headers.get("X-API-Key") == "test-key-123"
+
+
+def _make_response(status: int, headers: dict | None = None):
+    """Build a minimal mock aiohttp response for use in async context managers."""
+    resp = MagicMock()
+    resp.status = status
+    resp.headers = headers or {}
+    resp.raise_for_status = MagicMock()
+
+    @asynccontextmanager
+    async def _ctx(*args, **kwargs):
+        yield resp
+
+    return _ctx
+
+
+class TestDetectUnifiOs:
+    """Tests for _detect_unifi_os."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_csrf_token_present(self):
+        """Should return True when the response (possibly after redirect) has x-csrf-token."""
+        client = make_client()
+        ctx = _make_response(200, headers={"x-csrf-token": "abc123"})
+        client._session.get = ctx
+        result = await client._detect_unifi_os()
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_csrf_token_absent(self):
+        """Should return False when x-csrf-token is not in response headers, even if HTTP 200."""
+        client = make_client()
+        ctx = _make_response(200, headers={})
+        client._session.get = ctx
+        result = await client._detect_unifi_os()
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_follows_redirects(self):
+        """allow_redirects=True: final response after redirect is inspected."""
+        client = make_client()
+        # Simulate: after following redirect the final response has the token
+        ctx = _make_response(200, headers={"x-csrf-token": "redirected-token"})
+        client._session.get = ctx
+        result = await client._detect_unifi_os()
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_exception_returns_false(self):
+        """Network errors during detection should return False (graceful fallback)."""
+        import aiohttp
+
+        client = make_client()
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectionError("unreachable")
+            yield  # make it a generator
+
+        client._session.get = _raise
+        result = await client._detect_unifi_os()
+        assert result is False
+
+
+class TestLoginUserpass:
+    """Tests for _login_userpass error handling."""
+
+    @pytest.mark.asyncio
+    async def test_http_400_raises_cannot_connect(self):
+        """HTTP 400 from the controller must raise CannotConnectError, not InvalidAuthError.
+
+        UCG-Ultra returns 400 for request format / endpoint mismatch — this is
+        NOT a credentials problem, so we must not show 'invalid credentials'.
+        """
+        client = make_client()
+        client._is_unifi_os = False
+        ctx = _make_response(400)
+        client._session.post = ctx
+        with pytest.raises(CannotConnectError):
+            await client._login_userpass()
+
+    @pytest.mark.asyncio
+    async def test_http_401_raises_invalid_auth(self):
+        """HTTP 401 should still raise InvalidAuthError (bad credentials)."""
+        client = make_client()
+        client._is_unifi_os = False
+        ctx = _make_response(401)
+        client._session.post = ctx
+        with pytest.raises(InvalidAuthError):
+            await client._login_userpass()
+
+    @pytest.mark.asyncio
+    async def test_http_403_raises_invalid_auth(self):
+        """HTTP 403 should still raise InvalidAuthError (bad credentials)."""
+        client = make_client()
+        client._is_unifi_os = False
+        ctx = _make_response(403)
+        client._session.post = ctx
+        with pytest.raises(InvalidAuthError):
+            await client._login_userpass()

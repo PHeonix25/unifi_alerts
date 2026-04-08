@@ -9,11 +9,14 @@ from homeassistant.data_entry_flow import AbortFlow
 from custom_components.unifi_alerts.config_flow import UniFiAlertsConfigFlow, UniFiAlertsOptionsFlow
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
+    CONF_API_KEY,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
     CONF_PASSWORD,
     CONF_USERNAME,
+    CONF_VERIFY_SSL,
     CONF_WEBHOOK_SECRET,
+    DEFAULT_VERIFY_SSL,
 )
 
 
@@ -138,7 +141,7 @@ async def test_categories_proceeds_to_finish() -> None:
 
 @pytest.mark.asyncio
 async def test_finish_shows_webhook_urls() -> None:
-    """async_step_finish with no input should show a form with webhook URL placeholders."""
+    """async_step_finish with no input should show a form with webhook URL fields in data_schema."""
     flow = _make_flow()
     flow._controller_url = "https://192.168.1.1"
     fake_secret = "test-secret-token"
@@ -154,10 +157,11 @@ async def test_finish_shows_webhook_urls() -> None:
 
     assert result["step_id"] == "finish"
     call_kwargs = flow.async_show_form.call_args.kwargs
-    assert "description_placeholders" in call_kwargs
-    url_list = call_kwargs["description_placeholders"]["webhook_url_list"]
-    assert fake_url in url_list
-    assert f"?token={fake_secret}" in url_list
+    schema = call_kwargs["data_schema"]
+    # Webhook URLs must be present as field defaults in the schema
+    schema_defaults = {str(k): k.default() for k in schema.schema}
+    assert any(f"?token={fake_secret}" in v for v in schema_defaults.values())
+    assert any(fake_url in v for v in schema_defaults.values())
 
 
 @pytest.mark.asyncio
@@ -181,7 +185,7 @@ async def test_finish_submit_creates_entry() -> None:
 
 @pytest.mark.asyncio
 async def test_options_init_includes_webhook_urls() -> None:
-    """Options flow init should include webhook_url_list in description_placeholders."""
+    """Options flow init should include webhook URL fields in data_schema."""
     fake_secret = "options-test-secret"
     config_entry = MagicMock()
     config_entry.data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES, CONF_WEBHOOK_SECRET: fake_secret}
@@ -200,10 +204,12 @@ async def test_options_init_includes_webhook_urls() -> None:
 
     assert result["step_id"] == "init"
     call_kwargs = flow.async_show_form.call_args.kwargs
-    assert "description_placeholders" in call_kwargs
-    url_list = call_kwargs["description_placeholders"]["webhook_url_list"]
-    assert fake_url in url_list
-    assert f"?token={fake_secret}" in url_list
+    schema = call_kwargs["data_schema"]
+    # Webhook URLs must be present as field defaults in the schema (filter to strings only
+    # because the options schema also contains booleans for category toggles).
+    str_defaults = [v for v in (k.default() for k in schema.schema) if isinstance(v, str)]
+    assert any(f"?token={fake_secret}" in v for v in str_defaults)
+    assert any(fake_url in v for v in str_defaults)
 
 
 @pytest.mark.asyncio
@@ -250,3 +256,72 @@ async def test_options_init_reads_entry_options_over_data() -> None:
     assert schema_defaults.get(f"cat_{ALL_CATEGORIES[0]}") is True
     # A category not in saved_enabled should default to False
     assert schema_defaults.get(f"cat_{ALL_CATEGORIES[1]}") is False
+
+
+@pytest.mark.asyncio
+async def test_user_step_error_preserves_submitted_values() -> None:
+    """On a validation error, the form must re-populate with the user's submitted values.
+
+    If the user types a controller URL (and other fields) and auth fails, the
+    schema defaults for the re-shown form must reflect what was submitted, not
+    the original hardcoded defaults.
+    """
+    from custom_components.unifi_alerts.unifi_client import InvalidAuthError
+
+    submitted = {
+        CONF_CONTROLLER_URL: "https://10.0.0.1",
+        CONF_USERNAME: "myuser",
+        CONF_PASSWORD: "mypassword",
+        CONF_API_KEY: "",
+        CONF_VERIFY_SSL: False,
+    }
+
+    flow = _make_flow()
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "user"})
+
+    with (
+        patch("custom_components.unifi_alerts.config_flow.async_create_clientsession"),
+        patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+    ):
+        instance = mock_cls.return_value
+        instance.authenticate = AsyncMock(side_effect=InvalidAuthError("bad creds"))
+        instance.close = AsyncMock()
+
+        result = await flow.async_step_user(submitted)
+
+    assert result["step_id"] == "user"
+    call_kwargs = flow.async_show_form.call_args.kwargs
+    assert call_kwargs["errors"] == {"base": "invalid_auth"}
+
+    # Schema defaults must reflect submitted values, not hardcoded "https://192.168.1.1"
+    schema = call_kwargs["data_schema"]
+    schema_defaults = {str(k): k.default() for k in schema.schema}
+    assert schema_defaults.get(CONF_CONTROLLER_URL) == "https://10.0.0.1"
+    assert schema_defaults.get(CONF_USERNAME) == "myuser"
+    assert schema_defaults.get(CONF_PASSWORD) == "mypassword"
+    assert schema_defaults.get(CONF_VERIFY_SSL) is False
+
+
+@pytest.mark.asyncio
+async def test_user_step_initial_load_uses_hardcoded_defaults() -> None:
+    """On initial load (no user_input), the form should show hardcoded defaults."""
+    import voluptuous as vol
+
+    flow = _make_flow()
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "user"})
+
+    result = await flow.async_step_user(user_input=None)
+
+    assert result["step_id"] == "user"
+    call_kwargs = flow.async_show_form.call_args.kwargs
+    schema = call_kwargs["data_schema"]
+    # Only read defaults for keys that actually have one (some Optional fields don't).
+    schema_defaults = {}
+    for k in schema.schema:
+        if not isinstance(k.default, vol.Undefined.__class__) and k.default is not vol.UNDEFINED:
+            try:
+                schema_defaults[str(k)] = k.default()
+            except TypeError:
+                pass  # no default set
+    assert schema_defaults.get(CONF_CONTROLLER_URL) == "https://192.168.1.1"
+    assert schema_defaults.get(CONF_VERIFY_SSL) == DEFAULT_VERIFY_SSL

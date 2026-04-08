@@ -131,15 +131,21 @@ class UniFiClient:
     # ── Private helpers ───────────────────────────────────────────────────
 
     async def _detect_unifi_os(self) -> bool:
-        """Return True if this is a UniFi OS console (UDM/UCG/etc.)."""
+        """Return True if this is a UniFi OS console (UDM/UCG/etc.).
+
+        Follows redirects so that HTTP→HTTPS redirects (e.g. UCG-Ultra) are
+        handled correctly.  The sole heuristic is the presence of
+        ``x-csrf-token`` in the final response headers — any HTTP 200 is not
+        sufficient because generic servers also return 200.
+        """
         try:
             async with self._session.get(
                 f"{self._base}/",
                 ssl=self._config.get(CONF_VERIFY_SSL, False),
-                allow_redirects=False,
+                allow_redirects=True,
                 timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
-                is_os = resp.headers.get("x-csrf-token") is not None or resp.status == 200
+                is_os = resp.headers.get("x-csrf-token") is not None
                 _LOGGER.debug("UniFi OS detection: %s (status %d)", is_os, resp.status)
                 return is_os
         except Exception:  # noqa: BLE001
@@ -149,13 +155,17 @@ class UniFiClient:
         api_key = self._config.get(CONF_API_KEY, "")
         if not api_key:
             raise InvalidAuthError("No API key provided")
+        endpoint = f"{self._base}{self._network_path('/api/s/default/self')}"
         async with self._session.get(
-            f"{self._base}{self._network_path('/api/s/default/self')}",
+            endpoint,
             headers={"X-API-Key": api_key, "Accept": "application/json"},
             ssl=self._config.get(CONF_VERIFY_SSL, False),
             timeout=aiohttp.ClientTimeout(total=8),
         ) as resp:
             if resp.status in (401, 403):
+                _LOGGER.warning(
+                    "API key authentication failed for %s (HTTP %d)", endpoint, resp.status
+                )
                 raise InvalidAuthError("Invalid API key")
             resp.raise_for_status()
 
@@ -174,7 +184,20 @@ class UniFiClient:
                 ssl=self._config.get(CONF_VERIFY_SSL, False),
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
-                if resp.status in (400, 401, 403):
+                if resp.status == 400:
+                    _LOGGER.warning(
+                        "Controller rejected login request at %s (HTTP 400). "
+                        "Check the controller URL and that the controller version "
+                        "supports this integration.",
+                        login_url,
+                    )
+                    raise CannotConnectError(
+                        "Controller rejected login request (HTTP 400). "
+                        "Check the controller URL and that the controller version "
+                        "supports this integration."
+                    )
+                if resp.status in (401, 403):
+                    _LOGGER.warning("Authentication failed at %s (HTTP %d)", login_url, resp.status)
                     raise InvalidAuthError("Invalid username or password")
                 resp.raise_for_status()
         except aiohttp.ClientError as err:

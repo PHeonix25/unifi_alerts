@@ -1,5 +1,32 @@
 # History
 
+## 2026-04-08 — Post-v1 must-fix bugs: 4 items resolved (9 new tests, 130 total)
+
+Four "must-fix" items from the v1-pre backlog resolved across two parallel worktrees, reconciled and committed together.
+
+### `config_flow.py` — user step preserves submitted values on validation error
+- `async_step_user` now rebuilds `data_schema` with the submitted `user_input` values as defaults when an auth or connectivity error occurs. Previously the form reset to hardcoded defaults (`https://192.168.1.1`, etc.), forcing the user to re-enter every field.
+
+### `unifi_client.py` — UniFi OS detection and HTTP 400 handling
+- `_detect_unifi_os`: changed `allow_redirects=False` → `True` so HTTP→HTTPS redirects (UCG-Ultra) are followed correctly. Removed `or resp.status == 200` from the heuristic — the `x-csrf-token` header is the only reliable signal; any HTTP 200 was incorrectly classifying generic web servers as UniFi OS.
+- `_login_userpass`: separated HTTP 400 from 401/403. 400 now raises `CannotConnectError` (wrong endpoint / controller version mismatch — not a credentials problem); 401/403 still raise `InvalidAuthError`. Added `_LOGGER.warning` with the endpoint URL and status on every auth failure.
+- `_login_apikey`: added `_LOGGER.warning` with endpoint and status on 401/403.
+- `cannot_connect` error string updated to mention URL, port, and SSL settings and point users to HA logs.
+
+### `config_flow.py` + `strings.json` — webhook URLs as copyable form fields
+- `async_step_finish`: replaced `description_placeholders` URL list with `vol.Optional` string fields pre-filled with each enabled category's webhook URL. Users can now select and copy individual URLs from the form rather than trying to highlight text in a description block.
+- `async_step_init` (options flow): same change — webhook URL fields now appear as copyable form inputs.
+- Removed `{webhook_url_list}` placeholder from both step descriptions.
+
+### `strings.json` + `translations/en.json` — SSL warning corrected
+- Removed stale `⚠️ SSL verification is disabled by default` sentence from the `user` step description (was accurate when `DEFAULT_VERIFY_SSL = False`; wrong since the default was flipped to `True`).
+- New copy: `"SSL verification is enabled by default. Disable it only if your controller uses a self-signed certificate."`
+- Added `data` label entries for all `webhook_url_*` fields in both `finish` and `init` steps.
+
+### Tests — 9 new tests (130 total)
+- `test_config_flow.py`: `test_user_step_error_preserves_submitted_values`, `test_user_step_initial_load_uses_hardcoded_defaults` (config flow schema fix); updated `test_finish_shows_webhook_urls` and `test_options_init_includes_webhook_urls` to assert schema fields instead of `description_placeholders`.
+- `test_unifi_client.py`: `TestDetectUnifiOs` (4 tests — CSRF token present/absent, redirect followed, exception fallback); `TestLoginUserpass` (3 tests — HTTP 400 raises `CannotConnectError`, 401/403 raise `InvalidAuthError`).
+
 ## 2026-04-07 — v1.0.0 blocking bugs resolved (6 fixes, 10 new tests)
 
 All remaining must-fix items from the v1.0.0 roadmap are now closed. 121 tests passing.

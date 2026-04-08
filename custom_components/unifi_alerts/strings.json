@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to UniFi Controller",
-        "description": "Enter your UniFi Network controller address and credentials. The integration will auto-detect which method to use.\n\n**API key** (UniFi OS consoles — UDM Pro, UCG Ultra, etc.): leave Username and Password blank. Generate a key in **Settings → Admins & Users → API Keys**.\n\n**Username / password** (older controllers or Cloud Key): fill in Username and Password, leave API Key blank.\n\n⚠️ SSL verification is disabled by default — appropriate for controllers with self-signed certificates. Enable it if your controller has a trusted certificate.",
+        "description": "Enter your UniFi Network controller address and credentials. The integration will auto-detect which method to use.\n\n**API key** (UniFi OS consoles — UDM Pro, UCG Ultra, etc.): leave Username and Password blank. Generate a key in **Settings → Admins & Users → API Keys**.\n\n**Username / password** (older controllers or Cloud Key): fill in Username and Password, leave API Key blank.\n\nSSL verification is enabled by default. Disable it only if your controller uses a self-signed certificate.",
         "data": {
           "controller_url": "Controller URL (e.g. https://192.168.1.1)",
           "username": "Username (leave blank if using API key)",
@@ -29,11 +29,20 @@
       },
       "finish": {
         "title": "Webhook URLs",
-        "description": "Copy these webhook URLs into UniFi Alarm Manager — one per enabled category — then click **Submit** to save the integration.\n\n{webhook_url_list}\n\nYou can always retrieve these URLs later via **Settings → Devices & Services → UniFi Alerts → Configure**."
+        "description": "Copy each webhook URL into UniFi Alarm Manager, then click **Submit** to save the integration.\n\nYou can always retrieve these URLs later via **Settings → Devices & Services → UniFi Alerts → Configure**.",
+        "data": {
+          "webhook_url_network_device": "Network: Device offline/online webhook URL",
+          "webhook_url_network_wan": "Network: WAN offline/latency webhook URL",
+          "webhook_url_network_client": "Network: Client connect/disconnect webhook URL",
+          "webhook_url_security_threat": "Security: Threat / IDS detected webhook URL",
+          "webhook_url_security_honeypot": "Security: Honeypot triggered webhook URL",
+          "webhook_url_security_firewall": "Security: Firewall block webhook URL",
+          "webhook_url_power": "Power: PoE / power loss webhook URL"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Cannot reach the controller. Check the URL and that the controller is online.",
+      "cannot_connect": "Cannot reach the controller. Check the URL, port, and SSL settings. See Home Assistant logs for details.",
       "invalid_auth": "Invalid credentials. Check your username/password or API key.",
       "unknown": "An unexpected error occurred. Check the Home Assistant logs."
     },
@@ -45,7 +54,7 @@
     "step": {
       "init": {
         "title": "Update Alert Categories",
-        "description": "Current webhook URLs for your enabled categories:\n\n{webhook_url_list}",
+        "description": "Update your alert category settings. Webhook URLs for your enabled categories are shown below — copy them into UniFi Alarm Manager as needed.",
         "data": {
           "cat_network_device": "Network: Device offline/online",
           "cat_network_wan": "Network: WAN offline/latency",
@@ -55,7 +64,14 @@
           "cat_security_firewall": "Security: Firewall block",
           "cat_power": "Power: PoE / power loss",
           "poll_interval": "Polling interval (seconds)",
-          "clear_timeout": "Auto-clear timeout (minutes)"
+          "clear_timeout": "Auto-clear timeout (minutes)",
+          "webhook_url_network_device": "Network: Device offline/online webhook URL",
+          "webhook_url_network_wan": "Network: WAN offline/latency webhook URL",
+          "webhook_url_network_client": "Network: Client connect/disconnect webhook URL",
+          "webhook_url_security_threat": "Security: Threat / IDS detected webhook URL",
+          "webhook_url_security_honeypot": "Security: Honeypot triggered webhook URL",
+          "webhook_url_security_firewall": "Security: Firewall block webhook URL",
+          "webhook_url_power": "Power: PoE / power loss webhook URL"
         }
       }
     }
