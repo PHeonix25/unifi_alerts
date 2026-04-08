@@ -5,11 +5,11 @@
   "permissions": {
     "allow": [
       "Bash(gh run:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
+      "Bash(git:*)",
       "Bash(pytest:*)",
       "Bash(python:*)",
       "Bash(py -m pytest tests/ -v)",
+      "Bash(.venv/Scripts/pytest:*)",
       "Bash(.venv/Scripts/pytest tests/ -v)",
       "Bash(.venv/Scripts/ruff check:*)",
       "Bash(.venv/Scripts/ruff format:*)",
@@ -20,8 +20,7 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:ui.com)",
       "WebFetch(domain:help.ui.com)",
-      "WebSearch",
-      "Bash(.venv/Scripts/pytest:*)"
+      "WebSearch"
     ]
   },
   "defaultShell": "powershell"
