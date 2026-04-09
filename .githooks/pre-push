@@ -12,11 +12,21 @@ fi
 echo "pre-push: running HACS manifest checks..."
 python3 scripts/validate_hacs.py
 
+echo "pre-push: checking strings.json / translations/en.json are in sync..."
+diff custom_components/unifi_alerts/strings.json \
+     custom_components/unifi_alerts/translations/en.json > /dev/null || {
+  echo "  FAIL  strings.json and translations/en.json have drifted — keep them identical."
+  exit 1
+}
+
 echo "pre-push: running ruff lint..."
 "$VENV/ruff" check custom_components/
 
 echo "pre-push: running ruff format check..."
 "$VENV/ruff" format --check custom_components/
+
+echo "pre-push: running mypy type check..."
+"$VENV/mypy" custom_components/unifi_alerts --ignore-missing-imports --quiet
 
 echo "pre-push: running tests..."
 "$VENV/pytest" tests/ -q

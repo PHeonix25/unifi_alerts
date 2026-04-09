@@ -44,14 +44,18 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: |
-          pip install ruff mypy aiohttp homeassistant
+        run: pip install -r requirements-dev.txt
       - name: Ruff lint
         run: ruff check custom_components/
       - name: Ruff format check
         run: ruff format --check custom_components/
       - name: Mypy type check
         run: mypy custom_components/unifi_alerts --ignore-missing-imports
+      - name: Check strings.json matches translations/en.json
+        run: |
+          diff custom_components/unifi_alerts/strings.json \
+               custom_components/unifi_alerts/translations/en.json \
+          || (echo "strings.json and translations/en.json have drifted" && exit 1)
 
   test:
     name: Run tests
@@ -62,7 +66,6 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install test dependencies
-        run: |
-          pip install pytest pytest-asyncio pytest-homeassistant-custom-component aiohttp
+        run: pip install -r requirements-dev.txt
       - name: Run tests
         run: pytest tests/ -v

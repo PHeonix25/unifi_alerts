@@ -98,22 +98,21 @@ Interruptions (timeouts, hibernation, re-login) are common. When a new conversat
 2. **Run `git status` and `git diff HEAD`** — uncommitted changes show exactly what was in-flight.
 3. **Read `TODO.md`** — the top remaining item is what was probably being worked on.
 4. **Check the venv** — on Linux/Mac: `ls .venv/bin/pytest`; on Windows PowerShell: `Test-Path .venv\Scripts\pytest.exe`. If missing, recreate it:
-   - **Linux/Mac:** `python3.12 -m venv .venv && .venv/bin/pip install pytest pytest-asyncio pytest-homeassistant-custom-component aiohttp ruff mypy --quiet`
-   - **Windows:** `py -3.12 -m venv .venv && .venv\Scripts\pip install pytest pytest-asyncio pytest-homeassistant-custom-component aiohttp ruff mypy --quiet`
+   - **Linux/Mac:** `make setup` (or manually: `python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt --quiet`)
+   - **Windows:** `py -3.12 -m venv .venv && .venv\Scripts\pip install -r requirements-dev.txt --quiet`
 5. **Resume from where the diff left off** — do not re-do already-applied changes. Pick up at the next pending step (usually: run tests, fix lint, commit).
 
 ## Before making changes
 
 1. Check `TODO.md` for context on what's known to be incomplete or broken.
-2. Run tests and confirm they pass before and after your change:
-   - **Linux/Mac:** `.venv/bin/pytest tests/ -v`
-   - **Windows:** `.venv\Scripts\pytest tests\ -v`
-3. Run ruff checks before committing:
-   - **Linux/Mac:** `.venv/bin/ruff check custom_components/` and `.venv/bin/ruff format --check custom_components/`
-   - **Windows:** `.venv\Scripts\ruff check custom_components\` and `.venv\Scripts\ruff format --check custom_components\`
-4. Run the HACS manifest pre-flight before pushing any `manifest.json` or `hacs.json` change:
-   - `python3 scripts/validate_hacs.py`
-5. All test/lint/format commands use the `.venv` in the repo root — never the system Python.
+2. Run `make check` (or `make` — it's the default target) to run all local validation in one shot:
+   - ruff lint + format check
+   - mypy type check
+   - HACS manifest pre-flight (`scripts/validate_hacs.py`)
+   - strings.json ↔ translations/en.json drift check
+   - full pytest suite
+3. Individual targets: `make lint`, `make typecheck`, `make validate`, `make test`.
+4. All commands use the `.venv` in the repo root — never the system Python.
 
 ## Pre-push hook (install once per clone)
 

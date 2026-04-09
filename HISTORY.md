@@ -1,5 +1,34 @@
 # History
 
+## 2026-04-09 — chore: close remaining local dev tooling gaps
+
+Four gaps between local validation and what CI actually runs:
+
+1. **mypy missing from pre-push hook** — CI ran mypy; the hook didn't. Added
+   `.venv/bin/mypy custom_components/unifi_alerts --ignore-missing-imports` to
+   `.githooks/pre-push` so type errors are caught before push.
+
+2. **`strings.json` ↔ `translations/en.json` drift unchecked** — no guard
+   anywhere. Added a `diff` step to the pre-push hook (exits 1 on mismatch) and
+   a matching CI step in the `lint` job. Removed the corresponding TODO/ROADMAP
+   entry; it is now enforced automatically.
+
+3. **No `requirements-dev.txt`** — the venv setup command in CLAUDE.md was
+   hardcoded and diverged from what CI installs (CI included `homeassistant` for
+   mypy stubs; local didn't). Created `requirements-dev.txt` with the union of
+   all CI deps. Updated CI lint and test jobs to use it. Updated CLAUDE.md to
+   point to `make setup` / `pip install -r requirements-dev.txt`.
+
+4. **No `Makefile`** — multiple manual commands were documented in CLAUDE.md.
+   Added `Makefile` with: `setup`, `lint`, `typecheck`, `validate`, `test`, and
+   `check` (default) targets. Updated CLAUDE.md's "Before making changes" section
+   to lead with `make check`.
+
+`make check` now runs lint + typecheck + HACS preflight + translation drift +
+tests in one command. 234 tests pass, all checks clean.
+
+---
+
 ## 2026-04-09 — chore: add HACS manifest pre-flight validator and pre-push hook
 
 Root cause of the CI failure that let `"webhook"` slip into `dependencies`: the
