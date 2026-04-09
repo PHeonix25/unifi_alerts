@@ -1,5 +1,46 @@
 # History
 
+## 2026-04-09 — docs: align all documentation with new tooling and processes
+
+Full documentation pass to reflect the Makefile, requirements-dev.txt, pre-push
+hook, and HACS pre-flight validator added in recent commits. Goal: no developer
+should need to read the git log to understand how to set up or validate locally.
+
+### CLAUDE.md
+- Repository layout updated to include `Makefile`, `requirements-dev.txt`,
+  `.githooks/pre-push`, and `scripts/validate_hacs.py` with descriptions.
+- `strings.json` and `translations/en.json` entries note that CI enforces parity.
+- Working style: replaced "run tests and ruff before committing" with "run
+  `make check` before committing" (single command, catches everything).
+- "Before making changes" section lists all five checks `make check` runs.
+- Pre-push hook section and hook install command consolidated at the bottom.
+
+### README.md
+- Contributing section expanded from 2 lines to a full developer workflow:
+  clone → `git config core.hooksPath .githooks` → `make setup` → `make check`.
+- CI pipeline table explaining every job and what it guards.
+- Key rules table (manifest dependencies, strings drift, async, no YAML, token
+  auth) so contributors know the sharp edges before opening a PR.
+
+### TESTING.md
+- Full rewrite. Replaces hardcoded `pip install` with `make setup` /
+  `requirements-dev.txt`. Adds `make` target table as the primary interface.
+- Documents pre-push hook and that `--no-verify` must not be used.
+- Adds translation drift check and HACS pre-flight to the "other checks" list.
+- Notes `make_hass()` / `make_entry()` as canonical conftest helpers.
+- Renamed "Adding a test for a new category" → "Adding a test for a new event
+  key" (more accurate).
+
+### HOMEASSISTANT.md
+- Translations section updated: "must be kept in sync" → "drift is caught
+  automatically by CI and the pre-push hook", with details of where.
+
+### ARCHITECTURE.md
+- Added "Tooling and validation" section documenting `scripts/validate_hacs.py`,
+  `Makefile`, and `requirements-dev.txt` so the repo layout is fully explained.
+
+---
+
 ## 2026-04-09 — chore: close remaining local dev tooling gaps
 
 Four gaps between local validation and what CI actually runs:

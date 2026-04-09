@@ -107,6 +107,14 @@ After setup, `entry.data` contains:
 
 `entry.options` contains only the reconfigurable subset: `enabled_categories`, `poll_interval`, `clear_timeout`. In `__init__.py`, these are merged: `dict(entry.data) | dict(entry.options)` so options always win.
 
+## Tooling and validation
+
+The `scripts/` directory contains project-level tooling that is not part of the integration itself:
+
+- **`scripts/validate_hacs.py`** — pure-Python HACS manifest pre-flight. Checks `manifest.json` for required fields, valid `iot_class`, correct version format, and that `dependencies` contains no HA core built-ins (which the HACS action rejects). Run via `make validate` or automatically by the pre-push hook and CI's `hacs-preflight` job.
+
+The `Makefile` provides convenience targets (`make check`, `make lint`, `make test`, etc.) that wrap the venv commands. `requirements-dev.txt` is the single source of truth for dev dependencies — used by `make setup` and both CI jobs.
+
 ## Key invariants
 
 - `CategoryState` instances are created once at coordinator init and mutated in place — never replaced.

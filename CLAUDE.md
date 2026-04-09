@@ -38,8 +38,8 @@ custom_components/unifi_alerts/   # integration source
   sensor.py                       # message, count, and rollup count sensors
   event.py                        # event entities, fire per alert
   button.py                       # manual clear buttons
-  strings.json                    # UI copy for config flow
-  translations/en.json            # copy of strings.json (HA translation convention)
+  strings.json                    # UI copy for config flow; must be identical to translations/en.json — CI enforces this
+  translations/en.json            # runtime translation file loaded by HA; must be identical to strings.json — CI enforces this
 tests/
   conftest.py                     # shared fixtures, MOCK_CONFIG; make_hass() and make_entry() module-level helpers for setup/unload tests
   test_models.py
@@ -51,12 +51,18 @@ tests/
   test_init.py                    # async_setup_entry / async_unload_entry lifecycle, teardown order
   test_entities.py                # all entity property methods: binary_sensor, sensor, event, button
 .github/workflows/
-  ci.yml                          # hassfest + HACS validate + ruff + mypy + pytest
+  ci.yml                          # hassfest + hacs-preflight + HACS action + lint (ruff, mypy, translation drift) + pytest
   release.yml                     # zips and attaches release asset on GitHub release
+.githooks/
+  pre-push                        # local gate: HACS preflight → translation drift → ruff → mypy → pytest; install with: git config core.hooksPath .githooks
+scripts/
+  validate_hacs.py                # pure-Python HACS manifest pre-flight; checks required fields, iot_class, dependencies (no HA core built-ins); run locally or in CI
+Makefile                          # convenience targets: setup, lint, typecheck, validate, test, check (default = all)
+requirements-dev.txt              # single source of truth for all dev dependencies; used by make setup and both CI jobs
 hacs.json
 pyproject.toml                    # ruff and mypy config
 pytest.ini
-README.md                         # user-facing install and setup guide
+README.md                         # user-facing install, setup, and contributing guide
 ```
 
 ## Non-negotiable constraints
@@ -84,8 +90,7 @@ README.md                         # user-facing install and setup guide
 
 - **Never assume — always ask.** If anything about the task, scope, or approach is unclear, ask before proceeding. Do not guess intent.
 - **Move into the working directory at the start of every session** — avoids needing path prefixes on every command.
-- Always run tests before committing — never commit broken code. If tests are failing, fix them before committing.
-- Always run ruff lint and format checks before committing — maintain a clean codebase.
+- Always run `make check` before committing — never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
 - Always update `HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
 - Always update `TODO.md` by removing completed items and adding new ones as needed. This is the primary source of truth for what is pending work. Do not rely on memory or Git history alone.
 - At the end of the day, make sure there are no commits outstanding, no changes locally that need to be pushed, and that the `auto-memory\dirty-files` file is empty (if it exists on disk). This ensures a clean slate for the next session.
