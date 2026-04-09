@@ -51,7 +51,7 @@ Issues that are non-blocking for a first release but important for production qu
 - [ ] Webhook URLs logged at INFO level on every startup — demote to DEBUG (`__init__.py:71`)
 - [ ] Unbounded webhook body stored in memory — apply `max_bytes` cap on `request.json()` (`webhook_handler.py:86`)
 - [ ] Credentials leak risk via exception messages in logs — log class name only, not `str(err)` (`unifi_client.py:105,181`)
-- [ ] Overly broad UniFi OS detection — remove `or resp.status == 200` fallback (`unifi_client.py:142`)
+- [x] Overly broad UniFi OS detection — remove `or resp.status == 200` fallback (`unifi_client.py:142`)
 
 ### Bugs
 
@@ -62,8 +62,8 @@ Issues that are non-blocking for a first release but important for production qu
 
 ### Tests
 
-- [ ] Add `tests/test_webhook_handler.py` — valid POST, GET health-check no-op, invalid JSON, unregister
-- [ ] Add lifecycle tests: `async_setup_entry` populates state, `async_unload_entry` tears down cleanly
+- [x] Add `tests/test_webhook_handler.py` — valid POST, GET health-check no-op, invalid JSON, unregister
+- [x] Add lifecycle tests: `async_setup_entry` populates state, `async_unload_entry` tears down cleanly
 
 ### Tech debt
 

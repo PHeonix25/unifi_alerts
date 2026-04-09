@@ -14,6 +14,7 @@ from custom_components.unifi_alerts.const import (
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
     CONF_USERNAME,
+    CONF_VERIFY_SSL,
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
@@ -65,3 +66,45 @@ def sample_alarm_record() -> dict:
         "archived": False,
         "datetime": "2024-01-15T10:30:00",
     }
+
+
+# ── shared plain-function helpers (importable from any test file) ─────────────
+
+def make_hass() -> MagicMock:
+    """Return a minimal hass mock wired up for config-entry setup/unload tests."""
+    hass = MagicMock()
+    hass.data = {}
+    hass.config_entries = MagicMock()
+    hass.config_entries.async_forward_entry_setups = AsyncMock()
+    hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+    hass.config_entries.async_reload = AsyncMock()
+    return hass
+
+
+def make_entry(
+    data: dict | None = None,
+    options: dict | None = None,
+    entry_id: str = "entry-abc",
+) -> MagicMock:
+    """Return a mock config entry with sane defaults.
+
+    The default ``data`` dict mirrors a fully-configured entry so tests that
+    only care about ``entry_id`` can call ``make_entry()`` with no arguments.
+    Tests that need specific field values can pass an explicit ``data`` dict.
+    """
+    entry = MagicMock()
+    entry.entry_id = entry_id
+    entry.data = data or {
+        CONF_CONTROLLER_URL: "https://192.168.1.1",
+        CONF_USERNAME: "admin",
+        CONF_PASSWORD: "password",
+        CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+        CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
+        CONF_CLEAR_TIMEOUT: DEFAULT_CLEAR_TIMEOUT,
+        CONF_VERIFY_SSL: True,
+        "webhook_secret": "fake-secret",
+    }
+    entry.options = options or {}
+    entry.async_on_unload = MagicMock()
+    entry.add_update_listener = MagicMock(return_value=MagicMock())
+    return entry

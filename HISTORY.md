@@ -1,5 +1,49 @@
 # History
 
+## 2026-04-09 — Test coverage expansion: 5 new test files, 103 new tests (233 total)
+
+Addressed all major coverage gaps identified in a structured analysis of the codebase. Previous suite: 130 tests. New suite: 233 tests (+103). All passing, lint clean.
+
+### New: `tests/test_webhook_handler.py` (15 tests)
+`WebhookManager` had zero test coverage — this is the entire real-time alert path.
+- `TestRegisterAll` (6 tests): registers one webhook per enabled category; skips disabled categories; URL includes `?token=` when secret set; no token suffix when secret empty; `_registered` list populated; returns `{category: url}` dict.
+- `TestUnregisterAll` (3 tests): calls `async_unregister` for each registered ID; clears `_registered` after; suppresses exceptions silently.
+- `TestMakeHandler` (6 tests): valid token → push callback called with correct category/alert; missing token → HTTP 401, callback not called; wrong token → HTTP 401, callback not called; no secret configured → accepts any request; malformed JSON → falls back to empty dict (alert still dispatched with "Unknown alert"); well-formed payload → all alert fields populated correctly.
+
+### New: `tests/test_init.py` (14 tests)
+`async_setup_entry` / `async_unload_entry` / `_async_update_listener` had zero coverage.
+- `TestAsyncSetupEntry` (7 tests): happy path returns True; stores coordinator/webhook IDs/unregister callable in `hass.data`; auth failure → `ConfigEntryNotReady`; first-refresh failure → `ConfigEntryNotReady`; `verify_ssl=False` logs SSL warning; `verify_ssl=True` produces no warning; platforms forwarded via `async_forward_entry_setups`.
+- `TestAsyncUnloadEntry` (5 tests): returns True on success; calls `coordinator.async_shutdown()`; calls `unregister_all()`; calls `client.close()`; when platform unload fails returns False and skips all teardown (correct teardown ordering guarded).
+- `TestAsyncUpdateListener` (1 test): calls `hass.config_entries.async_reload(entry.entry_id)`.
+
+### Extended: `tests/test_unifi_client.py` (+25 tests, was 19)
+- `TestFetchAlarms` (5 tests): returns only non-archived alarms; filters archived alarms; HTTP 401 raises `InvalidAuthError` and clears `_authenticated`; `ClientConnectionError` raises `CannotConnectError`; unauthenticated client calls `authenticate()` before fetching.
+- `TestCategoriseAlarms` (3 tests): groups alarms by category; skips unclassifiable keys; empty alarm list returns `{}`.
+- `TestAuthenticate` (3 tests): API key path used when `auth_method=apikey`; API key falls back to userpass when key invalid and method not explicit; explicit `auth_method=apikey` does not fall back.
+- `TestClose` (4 tests): userpass posts to `/api/logout`; UniFi OS userpass posts to `/api/auth/logout`; API key auth skips logout; unauthenticated skips logout.
+
+### Extended: `tests/test_coordinator.py` (+9 tests, was 19)
+- `TestPollingErrorPaths` (4 tests): `InvalidAuthError` triggers one re-auth then retries; `InvalidAuthError` on retry raises `UpdateFailed`; `CannotConnectError` raises `UpdateFailed`; categories absent from poll result get `open_count` zeroed.
+- `TestRollupOpenCount` (3 tests): sums `open_count` for enabled categories only; excludes disabled; zero when no alarms.
+- `TestAutoClear` (2 tests): `_auto_clear` clears state and notifies listeners after delay; no-op when category is not alerting.
+
+### New: `tests/test_entities.py` (51 tests)
+All four entity platforms had zero coverage for their property methods and update logic.
+- `TestUniFiCategoryBinarySensor` (11 tests): `is_on` true/false/missing-state; `available` enabled/disabled; `icon` alert/ok; `extra_state_attributes` with alert, without alert, missing state, with `last_cleared_at`; `unique_id` format.
+- `TestUniFiRollupBinarySensor` (6 tests): `is_on` delegates to `any_alerting`; icon variants; attributes with/without last alert.
+- `TestUniFiCategoryMessageSensor` (8 tests): `native_value` with/without alert/missing state; `available`; `icon`; `extra_state_attributes` with/without alert.
+- `TestUniFiCategoryCountSensor` (3 tests): `native_value` reflects `open_count`; zero for missing state; `available`.
+- `TestUniFiRollupCountSensor` (3 tests): `native_value` is `rollup_open_count`; attributes with/without last alert.
+- `TestUniFiAlertEventEntity` (8 tests): `available` enabled/disabled/missing; `_handle_coordinator_update` fires event only when `alert_count` increases (not on unchanged count); increments `_last_seen_count` correctly; no-op on missing state / missing `last_alert`; event payload contains all required fields.
+- `TestUniFiClearCategoryButton` (5 tests): `async_press` cancels pending task, clears state, notifies coordinator, no-op on missing state; `unique_id` format.
+- `TestUniFiClearAllButton` (4 tests): clears all alerting categories; skips non-alerting; cancels clear tasks; notifies coordinator exactly once.
+
+### `TODO.md` updated
+Replaced the old "Integration tests with the hass fixture" item with a more accurate two-part entry: the remaining integration-test work (end-to-end with real hass fixture) and an "extended coverage" item marked as partially complete (since the plain-mock layer is now covered).
+
+### Environment note
+Tests run with `.venv` (Python 3.12, matching CI). Created `.venv` using `python3.12 -m venv .venv` and installed `pytest pytest-asyncio pytest-homeassistant-custom-component aiohttp ruff`.
+
 ## 2026-04-08 — CI housekeeping: GitHub Actions upgraded to Node.js 24
 
 - `actions/checkout`: `@v4` → `@v6`
