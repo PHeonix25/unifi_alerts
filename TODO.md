@@ -11,11 +11,6 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 **Problem:** The controller URL field accepts any string and passes it directly to the HTTP client. A malicious or misconfigured user could supply an internal address (e.g. `http://localhost:8123/`) to probe internal services.
 **Fix:** Validate that the URL scheme is `http` or `https`, and optionally reject loopback and link-local addresses using `yarl.URL`.
 
-### [SECURITY] Webhook URLs logged at INFO level on every startup
-**File:** `__init__.py:71-74`
-**Problem:** Full webhook URLs are written to HA logs at INFO level. Log files are routinely shared in bug reports, exposing the URLs even though they're local-only.
-**Fix:** Demote to `DEBUG` level. Log only the count of registered webhooks at INFO.
-
 ### [BUG] Config flow uses `async_create_clientsession` — session is never properly closed
 **File:** `config_flow.py:56`
 **Problem:** `async_create_clientsession` creates a new session per config flow run. The `client.close()` call issues a logout HTTP request but does not close the underlying session. The correct pattern is to use `async_create_clientsession`, store a reference, and call `session.close()` explicitly in a try/finally after the auth check.
@@ -86,9 +81,6 @@ In `coordinator._async_update_data`, if re-auth succeeds but the second `categor
 
 ### `strings.json` and `translations/en.json` are manually kept in sync
 HA's tooling expects them to match. A pre-commit hook or CI check that diffs the two files would prevent drift.
-
-### `manifest.json` does not declare `webhook` as a dependency
-The integration depends on `homeassistant.components.webhook`. HA loads it early by default so this rarely matters in practice, but explicit declaration via `"dependencies": ["webhook"]` would make the dependency visible to hassfest.
 
 ### Disabled category `open_count` is still updated by polling
 `categorise_alarms()` returns all categories regardless of enabled/disabled state, and the coordinator updates `open_count` for all of them. A disabled category with open alarms on the controller will have a non-zero `open_count` internally, which is inconsistent.

@@ -1,5 +1,19 @@
 # History
 
+## 2026-04-09 — v1.1.0 quick wins: manifest webhook dependency + demote URL logging
+
+Two small v1.1.0 items from the roadmap addressed together:
+
+### `manifest.json` — declare `"webhook"` dependency
+The integration relies on `homeassistant.components.webhook` being loaded, but `manifest.json` had an empty `"dependencies": []`. Added `"webhook"` so hassfest and HA's component loader see the explicit dependency. No behaviour change at runtime (HA loads webhook early anyway), but makes the dependency discoverable.
+
+### `__init__.py` — demote webhook URL logging from INFO to DEBUG
+Full webhook URLs (including the `?token=` bearer secret) were written to HA logs at INFO level on every startup. Log files are routinely shared in bug reports, which would expose the URL even though webhooks are local-only. Changed to: log only the count of registered webhooks at INFO, and emit the full URLs at DEBUG for developers who need them.
+
+No test changes needed — 234 tests all pass. Lint clean.
+
+---
+
 ## 2026-04-09 — Test coverage expansion: 5 new test files, 103 new tests (233 total)
 
 Addressed all major coverage gaps identified in a structured analysis of the codebase. Previous suite: 130 tests. New suite: 233 tests (+103). All passing, lint clean.
