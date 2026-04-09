@@ -62,7 +62,7 @@ All entities use the same `_device_info` dict:
 Webhooks are registered with `homeassistant.components.webhook.async_register`.
 
 - `local_only=True` — HA rejects requests from outside the local network at the framework level. Do not remove this.
-- `allowed_methods=["GET", "POST"]` — UniFi Alarm Manager sends GET by default; POST is configured manually and sends a JSON body.
+- `allowed_methods=["POST"]` — only POST is accepted. UniFi Alarm Manager must be configured to send POST with a JSON body. GET requests are rejected with HTTP 405.
 - Webhook IDs are deterministic strings (`unifi_alerts_{category}`), not UUIDs, so they survive HA restarts.
 - `async_generate_url(hass, webhook_id)` generates the full URL including HA's `base_url`. This requires HA's external URL or internal URL to be configured correctly — if it isn't, the URL will be incorrect. This is a known limitation (see `TODO.md`).
 

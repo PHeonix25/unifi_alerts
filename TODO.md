@@ -11,11 +11,6 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 **Problem:** The controller URL field accepts any string and passes it directly to the HTTP client. A malicious or misconfigured user could supply an internal address (e.g. `http://localhost:8123/`) to probe internal services.
 **Fix:** Validate that the URL scheme is `http` or `https`, and optionally reject loopback and link-local addresses using `yarl.URL`.
 
-### [SECURITY] `str(payload)` fallback stores raw webhook payload in alert message
-**File:** `models.py:33`
-**Problem:** When no recognised message field is present in a webhook payload, `from_webhook_payload` falls back to `str(payload)` — the entire payload repr, truncated to 255 chars. This leaks internal payload structure into the message field and into event entity attributes.
-**Fix:** Replace `str(payload)` with a static sentinel `"Unknown alert"`, matching the behaviour of `from_api_alarm`.
-
 ### [SECURITY] Webhook URLs logged at INFO level on every startup
 **File:** `__init__.py:71-74`
 **Problem:** Full webhook URLs are written to HA logs at INFO level. Log files are routinely shared in bug reports, exposing the URLs even though they're local-only.
@@ -30,11 +25,6 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 **File:** `unifi_client.py:92-103`
 **Problem:** On sites with thousands of unarchived alarms, the API returns a multi-megabyte response in a single call, which may exceed the 10-second timeout and blocks the event loop budget during parsing.
 **Fix:** Add a `?limit=200` query parameter (or equivalent) and document the constraint. Fetch only the most recent N alarms per poll cycle.
-
-### [BUG] UniFi OS detection triggers on any HTTP 200 — wrong path on non-UniFi hosts
-**File:** `unifi_client.py:142`
-**Problem:** `is_os = resp.headers.get("x-csrf-token") is not None or resp.status == 200`. Any HTTP server returning 200 on `/` is misclassified as UniFi OS, causing all API calls to use the wrong path prefix.
-**Fix:** Remove `or resp.status == 200`. The `x-csrf-token` check alone is the correct heuristic.
 
 ### [BUG] No validation that at least one category is enabled
 **File:** `config_flow.py:94-95`
@@ -51,7 +41,7 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 **Reference:** See `TESTING.md` for fixture pattern.
 
 ### Remaining test coverage gaps (plain-mock layer now complete — see HISTORY.md 2026-04-09)
-All source modules now have plain-mock unit test coverage (233 tests). Remaining gaps:
+All source modules now have plain-mock unit test coverage (234 tests). Remaining gaps:
 - **Options flow form submission** — only the init form display is tested; saving updated values is not.
 - **Config flow categories step submission** — poll interval / clear timeout validation and edge values (10, 3600, 1, 1440) not covered.
 - **End-to-end integration tests** — still require full `hass` fixture setup (see item above).
@@ -97,12 +87,6 @@ In `coordinator._async_update_data`, if re-auth succeeds but the second `categor
 ### `strings.json` and `translations/en.json` are manually kept in sync
 HA's tooling expects them to match. A pre-commit hook or CI check that diffs the two files would prevent drift.
 
-### `CONF_VERIFY_SSL` raw string in `__init__.py:36`
-`entry.data.get("verify_ssl", False)` uses a raw string instead of the `CONF_VERIFY_SSL` constant. If the constant's value ever changed, this reference would silently fall back to `False`.
-
-### `diagnostics.py` uses `__import__` for logging instead of `import logging`
-Line 19 uses `_LOGGER = __import__("logging").getLogger(__name__)`. Inconsistent with the stated coding convention and harder to read. No functional impact.
-
 ### `manifest.json` does not declare `webhook` as a dependency
 The integration depends on `homeassistant.components.webhook`. HA loads it early by default so this rarely matters in practice, but explicit declaration via `"dependencies": ["webhook"]` would make the dependency visible to hassfest.
 
@@ -111,6 +95,3 @@ The integration depends on `homeassistant.components.webhook`. HA loads it early
 
 ### CI action versions are floating (`@master`, `@main`)
 `home-assistant/actions/hassfest@master` and `hacs/action@main` are not pinned to a SHA. A breaking upstream change or supply-chain compromise would silently affect CI. Pin to commit SHAs and update periodically.
-
-### `hacs.json` has contradictory `zip_release: false` and `filename` set
-`"zip_release": false` causes HACS to ignore the `"filename"` field. Either remove `filename` or align both fields to use zip releases (which `release.yml` already generates).
