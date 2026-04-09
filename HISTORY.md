@@ -1,5 +1,27 @@
 # History
 
+## 2026-04-09 — chore: add HACS manifest pre-flight validator and pre-push hook
+
+Root cause of the CI failure that let `"webhook"` slip into `dependencies`: the
+only local checks were ruff and pytest; neither exercises the HACS action rules.
+
+Added three things to close the gap:
+
+- **`scripts/validate_hacs.py`** — standalone Python script that replicates the
+  HACS action's key manifest checks: required fields, version format, iot_class
+  validity, and the core-integration guard on `dependencies`. Catches the exact
+  class of mistake that broke CI. No Docker or GitHub required.
+
+- **`ci.yml` — `hacs-preflight` job** — runs `validate_hacs.py` in CI *before*
+  the real HACS action job (`needs: hacs-preflight`). Fast feedback (pure Python,
+  no container pull) and a second opinion alongside the authoritative check.
+
+- **`.githooks/pre-push`** — tracked git hook that runs HACS preflight, ruff
+  lint, ruff format, and pytest before every `git push`. One-time setup:
+  `git config core.hooksPath .githooks`. Documented in CLAUDE.md.
+
+---
+
 ## 2026-04-09 — hotfix: revert manifest webhook dependency (broke HACS CI)
 
 The `"dependencies": ["webhook"]` added in the previous commit caused the HACS validator to fail CI. hassfest accepts HA core built-ins in `dependencies`, but the HACS action rejects them — it only allows entries that are installable external integrations.

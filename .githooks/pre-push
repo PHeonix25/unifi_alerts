@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Pre-push hook — runs all local validation before a push reaches CI.
+# Install once per clone: git config core.hooksPath .githooks
+set -e
+
+VENV=".venv/bin"
+if [[ ! -f "$VENV/pytest" ]]; then
+  echo "pre-push: .venv not found. Run setup first (see CLAUDE.md)."
+  exit 1
+fi
+
+echo "pre-push: running HACS manifest checks..."
+python3 scripts/validate_hacs.py
+
+echo "pre-push: running ruff lint..."
+"$VENV/ruff" check custom_components/
+
+echo "pre-push: running ruff format check..."
+"$VENV/ruff" format --check custom_components/
+
+echo "pre-push: running tests..."
+"$VENV/pytest" tests/ -q
+
+echo "pre-push: all checks passed."

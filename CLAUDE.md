@@ -111,4 +111,16 @@ Interruptions (timeouts, hibernation, re-login) are common. When a new conversat
 3. Run ruff checks before committing:
    - **Linux/Mac:** `.venv/bin/ruff check custom_components/` and `.venv/bin/ruff format --check custom_components/`
    - **Windows:** `.venv\Scripts\ruff check custom_components\` and `.venv\Scripts\ruff format --check custom_components\`
-4. All test/lint/format commands use the `.venv` in the repo root — never the system Python.
+4. Run the HACS manifest pre-flight before pushing any `manifest.json` or `hacs.json` change:
+   - `python3 scripts/validate_hacs.py`
+5. All test/lint/format commands use the `.venv` in the repo root — never the system Python.
+
+## Pre-push hook (install once per clone)
+
+A git hook at `.githooks/pre-push` runs all of the above automatically before every `git push`. Activate it once after cloning:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+If the hook is not installed, run `scripts/validate_hacs.py` manually before every push that touches `manifest.json` or `hacs.json`.
