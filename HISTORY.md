@@ -1,5 +1,13 @@
 # History
 
+## 2026-04-09 — hotfix: revert manifest webhook dependency (broke HACS CI)
+
+The `"dependencies": ["webhook"]` added in the previous commit caused the HACS validator to fail CI. hassfest accepts HA core built-ins in `dependencies`, but the HACS action rejects them — it only allows entries that are installable external integrations.
+
+Reverted `manifest.json` back to `"dependencies": []`. Added a non-negotiable constraint to `CLAUDE.md` to prevent recurrence: never list HA core built-ins in `dependencies`. Updated `ROADMAP.md` to mark the item as "won't do" with the reason.
+
+---
+
 ## 2026-04-09 — v1.1.0 quick wins: manifest webhook dependency + demote URL logging
 
 Two small v1.1.0 items from the roadmap addressed together:

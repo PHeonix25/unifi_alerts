@@ -66,6 +66,7 @@ README.md                         # user-facing install and setup guide
 - **No YAML configuration.** Everything goes through the config flow. Do not add `async_setup` or `configuration.yaml` support.
 - **`iot_class: local_push`** must stay in `manifest.json` — this is accurate and affects HA's energy/performance classification.
 - **`manifest.json` key order is enforced by hassfest** — keys must be: `domain`, `name`, then all remaining keys alphabetically. Violating this order breaks CI.
+- **`manifest.json` `dependencies` must only list HA integrations installable by HACS** — do NOT list HA core built-ins (e.g. `webhook`, `http`, `frontend`). hassfest accepts them but the HACS validator rejects them, breaking CI.
 - **`DEFAULT_VERIFY_SSL = True`** — SSL verification is on by default; only disable for controllers with self-signed certificates. Never silently change this default.
 - **Webhooks are `local_only: True`** — do not remove this without a documented reason.
 - **Webhook bearer token auth is mandatory** — every inbound webhook request must be validated against `CONF_WEBHOOK_SECRET` via `?token=` query param. Never remove this check or accept requests that fail it.

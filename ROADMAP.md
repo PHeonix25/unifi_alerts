@@ -68,7 +68,7 @@ Issues that are non-blocking for a first release but important for production qu
 ### Tech debt
 
 - [ ] Pin CI action versions to commit SHAs instead of `@master` / `@main` (`ci.yml`)
-- [x] Add `"dependencies": ["webhook"]` to `manifest.json`
+- [~] Add `"dependencies": ["webhook"]` to `manifest.json` — HACS validator rejects HA-core built-ins in this field; reverted
 - [ ] Add CI diff check between `strings.json` and `translations/en.json` to prevent drift
 - [ ] Tighten `JSONDecodeError` catch in webhook handler instead of bare `except Exception`
 
