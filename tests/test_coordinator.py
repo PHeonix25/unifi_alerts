@@ -269,3 +269,193 @@ class TestPollingPath:
         # Poll again — should not increment count further
         await coord._async_update_data()
         assert state.alert_count == 1
+
+
+class TestPollingErrorPaths:
+    """Tests for _async_update_data error handling."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_auth_triggers_re_auth_and_retries(self):
+        """On InvalidAuthError the coordinator re-authenticates once and retries."""
+        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
+
+        hass = MagicMock()
+
+        def _create_task(coro, **kwargs):
+            coro.close()
+            return MagicMock()
+
+        hass.async_create_task = _create_task
+        client = MagicMock()
+
+        # First call raises InvalidAuthError; after re-auth the second call succeeds
+        client.categorise_alarms = AsyncMock(
+            side_effect=[InvalidAuthError("expired"), {}]
+        )
+        client.authenticate = AsyncMock()
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        # Should not raise
+        await coord._async_update_data()
+        client.authenticate.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_invalid_auth_on_retry_raises_update_failed(self):
+        """If re-auth also fails, UpdateFailed must be raised."""
+        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
+        from homeassistant.helpers.update_coordinator import UpdateFailed
+
+        hass = MagicMock()
+
+        def _create_task(coro, **kwargs):
+            coro.close()
+            return MagicMock()
+
+        hass.async_create_task = _create_task
+        client = MagicMock()
+        client.categorise_alarms = AsyncMock(side_effect=InvalidAuthError("expired"))
+        client.authenticate = AsyncMock(side_effect=InvalidAuthError("still bad"))
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        with pytest.raises(UpdateFailed):
+            await coord._async_update_data()
+
+    @pytest.mark.asyncio
+    async def test_cannot_connect_raises_update_failed(self):
+        """CannotConnectError must be wrapped in UpdateFailed."""
+        from custom_components.unifi_alerts.unifi_client import CannotConnectError
+        from homeassistant.helpers.update_coordinator import UpdateFailed
+
+        hass = MagicMock()
+
+        def _create_task(coro, **kwargs):
+            coro.close()
+            return MagicMock()
+
+        hass.async_create_task = _create_task
+        client = MagicMock()
+        client.categorise_alarms = AsyncMock(side_effect=CannotConnectError("timeout"))
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        with pytest.raises(UpdateFailed):
+            await coord._async_update_data()
+
+    @pytest.mark.asyncio
+    async def test_polling_zeroes_open_count_for_cleared_categories(self):
+        """Categories that have no polled alarms get open_count reset to 0."""
+        hass = MagicMock()
+
+        def _create_task(coro, **kwargs):
+            coro.close()
+            return MagicMock()
+
+        hass.async_create_task = _create_task
+        client = MagicMock()
+        # First poll: WAN has 1 alarm; second poll: WAN has 0 alarms
+        polled_alert = UniFiAlert(
+            category=CATEGORY_NETWORK_WAN,
+            message="open",
+            received_at=datetime(2024, 1, 1, 10, 0),
+        )
+        client.categorise_alarms = AsyncMock(
+            side_effect=[
+                {CATEGORY_NETWORK_WAN: [polled_alert]},
+                {},  # second poll: nothing open
+            ]
+        )
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        coord.async_set_updated_data = MagicMock()
+
+        await coord._async_update_data()
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).open_count == 1
+
+        await coord._async_update_data()
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).open_count == 0
+
+
+class TestRollupOpenCount:
+    def test_rollup_open_count_sums_enabled_categories(self):
+        coord = make_coordinator()
+        coord.get_category_state(CATEGORY_NETWORK_WAN).open_count = 3
+        coord.get_category_state(CATEGORY_SECURITY_THREAT).open_count = 2
+        assert coord.rollup_open_count == 5
+
+    def test_rollup_open_count_excludes_disabled_categories(self):
+        coord = make_coordinator(enabled=[CATEGORY_NETWORK_WAN])
+        coord.get_category_state(CATEGORY_NETWORK_WAN).open_count = 3
+        coord.get_category_state(CATEGORY_SECURITY_THREAT).open_count = 99
+        assert coord.rollup_open_count == 3
+
+    def test_rollup_open_count_zero_when_no_alarms(self):
+        coord = make_coordinator()
+        assert coord.rollup_open_count == 0
+
+
+class TestAutoClear:
+    """Tests for the _auto_clear coroutine."""
+
+    @pytest.mark.asyncio
+    async def test_auto_clear_clears_state_after_delay(self):
+        """_auto_clear must call state.clear() and notify listeners after sleeping."""
+        import asyncio
+
+        hass = MagicMock()
+
+        real_tasks = []
+
+        def _create_task(coro, **kwargs):
+            task = asyncio.ensure_future(coro)
+            real_tasks.append(task)
+            return task
+
+        hass.async_create_task = _create_task
+        coord = make_coordinator(hass=hass)
+        coord.async_set_updated_data = MagicMock()
+
+        alert = make_alert(CATEGORY_NETWORK_WAN)
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        state.apply_alert(alert)
+
+        # Call _auto_clear directly with a very short delay
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await coord._auto_clear(CATEGORY_NETWORK_WAN, 0)
+
+        assert state.is_alerting is False
+        coord.async_set_updated_data.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_auto_clear_noop_when_not_alerting(self):
+        """_auto_clear must not notify if the category is not alerting."""
+        import asyncio
+
+        hass = MagicMock()
+        hass.async_create_task = lambda coro, **kw: MagicMock()
+        coord = make_coordinator(hass=hass)
+        coord.async_set_updated_data = MagicMock()
+
+        # Do NOT set alerting — state starts as not alerting
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await coord._auto_clear(CATEGORY_NETWORK_WAN, 0)
+
+        coord.async_set_updated_data.assert_not_called()

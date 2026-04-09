@@ -256,3 +256,251 @@ class TestLoginUserpass:
         client._session.post = ctx
         with pytest.raises(InvalidAuthError):
             await client._login_userpass()
+
+
+def _make_json_response(status: int, body: dict | None = None):
+    """Build a mock aiohttp response that returns JSON body."""
+    resp = MagicMock()
+    resp.status = status
+    resp.headers = {}
+    resp.raise_for_status = MagicMock()
+    resp.json = AsyncMock(return_value=body or {})
+
+    @asynccontextmanager
+    async def _ctx(*args, **kwargs):
+        yield resp
+
+    return _ctx, resp
+
+
+class TestFetchAlarms:
+    """Tests for UniFiClient.fetch_alarms."""
+
+    @pytest.mark.asyncio
+    async def test_returns_non_archived_alarms(self):
+        client = make_client()
+        client._authenticated = True
+        client._is_unifi_os = False
+        body = {
+            "data": [
+                {"key": "EVT_GW_WANTransition", "archived": False},
+                {"key": "EVT_AP_Disconnected", "archived": True},   # should be filtered
+            ]
+        }
+        ctx, _ = _make_json_response(200, body)
+        client._session.get = ctx
+        alarms = await client.fetch_alarms()
+        assert len(alarms) == 1
+        assert alarms[0]["key"] == "EVT_GW_WANTransition"
+
+    @pytest.mark.asyncio
+    async def test_filters_out_archived_alarms(self):
+        client = make_client()
+        client._authenticated = True
+        client._is_unifi_os = False
+        body = {"data": [{"key": "EVT_GW_WANTransition", "archived": True}]}
+        ctx, _ = _make_json_response(200, body)
+        client._session.get = ctx
+        alarms = await client.fetch_alarms()
+        assert alarms == []
+
+    @pytest.mark.asyncio
+    async def test_401_raises_invalid_auth_and_clears_authenticated(self):
+        client = make_client()
+        client._authenticated = True
+        ctx = _make_response(401)
+        client._session.get = ctx
+        with pytest.raises(InvalidAuthError):
+            await client.fetch_alarms()
+        assert client._authenticated is False
+
+    @pytest.mark.asyncio
+    async def test_client_error_raises_cannot_connect(self):
+        import aiohttp
+
+        client = make_client()
+        client._authenticated = True
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectionError("unreachable")
+            yield  # make it a generator
+
+        client._session.get = _raise
+        with pytest.raises(CannotConnectError):
+            await client.fetch_alarms()
+
+    @pytest.mark.asyncio
+    async def test_not_authenticated_calls_authenticate_first(self):
+        """fetch_alarms must call authenticate() when not yet authenticated."""
+        client = make_client()
+        client._authenticated = False
+        # authenticate() is called; after it the client should be marked as authenticated
+        # so we patch authenticate to set _authenticated=True and return
+        body = {"data": [{"key": "EVT_GW_WANTransition", "archived": False}]}
+        ctx, _ = _make_json_response(200, body)
+        client._session.get = ctx
+
+        authenticated_calls = []
+
+        async def _mock_authenticate():
+            client._authenticated = True
+            client._auth_method = "userpass"
+            authenticated_calls.append(1)
+
+        client.authenticate = _mock_authenticate
+        await client.fetch_alarms()
+        assert len(authenticated_calls) == 1
+
+
+class TestCategoriseAlarms:
+    """Tests for UniFiClient.categorise_alarms."""
+
+    @pytest.mark.asyncio
+    async def test_groups_alarms_by_category(self):
+        client = make_client()
+        client._authenticated = True
+        client._is_unifi_os = False
+        body = {
+            "data": [
+                {"key": "EVT_GW_WANTransition", "msg": "WAN down", "archived": False},
+                {"key": "EVT_IPS_ThreatDetected", "msg": "Threat", "archived": False},
+                {"key": "EVT_GW_Failover", "msg": "Failover", "archived": False},
+            ]
+        }
+        ctx, _ = _make_json_response(200, body)
+        client._session.get = ctx
+        result = await client.categorise_alarms()
+        from custom_components.unifi_alerts.const import CATEGORY_NETWORK_WAN, CATEGORY_SECURITY_THREAT
+        assert CATEGORY_NETWORK_WAN in result
+        assert CATEGORY_SECURITY_THREAT in result
+        assert len(result[CATEGORY_NETWORK_WAN]) == 2  # both WAN events
+
+    @pytest.mark.asyncio
+    async def test_skips_unclassified_alarms(self):
+        client = make_client()
+        client._authenticated = True
+        client._is_unifi_os = False
+        body = {
+            "data": [
+                {"key": "EVT_UNKNOWN_THING", "msg": "who knows", "archived": False},
+            ]
+        }
+        ctx, _ = _make_json_response(200, body)
+        client._session.get = ctx
+        result = await client.categorise_alarms()
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_empty_alarm_list_returns_empty_dict(self):
+        client = make_client()
+        client._authenticated = True
+        client._is_unifi_os = False
+        ctx, _ = _make_json_response(200, {"data": []})
+        client._session.get = ctx
+        result = await client.categorise_alarms()
+        assert result == {}
+
+
+class TestAuthenticate:
+    """Tests for UniFiClient.authenticate — auth method selection and fallback."""
+
+    @pytest.mark.asyncio
+    async def test_apikey_method_used_when_configured(self):
+        client = make_client({"api_key": "my-key", "auth_method": "apikey", "verify_ssl": False})
+        ctx_detect = _make_response(200, headers={})  # not UniFi OS
+        client._session.get = ctx_detect
+
+        verify_calls = []
+
+        async def _mock_verify():
+            verify_calls.append(1)
+
+        client._verify_api_key = _mock_verify
+        result = await client.authenticate()
+        assert result == "apikey"
+        assert len(verify_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_apikey_fallback_to_userpass_when_key_invalid(self):
+        """If api_key present but method not explicitly set to apikey, fall back to userpass on InvalidAuthError."""
+        client = make_client({"api_key": "bad-key", "verify_ssl": False})
+        ctx_detect = _make_response(200, headers={})
+        client._session.get = ctx_detect
+
+        async def _bad_verify():
+            raise InvalidAuthError("bad key")
+
+        userpass_calls = []
+
+        async def _mock_login():
+            userpass_calls.append(1)
+
+        client._verify_api_key = _bad_verify
+        client._login_userpass = _mock_login
+        result = await client.authenticate()
+        assert result == "userpass"
+        assert len(userpass_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_explicit_apikey_method_does_not_fallback(self):
+        """If auth_method=apikey is explicit, InvalidAuthError must propagate (no fallback)."""
+        client = make_client({"api_key": "bad-key", "auth_method": "apikey", "verify_ssl": False})
+        ctx_detect = _make_response(200, headers={})
+        client._session.get = ctx_detect
+
+        async def _bad_verify():
+            raise InvalidAuthError("bad key")
+
+        client._verify_api_key = _bad_verify
+        with pytest.raises(InvalidAuthError):
+            await client.authenticate()
+
+
+class TestClose:
+    """Tests for UniFiClient.close — logout behavior.
+
+    close() calls ``await session.post(url, ...)`` without an async-with block,
+    so the mock must be a plain AsyncMock (coroutine), not an asynccontextmanager.
+    """
+
+    @pytest.mark.asyncio
+    async def test_userpass_auth_posts_logout(self):
+        client = make_client()
+        client._auth_method = "userpass"
+        client._authenticated = True
+        client._is_unifi_os = False
+        client._session.post = AsyncMock()
+        await client.close()
+        client._session.post.assert_awaited_once()
+        url_called = client._session.post.call_args[0][0]
+        assert "/api/logout" in url_called
+
+    @pytest.mark.asyncio
+    async def test_unifi_os_userpass_uses_different_logout_path(self):
+        client = make_client()
+        client._auth_method = "userpass"
+        client._authenticated = True
+        client._is_unifi_os = True
+        client._session.post = AsyncMock()
+        await client.close()
+        url_called = client._session.post.call_args[0][0]
+        assert "/api/auth/logout" in url_called
+
+    @pytest.mark.asyncio
+    async def test_apikey_auth_does_not_post_logout(self):
+        client = make_client({"api_key": "k", "verify_ssl": False})
+        client._auth_method = "apikey"
+        client._authenticated = True
+        client._session.post = AsyncMock()
+        await client.close()
+        client._session.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_not_authenticated_does_not_post_logout(self):
+        client = make_client()
+        client._auth_method = "userpass"
+        client._authenticated = False
+        client._session.post = AsyncMock()
+        await client.close()
+        client._session.post.assert_not_awaited()

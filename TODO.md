@@ -44,13 +44,17 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 ### Integration tests with the `hass` fixture
 **Problem:** The current test suite uses plain mocks and does not exercise the HA setup lifecycle. Config flow, entity creation, coordinator wiring, and webhook dispatch are all untested end-to-end.
 **Fix:** Set up `pytest_homeassistant_custom_component` properly in `conftest.py` and add tests for:
-- `async_setup_entry` → entities appear in HA state machine
 - Webhook POST → binary sensor flips to `on`
 - Auto-clear timeout → binary sensor returns to `off`
 - Options flow → categories change → entities update
-- `async_unload_entry` → entities removed, webhooks unregistered
 - GET health-check → no spurious alert dispatched
 **Reference:** See `TESTING.md` for fixture pattern.
+
+### Remaining test coverage gaps (plain-mock layer now complete — see HISTORY.md 2026-04-09)
+All source modules now have plain-mock unit test coverage (233 tests). Remaining gaps:
+- **Options flow form submission** — only the init form display is tested; saving updated values is not.
+- **Config flow categories step submission** — poll interval / clear timeout validation and edge values (10, 3600, 1, 1440) not covered.
+- **End-to-end integration tests** — still require full `hass` fixture setup (see item above).
 
 ### Multi-site support
 **Problem:** `UniFiClient.fetch_alarms()` hardcodes `site="default"`. Users with multi-site UniFi deployments cannot monitor secondary sites. Currently a silent failure with no user-facing explanation.
