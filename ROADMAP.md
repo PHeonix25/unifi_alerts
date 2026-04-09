@@ -48,7 +48,7 @@ Issues that are non-blocking for a first release but important for production qu
 ### Security
 
 - [ ] Unvalidated controller URL allows SSRF — validate scheme and optionally reject loopback/link-local (`config_flow.py:53`)
-- [ ] Webhook URLs logged at INFO level on every startup — demote to DEBUG (`__init__.py:71`)
+- [x] Webhook URLs logged at INFO level on every startup — demote to DEBUG (`__init__.py:71`)
 - [ ] Unbounded webhook body stored in memory — apply `max_bytes` cap on `request.json()` (`webhook_handler.py:86`)
 - [ ] Credentials leak risk via exception messages in logs — log class name only, not `str(err)` (`unifi_client.py:105,181`)
 - [x] Overly broad UniFi OS detection — remove `or resp.status == 200` fallback (`unifi_client.py:142`)
@@ -68,7 +68,7 @@ Issues that are non-blocking for a first release but important for production qu
 ### Tech debt
 
 - [ ] Pin CI action versions to commit SHAs instead of `@master` / `@main` (`ci.yml`)
-- [ ] Add `"dependencies": ["webhook"]` to `manifest.json`
+- [x] Add `"dependencies": ["webhook"]` to `manifest.json`
 - [ ] Add CI diff check between `strings.json` and `translations/en.json` to prevent drift
 - [ ] Tighten `JSONDecodeError` catch in webhook handler instead of bare `except Exception`
 
