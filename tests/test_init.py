@@ -293,6 +293,26 @@ class TestAsyncUnloadEntry:
         mock_wm.unregister_all.assert_not_called()
         mock_client.close.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_unload_teardown_order(self):
+        """CLAUDE.md constraint: teardown must be coordinator.async_shutdown()
+        → unregister_all() → client.close(), in that exact order."""
+        from custom_components.unifi_alerts import async_unload_entry
+
+        hass = make_hass()
+        entry = make_entry()
+        mock_client, mock_coordinator, mock_wm = _patch_all()
+
+        call_order: list[str] = []
+        mock_coordinator.async_shutdown = AsyncMock(side_effect=lambda: call_order.append("shutdown"))
+        mock_wm.unregister_all = MagicMock(side_effect=lambda: call_order.append("unregister"))
+        mock_client.close = AsyncMock(side_effect=lambda: call_order.append("close"))
+
+        self._populate_hass(hass, entry, mock_coordinator, mock_client, mock_wm)
+        await async_unload_entry(hass, entry)
+
+        assert call_order == ["shutdown", "unregister", "close"]
+
 
 # ── _async_update_listener ────────────────────────────────────────────────────
 

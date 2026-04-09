@@ -184,7 +184,13 @@ class TestMakeHandler:
 
     @pytest.mark.asyncio
     async def test_no_secret_configured_accepts_any_request(self):
-        """When secret is empty string, token check is skipped."""
+        """When secret is empty string, token check is skipped entirely.
+
+        This is intentional: if the admin chose not to set a webhook secret
+        (CONF_WEBHOOK_SECRET is empty), the integration operates without
+        bearer-token auth.  The webhook is still local-only (local_only=True),
+        so accepting token-less requests is a deliberate trade-off, not a bug.
+        """
         manager, push_cb = make_manager(secret="")
         handler = manager._make_handler(CATEGORY_NETWORK_WAN, "")
         req = make_request(token=None)

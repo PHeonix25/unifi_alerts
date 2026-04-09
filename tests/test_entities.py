@@ -49,7 +49,15 @@ def make_state(
 
 
 def make_coordinator(states: dict[str, CategoryState] | None = None):
-    """Build a minimal mock coordinator with controllable state."""
+    """Build a minimal mock coordinator with controllable state.
+
+    NOTE: rollup attributes (any_alerting, rollup_alert_count, etc.) are
+    computed once at call time and stored as fixed values on the mock.
+    They will NOT update if a CategoryState is mutated after the coordinator
+    is built.  This is intentional — entity tests only need a snapshot, not
+    a live coordinator.  If a future test needs dynamic rollup behaviour,
+    use a real UniFiAlertsCoordinator instead.
+    """
     coord = MagicMock()
     _states = states or {}
 
