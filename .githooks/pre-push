@@ -26,7 +26,7 @@ echo "pre-push: running ruff format check..."
 "$VENV/ruff" format --check custom_components/
 
 echo "pre-push: running mypy type check..."
-"$VENV/mypy" custom_components/unifi_alerts --ignore-missing-imports --quiet
+"$VENV/mypy" custom_components/unifi_alerts --ignore-missing-imports
 
 echo "pre-push: running tests..."
 "$VENV/pytest" tests/ -q
