@@ -1,5 +1,105 @@
 # History
 
+## 2026-04-09 — docs: align all documentation with new tooling and processes
+
+Full documentation pass to reflect the Makefile, requirements-dev.txt, pre-push
+hook, and HACS pre-flight validator added in recent commits. Goal: no developer
+should need to read the git log to understand how to set up or validate locally.
+
+### CLAUDE.md
+- Repository layout updated to include `Makefile`, `requirements-dev.txt`,
+  `.githooks/pre-push`, and `scripts/validate_hacs.py` with descriptions.
+- `strings.json` and `translations/en.json` entries note that CI enforces parity.
+- Working style: replaced "run tests and ruff before committing" with "run
+  `make check` before committing" (single command, catches everything).
+- "Before making changes" section lists all five checks `make check` runs.
+- Pre-push hook section and hook install command consolidated at the bottom.
+
+### README.md
+- Contributing section expanded from 2 lines to a full developer workflow:
+  clone → `git config core.hooksPath .githooks` → `make setup` → `make check`.
+- CI pipeline table explaining every job and what it guards.
+- Key rules table (manifest dependencies, strings drift, async, no YAML, token
+  auth) so contributors know the sharp edges before opening a PR.
+
+### TESTING.md
+- Full rewrite. Replaces hardcoded `pip install` with `make setup` /
+  `requirements-dev.txt`. Adds `make` target table as the primary interface.
+- Documents pre-push hook and that `--no-verify` must not be used.
+- Adds translation drift check and HACS pre-flight to the "other checks" list.
+- Notes `make_hass()` / `make_entry()` as canonical conftest helpers.
+- Renamed "Adding a test for a new category" → "Adding a test for a new event
+  key" (more accurate).
+
+### HOMEASSISTANT.md
+- Translations section updated: "must be kept in sync" → "drift is caught
+  automatically by CI and the pre-push hook", with details of where.
+
+### ARCHITECTURE.md
+- Added "Tooling and validation" section documenting `scripts/validate_hacs.py`,
+  `Makefile`, and `requirements-dev.txt` so the repo layout is fully explained.
+
+---
+
+## 2026-04-09 — chore: close remaining local dev tooling gaps
+
+Four gaps between local validation and what CI actually runs:
+
+1. **mypy missing from pre-push hook** — CI ran mypy; the hook didn't. Added
+   `.venv/bin/mypy custom_components/unifi_alerts --ignore-missing-imports` to
+   `.githooks/pre-push` so type errors are caught before push.
+
+2. **`strings.json` ↔ `translations/en.json` drift unchecked** — no guard
+   anywhere. Added a `diff` step to the pre-push hook (exits 1 on mismatch) and
+   a matching CI step in the `lint` job. Removed the corresponding TODO/ROADMAP
+   entry; it is now enforced automatically.
+
+3. **No `requirements-dev.txt`** — the venv setup command in CLAUDE.md was
+   hardcoded and diverged from what CI installs (CI included `homeassistant` for
+   mypy stubs; local didn't). Created `requirements-dev.txt` with the union of
+   all CI deps. Updated CI lint and test jobs to use it. Updated CLAUDE.md to
+   point to `make setup` / `pip install -r requirements-dev.txt`.
+
+4. **No `Makefile`** — multiple manual commands were documented in CLAUDE.md.
+   Added `Makefile` with: `setup`, `lint`, `typecheck`, `validate`, `test`, and
+   `check` (default) targets. Updated CLAUDE.md's "Before making changes" section
+   to lead with `make check`.
+
+`make check` now runs lint + typecheck + HACS preflight + translation drift +
+tests in one command. 234 tests pass, all checks clean.
+
+---
+
+## 2026-04-09 — chore: add HACS manifest pre-flight validator and pre-push hook
+
+Root cause of the CI failure that let `"webhook"` slip into `dependencies`: the
+only local checks were ruff and pytest; neither exercises the HACS action rules.
+
+Added three things to close the gap:
+
+- **`scripts/validate_hacs.py`** — standalone Python script that replicates the
+  HACS action's key manifest checks: required fields, version format, iot_class
+  validity, and the core-integration guard on `dependencies`. Catches the exact
+  class of mistake that broke CI. No Docker or GitHub required.
+
+- **`ci.yml` — `hacs-preflight` job** — runs `validate_hacs.py` in CI *before*
+  the real HACS action job (`needs: hacs-preflight`). Fast feedback (pure Python,
+  no container pull) and a second opinion alongside the authoritative check.
+
+- **`.githooks/pre-push`** — tracked git hook that runs HACS preflight, ruff
+  lint, ruff format, and pytest before every `git push`. One-time setup:
+  `git config core.hooksPath .githooks`. Documented in CLAUDE.md.
+
+---
+
+## 2026-04-09 — hotfix: revert manifest webhook dependency (broke HACS CI)
+
+The `"dependencies": ["webhook"]` added in the previous commit caused the HACS validator to fail CI. hassfest accepts HA core built-ins in `dependencies`, but the HACS action rejects them — it only allows entries that are installable external integrations.
+
+Reverted `manifest.json` back to `"dependencies": []`. Added a non-negotiable constraint to `CLAUDE.md` to prevent recurrence: never list HA core built-ins in `dependencies`. Updated `ROADMAP.md` to mark the item as "won't do" with the reason.
+
+---
+
 ## 2026-04-09 — v1.1.0 quick wins: manifest webhook dependency + demote URL logging
 
 Two small v1.1.0 items from the roadmap addressed together:

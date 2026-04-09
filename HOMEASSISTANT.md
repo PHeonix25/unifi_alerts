@@ -81,9 +81,13 @@ When adding a new platform: add it to `PLATFORMS`, create `{platform}.py`, imple
 
 ## Translations
 
-`strings.json` and `translations/en.json` must be kept in sync — they are identical. The `strings.json` file is used by the HA frontend tooling; `translations/en.json` is the runtime file loaded by HA.
+`strings.json` and `translations/en.json` must be kept **identical**. The `strings.json` file is used by the HA frontend tooling; `translations/en.json` is the runtime file loaded by HA.
 
-If adding a new config flow step or error code, update both files.
+Drift between the two files is now caught automatically:
+- **CI** (`lint` job): diffs the two files and fails if they differ.
+- **Pre-push hook** (`.githooks/pre-push`): same diff runs before every `git push`.
+
+If adding a new config flow step or error code, update **both** files before committing.
 
 ## Logging
 

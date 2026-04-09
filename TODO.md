@@ -79,9 +79,6 @@ The `_device_info()` helper function is duplicated identically across `binary_se
 ### Polling re-auth is fire-and-forget
 In `coordinator._async_update_data`, if re-auth succeeds but the second `categorise_alarms()` call fails for a different reason, the error path is the generic `CannotConnectError` branch which may give a misleading log message.
 
-### `strings.json` and `translations/en.json` are manually kept in sync
-HA's tooling expects them to match. A pre-commit hook or CI check that diffs the two files would prevent drift.
-
 ### Disabled category `open_count` is still updated by polling
 `categorise_alarms()` returns all categories regardless of enabled/disabled state, and the coordinator updates `open_count` for all of them. A disabled category with open alarms on the controller will have a non-zero `open_count` internally, which is inconsistent.
 
