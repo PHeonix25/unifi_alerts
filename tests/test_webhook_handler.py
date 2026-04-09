@@ -17,13 +17,9 @@ from custom_components.unifi_alerts.webhook_handler import WebhookManager
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-def make_hass():
-    return MagicMock()
-
-
 def make_manager(enabled=None, secret="test-secret-123", hass=None):
     if hass is None:
-        hass = make_hass()
+        hass = MagicMock()
     config = {
         CONF_ENABLED_CATEGORIES: enabled if enabled is not None else ALL_CATEGORIES,
         CONF_WEBHOOK_SECRET: secret,

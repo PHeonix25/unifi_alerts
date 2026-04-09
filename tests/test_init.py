@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import make_entry, make_hass
+
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
     CONF_ENABLED_CATEGORIES,
@@ -21,35 +23,6 @@ from custom_components.unifi_alerts.const import (
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-
-def make_hass():
-    hass = MagicMock()
-    hass.data = {}
-    hass.config_entries = MagicMock()
-    hass.config_entries.async_forward_entry_setups = AsyncMock()
-    hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
-    hass.config_entries.async_reload = AsyncMock()
-    return hass
-
-
-def make_entry(data: dict | None = None, options: dict | None = None, entry_id: str = "entry-abc"):
-    entry = MagicMock()
-    entry.entry_id = entry_id
-    entry.data = data or {
-        "controller_url": "https://192.168.1.1",
-        "username": "admin",
-        "password": "password",
-        CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-        CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
-        CONF_CLEAR_TIMEOUT: DEFAULT_CLEAR_TIMEOUT,
-        CONF_VERIFY_SSL: True,
-        "webhook_secret": "fake-secret",
-    }
-    entry.options = options or {}
-    entry.async_on_unload = MagicMock()
-    entry.add_update_listener = MagicMock(return_value=MagicMock())
-    return entry
-
 
 def _patch_all(authenticate_side_effect=None, first_refresh_side_effect=None):
     """Context managers that patch away all external collaborators."""

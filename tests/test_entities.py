@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
+
+from conftest import make_entry
 
 from custom_components.unifi_alerts.const import (
     CATEGORY_ICONS,
@@ -73,12 +75,6 @@ def make_coordinator(states: dict[str, CategoryState] | None = None):
 
     coord.cancel_clear = MagicMock()
     return coord
-
-
-def make_entry(entry_id: str = "entry-abc") -> MagicMock:
-    entry = MagicMock()
-    entry.entry_id = entry_id
-    return entry
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
