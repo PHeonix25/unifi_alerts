@@ -2,7 +2,7 @@
 
 This file maps TODO items to planned releases. Items within each release are ordered by priority — complete them top-to-bottom. Check off each item as it is merged to `main`.
 
-> **Current status:** v1pre2 in progress. Blockers found during UCG-Ultra installation testing are being resolved. CI is green.
+> **Current status:** v1pre2 ready to tag. All targeted blockers resolved. Remaining open items: UCG-Ultra API-key OS detection, API key path instructions (firmware research needed), pagination. CI is green.
 
 ---
 
@@ -35,8 +35,8 @@ All blocking bugs, security issues, and UX gaps that will immediately affect new
 
 - [ ] UCG-Ultra: OS detection fails → `_verify_api_key` hits `/api/s/default/self` (404) instead of `/proxy/network/...` (`unifi_client.py:133,158`)
 - [ ] Config flow API key path instructions are wrong — vary by firmware version; current text misleads users (`strings.json:6`, `translations/en.json`)
-- [ ] Config flow repopulates old username/password after user clears them and switches to API key (`config_flow.py:76-90`)
-- [ ] API key and password fields are plaintext — sensitive values visible on screen; use `TextSelectorType.PASSWORD` (`config_flow.py:83-84,96-97`)
+- [x] Config flow repopulates old username/password after user clears them and switches to API key (`config_flow.py:76-90`)
+- [x] API key and password fields are plaintext — sensitive values visible on screen; use `TextSelectorType.PASSWORD` (`config_flow.py:83-84,96-97`)
 
 ### Quick wins (one-liners, no reason to defer)
 
@@ -66,7 +66,7 @@ Issues that are non-blocking for a first release but important for production qu
 - [x] Config flow creates session via `async_create_clientsession` and never closes it (`config_flow.py:56`)
 - [ ] No pagination on `/alarm` endpoint — large backlogs block event loop (`unifi_client.py:92`)
 - [x] No validation that at least one category is enabled (`config_flow.py:94`)
-- [ ] Disabled category `open_count` still updated by polling — skip disabled categories in loop (`coordinator.py:81`)
+- [x] Disabled category `open_count` still updated by polling — skip disabled categories in loop (`coordinator.py:81`)
 
 ### Tests
 
@@ -78,7 +78,7 @@ Issues that are non-blocking for a first release but important for production qu
 - [ ] Pin CI action versions to commit SHAs instead of `@master` / `@main` (`ci.yml`)
 - [~] Add `"dependencies": ["webhook"]` to `manifest.json` — HACS validator rejects HA-core built-ins in this field; reverted
 - [x] Add CI diff check between `strings.json` and `translations/en.json` to prevent drift
-- [ ] Tighten `JSONDecodeError` catch in webhook handler instead of bare `except Exception`
+- [x] Tighten `JSONDecodeError` catch in webhook handler instead of bare `except Exception`
 
 ---
 

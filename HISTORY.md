@@ -1,5 +1,34 @@
 # History
 
+## 2026-04-10 (session 2) — Pre-release v1pre2 continued: 3 more fixes, lint cleanup, docs (238 tests)
+
+Completed the remaining v1pre2 fixes: password field masking, repopulates bug, coordinator and webhook tightening. Also resolved 5 merge conflicts from origin/main and fixed 24 ruff lint issues in origin-merged test files.
+
+### `config_flow.py` — Mask password/API key + fix repopulates bug
+- `CONF_PASSWORD` and `CONF_API_KEY` now use `TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))` so HA renders them as masked inputs with a show/hide toggle.
+- Error-recovery schema (shown after a failed auth attempt) omits `default=` for password and API key fields entirely — HA never pre-fills sensitive values on re-render.
+- `CONF_USERNAME` now uses a conditional default: `default=` is omitted entirely when the submitted value is an empty string, so HA treats the field as genuinely blank rather than pre-filled. This fixes the "repopulates old username/password after switching to API key" bug.
+- Updated `test_user_step_error_preserves_submitted_values` to assert that `CONF_PASSWORD` and `CONF_API_KEY` are absent from error-recovery schema defaults.
+
+### `coordinator.py` — Skip disabled categories in polling loop
+- Polling loop now skips categories where `state.enabled is False`: `open_count` is not updated, no auto-clear is scheduled, and the zeroise pass also skips disabled categories. Fixes inconsistency where disabled categories with controller-side open alarms had non-zero `open_count`.
+
+### `webhook_handler.py` — Tighten bare `except Exception` in JSON parsing
+- `except Exception` replaced with `except (json.JSONDecodeError, TypeError)` so unexpected errors during webhook body parsing are no longer silently swallowed.
+
+### Origin/main merge + lint cleanup
+- Merged 5 origin commits (new test files `test_entities.py`, `test_init.py`, `test_webhook_handler.py`, updated `conftest.py`, Makefile, CI, hooks). Resolved 5 merge conflicts.
+- Fixed 24 ruff lint issues in origin-merged test files: unused imports, unused variables (`F841`), import ordering (`I001`), `SIM105` (try/except/pass → `contextlib.suppress`), `SIM117` (nested `with` → single `with`).
+
+### `CLAUDE.md` — Pull-before-work reminder
+- Added "Always pull `main` before starting work" to the Working style section to prevent future branch divergence.
+
+### `TODO.md` — Resolved items removed
+- Removed: API key/password plaintext, repopulates bug, session close, at-least-one-category, disabled category open_count, webhook exception tightening.
+- Kept: UCG-Ultra OS detection (api key path), API key instructions, pagination, integration tests, multi-site.
+
+---
+
 ## 2026-04-10 — Pre-release v1pre2: 4 blockers resolved (4 new tests, 238 total)
 
 Four issues surfaced during v1pre1 testing resolved across targeted commits.
