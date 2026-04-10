@@ -1,17 +1,17 @@
 """Tests for async_setup_entry and async_unload_entry in __init__.py."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from conftest import make_entry, make_hass
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
+    CONF_CLEAR_TIMEOUT,
     CONF_ENABLED_CATEGORIES,
     CONF_POLL_INTERVAL,
-    CONF_CLEAR_TIMEOUT,
     CONF_VERIFY_SSL,
     DATA_COORDINATOR,
     DATA_UNREGISTER_WEBHOOKS,
@@ -21,8 +21,8 @@ from custom_components.unifi_alerts.const import (
     DOMAIN,
 )
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
+
 
 def _patch_all(authenticate_side_effect=None, first_refresh_side_effect=None):
     """Context managers that patch away all external collaborators."""
@@ -38,13 +38,16 @@ def _patch_all(authenticate_side_effect=None, first_refresh_side_effect=None):
     mock_client.close = AsyncMock()
 
     mock_webhook_manager = MagicMock()
-    mock_webhook_manager.register_all = MagicMock(return_value={"network_wan": "http://ha/hook/abc?token=x"})
+    mock_webhook_manager.register_all = MagicMock(
+        return_value={"network_wan": "http://ha/hook/abc?token=x"}
+    )
     mock_webhook_manager.unregister_all = MagicMock()
 
     return mock_client, mock_coordinator, mock_webhook_manager
 
 
 # ── async_setup_entry ─────────────────────────────────────────────────────────
+
 
 class TestAsyncSetupEntry:
     @pytest.mark.asyncio
@@ -56,9 +59,14 @@ class TestAsyncSetupEntry:
         mock_client, mock_coordinator, mock_wm = _patch_all()
 
         with (
-            patch("custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()),
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
             patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch("custom_components.unifi_alerts.UniFiAlertsCoordinator", return_value=mock_coordinator),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
         ):
             result = await async_setup_entry(hass, entry)
@@ -74,9 +82,14 @@ class TestAsyncSetupEntry:
         mock_client, mock_coordinator, mock_wm = _patch_all()
 
         with (
-            patch("custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()),
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
             patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch("custom_components.unifi_alerts.UniFiAlertsCoordinator", return_value=mock_coordinator),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
         ):
             await async_setup_entry(hass, entry)
@@ -89,6 +102,7 @@ class TestAsyncSetupEntry:
     @pytest.mark.asyncio
     async def test_auth_failure_raises_config_entry_not_ready(self):
         from homeassistant.exceptions import ConfigEntryNotReady
+
         from custom_components.unifi_alerts import async_setup_entry
 
         hass = make_hass()
@@ -98,17 +112,23 @@ class TestAsyncSetupEntry:
         )
 
         with (
-            patch("custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()),
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
             patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch("custom_components.unifi_alerts.UniFiAlertsCoordinator", return_value=mock_coordinator),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            pytest.raises(ConfigEntryNotReady),
         ):
-            with pytest.raises(ConfigEntryNotReady):
-                await async_setup_entry(hass, entry)
+            await async_setup_entry(hass, entry)
 
     @pytest.mark.asyncio
     async def test_first_refresh_failure_raises_config_entry_not_ready(self):
         from homeassistant.exceptions import ConfigEntryNotReady
+
         from custom_components.unifi_alerts import async_setup_entry
 
         hass = make_hass()
@@ -118,35 +138,47 @@ class TestAsyncSetupEntry:
         )
 
         with (
-            patch("custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()),
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
             patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch("custom_components.unifi_alerts.UniFiAlertsCoordinator", return_value=mock_coordinator),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            pytest.raises(ConfigEntryNotReady),
         ):
-            with pytest.raises(ConfigEntryNotReady):
-                await async_setup_entry(hass, entry)
+            await async_setup_entry(hass, entry)
 
     @pytest.mark.asyncio
     async def test_ssl_disabled_logs_warning(self, caplog):
         from custom_components.unifi_alerts import async_setup_entry
 
         hass = make_hass()
-        entry = make_entry(data={
-            "controller_url": "https://192.168.1.1",
-            "username": "admin",
-            "password": "password",
-            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-            CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
-            CONF_CLEAR_TIMEOUT: DEFAULT_CLEAR_TIMEOUT,
-            CONF_VERIFY_SSL: False,
-            "webhook_secret": "fake-secret",
-        })
+        entry = make_entry(
+            data={
+                "controller_url": "https://192.168.1.1",
+                "username": "admin",
+                "password": "password",
+                CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+                CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
+                CONF_CLEAR_TIMEOUT: DEFAULT_CLEAR_TIMEOUT,
+                CONF_VERIFY_SSL: False,
+                "webhook_secret": "fake-secret",
+            }
+        )
         mock_client, mock_coordinator, mock_wm = _patch_all()
 
         with (
-            patch("custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()),
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
             patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch("custom_components.unifi_alerts.UniFiAlertsCoordinator", return_value=mock_coordinator),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
         ):
             await async_setup_entry(hass, entry)
@@ -162,9 +194,14 @@ class TestAsyncSetupEntry:
         mock_client, mock_coordinator, mock_wm = _patch_all()
 
         with (
-            patch("custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()),
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
             patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch("custom_components.unifi_alerts.UniFiAlertsCoordinator", return_value=mock_coordinator),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
         ):
             await async_setup_entry(hass, entry)
@@ -180,9 +217,14 @@ class TestAsyncSetupEntry:
         mock_client, mock_coordinator, mock_wm = _patch_all()
 
         with (
-            patch("custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()),
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
             patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch("custom_components.unifi_alerts.UniFiAlertsCoordinator", return_value=mock_coordinator),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
         ):
             await async_setup_entry(hass, entry)
@@ -191,6 +233,7 @@ class TestAsyncSetupEntry:
 
 
 # ── async_unload_entry ────────────────────────────────────────────────────────
+
 
 class TestAsyncUnloadEntry:
     def _populate_hass(self, hass, entry, mock_coordinator, mock_client, mock_wm):
@@ -277,7 +320,9 @@ class TestAsyncUnloadEntry:
         mock_client, mock_coordinator, mock_wm = _patch_all()
 
         call_order: list[str] = []
-        mock_coordinator.async_shutdown = AsyncMock(side_effect=lambda: call_order.append("shutdown"))
+        mock_coordinator.async_shutdown = AsyncMock(
+            side_effect=lambda: call_order.append("shutdown")
+        )
         mock_wm.unregister_all = MagicMock(side_effect=lambda: call_order.append("unregister"))
         mock_client.close = AsyncMock(side_effect=lambda: call_order.append("close"))
 
@@ -288,6 +333,7 @@ class TestAsyncUnloadEntry:
 
 
 # ── _async_update_listener ────────────────────────────────────────────────────
+
 
 class TestAsyncUpdateListener:
     @pytest.mark.asyncio

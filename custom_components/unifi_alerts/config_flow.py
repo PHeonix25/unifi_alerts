@@ -11,6 +11,7 @@ from homeassistant.components.webhook import async_generate_url
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
+from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 
 from .const import (
     ALL_CATEGORIES,
@@ -78,15 +79,25 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             finally:
                 await session.close()
 
+        _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+        _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+
         if user_input is not None:
             # Rebuild schema with submitted values as defaults so the user
             # doesn't have to re-enter everything on a validation error.
+            # Password/API key fields deliberately omit `default=` so HA does
+            # not pre-fill sensitive values — the user must re-enter them.
+            # Username uses a conditional default: omit entirely when empty so
+            # HA treats the field as truly blank rather than pre-filled.
+            _username = user_input.get(CONF_USERNAME, "")
             schema = vol.Schema(
                 {
                     vol.Required(CONF_CONTROLLER_URL, default=user_input[CONF_CONTROLLER_URL]): str,
-                    vol.Optional(CONF_USERNAME, default=user_input.get(CONF_USERNAME, "")): str,
-                    vol.Optional(CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, "")): str,
-                    vol.Optional(CONF_API_KEY, default=user_input.get(CONF_API_KEY, "")): str,
+                    vol.Optional(
+                        CONF_USERNAME, **({"default": _username} if _username else {})
+                    ): str,
+                    vol.Optional(CONF_PASSWORD): _password_selector,
+                    vol.Optional(CONF_API_KEY): _api_key_selector,
                     vol.Optional(
                         CONF_VERIFY_SSL,
                         default=user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
@@ -98,8 +109,8 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_CONTROLLER_URL, default="https://192.168.1.1"): str,
                     vol.Optional(CONF_USERNAME): str,
-                    vol.Optional(CONF_PASSWORD): str,
-                    vol.Optional(CONF_API_KEY): str,
+                    vol.Optional(CONF_PASSWORD): _password_selector,
+                    vol.Optional(CONF_API_KEY): _api_key_selector,
                     vol.Optional(CONF_VERIFY_SSL, default=DEFAULT_VERIFY_SSL): bool,
                 }
             )

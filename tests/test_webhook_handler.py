@@ -1,4 +1,5 @@
 """Tests for WebhookManager — registration, token auth, and alert dispatch."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,8 +15,8 @@ from custom_components.unifi_alerts.const import (
 )
 from custom_components.unifi_alerts.webhook_handler import WebhookManager
 
-
 # ── helpers ──────────────────────────────────────────────────────────────────
+
 
 def make_manager(enabled=None, secret="test-secret-123", hass=None):
     if hass is None:
@@ -43,14 +44,18 @@ def make_request(token: str | None = "test-secret-123", json_body: dict | None =
 
 # ── register_all ─────────────────────────────────────────────────────────────
 
+
 class TestRegisterAll:
     def test_registers_one_webhook_per_enabled_category(self):
         manager, _ = make_manager()
         with (
             patch("custom_components.unifi_alerts.webhook_handler.async_register") as mock_reg,
-            patch("custom_components.unifi_alerts.webhook_handler.async_generate_url", return_value="http://ha/hook/abc"),
+            patch(
+                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
+                return_value="http://ha/hook/abc",
+            ),
         ):
-            urls = manager.register_all()
+            manager.register_all()
         # One call per enabled category
         assert mock_reg.call_count == len(ALL_CATEGORIES)
 
@@ -58,7 +63,10 @@ class TestRegisterAll:
         manager, _ = make_manager(enabled=[CATEGORY_NETWORK_WAN])
         with (
             patch("custom_components.unifi_alerts.webhook_handler.async_register") as mock_reg,
-            patch("custom_components.unifi_alerts.webhook_handler.async_generate_url", return_value="http://ha/hook/abc"),
+            patch(
+                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
+                return_value="http://ha/hook/abc",
+            ),
         ):
             urls = manager.register_all()
         assert mock_reg.call_count == 1
@@ -69,7 +77,10 @@ class TestRegisterAll:
         manager, _ = make_manager(enabled=[CATEGORY_NETWORK_WAN], secret="mysecret")
         with (
             patch("custom_components.unifi_alerts.webhook_handler.async_register"),
-            patch("custom_components.unifi_alerts.webhook_handler.async_generate_url", return_value="http://ha/hook/abc"),
+            patch(
+                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
+                return_value="http://ha/hook/abc",
+            ),
         ):
             urls = manager.register_all()
         assert urls[CATEGORY_NETWORK_WAN] == "http://ha/hook/abc?token=mysecret"
@@ -78,7 +89,10 @@ class TestRegisterAll:
         manager, _ = make_manager(enabled=[CATEGORY_NETWORK_WAN], secret="")
         with (
             patch("custom_components.unifi_alerts.webhook_handler.async_register"),
-            patch("custom_components.unifi_alerts.webhook_handler.async_generate_url", return_value="http://ha/hook/abc"),
+            patch(
+                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
+                return_value="http://ha/hook/abc",
+            ),
         ):
             urls = manager.register_all()
         assert urls[CATEGORY_NETWORK_WAN] == "http://ha/hook/abc"
@@ -87,7 +101,10 @@ class TestRegisterAll:
         manager, _ = make_manager(enabled=[CATEGORY_NETWORK_WAN])
         with (
             patch("custom_components.unifi_alerts.webhook_handler.async_register"),
-            patch("custom_components.unifi_alerts.webhook_handler.async_generate_url", return_value="http://ha/hook/abc"),
+            patch(
+                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
+                return_value="http://ha/hook/abc",
+            ),
         ):
             manager.register_all()
         assert len(manager._registered) == 1
@@ -96,7 +113,10 @@ class TestRegisterAll:
         manager, _ = make_manager(enabled=[CATEGORY_NETWORK_WAN])
         with (
             patch("custom_components.unifi_alerts.webhook_handler.async_register"),
-            patch("custom_components.unifi_alerts.webhook_handler.async_generate_url", return_value="http://ha/hook/abc"),
+            patch(
+                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
+                return_value="http://ha/hook/abc",
+            ),
         ):
             urls = manager.register_all()
         assert isinstance(urls, dict)
@@ -105,12 +125,16 @@ class TestRegisterAll:
 
 # ── unregister_all ────────────────────────────────────────────────────────────
 
+
 class TestUnregisterAll:
     def test_unregisters_all_registered_webhooks(self):
         manager, _ = make_manager(enabled=[CATEGORY_NETWORK_WAN])
         with (
             patch("custom_components.unifi_alerts.webhook_handler.async_register"),
-            patch("custom_components.unifi_alerts.webhook_handler.async_generate_url", return_value="http://ha/hook/abc"),
+            patch(
+                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
+                return_value="http://ha/hook/abc",
+            ),
         ):
             manager.register_all()
 
@@ -122,7 +146,10 @@ class TestUnregisterAll:
         manager, _ = make_manager(enabled=[CATEGORY_NETWORK_WAN])
         with (
             patch("custom_components.unifi_alerts.webhook_handler.async_register"),
-            patch("custom_components.unifi_alerts.webhook_handler.async_generate_url", return_value="http://ha/hook/abc"),
+            patch(
+                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
+                return_value="http://ha/hook/abc",
+            ),
         ):
             manager.register_all()
         assert len(manager._registered) == 1
@@ -144,6 +171,7 @@ class TestUnregisterAll:
 
 
 # ── handler (token validation + dispatch) ────────────────────────────────────
+
 
 class TestMakeHandler:
     """Tests for the closure returned by _make_handler."""
@@ -199,11 +227,12 @@ class TestMakeHandler:
     async def test_malformed_json_uses_empty_dict_fallback(self):
         """If the body can't be parsed as JSON, push_callback is still called with empty payload."""
         import json
+
         manager, push_cb = make_manager(secret="tok")
         handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
         req = make_request(token="tok")
         req.json = AsyncMock(side_effect=json.JSONDecodeError("nope", "", 0))
-        response = await handler(manager._hass, "wh-id", req)
+        await handler(manager._hass, "wh-id", req)
         push_cb.assert_called_once()
         # Alert should have fallback message
         call_category, call_alert = push_cb.call_args[0]

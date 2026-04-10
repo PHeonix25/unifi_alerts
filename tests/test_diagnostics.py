@@ -1,4 +1,5 @@
 """Tests for the UniFi Alerts diagnostics platform."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -17,8 +18,7 @@ from custom_components.unifi_alerts.diagnostics import async_get_config_entry_di
 from tests.conftest import MOCK_CONFIG
 
 _SAMPLE_WEBHOOK_URLS = {
-    cat: f"http://homeassistant.local/api/webhook/unifi_alerts_{cat}"
-    for cat in ALL_CATEGORIES
+    cat: f"http://homeassistant.local/api/webhook/unifi_alerts_{cat}" for cat in ALL_CATEGORIES
 }
 
 
@@ -43,7 +43,9 @@ def _make_entry(entry_id: str = "test_entry", extra_data: dict | None = None) ->
     return entry
 
 
-def _make_coordinator(any_alerting: bool = False, rollup_alert_count: int = 0, rollup_open_count: int = 0) -> MagicMock:
+def _make_coordinator(
+    any_alerting: bool = False, rollup_alert_count: int = 0, rollup_open_count: int = 0
+) -> MagicMock:
     coordinator = MagicMock()
     coordinator.any_alerting = any_alerting
     coordinator.rollup_alert_count = rollup_alert_count

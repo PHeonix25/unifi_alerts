@@ -1,4 +1,5 @@
 """Pytest configuration and shared fixtures for unifi_alerts tests."""
+
 from __future__ import annotations
 
 from collections.abc import Generator
@@ -17,9 +18,7 @@ from custom_components.unifi_alerts.const import (
     CONF_VERIFY_SSL,
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
-    DOMAIN,
 )
-
 
 MOCK_CONFIG = {
     CONF_CONTROLLER_URL: "https://192.168.1.1",
@@ -35,9 +34,7 @@ MOCK_CONFIG = {
 @pytest.fixture
 def mock_unifi_client() -> Generator[MagicMock, None, None]:
     """Mock UniFiClient so tests never make real HTTP calls."""
-    with patch(
-        "custom_components.unifi_alerts.unifi_client.UniFiClient"
-    ) as mock_cls:
+    with patch("custom_components.unifi_alerts.unifi_client.UniFiClient") as mock_cls:
         instance = mock_cls.return_value
         instance.authenticate = AsyncMock(return_value="userpass")
         instance.categorise_alarms = AsyncMock(return_value={})
@@ -69,6 +66,7 @@ def sample_alarm_record() -> dict:
 
 
 # ── shared plain-function helpers (importable from any test file) ─────────────
+
 
 def make_hass() -> MagicMock:
     """Return a minimal hass mock wired up for config-entry setup/unload tests."""

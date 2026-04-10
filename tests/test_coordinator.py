@@ -1,4 +1,5 @@
 """Tests for the UniFiAlertsCoordinator."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -15,7 +16,7 @@ from custom_components.unifi_alerts.const import (
     CONF_POLL_INTERVAL,
 )
 from custom_components.unifi_alerts.coordinator import UniFiAlertsCoordinator
-from custom_components.unifi_alerts.models import CategoryState, UniFiAlert
+from custom_components.unifi_alerts.models import UniFiAlert
 
 
 def make_coordinator(hass=None, enabled=None):
@@ -210,6 +211,7 @@ class TestPollingPath:
         hass.async_create_task = _create_task
         client = MagicMock()
         from custom_components.unifi_alerts.models import UniFiAlert
+
         polled_alert = UniFiAlert(
             category=CATEGORY_NETWORK_WAN,
             message="persistent open alarm",
@@ -218,6 +220,7 @@ class TestPollingPath:
         client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: [polled_alert]})
 
         from custom_components.unifi_alerts.const import CONF_CLEAR_TIMEOUT, CONF_POLL_INTERVAL
+
         config = {
             CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
             CONF_POLL_INTERVAL: 60,
@@ -244,6 +247,7 @@ class TestPollingPath:
         hass.async_create_task = _create_task
         client = MagicMock()
         from custom_components.unifi_alerts.models import UniFiAlert
+
         polled_alert = UniFiAlert(
             category=CATEGORY_NETWORK_WAN,
             message="open alarm",
@@ -252,6 +256,7 @@ class TestPollingPath:
         client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: [polled_alert]})
 
         from custom_components.unifi_alerts.const import CONF_CLEAR_TIMEOUT, CONF_POLL_INTERVAL
+
         config = {
             CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
             CONF_POLL_INTERVAL: 60,
@@ -289,9 +294,7 @@ class TestPollingErrorPaths:
         client = MagicMock()
 
         # First call raises InvalidAuthError; after re-auth the second call succeeds
-        client.categorise_alarms = AsyncMock(
-            side_effect=[InvalidAuthError("expired"), {}]
-        )
+        client.categorise_alarms = AsyncMock(side_effect=[InvalidAuthError("expired"), {}])
         client.authenticate = AsyncMock()
 
         config = {
@@ -307,8 +310,9 @@ class TestPollingErrorPaths:
     @pytest.mark.asyncio
     async def test_invalid_auth_on_retry_raises_update_failed(self):
         """If re-auth also fails, UpdateFailed must be raised."""
-        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
         from homeassistant.helpers.update_coordinator import UpdateFailed
+
+        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
 
         hass = MagicMock()
 
@@ -333,8 +337,9 @@ class TestPollingErrorPaths:
     @pytest.mark.asyncio
     async def test_cannot_connect_raises_update_failed(self):
         """CannotConnectError must be wrapped in UpdateFailed."""
-        from custom_components.unifi_alerts.unifi_client import CannotConnectError
         from homeassistant.helpers.update_coordinator import UpdateFailed
+
+        from custom_components.unifi_alerts.unifi_client import CannotConnectError
 
         hass = MagicMock()
 
@@ -447,7 +452,6 @@ class TestAutoClear:
     @pytest.mark.asyncio
     async def test_auto_clear_noop_when_not_alerting(self):
         """_auto_clear must not notify if the category is not alerting."""
-        import asyncio
 
         hass = MagicMock()
         hass.async_create_task = lambda coro, **kw: MagicMock()

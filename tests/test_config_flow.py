@@ -1,9 +1,11 @@
 """Tests for the UniFi Alerts config flow."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import voluptuous as vol
 from homeassistant.data_entry_flow import AbortFlow
 
 from custom_components.unifi_alerts.config_flow import UniFiAlertsConfigFlow, UniFiAlertsOptionsFlow
@@ -42,9 +44,7 @@ _VALID_INPUT = {
 async def test_duplicate_url_aborts() -> None:
     """When the controller URL is already configured, the flow should abort."""
     flow = _make_flow()
-    flow._abort_if_unique_id_configured = MagicMock(
-        side_effect=AbortFlow("already_configured")
-    )
+    flow._abort_if_unique_id_configured = MagicMock(side_effect=AbortFlow("already_configured"))
 
     with pytest.raises(AbortFlow) as exc_info:
         await flow.async_step_user(_VALID_INPUT)
@@ -68,9 +68,7 @@ async def test_unique_id_set_to_normalised_url() -> None:
         instance = mock_cls.return_value
         instance.authenticate = AsyncMock(return_value="userpass")
 
-        await flow.async_step_user(
-            {**_VALID_INPUT, CONF_CONTROLLER_URL: "https://192.168.1.1/"}
-        )
+        await flow.async_step_user({**_VALID_INPUT, CONF_CONTROLLER_URL: "https://192.168.1.1/"})
 
     flow.async_set_unique_id.assert_called_once_with("https://192.168.1.1")
 
@@ -196,7 +194,7 @@ async def test_finish_submit_creates_entry() -> None:
     }
     flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
 
-    result = await flow.async_step_finish(user_input={})
+    await flow.async_step_finish(user_input={})
 
     flow.async_create_entry.assert_called_once()
     call_kwargs = flow.async_create_entry.call_args.kwargs
@@ -265,7 +263,9 @@ async def test_options_init_reads_entry_options_over_data() -> None:
     flow.hass = MagicMock()
     flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
 
-    with patch("custom_components.unifi_alerts.config_flow.async_generate_url", return_value="http://x"):
+    with patch(
+        "custom_components.unifi_alerts.config_flow.async_generate_url", return_value="http://x"
+    ):
         await flow.async_step_init(user_input=None)
 
     call_kwargs = flow.async_show_form.call_args.kwargs
@@ -318,10 +318,12 @@ async def test_user_step_error_preserves_submitted_values() -> None:
 
     # Schema defaults must reflect submitted values, not hardcoded "https://192.168.1.1"
     schema = call_kwargs["data_schema"]
-    schema_defaults = {str(k): k.default() for k in schema.schema}
+    schema_defaults = {str(k): k.default() for k in schema.schema if k.default is not vol.UNDEFINED}
     assert schema_defaults.get(CONF_CONTROLLER_URL) == "https://10.0.0.1"
     assert schema_defaults.get(CONF_USERNAME) == "myuser"
-    assert schema_defaults.get(CONF_PASSWORD) == "mypassword"
+    # Password and API key fields must NOT be pre-filled — they have no default
+    assert CONF_PASSWORD not in schema_defaults
+    assert CONF_API_KEY not in schema_defaults
     assert schema_defaults.get(CONF_VERIFY_SSL) is False
 
 
@@ -352,8 +354,6 @@ async def test_config_flow_session_closed_on_auth_error() -> None:
 @pytest.mark.asyncio
 async def test_user_step_initial_load_uses_hardcoded_defaults() -> None:
     """On initial load (no user_input), the form should show hardcoded defaults."""
-    import voluptuous as vol
-
     flow = _make_flow()
     flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "user"})
 
@@ -364,11 +364,11 @@ async def test_user_step_initial_load_uses_hardcoded_defaults() -> None:
     schema = call_kwargs["data_schema"]
     # Only read defaults for keys that actually have one (some Optional fields don't).
     schema_defaults = {}
+    import contextlib
+
     for k in schema.schema:
         if not isinstance(k.default, vol.Undefined.__class__) and k.default is not vol.UNDEFINED:
-            try:
+            with contextlib.suppress(TypeError):
                 schema_defaults[str(k)] = k.default()
-            except TypeError:
-                pass  # no default set
     assert schema_defaults.get(CONF_CONTROLLER_URL) == "https://192.168.1.1"
     assert schema_defaults.get(CONF_VERIFY_SSL) == DEFAULT_VERIFY_SSL

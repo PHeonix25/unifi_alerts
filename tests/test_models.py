@@ -1,9 +1,8 @@
 """Tests for data models."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from custom_components.unifi_alerts.const import CATEGORY_NETWORK_WAN, CATEGORY_SECURITY_THREAT
 from custom_components.unifi_alerts.models import CategoryState, UniFiAlert
@@ -59,7 +58,7 @@ class TestUniFiAlert:
         """received_at must be UTC-aware so HA time comparisons work."""
         alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": "test"})
         assert alert.received_at.tzinfo is not None
-        assert alert.received_at.tzinfo == timezone.utc
+        assert alert.received_at.tzinfo == UTC
 
     def test_from_api_alarm_fallback_received_at_is_timezone_aware(self):
         """Fallback datetime (no ts field) must still be UTC-aware."""

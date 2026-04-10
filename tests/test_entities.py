@@ -1,11 +1,11 @@
 """Tests for all entity platform classes: binary_sensor, sensor, event, button."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
-
 from conftest import make_entry
 
 from custom_components.unifi_alerts.const import (
@@ -16,8 +16,8 @@ from custom_components.unifi_alerts.const import (
 )
 from custom_components.unifi_alerts.models import CategoryState, UniFiAlert
 
-
 # ── shared helpers ────────────────────────────────────────────────────────────
+
 
 def make_alert(category: str = CATEGORY_NETWORK_WAN, message: str = "WAN offline") -> UniFiAlert:
     return UniFiAlert(
@@ -81,11 +81,13 @@ def make_coordinator(states: dict[str, CategoryState] | None = None):
 # binary_sensor
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestUniFiCategoryBinarySensor:
     from custom_components.unifi_alerts.binary_sensor import UniFiCategoryBinarySensor
 
     def _make(self, state: CategoryState | None):
         from custom_components.unifi_alerts.binary_sensor import UniFiCategoryBinarySensor
+
         coord = make_coordinator({CATEGORY_NETWORK_WAN: state} if state else {})
         entry = make_entry()
         entity = UniFiCategoryBinarySensor(coord, entry, CATEGORY_NETWORK_WAN)
@@ -166,6 +168,7 @@ class TestUniFiCategoryBinarySensor:
 class TestUniFiRollupBinarySensor:
     def _make(self, states: dict[str, CategoryState]):
         from custom_components.unifi_alerts.binary_sensor import UniFiRollupBinarySensor
+
         coord = make_coordinator(states)
         entry = make_entry()
         return UniFiRollupBinarySensor(coord, entry)
@@ -192,7 +195,11 @@ class TestUniFiRollupBinarySensor:
 
     def test_extra_attrs_with_last_alert(self):
         alert = make_alert()
-        states = {CATEGORY_NETWORK_WAN: make_state(is_alerting=True, alert_count=1, open_count=2, last_alert=alert)}
+        states = {
+            CATEGORY_NETWORK_WAN: make_state(
+                is_alerting=True, alert_count=1, open_count=2, last_alert=alert
+            )
+        }
         entity = self._make(states)
         attrs = entity.extra_state_attributes
         assert attrs["total_alert_count"] == 1
@@ -212,9 +219,11 @@ class TestUniFiRollupBinarySensor:
 # sensor
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestUniFiCategoryMessageSensor:
     def _make(self, state: CategoryState | None):
         from custom_components.unifi_alerts.sensor import UniFiCategoryMessageSensor
+
         coord = make_coordinator({CATEGORY_NETWORK_WAN: state} if state else {})
         entry = make_entry()
         return UniFiCategoryMessageSensor(coord, entry, CATEGORY_NETWORK_WAN)
@@ -274,6 +283,7 @@ class TestUniFiCategoryMessageSensor:
 class TestUniFiCategoryCountSensor:
     def _make(self, state: CategoryState | None):
         from custom_components.unifi_alerts.sensor import UniFiCategoryCountSensor
+
         coord = make_coordinator({CATEGORY_NETWORK_WAN: state} if state else {})
         entry = make_entry()
         return UniFiCategoryCountSensor(coord, entry, CATEGORY_NETWORK_WAN)
@@ -297,6 +307,7 @@ class TestUniFiCategoryCountSensor:
 class TestUniFiRollupCountSensor:
     def _make(self, states: dict[str, CategoryState]):
         from custom_components.unifi_alerts.sensor import UniFiRollupCountSensor
+
         coord = make_coordinator(states)
         entry = make_entry()
         return UniFiRollupCountSensor(coord, entry)
@@ -333,9 +344,11 @@ class TestUniFiRollupCountSensor:
 # event
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestUniFiAlertEventEntity:
     def _make(self, state: CategoryState | None):
         from custom_components.unifi_alerts.event import UniFiAlertEventEntity
+
         coord = make_coordinator({CATEGORY_NETWORK_WAN: state} if state else {})
         entry = make_entry()
         entity = UniFiAlertEventEntity(coord, entry, CATEGORY_NETWORK_WAN)
@@ -406,7 +419,15 @@ class TestUniFiAlertEventEntity:
         entity._last_seen_count = 0
         entity._handle_coordinator_update()
         _, payload = entity._trigger_event.call_args[0]
-        for key in ("message", "category", "device_name", "alert_key", "severity", "site", "received_at"):
+        for key in (
+            "message",
+            "category",
+            "device_name",
+            "alert_key",
+            "severity",
+            "site",
+            "received_at",
+        ):
             assert key in payload
 
 
@@ -414,9 +435,11 @@ class TestUniFiAlertEventEntity:
 # button
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestUniFiClearCategoryButton:
     def _make(self, state: CategoryState | None):
         from custom_components.unifi_alerts.button import UniFiClearCategoryButton
+
         coord = make_coordinator({CATEGORY_NETWORK_WAN: state} if state else {})
         entry = make_entry()
         return UniFiClearCategoryButton(coord, entry, CATEGORY_NETWORK_WAN)
@@ -458,6 +481,7 @@ class TestUniFiClearCategoryButton:
 class TestUniFiClearAllButton:
     def _make(self, states: dict[str, CategoryState]):
         from custom_components.unifi_alerts.button import UniFiClearAllButton
+
         coord = make_coordinator(states)
         entry = make_entry()
         return UniFiClearAllButton(coord, entry)
