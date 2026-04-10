@@ -152,7 +152,7 @@ class TestAsyncSetupEntry:
             await async_setup_entry(hass, entry)
 
     @pytest.mark.asyncio
-    async def test_ssl_disabled_logs_warning(self, caplog):
+    async def test_ssl_disabled_logs_warning(self):
         from custom_components.unifi_alerts import async_setup_entry
 
         hass = make_hass()
@@ -171,6 +171,7 @@ class TestAsyncSetupEntry:
         mock_client, mock_coordinator, mock_wm = _patch_all()
 
         with (
+            patch("custom_components.unifi_alerts._LOGGER") as mock_logger,
             patch(
                 "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
             ),
@@ -183,10 +184,13 @@ class TestAsyncSetupEntry:
         ):
             await async_setup_entry(hass, entry)
 
-        assert "SSL certificate verification is disabled" in caplog.text
+        warning_messages = " ".join(
+            str(call[0][0]) for call in mock_logger.warning.call_args_list
+        )
+        assert "SSL certificate verification is disabled" in warning_messages
 
     @pytest.mark.asyncio
-    async def test_ssl_enabled_no_warning(self, caplog):
+    async def test_ssl_enabled_no_warning(self):
         from custom_components.unifi_alerts import async_setup_entry
 
         hass = make_hass()
@@ -194,6 +198,7 @@ class TestAsyncSetupEntry:
         mock_client, mock_coordinator, mock_wm = _patch_all()
 
         with (
+            patch("custom_components.unifi_alerts._LOGGER") as mock_logger,
             patch(
                 "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
             ),
@@ -206,7 +211,10 @@ class TestAsyncSetupEntry:
         ):
             await async_setup_entry(hass, entry)
 
-        assert "SSL certificate verification is disabled" not in caplog.text
+        warning_messages = " ".join(
+            str(call[0][0]) for call in mock_logger.warning.call_args_list
+        )
+        assert "SSL certificate verification is disabled" not in warning_messages
 
     @pytest.mark.asyncio
     async def test_platforms_are_forwarded(self):

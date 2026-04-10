@@ -28,6 +28,7 @@ def make_coordinator(hass=None, enabled=None):
             return MagicMock()
 
         hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
 
     client = MagicMock()
     client.categorise_alarms = AsyncMock(return_value={})
@@ -89,11 +90,15 @@ class TestPushAlert:
         coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
         coord.async_set_updated_data.assert_called_once()
 
-    def test_push_to_unknown_category_logs_warning(self, caplog):
+    def test_push_to_unknown_category_logs_warning(self):
+        from unittest.mock import patch as _patch
+
         coord = make_coordinator()
         alert = make_alert("nonexistent_category")
-        coord.push_alert("nonexistent_category", alert)
-        assert "unknown category" in caplog.text
+        with _patch("custom_components.unifi_alerts.coordinator._LOGGER") as mock_logger:
+            coord.push_alert("nonexistent_category", alert)
+        mock_logger.warning.assert_called_once()
+        assert "unknown category" in mock_logger.warning.call_args[0][0]
 
 
 class TestRollupProperties:
@@ -144,6 +149,7 @@ class TestShutdown:
             return task_mock
 
         hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
         coord = make_coordinator(hass=hass)
         coord.async_set_updated_data = MagicMock()
         return coord, task_mock
@@ -175,6 +181,7 @@ class TestCancelClear:
             return task_mock
 
         hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
         coord = make_coordinator(hass=hass)
         coord.async_set_updated_data = MagicMock()
         return coord, task_mock
@@ -209,6 +216,7 @@ class TestPollingPath:
             return MagicMock()
 
         hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
         client = MagicMock()
         from custom_components.unifi_alerts.models import UniFiAlert
 
@@ -245,6 +253,7 @@ class TestPollingPath:
             return MagicMock()
 
         hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
         client = MagicMock()
         from custom_components.unifi_alerts.models import UniFiAlert
 
@@ -291,6 +300,7 @@ class TestPollingErrorPaths:
             return MagicMock()
 
         hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
         client = MagicMock()
 
         # First call raises InvalidAuthError; after re-auth the second call succeeds
@@ -321,6 +331,7 @@ class TestPollingErrorPaths:
             return MagicMock()
 
         hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
         client = MagicMock()
         client.categorise_alarms = AsyncMock(side_effect=InvalidAuthError("expired"))
         client.authenticate = AsyncMock(side_effect=InvalidAuthError("still bad"))
@@ -348,6 +359,7 @@ class TestPollingErrorPaths:
             return MagicMock()
 
         hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
         client = MagicMock()
         client.categorise_alarms = AsyncMock(side_effect=CannotConnectError("timeout"))
 
@@ -370,6 +382,7 @@ class TestPollingErrorPaths:
             return MagicMock()
 
         hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
         client = MagicMock()
         # First poll: WAN has 1 alarm; second poll: WAN has 0 alarms
         polled_alert = UniFiAlert(
@@ -435,6 +448,7 @@ class TestAutoClear:
             return task
 
         hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
         coord = make_coordinator(hass=hass)
         coord.async_set_updated_data = MagicMock()
 
