@@ -89,6 +89,7 @@ README.md                         # user-facing install, setup, and contributing
 ## Working style
 
 - **Never assume — always ask.** If anything about the task, scope, or approach is unclear, ask before proceeding. Do not guess intent.
+- **Always pull `main` before starting work** — run `git pull origin main` at the start of every session to avoid diverging from origin. Never start implementing changes on a stale branch.
 - **Move into the working directory at the start of every session** — avoids needing path prefixes on every command.
 - Always run `make check` before committing — never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
 - Always update `HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
