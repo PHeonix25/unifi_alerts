@@ -45,6 +45,7 @@ async def test_valid_post_flips_binary_sensor(hass, entry, hass_client):
         json=TEST_PAYLOAD,
     )
     assert resp.status == 200
+    await resp.release()
     await hass.async_block_till_done()
 
     assert hass.states.get(eid).state == "on"
@@ -57,10 +58,11 @@ async def test_valid_post_also_flips_rollup_sensor(hass, entry, hass_client):
     assert hass.states.get(rollup_eid).state == "off"
 
     client = await hass_client()
-    await client.post(
+    resp = await client.post(
         f"/api/webhook/{TEST_WEBHOOK_ID}?token={WEBHOOK_SECRET}",
         json=TEST_PAYLOAD,
     )
+    await resp.release()
     await hass.async_block_till_done()
 
     assert hass.states.get(rollup_eid).state == "on"
@@ -78,6 +80,7 @@ async def test_missing_token_returns_401_and_sensor_stays_off(hass, entry, hass_
         json=TEST_PAYLOAD,
     )
     assert resp.status == 401
+    await resp.release()
     await hass.async_block_till_done()
 
     assert hass.states.get(eid).state == "off"
@@ -95,6 +98,7 @@ async def test_wrong_token_returns_401_and_sensor_stays_off(hass, entry, hass_cl
         json=TEST_PAYLOAD,
     )
     assert resp.status == 401
+    await resp.release()
     await hass.async_block_till_done()
 
     assert hass.states.get(eid).state == "off"
@@ -108,7 +112,8 @@ async def test_get_request_does_not_dispatch_alert(hass, entry, hass_client):
 
     client = await hass_client()
     # HA rejects non-POST methods for webhooks registered with allowed_methods=["POST"]
-    await client.get(f"/api/webhook/{TEST_WEBHOOK_ID}?token={WEBHOOK_SECRET}")
+    resp = await client.get(f"/api/webhook/{TEST_WEBHOOK_ID}?token={WEBHOOK_SECRET}")
+    await resp.release()
     await hass.async_block_till_done()
 
     # Regardless of HTTP status, the coordinator must not have dispatched an alert
@@ -154,6 +159,7 @@ async def test_no_secret_config_accepts_post_without_token(
         json=TEST_PAYLOAD,
     )
     assert resp.status == 200
+    await resp.release()
     await hass.async_block_till_done()
 
     assert hass.states.get(eid).state == "on"

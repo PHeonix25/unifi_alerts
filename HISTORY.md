@@ -20,7 +20,7 @@ Consequence: updated all 10 occurrences of `hass.async_create_task = _create_tas
 
 ### Integration tests — 16 new tests
 
-**`tests/integration/conftest.py`**: `entry` fixture sets up HTTP/webhook infrastructure, instantiates the config entry, and unloads on teardown. `mock_unifi_client` patches `UniFiClient` so no HTTP calls escape. `_prime_pycares_shutdown_thread` (session-scoped) calls `pycares._shutdown_manager.start()` to pre-start Thread-1 before `verify_cleanup` captures its baseline.
+**`tests/integration/conftest.py`**: `entry` fixture sets up HTTP/webhook infrastructure, instantiates the config entry, and unloads on teardown. `mock_unifi_client` patches `UniFiClient` so no HTTP calls escape. `_prime_pycares_shutdown_thread` (session-scoped) constructs `aiodns.DNSResolver(...)` to warm up the resolver stack before `verify_cleanup` captures its thread baseline; no-op when `aiodns` is absent.
 
 **`tests/integration/test_lifecycle.py`** (6 tests):
 - Binary sensors created for all categories
@@ -44,9 +44,9 @@ Consequence: updated all 10 occurrences of `hass.async_create_task = _create_tas
 - GET request → no alert dispatched
 - No-secret config → POST accepted without token
 
-### Thread-1 / pycares investigation
+### Thread-1 / aiodns investigation
 
-`Thread-1 (_run_safe_shutdown_loop)` is created by `pycares._ChannelShutdownManager.start()`, which is called when `aiohttp.TCPConnector` creates a `DefaultResolver` (aiodns → pycares). This happens when the `entry` fixture sets up the HTTP server, AFTER `verify_cleanup` captures its `threads_before` snapshot. The session-scoped `_prime_pycares_shutdown_thread` fixture calls `pycares._shutdown_manager.start()` directly to pre-start the thread before any test.
+`Thread-1 (_run_safe_shutdown_loop)` is created by pycares internally when `aiohttp.TCPConnector` builds a `DefaultResolver` (aiodns → pycares). This happens when the `entry` fixture sets up the HTTP server, AFTER `verify_cleanup` captures its `threads_before` snapshot. The session-scoped `_prime_pycares_shutdown_thread` fixture constructs `aiodns.DNSResolver(...)` via the public API to warm up the resolver stack before any test runs, ensuring Thread-1 is already alive in `verify_cleanup`'s baseline. The fixture is a no-op when `aiodns` is not installed.
 
 ### `caplog` circular dependency fix
 

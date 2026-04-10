@@ -140,12 +140,12 @@ Mark all integration tests with `@pytest.mark.integration`.
 | `hass_client` | function | aiohttp test client bound to `hass.http.app` |
 | `mock_unifi_client` | function | Patches `UniFiClient` so no HTTP calls escape |
 | `entry` | function | Sets up the config entry + HTTP/webhook infra; unloads on teardown |
-| `_prime_pycares_shutdown_thread` | session | Pre-starts the `pycares` daemon thread so `verify_cleanup` doesn't flag it as new |
+| `_prime_pycares_shutdown_thread` | session | Warms up aiodns/pycares resolver so `verify_cleanup` doesn't flag Thread-1 as new |
 
 ### Key implementation notes
 
 - **`hass.async_create_background_task`** is used for auto-clear tasks so they do NOT block `hass.async_block_till_done()`. Background tasks are cancelled on entry unload via `coordinator.async_shutdown()`.
-- **pycares Thread-1** (`_run_safe_shutdown_loop`): aiohttp's DNS resolver starts this daemon thread on first use. The session-scoped `_prime_pycares_shutdown_thread` fixture calls `pycares._shutdown_manager.start()` before any test so the thread is in `verify_cleanup`'s baseline.
+- **pycares Thread-1** (`_run_safe_shutdown_loop`): aiohttp DNS usage can start this daemon thread on first use. The session-scoped `_prime_pycares_shutdown_thread` fixture primes that path by constructing `aiodns.DNSResolver(...)` before tests so the thread is in `verify_cleanup`'s baseline; if `aiodns` is not installed, this is a no-op.
 - **HTTP infrastructure**: The `entry` fixture calls `async_setup_component(hass, "webhook", {})` and sets `internal_url` before setting up the config entry. Tests that don't use the `entry` fixture but need `hass_client` must set this up themselves (see `test_no_secret_config_accepts_post_without_token`).
 - **Auto-clear in tests**: Patch `custom_components.unifi_alerts.coordinator.asyncio.sleep` with `AsyncMock()` to make the auto-clear fire immediately during `async_block_till_done`.
 

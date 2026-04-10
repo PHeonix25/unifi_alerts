@@ -170,10 +170,14 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             existing.cancel()
 
         delay = self._clear_timeout_minutes * 60
-        self._clear_tasks[category] = self.hass.async_create_background_task(
-            self._auto_clear(category, delay),
-            name=f"unifi_alerts_auto_clear_{category}",
-        )
+        coro = self._auto_clear(category, delay)
+        create_bg = getattr(self.hass, "async_create_background_task", None)
+        if create_bg is not None:
+            task = create_bg(coro, name=f"unifi_alerts_auto_clear_{category}")
+        else:
+            create_task = getattr(self.hass, "async_create_task", None)
+            task = create_task(coro) if create_task is not None else asyncio.ensure_future(coro)
+        self._clear_tasks[category] = task
 
     def cancel_clear(self, category: str) -> None:
         """Cancel any pending auto-clear task for the given category."""
