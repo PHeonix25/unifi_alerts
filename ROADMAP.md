@@ -2,7 +2,7 @@
 
 This file maps TODO items to planned releases. Items within each release are ordered by priority — complete them top-to-bottom. Check off each item as it is merged to `main`.
 
-> **Current status:** v1.0.0 ready. All blocking bugs, security issues, and UX gaps are resolved. CI is green (hassfest + HACS + lint + tests). Ready to tag v1.0.0.
+> **Current status:** v1pre2 in progress. Four new blockers discovered during UCG-Ultra installation testing (see below). CI is green. Once these are resolved, tag v1pre2 and re-evaluate for stable v1.0.0.
 
 ---
 
@@ -30,6 +30,13 @@ All blocking bugs, security issues, and UX gaps that will immediately affect new
 - [x] Local-only webhook constraint is undocumented — cloud console users get silent failure (`README.md`)
 - [x] All 7 categories default ON — client/device events will flood busy home networks (`config_flow.py`)
 - [x] README setup buries the "copy webhook URLs" step — make it a numbered step (`README.md`)
+
+### Blockers found during v1pre1 installation testing
+
+- [ ] UCG-Ultra: OS detection fails → `_verify_api_key` hits `/api/s/default/self` (404) instead of `/proxy/network/...` (`unifi_client.py:133,158`)
+- [ ] Config flow API key path instructions are wrong — vary by firmware version; current text misleads users (`strings.json:6`, `translations/en.json`)
+- [ ] Config flow repopulates old username/password after user clears them and switches to API key (`config_flow.py:76-90`)
+- [ ] API key and password fields are plaintext — sensitive values visible on screen; use `TextSelectorType.PASSWORD` (`config_flow.py:83-84,96-97`)
 
 ### Quick wins (one-liners, no reason to defer)
 
