@@ -6,6 +6,7 @@
     "allow": [
       "Bash(gh run:*)",
       "Bash(git:*)",
+      "Bash(make check:*)",
       "Bash(pytest:*)",
       "Bash(python:*)",
       "Bash(py -m pytest tests/ -v)",
@@ -13,7 +14,7 @@
       "Bash(.venv/Scripts/pytest tests/ -v)",
       "Bash(.venv/Scripts/ruff check:*)",
       "Bash(.venv/Scripts/ruff format:*)",
-      "Bash(.venv/Scripts/mypy custom_components/ --ignore-missing-imports)",
+      "Bash(.venv/Scripts/mypy custom_components/)",
       "PowerShell(py:*)",
       "PowerShell(.venv\\\\Scripts\\\\pytest tests/ -v 2>&1)",
       "PowerShell(.venv\\\\Scripts\\\\ruff format custom_components/ 2>&1)",
