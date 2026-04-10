@@ -1,5 +1,34 @@
 # History
 
+## 2026-04-10 (session 4) — API key docs, test coverage gaps, multi-site support (253 tests)
+
+Addressed three more high-priority items from `TODO.md`. All checks pass.
+
+### `TODO.md` — stale item cleanup
+- Removed four items already resolved in prior sessions whose removal was recorded in HISTORY.md but not actually applied to the file: "Config flow repopulates old username/password", "API key and password fields are plaintext", "Tighten bare except Exception in webhook handler", "Disabled category open_count is still updated by polling".
+
+### API key instructions — config flow, README, UNIFI.md
+- `strings.json` + `translations/en.json`: replaced the single hard-coded path ("Settings → Admins & Users → API Keys") with a version-agnostic instruction noting the path varies by firmware and listing both common paths ("Settings → Admins & Users → API Keys" or "Integrations → New API Key"). Links to README for device-specific instructions.
+- `README.md`: updated setup step 2 to reference new "Generating an API key" section; added that section with a table of per-firmware navigation paths and a note to use a dedicated non-MFA account.
+- `UNIFI.md`: removed two stale references to the now-resolved API key path bug in `TODO.md`.
+
+### Missing test coverage — 9 new tests
+- `test_config_flow.py`: added `test_categories_step_saves_poll_interval_and_clear_timeout`, `test_categories_step_accepts_boundary_poll_intervals` (parametrised: 10, 3600), `test_categories_step_accepts_boundary_clear_timeouts` (parametrised: 1, 1440), `test_options_flow_saves_submitted_values`, `test_options_flow_rejects_all_disabled`.
+- These cover: poll_interval and clear_timeout are stored in `_entry_data`; vol.Range boundary values are accepted; options flow submits and persists selected values; options flow rejects all-disabled with correct error.
+
+### Multi-site support — `CONF_SITE` / `DEFAULT_SITE`
+- `const.py`: added `CONF_SITE = "site"` and `DEFAULT_SITE = "default"`.
+- `config_flow.py`: added optional `site` field (default `"default"`) to both the categories step and the options flow init step; stored in `_entry_data` and options `data`.
+- `coordinator.py`: reads `CONF_SITE` from config (falls back to `DEFAULT_SITE`); passes the site name to `categorise_alarms()` on every poll cycle.
+- `strings.json` + `translations/en.json`: added `"site"` label to both the categories step and the options init step.
+- `test_coordinator.py`: added `TestSiteConfig` (2 tests): coordinator passes configured site to `categorise_alarms`; defaults to `"default"` when absent.
+
+### `TODO.md` — resolved items removed
+- Removed: API key instructions, multi-site support.
+- Updated: remaining test coverage gap now reduced to end-to-end integration tests only.
+
+---
+
 ## 2026-04-10 (session 3) — 4 high-priority bugfixes: session ownership, SSRF, API key path, pagination (244 tests)
 
 Addressed the top four items from `TODO.md`. All checks pass: lint, mypy, HACS preflight, translation drift, 244 tests.

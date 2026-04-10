@@ -24,11 +24,13 @@ from .const import (
     CONF_ENABLED_CATEGORIES,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
+    CONF_SITE,
     CONF_USERNAME,
     CONF_VERIFY_SSL,
     CONF_WEBHOOK_SECRET,
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
+    DEFAULT_SITE,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
     webhook_id_for_category,
@@ -138,6 +140,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_ENABLED_CATEGORIES: enabled,
                     CONF_POLL_INTERVAL: user_input.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
                     CONF_CLEAR_TIMEOUT: user_input.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT),
+                    CONF_SITE: user_input.get(CONF_SITE, DEFAULT_SITE),
                     CONF_AUTH_METHOD: self._detected_auth_method,
                 }
                 return await self.async_step_finish()
@@ -155,6 +158,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         fields[vol.Optional(CONF_CLEAR_TIMEOUT, default=DEFAULT_CLEAR_TIMEOUT)] = vol.All(
             int, vol.Range(min=1, max=1440)
         )
+        fields[vol.Optional(CONF_SITE, default=DEFAULT_SITE)] = str
 
         schema = vol.Schema(fields)
         return self.async_show_form(
@@ -216,6 +220,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                         CONF_CLEAR_TIMEOUT: user_input.get(
                             CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT
                         ),
+                        CONF_SITE: user_input.get(CONF_SITE, DEFAULT_SITE),
                     },
                 )
 
@@ -231,6 +236,10 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             CONF_CLEAR_TIMEOUT,
             self._config_entry.data.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT),
         )
+        current_site: str = self._config_entry.options.get(
+            CONF_SITE,
+            self._config_entry.data.get(CONF_SITE, DEFAULT_SITE),
+        )
 
         fields: dict = {}
         for cat in ALL_CATEGORIES:
@@ -241,6 +250,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
         fields[vol.Optional(CONF_CLEAR_TIMEOUT, default=current_clear)] = vol.All(
             int, vol.Range(min=1, max=1440)
         )
+        fields[vol.Optional(CONF_SITE, default=current_site)] = str
 
         secret: str = self._config_entry.data.get(CONF_WEBHOOK_SECRET, "")
         for cat in ALL_CATEGORIES:

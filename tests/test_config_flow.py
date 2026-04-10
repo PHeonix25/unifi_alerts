@@ -397,3 +397,132 @@ async def test_user_step_initial_load_uses_hardcoded_defaults() -> None:
                 schema_defaults[str(k)] = k.default()
     assert schema_defaults.get(CONF_CONTROLLER_URL) == "https://192.168.1.1"
     assert schema_defaults.get(CONF_VERIFY_SSL) == DEFAULT_VERIFY_SSL
+
+
+# ---------------------------------------------------------------------------
+# Categories step — boundary-value and validation coverage
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_categories_step_saves_poll_interval_and_clear_timeout() -> None:
+    """Submitted poll_interval and clear_timeout must be stored in _entry_data."""
+    from custom_components.unifi_alerts.const import CONF_CLEAR_TIMEOUT, CONF_POLL_INTERVAL
+
+    flow = _make_flow()
+    flow._controller_url = "https://192.168.1.1"
+    flow._detected_auth_method = "userpass"
+    flow._credentials = {CONF_WEBHOOK_SECRET: "s"}
+    flow.async_step_finish = AsyncMock(return_value={"type": "form", "step_id": "finish"})
+
+    cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+    cat_input[CONF_POLL_INTERVAL] = 120
+    cat_input[CONF_CLEAR_TIMEOUT] = 30
+
+    await flow.async_step_categories(cat_input)
+
+    assert flow._entry_data[CONF_POLL_INTERVAL] == 120
+    assert flow._entry_data[CONF_CLEAR_TIMEOUT] == 30
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("poll_interval", [10, 3600])
+async def test_categories_step_accepts_boundary_poll_intervals(poll_interval: int) -> None:
+    """poll_interval boundary values 10 and 3600 must be accepted without error."""
+    from custom_components.unifi_alerts.const import CONF_POLL_INTERVAL
+
+    flow = _make_flow()
+    flow._controller_url = "https://192.168.1.1"
+    flow._detected_auth_method = "userpass"
+    flow._credentials = {CONF_WEBHOOK_SECRET: "s"}
+    flow.async_step_finish = AsyncMock(return_value={"type": "form", "step_id": "finish"})
+
+    cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+    cat_input[CONF_POLL_INTERVAL] = poll_interval
+
+    result = await flow.async_step_categories(cat_input)
+
+    assert result["step_id"] == "finish"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("clear_timeout", [1, 1440])
+async def test_categories_step_accepts_boundary_clear_timeouts(clear_timeout: int) -> None:
+    """clear_timeout boundary values 1 and 1440 must be accepted without error."""
+    from custom_components.unifi_alerts.const import CONF_CLEAR_TIMEOUT
+
+    flow = _make_flow()
+    flow._controller_url = "https://192.168.1.1"
+    flow._detected_auth_method = "userpass"
+    flow._credentials = {CONF_WEBHOOK_SECRET: "s"}
+    flow.async_step_finish = AsyncMock(return_value={"type": "form", "step_id": "finish"})
+
+    cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+    cat_input[CONF_CLEAR_TIMEOUT] = clear_timeout
+
+    result = await flow.async_step_categories(cat_input)
+
+    assert result["step_id"] == "finish"
+
+
+# ---------------------------------------------------------------------------
+# Options flow — form submission (saving updated values)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_options_flow_saves_submitted_values() -> None:
+    """Submitting the options flow must persist the selected categories and intervals."""
+    from custom_components.unifi_alerts.const import CONF_CLEAR_TIMEOUT, CONF_POLL_INTERVAL, CONF_SITE
+
+    config_entry = MagicMock()
+    config_entry.data = {
+        CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+        CONF_WEBHOOK_SECRET: "sec",
+        CONF_POLL_INTERVAL: 60,
+        CONF_CLEAR_TIMEOUT: 5,
+    }
+    config_entry.options = {}
+
+    flow = UniFiAlertsOptionsFlow(config_entry)
+    flow.hass = MagicMock()
+    flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+
+    # Only enable first category; set custom poll, clear, and site values
+    first_cat = ALL_CATEGORIES[0]
+    user_input = {f"cat_{cat}": (cat == first_cat) for cat in ALL_CATEGORIES}
+    user_input[CONF_POLL_INTERVAL] = 300
+    user_input[CONF_CLEAR_TIMEOUT] = 60
+    user_input[CONF_SITE] = "secondary"
+
+    result = await flow.async_step_init(user_input)
+
+    assert result["type"] == "create_entry"
+    saved = flow.async_create_entry.call_args.kwargs["data"]
+    assert saved[CONF_ENABLED_CATEGORIES] == [first_cat]
+    assert saved[CONF_POLL_INTERVAL] == 300
+    assert saved[CONF_CLEAR_TIMEOUT] == 60
+    assert saved[CONF_SITE] == "secondary"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_rejects_all_disabled() -> None:
+    """Options flow must show error when all categories are unchecked."""
+    config_entry = MagicMock()
+    config_entry.data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES, CONF_WEBHOOK_SECRET: "s"}
+    config_entry.options = {}
+
+    flow = UniFiAlertsOptionsFlow(config_entry)
+    flow.hass = MagicMock()
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
+
+    all_off = {f"cat_{cat}": False for cat in ALL_CATEGORIES}
+    with patch(
+        "custom_components.unifi_alerts.config_flow.async_generate_url",
+        return_value="http://ha.local/webhook/x",
+    ):
+        result = await flow.async_step_init(all_off)
+
+    assert result["step_id"] == "init"
+    call_kwargs = flow.async_show_form.call_args.kwargs
+    assert call_kwargs["errors"] == {"base": "at_least_one_category"}

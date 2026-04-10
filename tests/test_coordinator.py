@@ -463,3 +463,53 @@ class TestAutoClear:
             await coord._auto_clear(CATEGORY_NETWORK_WAN, 0)
 
         coord.async_set_updated_data.assert_not_called()
+
+
+class TestSiteConfig:
+    """Tests for CONF_SITE threading through the coordinator."""
+
+    @pytest.mark.asyncio
+    async def test_coordinator_passes_site_to_categorise_alarms(self):
+        """Coordinator must forward the configured site name to categorise_alarms."""
+        from custom_components.unifi_alerts.const import CONF_SITE
+
+        hass = MagicMock()
+        hass.async_create_task = lambda coro, **kw: (coro.close() or MagicMock())
+
+        client = MagicMock()
+        client.categorise_alarms = AsyncMock(return_value={})
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+            CONF_SITE: "secondary",
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        coord.async_set_updated_data = MagicMock()
+
+        await coord._async_update_data()
+
+        client.categorise_alarms.assert_awaited_once_with("secondary")
+
+    @pytest.mark.asyncio
+    async def test_coordinator_defaults_site_to_default(self):
+        """When CONF_SITE is absent, coordinator must use 'default'."""
+        hass = MagicMock()
+        hass.async_create_task = lambda coro, **kw: (coro.close() or MagicMock())
+
+        client = MagicMock()
+        client.categorise_alarms = AsyncMock(return_value={})
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+            # CONF_SITE intentionally absent
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        coord.async_set_updated_data = MagicMock()
+
+        await coord._async_update_data()
+
+        client.categorise_alarms.assert_awaited_once_with("default")

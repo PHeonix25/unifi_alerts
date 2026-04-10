@@ -17,6 +17,7 @@ CONF_CLEAR_TIMEOUT = "clear_timeout"
 CONF_ENABLED_CATEGORIES = "enabled_categories"
 CONF_VERIFY_SSL = "verify_ssl"
 CONF_WEBHOOK_SECRET = "webhook_secret"
+CONF_SITE = "site"
 
 AUTH_METHOD_USERPASS = "userpass"
 AUTH_METHOD_APIKEY = "apikey"
@@ -24,6 +25,7 @@ AUTH_METHOD_APIKEY = "apikey"
 DEFAULT_POLL_INTERVAL = 60  # seconds
 DEFAULT_CLEAR_TIMEOUT = 30  # minutes
 DEFAULT_VERIFY_SSL = True  # disable in config flow if controller has a self-signed cert
+DEFAULT_SITE = "default"
 
 # ──────────────────────────────────────────────
 # Category identifiers
