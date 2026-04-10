@@ -56,22 +56,24 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(url)
             self._abort_if_unique_id_configured()
             session = async_create_clientsession(self.hass)
-            client = UniFiClient(session, url, user_input)
             try:
-                auth_method = await client.authenticate()
-                await client.close()
-            except InvalidAuthError:
-                errors["base"] = "invalid_auth"
-            except CannotConnectError:
-                errors["base"] = "cannot_connect"
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("Unexpected error during auth")
-                errors["base"] = "unknown"
-            else:
-                self._controller_url = url
-                self._detected_auth_method = auth_method
-                self._credentials = {**user_input, CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32)}
-                return await self.async_step_categories()
+                client = UniFiClient(session, url, user_input)
+                try:
+                    auth_method = await client.authenticate()
+                except InvalidAuthError:
+                    errors["base"] = "invalid_auth"
+                except CannotConnectError:
+                    errors["base"] = "cannot_connect"
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("Unexpected error during auth")
+                    errors["base"] = "unknown"
+                else:
+                    self._controller_url = url
+                    self._detected_auth_method = auth_method
+                    self._credentials = {**user_input, CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32)}
+                    return await self.async_step_categories()
+            finally:
+                await session.close()
 
         if user_input is not None:
             # Rebuild schema with submitted values as defaults so the user

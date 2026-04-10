@@ -59,12 +59,14 @@ async def test_unique_id_set_to_normalised_url() -> None:
     flow.async_step_categories = AsyncMock(return_value={"type": "form"})
 
     with (
-        patch("custom_components.unifi_alerts.config_flow.async_create_clientsession"),
+        patch(
+            "custom_components.unifi_alerts.config_flow.async_create_clientsession",
+            return_value=AsyncMock(),
+        ),
         patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
     ):
         instance = mock_cls.return_value
         instance.authenticate = AsyncMock(return_value="userpass")
-        instance.close = AsyncMock()
 
         await flow.async_step_user(
             {**_VALID_INPUT, CONF_CONTROLLER_URL: "https://192.168.1.1/"}
@@ -107,12 +109,14 @@ async def test_no_duplicate_proceeds_to_categories() -> None:
     flow.async_step_categories = AsyncMock(return_value=categories_result)
 
     with (
-        patch("custom_components.unifi_alerts.config_flow.async_create_clientsession"),
+        patch(
+            "custom_components.unifi_alerts.config_flow.async_create_clientsession",
+            return_value=AsyncMock(),
+        ),
         patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
     ):
         instance = mock_cls.return_value
         instance.authenticate = AsyncMock(return_value="userpass")
-        instance.close = AsyncMock()
 
         result = await flow.async_step_user(_VALID_INPUT)
 
@@ -280,12 +284,14 @@ async def test_user_step_error_preserves_submitted_values() -> None:
     flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "user"})
 
     with (
-        patch("custom_components.unifi_alerts.config_flow.async_create_clientsession"),
+        patch(
+            "custom_components.unifi_alerts.config_flow.async_create_clientsession",
+            return_value=AsyncMock(),
+        ),
         patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
     ):
         instance = mock_cls.return_value
         instance.authenticate = AsyncMock(side_effect=InvalidAuthError("bad creds"))
-        instance.close = AsyncMock()
 
         result = await flow.async_step_user(submitted)
 
@@ -300,6 +306,30 @@ async def test_user_step_error_preserves_submitted_values() -> None:
     assert schema_defaults.get(CONF_USERNAME) == "myuser"
     assert schema_defaults.get(CONF_PASSWORD) == "mypassword"
     assert schema_defaults.get(CONF_VERIFY_SSL) is False
+
+
+@pytest.mark.asyncio
+async def test_config_flow_session_closed_on_auth_error() -> None:
+    """The aiohttp session created during auth must be closed even on error."""
+    from custom_components.unifi_alerts.unifi_client import InvalidAuthError
+
+    flow = _make_flow()
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "user"})
+    mock_session = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.unifi_alerts.config_flow.async_create_clientsession",
+            return_value=mock_session,
+        ),
+        patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+    ):
+        instance = mock_cls.return_value
+        instance.authenticate = AsyncMock(side_effect=InvalidAuthError("bad creds"))
+
+        await flow.async_step_user(_VALID_INPUT)
+
+    mock_session.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
