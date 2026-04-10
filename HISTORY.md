@@ -1,5 +1,40 @@
 # History
 
+## 2026-04-10 (session 3) — 4 high-priority bugfixes: session ownership, SSRF, API key path, pagination (244 tests)
+
+Addressed the top four items from `TODO.md`. All checks pass: lint, mypy, HACS preflight, translation drift, 244 tests.
+
+### `config_flow.py` — Replace HA-managed session with raw `aiohttp.ClientSession`
+- `async_create_clientsession(self.hass)` was creating an HA-managed session, then `await session.close()` in the `finally` block manually closed it. HA registers its own cleanup handler for sessions created this way, so the manual close triggered a deprecation warning from `homeassistant.helpers.frame`.
+- Replaced with `async with aiohttp.ClientSession() as session:`. The context manager owns and closes the session; the `finally` block is gone. The session is only needed for the single auth check so a raw `ClientSession` is appropriate.
+- Removed `async_create_clientsession` import (now unused). Added `import aiohttp`.
+
+### `config_flow.py` — SSRF: validate controller URL scheme before connecting
+- `async_step_user` previously passed the raw user-supplied URL directly to `UniFiClient` without validation. A misconfigured or malicious URL (e.g. `ftp://internal-host`) could cause the integration to probe arbitrary internal services.
+- Added a `yarl.URL` scheme check before the unique-ID and session work: if the scheme is not `http` or `https`, a field-level error `invalid_url_scheme` is shown immediately and no network call is made.
+- Added `"invalid_url_scheme"` to `strings.json` and `translations/en.json`.
+
+### `unifi_client.py` — API key endpoint always uses `/proxy/network` prefix
+- `_verify_api_key` called `self._network_path('/api/s/default/self')`, which returned the path unmodified when `_is_unifi_os` was `False`. API keys are UniFi OS-only, so the detection result is irrelevant — the correct path is always `/proxy/network/api/s/default/self`. Changed to hardcode the prefix via `UNIFI_OS_NETWORK_PREFIX`.
+- Added 404 handling in `_verify_api_key`: a 404 now raises `CannotConnectError("API key endpoint not found — check the controller URL and that UniFi OS is accessible at this address")` instead of bubbling as an unhandled `ClientResponseError`.
+
+### `unifi_client.py` — `_detect_unifi_os` two-stage fallback probe
+- The primary heuristic (presence of `x-csrf-token` in the `/` response) is insufficient for UCG-Ultra firmware and reverse-proxy setups where the header is absent or stripped.
+- Added a fallback: if `x-csrf-token` is absent, probe `GET /api/system`. That endpoint exists on all UniFi OS consoles and returns 200; classic controllers return 404. Returns `True` if the fallback returns 200, `False` otherwise. Both stages handle network errors gracefully.
+
+### `unifi_client.py` — Pagination on `/alarm` endpoint (`limit=200`)
+- `fetch_alarms` previously fetched the full unarchived alarm backlog in one request. On sites with thousands of alarms this could return a multi-megabyte payload and block the event loop.
+- Added `params={"limit": 200}` to the GET request to cap each poll at the 200 most recent alarms.
+
+### Tests — 10 new tests (244 total)
+- `test_config_flow.py`: updated 4 tests that patched `async_create_clientsession` to patch `aiohttp.ClientSession` as an async context manager; added `test_invalid_url_scheme_shows_error` (SSRF); added `_make_session_mock()` helper.
+- `test_unifi_client.py`: replaced `test_returns_false_when_csrf_token_absent` with `test_returns_false_when_csrf_token_absent_and_system_probe_fails` and added `test_returns_true_when_fallback_system_probe_200` for the new OS detection fallback; added `TestVerifyApiKey` (3 tests: always uses `/proxy/network` prefix, 404 raises `CannotConnectError`, 401 raises `InvalidAuthError`); added `test_sends_limit_param` in `TestFetchAlarms`.
+
+### `TODO.md` — resolved items removed
+- Removed: aiohttp session ownership, SSRF URL validation, OS detection / API key path bug, alarm endpoint pagination.
+
+---
+
 ## 2026-04-10 (session 2) — Pre-release v1pre2 continued: 3 more fixes, lint cleanup, docs (238 tests)
 
 Completed the remaining v1pre2 fixes: password field masking, repopulates bug, coordinator and webhook tightening. Also resolved 5 merge conflicts from origin/main and fixed 24 ruff lint issues in origin-merged test files.

@@ -6,12 +6,13 @@ import logging
 import secrets
 from typing import Any
 
+import aiohttp
 import voluptuous as vol
 from homeassistant.components.webhook import async_generate_url
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
-from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
+from yarl import URL
 
 from .const import (
     ALL_CATEGORIES,
@@ -54,30 +55,30 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             url = user_input[CONF_CONTROLLER_URL].rstrip("/")
-            await self.async_set_unique_id(url)
-            self._abort_if_unique_id_configured()
-            session = async_create_clientsession(self.hass)
-            try:
-                client = UniFiClient(session, url, user_input)
-                try:
-                    auth_method = await client.authenticate()
-                except InvalidAuthError:
-                    errors["base"] = "invalid_auth"
-                except CannotConnectError:
-                    errors["base"] = "cannot_connect"
-                except Exception:  # noqa: BLE001
-                    _LOGGER.exception("Unexpected error during auth")
-                    errors["base"] = "unknown"
-                else:
-                    self._controller_url = url
-                    self._detected_auth_method = auth_method
-                    self._credentials = {
-                        **user_input,
-                        CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32),
-                    }
-                    return await self.async_step_categories()
-            finally:
-                await session.close()
+            if URL(url).scheme not in ("http", "https"):
+                errors[CONF_CONTROLLER_URL] = "invalid_url_scheme"
+            else:
+                await self.async_set_unique_id(url)
+                self._abort_if_unique_id_configured()
+                async with aiohttp.ClientSession() as session:
+                    client = UniFiClient(session, url, user_input)
+                    try:
+                        auth_method = await client.authenticate()
+                    except InvalidAuthError:
+                        errors["base"] = "invalid_auth"
+                    except CannotConnectError:
+                        errors["base"] = "cannot_connect"
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.exception("Unexpected error during auth")
+                        errors["base"] = "unknown"
+                    else:
+                        self._controller_url = url
+                        self._detected_auth_method = auth_method
+                        self._credentials = {
+                            **user_input,
+                            CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32),
+                        }
+                        return await self.async_step_categories()
 
         _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))

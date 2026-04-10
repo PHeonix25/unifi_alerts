@@ -197,13 +197,40 @@ class TestDetectUnifiOs:
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_returns_false_when_csrf_token_absent(self):
-        """Should return False when x-csrf-token is not in response headers, even if HTTP 200."""
+    async def test_returns_false_when_csrf_token_absent_and_system_probe_fails(self):
+        """Should return False when x-csrf-token absent and /api/system probe returns non-200."""
         client = make_client()
-        ctx = _make_response(200, headers={})
-        client._session.get = ctx
+
+        @asynccontextmanager
+        async def _ctx(*args, **kwargs):
+            resp = MagicMock()
+            resp.headers = {}
+            resp.status = 404  # neither / nor /api/system indicates UniFi OS
+            yield resp
+
+        client._session.get = _ctx
         result = await client._detect_unifi_os()
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_fallback_system_probe_200(self):
+        """Should return True when x-csrf-token absent but /api/system returns 200."""
+        client = make_client()
+
+        call_count = [0]
+
+        @asynccontextmanager
+        async def _ctx(*args, **kwargs):
+            call_count[0] += 1
+            resp = MagicMock()
+            resp.headers = {}
+            resp.status = 200  # / has no csrf token; /api/system returns 200 → UniFi OS
+            yield resp
+
+        client._session.get = _ctx
+        result = await client._detect_unifi_os()
+        assert result is True
+        assert call_count[0] == 2  # primary probe + fallback probe
 
     @pytest.mark.asyncio
     async def test_follows_redirects(self):
@@ -307,6 +334,59 @@ class TestLoginUserpass:
         await client._login_userpass()
 
 
+class TestVerifyApiKey:
+    """Tests for _verify_api_key — API key authentication and endpoint selection."""
+
+    @pytest.mark.asyncio
+    async def test_always_uses_proxy_network_prefix(self):
+        """_verify_api_key must always use /proxy/network regardless of OS detection result.
+
+        API keys are UniFi OS-only, so the /proxy/network prefix is always correct.
+        Trusting _detect_unifi_os here caused 404s on UCG-Ultra and reverse proxies.
+        """
+        client = make_client({"api_key": "my-key", "verify_ssl": False})
+        client._is_unifi_os = False  # simulate failed OS detection
+
+        captured_url: list[str] = []
+
+        @asynccontextmanager
+        async def _ctx(*args, **kwargs):
+            captured_url.append(args[0] if args else "")
+            resp = MagicMock()
+            resp.status = 200
+            resp.headers = {}
+            resp.raise_for_status = MagicMock()
+            yield resp
+
+        client._session.get = _ctx
+        await client._verify_api_key()
+
+        assert captured_url, "Expected at least one GET call"
+        assert "/proxy/network" in captured_url[0], (
+            f"Expected /proxy/network in URL, got: {captured_url[0]}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_404_raises_cannot_connect(self):
+        """HTTP 404 from the API key endpoint must raise CannotConnectError, not bubble up."""
+        client = make_client({"api_key": "my-key", "verify_ssl": False})
+        ctx = _make_response(404)
+        client._session.get = ctx
+
+        with pytest.raises(CannotConnectError, match="API key endpoint not found"):
+            await client._verify_api_key()
+
+    @pytest.mark.asyncio
+    async def test_401_raises_invalid_auth(self):
+        """HTTP 401 from the API key endpoint must raise InvalidAuthError."""
+        client = make_client({"api_key": "bad-key", "verify_ssl": False})
+        ctx = _make_response(401)
+        client._session.get = ctx
+
+        with pytest.raises(InvalidAuthError):
+            await client._verify_api_key()
+
+
 def _make_json_response(status: int, body: dict | None = None):
     """Build a mock aiohttp response that returns JSON body."""
     resp = MagicMock()
@@ -378,6 +458,30 @@ class TestFetchAlarms:
         client._session.get = _raise
         with pytest.raises(CannotConnectError):
             await client.fetch_alarms()
+
+    @pytest.mark.asyncio
+    async def test_sends_limit_param(self):
+        """fetch_alarms must include limit=200 to avoid loading the full alarm backlog."""
+        client = make_client()
+        client._authenticated = True
+        client._is_unifi_os = False
+
+        captured_kwargs: dict = {}
+
+        @asynccontextmanager
+        async def _tracking_get(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            resp = MagicMock()
+            resp.status = 200
+            resp.headers = {}
+            resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(return_value={"data": []})
+            yield resp
+
+        client._session.get = _tracking_get
+        await client.fetch_alarms()
+
+        assert captured_kwargs.get("params") == {"limit": 200}
 
     @pytest.mark.asyncio
     async def test_not_authenticated_calls_authenticate_first(self):

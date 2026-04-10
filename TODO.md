@@ -4,30 +4,6 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 
 ## 🟡 High-value improvements
 
-### [BUG] Config flow closes HA-managed aiohttp session — deprecation warning on every setup
-**File:** `config_flow.py:59,80`
-**Error:** `Detected that custom integration 'unifi_alerts' closes the Home Assistant aiohttp session at config_flow.py, line 80: await session.close()`
-**Root cause:** `async_step_user` creates a session with `async_create_clientsession(self.hass)` (line 59), then explicitly calls `await session.close()` in the `finally` block (line 80). Sessions created with `async_create_clientsession` are HA-managed — HA registers its own cleanup handler and will close them on shutdown. Calling `close()` manually bypasses that contract and triggers a deprecation warning from `homeassistant.helpers.frame`.
-**Fix:** Replace `async_create_clientsession(self.hass)` with a raw `aiohttp.ClientSession()` used as an async context manager, so ownership is explicit and the integration fully controls the session lifetime:
-```python
-import aiohttp
-
-async with aiohttp.ClientSession() as session:
-    client = UniFiClient(session, url, user_input)
-    try:
-        auth_method = await client.authenticate()
-    except InvalidAuthError:
-        errors["base"] = "invalid_auth"
-    ...
-```
-Remove the `finally: await session.close()` block entirely — the context manager handles it. Also remove the `async_create_clientsession` import from `config_flow.py` if it's no longer used elsewhere.
-**Note:** The config flow only needs the session for the duration of the single auth check. A raw `aiohttp.ClientSession()` is appropriate here. `async_create_clientsession` provides a HA-shared cookie jar and SSL context that aren't needed in this short-lived context.
-
-### [SECURITY] Unvalidated controller URL allows SSRF
-**File:** `config_flow.py:53,57`
-**Problem:** The controller URL field accepts any string and passes it directly to the HTTP client. A malicious or misconfigured user could supply an internal address (e.g. `http://localhost:8123/`) to probe internal services.
-**Fix:** Validate that the URL scheme is `http` or `https`, and optionally reject loopback and link-local addresses using `yarl.URL`.
-
 ### [BUG] Config flow API key instructions are wrong / vary by UniFi OS version
 **File:** `strings.json:6`, `translations/en.json` (same line)
 **Problem:** The config flow description tells users to generate an API key via **Settings → Admins & Users → API Keys**. This path is incorrect on at least some versions of UniFi OS (e.g. it's **Integrations → New API Key** on some consoles), and the correct path varies across firmware versions. Users following the instructions will not find the option and give up.
@@ -60,26 +36,6 @@ vol.Optional(CONF_PASSWORD): _PASSWORD_SELECTOR,
 vol.Optional(CONF_API_KEY): _PASSWORD_SELECTOR,
 ```
 Apply in both the initial schema and the error-repopulation schema (lines 83-84 and 96-97).
-
-### [BUG] OS detection fails → API key verification hits wrong endpoint (404)
-**File:** `unifi_client.py:141-178`
-**Reported by:** Confirmed occurring on UCG-Ultra, reverse-proxy setups (custom domain, Nginx/Caddy/Traefik), and any config where `x-csrf-token` is absent or stripped from the `/` response.
-**Error:** `ClientResponseError: 404, message='Not Found', url='.../api/s/default/self'`
-**Root cause (two compounding issues):**
-1. `_detect_unifi_os()` relies solely on `x-csrf-token` being present in the `/` response headers. This header is absent on UCG-Ultra firmware, stripped by reverse proxies, and missing if the `/` request follows a redirect to a page that doesn't set it. When detection fails, `_is_unifi_os = False`.
-2. `_verify_api_key()` calls `self._network_path('/api/s/default/self')`. When `_is_unifi_os` is `False`, `_network_path` returns the path unchanged — so the call goes to `/api/s/default/self` instead of `/proxy/network/api/s/default/self`. That legacy endpoint does not exist on UniFi OS hardware and returns 404.
-**Logic flaw:** API keys are UniFi OS-only — a user who supplies an API key by definition has a UniFi OS controller. `_verify_api_key()` should always use the `/proxy/network` prefix regardless of what `_detect_unifi_os()` returns. The current code trusts the detection result unconditionally, which is wrong here.
-**Impact:** Setup is completely broken for anyone accessing their UniFi OS controller via a reverse proxy / custom domain, or using a UCG-Ultra. The 404 bubbles up as `Unexpected error during auth` with no actionable message.
-**Fix (recommended — combine all three):**
-1. **Force the OS prefix in `_verify_api_key`:** Since API keys are OS-only, hardcode `/proxy/network` prefix there instead of calling `_network_path`. This is the minimal, correct fix.
-2. **Improve `_detect_unifi_os` fallback:** After the `x-csrf-token` check fails, probe a known UniFi OS-only endpoint (e.g. `GET /api/system`) and set `_is_unifi_os = True` if it returns 200. This fixes detection for the user/pass path too.
-3. **Catch 404 in `_verify_api_key` and raise a clear error:** Currently a 404 surfaces as an unhandled `ClientResponseError`. It should be caught and re-raised as `CannotConnectError("API key endpoint not found — check the controller URL and that UniFi OS is accessible")`.
-**Optional:** Expose a manual "This is a UniFi OS console" toggle in the config flow as an override for when all detection heuristics fail.
-
-### [BUG] No pagination on `/alarm` endpoint — large backlogs block event loop
-**File:** `unifi_client.py:92-103`
-**Problem:** On sites with thousands of unarchived alarms, the API returns a multi-megabyte response in a single call, which may exceed the 10-second timeout and blocks the event loop budget during parsing.
-**Fix:** Add a `?limit=200` query parameter (or equivalent) and document the constraint. Fetch only the most recent N alarms per poll cycle.
 
 ### Integration tests with the `hass` fixture
 **Problem:** The current test suite uses plain mocks and does not exercise the HA setup lifecycle. Config flow, entity creation, coordinator wiring, and webhook dispatch are all untested end-to-end.
