@@ -256,3 +256,40 @@ class TestLoginUserpass:
         client._session.post = ctx
         with pytest.raises(InvalidAuthError):
             await client._login_userpass()
+
+    @pytest.mark.asyncio
+    async def test_invalid_auth_error_carries_login_url(self):
+        """InvalidAuthError raised after both paths fail must carry login_url attribute."""
+        client = make_client()
+        client._is_unifi_os = False
+        ctx = _make_response(401)
+        client._session.post = ctx
+        with pytest.raises(InvalidAuthError) as exc_info:
+            await client._login_userpass()
+        # Alternate path (/api/auth/login) is the last tried for a non-OS client.
+        assert exc_info.value.login_url.endswith("/api/auth/login")
+
+    @pytest.mark.asyncio
+    async def test_fallback_path_succeeds_on_ucg_ultra(self):
+        """When the primary path returns 401, the alternate path is tried.
+
+        Simulates a UCG-Ultra where _is_unifi_os=False (detection miss), so the
+        primary path is /api/login (returns 401) and the fallback /api/auth/login
+        succeeds (returns 200).
+        """
+        client = make_client()
+        client._is_unifi_os = False
+
+        responses = iter([401, 200])
+
+        @asynccontextmanager
+        async def _varying_post(*args, **kwargs):
+            status = next(responses)
+            resp = MagicMock()
+            resp.status = status
+            resp.raise_for_status = MagicMock()
+            yield resp
+
+        client._session.post = _varying_post
+        # Should not raise — the fallback path succeeded
+        await client._login_userpass()

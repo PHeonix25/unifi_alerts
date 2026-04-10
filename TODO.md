@@ -2,6 +2,12 @@
 
 Prioritised backlog. Items are grouped by type. Work top-to-bottom within each group unless there's a dependency noted.
 
+## Blocker for v1
+
+### Cannot login using UCG-Ultra
+**File:** `unifi_client.py:200`
+**Problem**: I cannot log in, I keep on getting authentication failed at https://REDACTED/api/login (HTTP 401)
+
 ---
 
 ## 🟡 High-value improvements

@@ -30,7 +30,15 @@ class CannotConnectError(Exception):
 
 
 class InvalidAuthError(Exception):
-    """Raised on 401/403 responses."""
+    """Raised on 401/403 responses.
+
+    Attributes:
+        login_url: The URL that returned the auth failure; surfaced in the UI.
+    """
+
+    def __init__(self, message: str, *, login_url: str = "") -> None:
+        super().__init__(message)
+        self.login_url = login_url
 
 
 class UniFiClient:
@@ -166,40 +174,58 @@ class UniFiClient:
                 _LOGGER.warning(
                     "API key authentication failed for %s (HTTP %d)", endpoint, resp.status
                 )
-                raise InvalidAuthError("Invalid API key")
+                raise InvalidAuthError("Invalid API key", login_url=endpoint)
             resp.raise_for_status()
 
     async def _login_userpass(self) -> None:
-        login_url = (
-            f"{self._base}/api/auth/login" if self._is_unifi_os else f"{self._base}/api/login"
-        )
+        """Attempt username/password login, trying both UniFi OS and classic paths.
+
+        UniFi OS detection via ``x-csrf-token`` can give a false negative for some
+        UCG-Ultra firmware versions.  We therefore always try both endpoint paths:
+        the detected-primary path first, then the alternate path as a fallback.
+        """
+        if self._is_unifi_os:
+            paths = [f"{self._base}/api/auth/login", f"{self._base}/api/login"]
+        else:
+            paths = [f"{self._base}/api/login", f"{self._base}/api/auth/login"]
+
         payload = {
             "username": self._config.get(CONF_USERNAME, ""),
             "password": self._config.get(CONF_PASSWORD, ""),
         }
         try:
-            async with self._session.post(
-                login_url,
-                json=payload,
-                ssl=self._config.get(CONF_VERIFY_SSL, False),
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status == 400:
-                    _LOGGER.warning(
-                        "Controller rejected login request at %s (HTTP 400). "
-                        "Check the controller URL and that the controller version "
-                        "supports this integration.",
-                        login_url,
-                    )
-                    raise CannotConnectError(
-                        "Controller rejected login request (HTTP 400). "
-                        "Check the controller URL and that the controller version "
-                        "supports this integration."
-                    )
-                if resp.status in (401, 403):
-                    _LOGGER.warning("Authentication failed at %s (HTTP %d)", login_url, resp.status)
-                    raise InvalidAuthError("Invalid username or password")
-                resp.raise_for_status()
+            for login_url in paths:
+                async with self._session.post(
+                    login_url,
+                    json=payload,
+                    ssl=self._config.get(CONF_VERIFY_SSL, False),
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status == 400:
+                        _LOGGER.warning(
+                            "Controller rejected login request at %s (HTTP 400). "
+                            "Check the controller URL and that the controller version "
+                            "supports this integration.",
+                            login_url,
+                        )
+                        raise CannotConnectError(
+                            "Controller rejected login request (HTTP 400). "
+                            "Check the controller URL and that the controller version "
+                            "supports this integration."
+                        )
+                    if resp.status in (401, 403):
+                        _LOGGER.debug(
+                            "Authentication failed at %s (HTTP %d) — trying alternate path",
+                            login_url,
+                            resp.status,
+                        )
+                        continue
+                    resp.raise_for_status()
+                    return  # success
+            # Both paths returned 401/403
+            last_url = paths[-1]
+            _LOGGER.warning("Authentication failed at all login paths (last: %s)", last_url)
+            raise InvalidAuthError("Invalid username or password", login_url=last_url)
         except aiohttp.ClientError as err:
             raise CannotConnectError(str(err)) from err
 
