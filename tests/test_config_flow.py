@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
+
 import pytest
 import voluptuous as vol
 from homeassistant.data_entry_flow import AbortFlow
@@ -33,6 +35,14 @@ def _make_flow() -> UniFiAlertsConfigFlow:
     return flow
 
 
+def _make_session_mock() -> AsyncMock:
+    """Return a mock that behaves as an async context manager (aiohttp.ClientSession)."""
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    return mock_session
+
+
 _VALID_INPUT = {
     CONF_CONTROLLER_URL: "https://192.168.1.1",
     CONF_USERNAME: "admin",
@@ -60,8 +70,8 @@ async def test_unique_id_set_to_normalised_url() -> None:
 
     with (
         patch(
-            "custom_components.unifi_alerts.config_flow.async_create_clientsession",
-            return_value=AsyncMock(),
+            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+            return_value=_make_session_mock(),
         ),
         patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
     ):
@@ -100,6 +110,21 @@ async def test_unique_id_checked_before_auth() -> None:
 
 
 @pytest.mark.asyncio
+async def test_invalid_url_scheme_shows_error() -> None:
+    """A controller URL that is not http/https must show a field-level error."""
+    flow = _make_flow()
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "user"})
+
+    result = await flow.async_step_user({**_VALID_INPUT, CONF_CONTROLLER_URL: "ftp://192.168.1.1"})
+
+    assert result["step_id"] == "user"
+    call_kwargs = flow.async_show_form.call_args.kwargs
+    assert call_kwargs["errors"].get("controller_url") == "invalid_url_scheme"
+    # unique-id check and network call must NOT have happened
+    flow.async_set_unique_id.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_no_duplicate_proceeds_to_categories() -> None:
     """When there is no duplicate, the flow should proceed to the categories step."""
     flow = _make_flow()
@@ -108,8 +133,8 @@ async def test_no_duplicate_proceeds_to_categories() -> None:
 
     with (
         patch(
-            "custom_components.unifi_alerts.config_flow.async_create_clientsession",
-            return_value=AsyncMock(),
+            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+            return_value=_make_session_mock(),
         ),
         patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
     ):
@@ -302,8 +327,8 @@ async def test_user_step_error_preserves_submitted_values() -> None:
 
     with (
         patch(
-            "custom_components.unifi_alerts.config_flow.async_create_clientsession",
-            return_value=AsyncMock(),
+            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+            return_value=_make_session_mock(),
         ),
         patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
     ):
@@ -329,16 +354,16 @@ async def test_user_step_error_preserves_submitted_values() -> None:
 
 @pytest.mark.asyncio
 async def test_config_flow_session_closed_on_auth_error() -> None:
-    """The aiohttp session created during auth must be closed even on error."""
+    """The aiohttp ClientSession context manager must exit (clean up) even on auth error."""
     from custom_components.unifi_alerts.unifi_client import InvalidAuthError
 
     flow = _make_flow()
     flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "user"})
-    mock_session = AsyncMock()
+    mock_session = _make_session_mock()
 
     with (
         patch(
-            "custom_components.unifi_alerts.config_flow.async_create_clientsession",
+            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
             return_value=mock_session,
         ),
         patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -348,7 +373,7 @@ async def test_config_flow_session_closed_on_auth_error() -> None:
 
         await flow.async_step_user(_VALID_INPUT)
 
-    mock_session.close.assert_awaited_once()
+    mock_session.__aexit__.assert_awaited_once()
 
 
 @pytest.mark.asyncio

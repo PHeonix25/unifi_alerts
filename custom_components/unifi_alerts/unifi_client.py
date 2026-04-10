@@ -99,6 +99,7 @@ class UniFiClient:
         try:
             async with self._session.get(
                 f"{self._base}{path}",
+                params={"limit": 200},
                 headers=self._headers(),
                 ssl=self._config.get(CONF_VERIFY_SSL, False),
                 timeout=aiohttp.ClientTimeout(total=10),
@@ -141,20 +142,43 @@ class UniFiClient:
     async def _detect_unifi_os(self) -> bool:
         """Return True if this is a UniFi OS console (UDM/UCG/etc.).
 
-        Follows redirects so that HTTP→HTTPS redirects (e.g. UCG-Ultra) are
-        handled correctly.  The sole heuristic is the presence of
-        ``x-csrf-token`` in the final response headers — any HTTP 200 is not
-        sufficient because generic servers also return 200.
+        Two-stage detection:
+        1. Check for ``x-csrf-token`` in the ``/`` response (primary heuristic).
+           Follows redirects so HTTP→HTTPS redirects (e.g. UCG-Ultra) are handled.
+        2. If the token is absent, probe ``/api/system`` — a UniFi OS-only endpoint.
+           Returns 200 on OS consoles, 404 on classic controllers.
         """
+        ssl = self._config.get(CONF_VERIFY_SSL, False)
+        timeout = aiohttp.ClientTimeout(total=5)
         try:
             async with self._session.get(
                 f"{self._base}/",
-                ssl=self._config.get(CONF_VERIFY_SSL, False),
+                ssl=ssl,
                 allow_redirects=True,
-                timeout=aiohttp.ClientTimeout(total=5),
+                timeout=timeout,
             ) as resp:
-                is_os = resp.headers.get("x-csrf-token") is not None
-                _LOGGER.debug("UniFi OS detection: %s (status %d)", is_os, resp.status)
+                if resp.headers.get("x-csrf-token") is not None:
+                    _LOGGER.debug(
+                        "UniFi OS detection: True via x-csrf-token (status %d)", resp.status
+                    )
+                    return True
+        except Exception:  # noqa: BLE001
+            return False
+
+        # x-csrf-token absent — try the /api/system fallback probe
+        try:
+            async with self._session.get(
+                f"{self._base}/api/system",
+                ssl=ssl,
+                allow_redirects=True,
+                timeout=timeout,
+            ) as probe:
+                is_os = probe.status == 200
+                _LOGGER.debug(
+                    "UniFi OS detection (fallback /api/system probe): %s (status %d)",
+                    is_os,
+                    probe.status,
+                )
                 return is_os
         except Exception:  # noqa: BLE001
             return False
@@ -163,13 +187,21 @@ class UniFiClient:
         api_key = self._config.get(CONF_API_KEY, "")
         if not api_key:
             raise InvalidAuthError("No API key provided")
-        endpoint = f"{self._base}{self._network_path('/api/s/default/self')}"
+        # API keys are UniFi OS-only, so always use the /proxy/network prefix regardless
+        # of what _detect_unifi_os() returned.  Trusting the detection result here caused
+        # 404 errors on UCG-Ultra and reverse-proxy setups where x-csrf-token is absent.
+        endpoint = f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/s/default/self"
         async with self._session.get(
             endpoint,
             headers={"X-API-Key": api_key, "Accept": "application/json"},
             ssl=self._config.get(CONF_VERIFY_SSL, False),
             timeout=aiohttp.ClientTimeout(total=8),
         ) as resp:
+            if resp.status == 404:
+                raise CannotConnectError(
+                    "API key endpoint not found — check the controller URL "
+                    "and that UniFi OS is accessible at this address"
+                )
             if resp.status in (401, 403):
                 _LOGGER.warning(
                     "API key authentication failed for %s (HTTP %d)", endpoint, resp.status
