@@ -1,5 +1,89 @@
 # History
 
+## 2026-04-10 (session 6) — Fix auto-clear race condition and lint cleanup (269 tests)
+
+Addressed PR review feedback on the integration tests introduced in session 5.
+
+### Auto-clear race condition fixed (`tests/integration/test_auto_clear.py`)
+
+`_schedule_clear()` uses `hass.async_create_background_task`, which creates tasks intentionally **not** awaited by `hass.async_block_till_done()`. The original tests for `test_auto_clear_resets_sensor_to_off` and `test_auto_clear_also_resets_rollup_sensor` relied on a single `async_block_till_done()` call to complete the background task, making them racey/flaky.
+
+Fix: call `await hass.async_block_till_done(wait_background_tasks=True)` so HA drains the background task queue, followed by a second `await hass.async_block_till_done()` to flush HA state-write callbacks the coordinator triggers. Updated the module docstring and `TESTING.md` to document this two-call pattern.
+
+### Lint fixes (`tests/unit/` and `tests/integration/`)
+
+Seven pre-existing lint errors were carried over when test files were moved from `tests/` to `tests/unit/` in session 5. Fixed with `ruff check --fix` + `ruff format`:
+
+- Removed unused `get_coordinator` import from `test_lifecycle.py`
+- Removed unused `aiohttp` import from `test_config_flow.py`
+- Fixed import sort order in `conftest.py`, `test_config_flow.py`, `test_diagnostics.py`, `test_webhook.py`, `test_coordinator.py`, `test_init.py`
+
+All 269 tests pass, all lint/typecheck/HACS checks clean.
+
+---
+
+## 2026-04-10 (session 5) — Integration tests with real `hass` fixture (269 tests)
+
+Added a full integration test suite using `pytest_homeassistant_custom_component`'s `hass` fixture. Tests exercise the real HA setup lifecycle without hitting a real controller. All 269 tests pass.
+
+### Test directory restructure
+
+Moved all existing unit tests from `tests/` root into `tests/unit/` and added a peer `tests/integration/` directory. Each has its own `conftest.py`.
+
+- `tests/unit/` — no `__init__.py` so pytest adds it to `sys.path`; bare `from conftest import` works unchanged. Moved all 9 existing test files here.
+- `tests/integration/` — has `__init__.py` enabling relative imports (`from .conftest import ...`).
+- Updated `pytest.ini` to add `markers = integration: ...`.
+
+### `coordinator.py` — background task for auto-clear
+
+Changed `_schedule_clear` to use `hass.async_create_background_task` instead of `hass.async_create_task`. Background tasks do **not** block `hass.async_block_till_done()`, preventing 30-second test timeouts caused by the 1800-second auto-clear sleep.
+
+Consequence: updated all 10 occurrences of `hass.async_create_task = _create_task` in `tests/unit/test_coordinator.py` to also mock `hass.async_create_background_task = _create_task`.
+
+### Integration tests — 16 new tests
+
+**`tests/integration/conftest.py`**: `entry` fixture sets up HTTP/webhook infrastructure, instantiates the config entry, and unloads on teardown. `mock_unifi_client` patches `UniFiClient` so no HTTP calls escape. `_prime_pycares_shutdown_thread` (session-scoped) constructs `aiodns.DNSResolver(...)` to warm up the resolver stack before `verify_cleanup` captures its thread baseline; no-op when `aiodns` is absent.
+
+**`tests/integration/test_lifecycle.py`** (6 tests):
+- Binary sensors created for all categories
+- Rollup binary sensor created
+- Count sensors created for all categories
+- Rollup count sensor created
+- Clear buttons created
+- Options flow disabling a category makes its sensor unavailable
+
+**`tests/integration/test_auto_clear.py`** (4 tests):
+- Push alert → binary sensor ON
+- Auto-clear fires (asyncio.sleep patched to AsyncMock) → sensor OFF
+- Auto-clear also resets rollup sensor
+- Push without auto-clear → sensor stays ON
+
+**`tests/integration/test_webhook.py`** (6 tests):
+- Valid POST + correct `?token=` → binary sensor ON
+- Valid POST also flips rollup sensor
+- Missing token → 401, sensor stays OFF
+- Wrong token → 401, sensor stays OFF
+- GET request → no alert dispatched
+- No-secret config → POST accepted without token
+
+### Thread-1 / aiodns investigation
+
+`Thread-1 (_run_safe_shutdown_loop)` is created by pycares internally when `aiohttp.TCPConnector` builds a `DefaultResolver` (aiodns → pycares). This happens when the `entry` fixture sets up the HTTP server, AFTER `verify_cleanup` captures its `threads_before` snapshot. The session-scoped `_prime_pycares_shutdown_thread` fixture constructs `aiodns.DNSResolver(...)` via the public API to warm up the resolver stack before any test runs, ensuring Thread-1 is already alive in `verify_cleanup`'s baseline. The fixture is a no-op when `aiodns` is not installed.
+
+### `caplog` circular dependency fix
+
+`pytest_homeassistant_custom_component` defines `@pytest.fixture(name="caplog")` without `override=True`, causing a circular-dependency error in pytest ≥ 8. The 3 affected tests (`test_push_to_unknown_category_logs_warning`, `test_ssl_disabled_logs_warning`, `test_ssl_enabled_no_warning`) were refactored to use `mock.patch` on `_LOGGER` instead of the `caplog` fixture.
+
+### `TESTING.md` — fully updated
+
+Documented the `tests/unit/` + `tests/integration/` structure, integration test fixtures, pycares thread behaviour, and how to run each suite.
+
+### `TODO.md` — resolved items removed
+
+Removed: "Integration tests with the `hass` fixture" and "Remaining test coverage gaps" (end-to-end integration tests).
+
+---
+
 ## 2026-04-10 (session 4) — API key docs, test coverage gaps, multi-site support (253 tests)
 
 Addressed three more high-priority items from `TODO.md`. All checks pass.

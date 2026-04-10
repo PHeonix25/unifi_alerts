@@ -4,19 +4,6 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 
 ## 🟡 High-value improvements
 
-### Integration tests with the `hass` fixture
-**Problem:** The current test suite uses plain mocks and does not exercise the HA setup lifecycle. Config flow, entity creation, coordinator wiring, and webhook dispatch are all untested end-to-end.
-**Fix:** Set up `pytest_homeassistant_custom_component` properly in `conftest.py` and add tests for:
-- Webhook POST → binary sensor flips to `on`
-- Auto-clear timeout → binary sensor returns to `off`
-- Options flow → categories change → entities update
-- GET health-check → no spurious alert dispatched
-**Reference:** See `TESTING.md` for fixture pattern.
-
-### Remaining test coverage gaps
-Plain-mock unit layer is complete (253 tests). Remaining gap:
-- **End-to-end integration tests** — still require full `hass` fixture setup (see item above).
-
 ### Verify update-in-place works without HA reboot
 **Problem:** Unknown whether updating the integration (e.g. via HACS or copying files) requires a full Home Assistant restart, or whether reloading the config entry is sufficient. A reboot requirement would be a significant friction point for self-hosted users pushing frequent updates.
 **Fix:** Test the update-in-place flow manually:

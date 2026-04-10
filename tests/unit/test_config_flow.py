@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import aiohttp
-
 import pytest
 import voluptuous as vol
 from homeassistant.data_entry_flow import AbortFlow
@@ -473,7 +471,11 @@ async def test_categories_step_accepts_boundary_clear_timeouts(clear_timeout: in
 @pytest.mark.asyncio
 async def test_options_flow_saves_submitted_values() -> None:
     """Submitting the options flow must persist the selected categories and intervals."""
-    from custom_components.unifi_alerts.const import CONF_CLEAR_TIMEOUT, CONF_POLL_INTERVAL, CONF_SITE
+    from custom_components.unifi_alerts.const import (
+        CONF_CLEAR_TIMEOUT,
+        CONF_POLL_INTERVAL,
+        CONF_SITE,
+    )
 
     config_entry = MagicMock()
     config_entry.data = {

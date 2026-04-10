@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+from conftest import MOCK_CONFIG
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
@@ -15,7 +16,6 @@ from custom_components.unifi_alerts.const import (
     DOMAIN,
 )
 from custom_components.unifi_alerts.diagnostics import async_get_config_entry_diagnostics
-from tests.conftest import MOCK_CONFIG
 
 _SAMPLE_WEBHOOK_URLS = {
     cat: f"http://homeassistant.local/api/webhook/unifi_alerts_{cat}" for cat in ALL_CATEGORIES
