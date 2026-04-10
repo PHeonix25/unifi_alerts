@@ -42,17 +42,20 @@ vol.Optional(CONF_API_KEY): _PASSWORD_SELECTOR,
 ```
 Apply in both the initial schema and the error-repopulation schema (lines 83-84 and 96-97).
 
-### [BUG] UCG-Ultra: OS detection fails → API key verification hits wrong endpoint (404)
-**File:** `unifi_client.py:133-170`
-**Reported by:** User during installation on UCG-Ultra
+### [BUG] OS detection fails → API key verification hits wrong endpoint (404)
+**File:** `unifi_client.py:141-178`
+**Reported by:** Confirmed occurring on UCG-Ultra, reverse-proxy setups (custom domain, Nginx/Caddy/Traefik), and any config where `x-csrf-token` is absent or stripped from the `/` response.
 **Error:** `ClientResponseError: 404, message='Not Found', url='.../api/s/default/self'`
-**Root cause:** `_detect_unifi_os()` relies solely on the presence of `x-csrf-token` in the response headers for `/`. On the UCG-Ultra (and possibly other newer UniFi OS consoles), this header is absent or the request fails, causing `_is_unifi_os` to be `False`. As a result, `_network_path()` does not prepend `/proxy/network`, and `_verify_api_key()` calls `/api/s/default/self` — a legacy non-OS endpoint that returns 404 on UniFi OS hardware.
-**Impact:** Setup is completely broken for any UniFi OS console where the detection heuristic fails. The 404 is not handled gracefully and bubbles up as `Unexpected error during auth`.
-**Fix options (pick one or combine):**
-1. After a 404 from `_verify_api_key`, retry with the OS path forced (`/proxy/network/api/s/default/self`) to auto-recover from a misdetected OS type.
-2. Improve `_detect_unifi_os` to also check for additional UCG-Ultra / UniFi OS signals (e.g. specific response body fields, `x-csrf-token` on a redirect destination, or a known OS-only endpoint like `/api/system`).
-3. Expose a manual "UniFi OS" toggle in the config flow so users can override detection when the heuristic fails.
-**Note:** The 404 should also be caught and re-raised as `InvalidAuthError` or `CannotConnectError` with a user-facing message instead of surfacing as a raw `ClientResponseError`.
+**Root cause (two compounding issues):**
+1. `_detect_unifi_os()` relies solely on `x-csrf-token` being present in the `/` response headers. This header is absent on UCG-Ultra firmware, stripped by reverse proxies, and missing if the `/` request follows a redirect to a page that doesn't set it. When detection fails, `_is_unifi_os = False`.
+2. `_verify_api_key()` calls `self._network_path('/api/s/default/self')`. When `_is_unifi_os` is `False`, `_network_path` returns the path unchanged — so the call goes to `/api/s/default/self` instead of `/proxy/network/api/s/default/self`. That legacy endpoint does not exist on UniFi OS hardware and returns 404.
+**Logic flaw:** API keys are UniFi OS-only — a user who supplies an API key by definition has a UniFi OS controller. `_verify_api_key()` should always use the `/proxy/network` prefix regardless of what `_detect_unifi_os()` returns. The current code trusts the detection result unconditionally, which is wrong here.
+**Impact:** Setup is completely broken for anyone accessing their UniFi OS controller via a reverse proxy / custom domain, or using a UCG-Ultra. The 404 bubbles up as `Unexpected error during auth` with no actionable message.
+**Fix (recommended — combine all three):**
+1. **Force the OS prefix in `_verify_api_key`:** Since API keys are OS-only, hardcode `/proxy/network` prefix there instead of calling `_network_path`. This is the minimal, correct fix.
+2. **Improve `_detect_unifi_os` fallback:** After the `x-csrf-token` check fails, probe a known UniFi OS-only endpoint (e.g. `GET /api/system`) and set `_is_unifi_os = True` if it returns 200. This fixes detection for the user/pass path too.
+3. **Catch 404 in `_verify_api_key` and raise a clear error:** Currently a 404 surfaces as an unhandled `ClientResponseError`. It should be caught and re-raised as `CannotConnectError("API key endpoint not found — check the controller URL and that UniFi OS is accessible")`.
+**Optional:** Expose a manual "This is a UniFi OS console" toggle in the config flow as an override for when all detection heuristics fail.
 
 ### [BUG] No pagination on `/alarm` endpoint — large backlogs block event loop
 **File:** `unifi_client.py:92-103`
