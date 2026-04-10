@@ -21,7 +21,7 @@ The `x-csrf-token` heuristic is fragile. It fails in several common real-world c
 - **UCG-Ultra firmware**: Some UCG-Ultra firmware versions do not set `x-csrf-token` on the `/` response, causing detection to fail on the device itself (no proxy involved).
 - **HTTP→HTTPS redirect**: The detection request follows redirects (`allow_redirects=True`), but if the final destination doesn't serve `x-csrf-token` (e.g. a landing page or portal), detection still returns `False`.
 
-**Critical implication:** API keys are **UniFi OS-only** — they cannot be generated or used on self-hosted (classic) controllers. If a user has supplied an API key in the config, the controller is UniFi OS by definition. The code must not route API key verification requests through the legacy `/api/s/...` path regardless of what detection returns. See the bug in `TODO.md`: *UCG-Ultra: OS detection fails → API key verification hits wrong endpoint (404)*.
+**Critical implication:** API keys are **UniFi OS-only** — they cannot be generated or used on self-hosted (classic) controllers. If a user has supplied an API key in the config, the controller is UniFi OS by definition. The code must not route API key verification requests through the legacy `/api/s/...` path regardless of what detection returns. `_verify_api_key()` hardcodes the `/proxy/network` prefix for this reason.
 
 ## Authentication
 
@@ -68,7 +68,7 @@ GET /proxy/network/api/s/default/self
 X-API-Key: your-key-here
 ```
 
-This endpoint **always** requires the `/proxy/network` prefix — it does not exist at `/api/s/default/self`. If `_detect_unifi_os()` returns `False` (detection failed), `_verify_api_key()` will incorrectly call the non-prefixed path and receive a 404. See `TODO.md` for the tracked bug and fix options.
+This endpoint **always** requires the `/proxy/network` prefix — it does not exist at `/api/s/default/self`. `_verify_api_key()` hardcodes the `/proxy/network` prefix and does not rely on `_detect_unifi_os()`, so it works correctly even when detection returns a false negative.
 
 > **Note on newer API (v2):** UniFi Network Application 8.x introduced a newer REST API under `/proxy/network/v2/api/`. For example, `GET /proxy/network/v2/api/site` lists all sites. The alarm endpoint remains at the classic `/proxy/network/api/s/{site}/alarm` path as of the time of writing, but this may change in future firmware versions. The v2 API may be a better verification target if the `self` endpoint is deprecated.
 

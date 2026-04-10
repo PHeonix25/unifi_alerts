@@ -15,8 +15,10 @@ from .const import (
     CONF_CLEAR_TIMEOUT,
     CONF_ENABLED_CATEGORIES,
     CONF_POLL_INTERVAL,
+    CONF_SITE,
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
+    DEFAULT_SITE,
     DOMAIN,
 )
 from .models import CategoryState, UniFiAlert
@@ -51,6 +53,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._config = config
         self._clear_timeout_minutes: int = config.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT)
         self._enabled_categories: list[str] = config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
+        self._site: str = config.get(CONF_SITE, DEFAULT_SITE)
 
         # Category state is long-lived; do NOT reset between coordinator refreshes
         self._category_states: dict[str, CategoryState] = {
@@ -66,13 +69,13 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     async def _async_update_data(self) -> dict[str, CategoryState]:
         """Fetch open alarm counts from the controller (polling path)."""
         try:
-            categorised = await self._client.categorise_alarms()
+            categorised = await self._client.categorise_alarms(self._site)
         except InvalidAuthError as err:
             # Re-authenticate once then retry
             _LOGGER.warning("Auth expired, re-authenticating: %s", err)
             try:
                 await self._client.authenticate()
-                categorised = await self._client.categorise_alarms()
+                categorised = await self._client.categorise_alarms(self._site)
             except (InvalidAuthError, CannotConnectError) as retry_err:
                 raise UpdateFailed(f"UniFi auth failed: {retry_err}") from retry_err
         except CannotConnectError as err:

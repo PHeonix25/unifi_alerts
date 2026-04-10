@@ -52,13 +52,31 @@ Copy `custom_components/unifi_alerts/` into your HA `config/custom_components/` 
 
 1. Go to **Settings → Devices & Services → Add Integration** → search **UniFi Alerts**
 2. Enter your controller URL (e.g. `https://192.168.1.1`) and credentials
-   - **API key** (UDM Pro, UCG Ultra, and other UniFi OS devices): generate one in **Settings → Admins & Users → API Keys**, leave Username/Password blank
+   - **API key** (UDM Pro, UCG Ultra, and other UniFi OS devices): generate one in the UniFi OS web UI (see [Generating an API key](#generating-an-api-key) below), leave Username/Password blank
    - **Username / password** (older controllers, Cloud Key): fill in Username and Password, leave API Key blank
 3. Select the alert categories you want to monitor (see table above — client/device categories are noisy by default)
 4. Configure polling interval and auto-clear timeout
 5. **Copy the webhook URLs** shown on the final screen into UniFi Alarm Manager (see next section). Click **Submit** to save — the integration is not created until you click Submit.
 
 > You can always retrieve your webhook URLs later from **Settings → Devices & Services → UniFi Alerts → Configure**.
+
+---
+
+## Generating an API key
+
+API keys are supported on **UniFi OS consoles only** (UDM, UDM Pro, UDM SE, UCG-Ultra, Cloud Key Gen2+). They are not available on self-hosted (Linux/Windows) controllers.
+
+The navigation path to create a key varies by firmware version:
+
+| Firmware / UI version | Path |
+|---|---|
+| Network Application 8.x+ | **Settings → Admins & Users → API Keys → Create** |
+| Some UCG / UDM firmware | **Integrations → API → New API Key** |
+| Older Cloud Key Gen2+ | **Settings → Control Plane → API Keys** |
+
+If you cannot find the option, try each path in order. The key is only displayed once at creation — copy it immediately and paste it into the integration setup.
+
+> **Tip:** Create a dedicated read-only local admin account for the integration. Do not use a cloud account or an account with MFA enabled — non-interactive login will break.
 
 ---
 
