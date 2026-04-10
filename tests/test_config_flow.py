@@ -126,6 +126,23 @@ async def test_no_duplicate_proceeds_to_categories() -> None:
 
 
 @pytest.mark.asyncio
+async def test_categories_all_disabled_shows_error() -> None:
+    """Submitting categories with nothing selected must show an error, not proceed."""
+    flow = _make_flow()
+    flow._controller_url = "https://192.168.1.1"
+    flow._detected_auth_method = "userpass"
+    flow._credentials = dict(_VALID_INPUT)
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
+
+    all_off = {f"cat_{cat}": False for cat in ALL_CATEGORIES}
+    result = await flow.async_step_categories(all_off)
+
+    assert result["step_id"] == "categories"
+    call_kwargs = flow.async_show_form.call_args.kwargs
+    assert call_kwargs["errors"] == {"base": "at_least_one_category"}
+
+
+@pytest.mark.asyncio
 async def test_categories_proceeds_to_finish() -> None:
     """Submitting categories should proceed to the finish step, not create the entry."""
     flow = _make_flow()

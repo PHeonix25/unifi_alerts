@@ -44,6 +44,7 @@
     "error": {
       "cannot_connect": "Cannot reach the controller. Check the URL, port, and SSL settings. See Home Assistant logs for details.",
       "invalid_auth": "Invalid credentials. Check your username/password or API key.",
+      "at_least_one_category": "Please enable at least one alert category.",
       "unknown": "An unexpected error occurred. Check the Home Assistant logs."
     },
     "abort": {

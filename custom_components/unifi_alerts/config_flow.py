@@ -70,7 +70,10 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 else:
                     self._controller_url = url
                     self._detected_auth_method = auth_method
-                    self._credentials = {**user_input, CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32)}
+                    self._credentials = {
+                        **user_input,
+                        CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32),
+                    }
                     return await self.async_step_categories()
             finally:
                 await session.close()
@@ -111,16 +114,21 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Step 2: choose which alert categories to enable."""
+        errors: dict[str, str] = {}
+
         if user_input is not None:
             enabled = [cat for cat in ALL_CATEGORIES if user_input.get(f"cat_{cat}", False)]
-            self._entry_data = {
-                **self._credentials,
-                CONF_ENABLED_CATEGORIES: enabled,
-                CONF_POLL_INTERVAL: user_input.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
-                CONF_CLEAR_TIMEOUT: user_input.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT),
-                CONF_AUTH_METHOD: self._detected_auth_method,
-            }
-            return await self.async_step_finish()
+            if not enabled:
+                errors["base"] = "at_least_one_category"
+            else:
+                self._entry_data = {
+                    **self._credentials,
+                    CONF_ENABLED_CATEGORIES: enabled,
+                    CONF_POLL_INTERVAL: user_input.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
+                    CONF_CLEAR_TIMEOUT: user_input.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT),
+                    CONF_AUTH_METHOD: self._detected_auth_method,
+                }
+                return await self.async_step_finish()
 
         # Build a schema with one boolean per category
         fields: dict = {}
@@ -140,6 +148,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="categories",
             data_schema=schema,
+            errors=errors,
             description_placeholders={cat: CATEGORY_LABELS[cat] for cat in ALL_CATEGORIES},
         )
 
@@ -182,14 +191,21 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
 
         if user_input is not None:
             enabled = [cat for cat in ALL_CATEGORIES if user_input.get(f"cat_{cat}", False)]
-            return self.async_create_entry(
-                title="",
-                data={
-                    CONF_ENABLED_CATEGORIES: enabled,
-                    CONF_POLL_INTERVAL: user_input.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
-                    CONF_CLEAR_TIMEOUT: user_input.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT),
-                },
-            )
+            if not enabled:
+                errors["base"] = "at_least_one_category"
+            else:
+                return self.async_create_entry(
+                    title="",
+                    data={
+                        CONF_ENABLED_CATEGORIES: enabled,
+                        CONF_POLL_INTERVAL: user_input.get(
+                            CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL
+                        ),
+                        CONF_CLEAR_TIMEOUT: user_input.get(
+                            CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT
+                        ),
+                    },
+                )
 
         current_enabled: list[str] = self._config_entry.options.get(
             CONF_ENABLED_CATEGORIES,
