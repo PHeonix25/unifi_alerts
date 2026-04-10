@@ -4,14 +4,6 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 
 ## 🟡 High-value improvements
 
-### [BUG] Config flow API key instructions are wrong / vary by UniFi OS version
-**File:** `strings.json:6`, `translations/en.json` (same line)
-**Problem:** The config flow description tells users to generate an API key via **Settings → Admins & Users → API Keys**. This path is incorrect on at least some versions of UniFi OS (e.g. it's **Integrations → New API Key** on some consoles), and the correct path varies across firmware versions. Users following the instructions will not find the option and give up.
-**Fix:**
-- Audit the actual navigation path for each major UniFi OS variant (UCG-Ultra, UDM Pro, Cloud Key Gen2, hosted controller) and document findings in `UNIFI.md`.
-- Replace the single hard-coded path in the config flow description with a version-agnostic instruction such as: *"Generate an API key in the UniFi OS web UI — the exact location varies by firmware version. Common paths: **Settings → Admins & Users → API Keys** or **Integrations → New API Key**. Refer to the [integration README] for device-specific instructions."*
-- Add a dedicated "Generating an API key" section to `README.md` with per-device navigation paths so users can find it outside the config flow UI.
-
 ### Integration tests with the `hass` fixture
 **Problem:** The current test suite uses plain mocks and does not exercise the HA setup lifecycle. Config flow, entity creation, coordinator wiring, and webhook dispatch are all untested end-to-end.
 **Fix:** Set up `pytest_homeassistant_custom_component` properly in `conftest.py` and add tests for:
