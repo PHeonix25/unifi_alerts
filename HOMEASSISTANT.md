@@ -72,6 +72,35 @@ Platforms are declared in `PLATFORMS` in `__init__.py` and set up with `async_fo
 
 When adding a new platform: add it to `PLATFORMS`, create `{platform}.py`, implement `async_setup_entry`, and add corresponding tests.
 
+## aiohttp session lifecycle
+
+Two helpers exist; they have different ownership semantics:
+
+| Helper | Ownership | Close it? |
+|---|---|---|
+| `async_get_clientsession(hass)` | HA-owned shared session | **Never** |
+| `async_create_clientsession(hass)` | HA-owned dedicated session | **Never** — HA registers a cleanup handler that closes it on shutdown |
+
+Calling `await session.close()` on either will trigger a deprecation warning from `homeassistant.helpers.frame` and is treated as a bug by HA. The session will be closed automatically when the integration is unloaded or HA shuts down.
+
+If you need a truly short-lived session with explicit lifecycle control (e.g. a one-off auth check in a config flow), create a raw `aiohttp.ClientSession()` yourself and use it as an async context manager:
+
+```python
+# DO: own it explicitly
+async with aiohttp.ClientSession() as session:
+    client = UniFiClient(session, url, user_input)
+    auth_method = await client.authenticate()
+
+# DON'T: close an HA-managed session
+session = async_create_clientsession(hass)
+try:
+    ...
+finally:
+    await session.close()  # triggers HA warning
+```
+
+The config flow `async_step_user` currently does the wrong thing — see `TODO.md`.
+
 ## Config flow patterns
 
 - `async_show_form` returns a form to the user. The same step function is called again with `user_input` populated when the user submits.

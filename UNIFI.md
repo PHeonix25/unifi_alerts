@@ -11,7 +11,17 @@ The integration must handle two distinct controller environments:
 | **Self-hosted** (Linux/Windows software) | No `x-csrf-token` header on `/` | `/api/...` | Session cookie (user/pass only) |
 | **UniFi OS** (UDM, UDM Pro, UDM SE, UCG, UCG-Ultra, Cloud Key Gen2+) | `x-csrf-token` header present | `/proxy/network/api/...` | Session cookie **or** API key |
 
-Detection happens in `UniFiClient._detect_unifi_os()` by making a HEAD/GET to `/` and checking response headers.
+Detection happens in `UniFiClient._detect_unifi_os()` by making a GET to `/` and checking response headers.
+
+### Detection caveats and known failure modes
+
+The `x-csrf-token` heuristic is fragile. It fails in several common real-world configurations:
+
+- **Reverse proxy / custom domain**: Nginx, Caddy, Traefik, and similar proxies often strip or do not forward the `x-csrf-token` response header. A user accessing their controller at `https://unifi.example.com` via a reverse proxy will have detection return `False` even if the underlying hardware is a UDM or UCG.
+- **UCG-Ultra firmware**: Some UCG-Ultra firmware versions do not set `x-csrf-token` on the `/` response, causing detection to fail on the device itself (no proxy involved).
+- **HTTP→HTTPS redirect**: The detection request follows redirects (`allow_redirects=True`), but if the final destination doesn't serve `x-csrf-token` (e.g. a landing page or portal), detection still returns `False`.
+
+**Critical implication:** API keys are **UniFi OS-only** — they cannot be generated or used on self-hosted (classic) controllers. If a user has supplied an API key in the config, the controller is UniFi OS by definition. The code must not route API key verification requests through the legacy `/api/s/...` path regardless of what detection returns. See the bug in `TODO.md`: *UCG-Ultra: OS detection fails → API key verification hits wrong endpoint (404)*.
 
 ## Authentication
 
@@ -36,14 +46,31 @@ Logout: `POST /api/logout` (self-hosted) or `POST /api/auth/logout` (UniFi OS).
 
 ### API key (UniFi OS only)
 
-Generated in UniFi OS Settings → Control Plane → API Keys (or similar, varies by version). Stateless — no login/logout needed.
+API keys are stateless — no login/logout needed. They are generated in the UniFi OS web UI; the exact navigation path varies by firmware version:
+
+- **Newer firmware (Network Application 8.x+):** Settings → Admins & Users → API Keys
+- **Some firmware versions:** Integrations → New API Key
+- **Older firmware:** Settings → Control Plane → API Keys
+
+The API key inherits permissions from the admin account that created it.
+
+Usage — pass the key as a request header on every call:
 
 ```
 GET /proxy/network/api/s/default/alarm
 X-API-Key: your-key-here
 ```
 
-The API key inherits permissions from the admin account that created it.
+**Verification endpoint** (used during setup to confirm the key is valid):
+
+```
+GET /proxy/network/api/s/default/self
+X-API-Key: your-key-here
+```
+
+This endpoint **always** requires the `/proxy/network` prefix — it does not exist at `/api/s/default/self`. If `_detect_unifi_os()` returns `False` (detection failed), `_verify_api_key()` will incorrectly call the non-prefixed path and receive a 404. See `TODO.md` for the tracked bug and fix options.
+
+> **Note on newer API (v2):** UniFi Network Application 8.x introduced a newer REST API under `/proxy/network/v2/api/`. For example, `GET /proxy/network/v2/api/site` lists all sites. The alarm endpoint remains at the classic `/proxy/network/api/s/{site}/alarm` path as of the time of writing, but this may change in future firmware versions. The v2 API may be a better verification target if the `self` endpoint is deprecated.
 
 ### Auto-detect logic (in `UniFiClient.authenticate()`)
 
