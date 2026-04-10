@@ -84,7 +84,7 @@ VALID_IOT_CLASSES = {
     "local_polling",
     "local_push",
 }
-VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
 
 HACS_VALID_KEYS = {"name", "content_in_root", "zip_release", "filename", "render_readme", "homeassistant"}
 

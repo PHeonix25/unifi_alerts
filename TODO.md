@@ -27,6 +27,9 @@ Currently the only way to change the controller URL or credentials is to delete 
 ### Lovelace card / dashboard example in README
 Add a simple Lovelace YAML snippet showing how to build a network health card using the binary sensors and count sensors. Reduces friction for new users.
 
+### Automation example in README
+Add a simple automation YAML example showing how to trigger on the `unifi_alerts` event entity. Verify the correct `event_type` and `event_data` schema before publishing.
+
 ### Service calls
 Expose `unifi_alerts.clear_category` and `unifi_alerts.clear_all` as HA services in addition to the button entities. This allows clearing alerts from automations without needing a button press.
 **File to create:** `services.py` (register with `hass.services.async_register`), `services.yaml` (service descriptions).
@@ -40,6 +43,14 @@ After the integration is stable and passes `hassfest`, submit a PR to https://gi
 ---
 
 ## 🐛 Known issues / technical debt
+
+### Unbounded webhook body stored in memory
+`request.json()` in `webhook_handler.py` reads the full request body without a size cap. A large or malicious payload could spike memory usage.
+**Fix:** Apply a `max_bytes` cap before deserialising. See `webhook_handler.py:86`.
+
+### Credentials leak risk via exception messages in logs
+`unifi_client.py` logs `str(err)` in several exception handlers. Some aiohttp exceptions embed the URL (including credentials) in their string representation.
+**Fix:** Log the exception class name only (`type(err).__name__`). See `unifi_client.py:105,181`.
 
 ### `_device_info` duplication
 The `_device_info()` helper function is duplicated identically across `binary_sensor.py`, `sensor.py`, `event.py`, and `button.py`. Intentional for platform isolation but could be extracted to a shared `entity_base.py` mixin if it becomes a maintenance burden.
