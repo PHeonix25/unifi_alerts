@@ -29,23 +29,33 @@ from custom_components.unifi_alerts.const import (
     DOMAIN,
 )
 
-# ── Session-level pycares warmup ─────────────────────────────────────────────
-# aiohttp's TCPConnector uses aiodns → pycares, which starts a process-level
+# ── Session-level resolver warmup ────────────────────────────────────────────
+# aiohttp's TCPConnector may use aiodns → pycares, which starts a process-level
 # daemon thread named "Thread-1 (_run_safe_shutdown_loop)" on first use.
 # Without this fixture, that thread starts during the first test (when the
 # entry fixture sets up the webhook HTTP server), AFTER verify_cleanup from
 # pytest_homeassistant_custom_component has already captured its "threads
 # before" snapshot — causing a spurious teardown ERROR on the first test only.
-# Calling pycares._shutdown_manager.start() here at session scope ensures
-# Thread-1 is alive before any test's verify_cleanup snapshot is taken.
+# Constructing a public aiodns resolver here at session scope triggers the same
+# initialization early, without relying on pycares private implementation
+# details, and becomes a no-op when aiodns is not installed.
 
 
 @pytest.fixture(autouse=True, scope="session")
 def _prime_pycares_shutdown_thread() -> None:
-    """Pre-start the pycares shutdown thread so verify_cleanup does not flag it."""
-    import pycares  # noqa: PLC0415
+    """Warm up the optional aiodns/pycares resolver stack before tests run."""
+    import asyncio  # noqa: PLC0415
 
-    pycares._shutdown_manager.start()
+    try:
+        import aiodns  # noqa: PLC0415
+    except ImportError:
+        return
+
+    loop = asyncio.new_event_loop()
+    try:
+        aiodns.DNSResolver(loop=loop)
+    finally:
+        loop.close()
 
 
 # ── Constants shared across integration tests ─────────────────────────────────
