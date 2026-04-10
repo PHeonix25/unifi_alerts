@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 from collections.abc import Callable
 
@@ -93,7 +94,7 @@ class WebhookManager:
 
             try:
                 payload = await request.json()
-            except Exception:  # noqa: BLE001
+            except (json.JSONDecodeError, TypeError):
                 payload = {}
 
             _LOGGER.debug("Webhook received for category %s: %s", category, payload)

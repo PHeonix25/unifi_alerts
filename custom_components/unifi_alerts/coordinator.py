@@ -81,6 +81,8 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         for cat, alerts in categorised.items():
             if cat in self._category_states:
                 state = self._category_states[cat]
+                if not state.enabled:
+                    continue
                 state.open_count = len(alerts)
                 # If polling finds open alerts and we're not already alerting,
                 # treat the most recent one as the active alert
@@ -93,10 +95,12 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                     state.last_alert = most_recent
                     self._schedule_clear(cat)
 
-        # Zeroise open_count for categories with no polled alarms
-        for cat in self._category_states:
+        # Zeroise open_count for enabled categories with no polled alarms
+        for cat, state in self._category_states.items():
+            if not state.enabled:
+                continue
             if cat not in categorised:
-                self._category_states[cat].open_count = 0
+                state.open_count = 0
 
         return self._category_states
 
