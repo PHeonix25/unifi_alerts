@@ -1,5 +1,35 @@
 # History
 
+## 2026-04-10 (session 7) — Release prep: ROADMAP/TODO tidy-up, version bump to 1.0.0-pre3
+
+Prepared the repository for the `1.0.0-pre3` tag.
+
+### `manifest.json` — version bumped to `1.0.0-pre3`
+
+Changed `"version"` from `"1.0.0"` to `"1.0.0-pre3"` to reflect the pre-release nature of this build.
+
+### `ROADMAP.md` — ticked off all completed items; restructured versions
+
+- Ticked `[x]` all items completed in sessions 1–6 that were still shown as `[ ]`:
+  - UCG-Ultra OS detection (two-stage fallback probe, session 3)
+  - Config flow API key path instructions (sessions 3 & 4)
+  - SSRF scheme validation (session 3)
+  - Alarm endpoint pagination / `limit=200` (session 3)
+  - Full integration tests with `hass` fixture (sessions 5 & 6)
+- Removed the `v1.2.0` section — scope is not yet defined; its non-deferred items (repair flow, options re-auth, Lovelace example, automation example, service calls) promoted into `v1.1.0`.
+- Added a `### QA` subsection to `v1.1.0` for the update-in-place verification task.
+- Updated the "Current status" note from "v1pre2 ready to tag" to "v1.0.0-pre3 ready to tag".
+
+### `TODO.md` — synced with ROADMAP
+
+- Added two items that were in ROADMAP v1.1.0 but absent from TODO:
+  - Unbounded webhook body stored in memory (`webhook_handler.py:86`)
+  - Credentials leak risk via exception messages in logs (`unifi_client.py:105,181`)
+- Added missing items promoted from v1.2.0: automation example in README; Lovelace/dashboard example already present.
+- No items removed — all prior completed items were already cleaned up in sessions 3–6.
+
+---
+
 ## 2026-04-10 (session 6) — Fix auto-clear race condition and lint cleanup (269 tests)
 
 Addressed PR review feedback on the integration tests introduced in session 5.

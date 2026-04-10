@@ -2,7 +2,7 @@
 
 This file maps TODO items to planned releases. Items within each release are ordered by priority — complete them top-to-bottom. Check off each item as it is merged to `main`.
 
-> **Current status:** v1pre2 ready to tag. All targeted blockers resolved. Remaining open items: UCG-Ultra API-key OS detection, API key path instructions (firmware research needed), pagination. CI is green.
+> **Current status:** v1.0.0-pre3 ready to tag. All v1.0.0 blockers resolved. Remaining open items target v1.1.0 (security hardening, reliability). CI is green.
 
 ---
 
@@ -31,10 +31,10 @@ All blocking bugs, security issues, and UX gaps that will immediately affect new
 - [x] All 7 categories default ON — client/device events will flood busy home networks (`config_flow.py`)
 - [x] README setup buries the "copy webhook URLs" step — make it a numbered step (`README.md`)
 
-### Blockers found during v1pre1 installation testing
+### Blockers found during v1pre1 / v1pre2 installation testing
 
-- [ ] UCG-Ultra: OS detection fails → `_verify_api_key` hits `/api/s/default/self` (404) instead of `/proxy/network/...` (`unifi_client.py:133,158`)
-- [ ] Config flow API key path instructions are wrong — vary by firmware version; current text misleads users (`strings.json:6`, `translations/en.json`)
+- [x] UCG-Ultra: OS detection fails → two-stage fallback probe added (x-csrf-token header + `/api/system` probe) (`unifi_client.py`)
+- [x] Config flow API key path instructions are wrong — replaced with version-agnostic text listing both firmware paths (`strings.json`, `translations/en.json`, `README.md`)
 - [x] Config flow repopulates old username/password after user clears them and switches to API key (`config_flow.py:76-90`)
 - [x] API key and password fields are plaintext — sensitive values visible on screen; use `TextSelectorType.PASSWORD` (`config_flow.py:83-84,96-97`)
 
@@ -54,45 +54,30 @@ Issues that are non-blocking for a first release but important for production qu
 
 ### Security
 
-- [ ] Unvalidated controller URL allows SSRF — validate scheme and optionally reject loopback/link-local (`config_flow.py:53`)
-- [x] Webhook URLs logged at INFO level on every startup — demote to DEBUG (`__init__.py:71`)
+- [x] Unvalidated controller URL allows SSRF — scheme validation added (`config_flow.py`); loopback/link-local rejection remains optional
 - [ ] Unbounded webhook body stored in memory — apply `max_bytes` cap on `request.json()` (`webhook_handler.py:86`)
 - [ ] Credentials leak risk via exception messages in logs — log class name only, not `str(err)` (`unifi_client.py:105,181`)
-- [x] Overly broad UniFi OS detection — remove `or resp.status == 200` fallback (`unifi_client.py:142`)
 
-### Bugs
+### Bugs / reliability
 
-- [x] UCG-Ultra login failure — try both auth paths (`/api/auth/login` and `/api/login`) with fallback (`unifi_client.py`)
-- [x] Config flow creates session via `async_create_clientsession` and never closes it (`config_flow.py:56`)
-- [ ] No pagination on `/alarm` endpoint — large backlogs block event loop (`unifi_client.py:92`)
-- [x] No validation that at least one category is enabled (`config_flow.py:94`)
-- [x] Disabled category `open_count` still updated by polling — skip disabled categories in loop (`coordinator.py:81`)
+- [x] No pagination on `/alarm` endpoint — `limit=200` added (`unifi_client.py:92`)
+- [ ] Polling re-auth is fire-and-forget — misleading log message when re-auth succeeds but second poll fails for a different reason (`coordinator.py`)
 
-### Tests
+### UX / Documentation
 
-- [x] Add `tests/test_webhook_handler.py` — valid POST, GET health-check no-op, invalid JSON, unregister
-- [x] Add lifecycle tests: `async_setup_entry` populates state, `async_unload_entry` tears down cleanly
+- [ ] Lovelace / dashboard YAML example in README
+- [ ] Automation example in README — verify correct `event_type` and `event_data` schema
+
+### QA
+
+- [ ] Verify update-in-place (HACS file copy → config entry reload) works without a full HA restart
 
 ### Tech debt
 
 - [ ] Pin CI action versions to commit SHAs instead of `@master` / `@main` (`ci.yml`)
-- [~] Add `"dependencies": ["webhook"]` to `manifest.json` — HACS validator rejects HA-core built-ins in this field; reverted
-- [x] Add CI diff check between `strings.json` and `translations/en.json` to prevent drift
-- [x] Tighten `JSONDecodeError` catch in webhook handler instead of bare `except Exception`
-
----
-
-## v1.2.0 — UX polish + multi-site
-
-Quality-of-life improvements and the most-requested missing feature.
-
-- [ ] Multi-site support — add `CONF_SITE` defaulting to `"default"`, expose in config flow (`unifi_client.py`, `config_flow.py`)
 - [ ] Config entry repair flow — surface a HA repair notification when auth fails post-setup (`homeassistant.helpers.issue_registry`)
 - [ ] Options flow: allow credentials and controller URL to be updated without re-adding integration
-- [ ] Lovelace / dashboard YAML example in README
-- [ ] Automation example in README — verify correct `event_type` and `event_data` schema
 - [ ] Service calls: `unifi_alerts.clear_category` and `unifi_alerts.clear_all` (`services.py`, `services.yaml`)
-- [ ] Full integration tests with the `hass` fixture (`pytest_homeassistant_custom_component`)
 
 ---
 
@@ -113,5 +98,4 @@ Prerequisites for submitting to https://github.com/hacs/default.
 Items tracked in `TODO.md` under known issues that have no planned release yet.
 
 - Extract `_device_info()` duplication into a shared `entity_base.py` mixin (if it becomes a maintenance burden)
-- Fix misleading log message when re-auth succeeds but second poll call fails for a different reason
 - Configurable site per category (power-user feature)
