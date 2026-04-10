@@ -106,7 +106,7 @@ Known field names for the message:
 
 `UniFiAlert.from_webhook_payload()` tries these in order.
 
-GET webhooks (UniFi's default) have no body — the integration handles this by catching JSON parse failures and using `{}`.
+The integration only accepts POST webhooks — GET requests are rejected with HTTP 405. UniFi Alarm Manager must be configured to send POST. JSON parse failures are caught and fall back to `{}`.
 
 ## Event key taxonomy
 
@@ -137,6 +137,6 @@ Guidelines:
 ## Known API inconsistencies
 
 - **Port 8443 vs 443**: Self-hosted controllers default to port 8443; UniFi OS uses 443. The integration does not auto-append a port — the user must include it in the controller URL.
-- **SSL certificates**: Self-hosted controllers use self-signed certificates. `verify_ssl` defaults to `False`. Users with valid certs can enable it via the config flow.
+- **SSL certificates**: Self-hosted controllers use self-signed certificates. `verify_ssl` defaults to `True` (secure by default). Users with self-signed certs must disable it via the config flow.
 - **Site names**: Some controllers use `default`; others use the site ID (a hex string). Multi-site support is not implemented — see `TODO.md`.
 - **Timestamp format**: The `datetime` field is usually ISO 8601 but some older controllers emit epoch milliseconds. `UniFiAlert.from_api_alarm()` has a try/except fallback to `datetime.now()`.

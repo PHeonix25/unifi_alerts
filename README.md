@@ -125,3 +125,51 @@ automation:
 Issues and PRs welcome at [github.com/PHeonix25/unifi_alerts](https://github.com/PHeonix25/unifi_alerts).
 
 The UniFi event key → category mappings in `const.py` are community-sourced and incomplete. If you see unrecognised alerts in your HA logs, please open an issue with the raw `key` value.
+
+### Development setup
+
+**Requirements:** Python 3.12+, Git.
+
+```bash
+# 1. Clone and enter the repo
+git clone https://github.com/PHeonix25/unifi_alerts.git
+cd unifi_alerts
+
+# 2. Install the pre-push hook (one-time, per clone)
+git config core.hooksPath .githooks
+
+# 3. Create a virtual environment and install all dev dependencies
+make setup
+```
+
+### Running checks
+
+```bash
+make check      # run everything: lint, typecheck, HACS validation, tests (default)
+make lint       # ruff lint + format check only
+make typecheck  # mypy only
+make validate   # HACS manifest pre-flight only
+make test       # pytest only
+```
+
+`make check` is the same suite that CI runs. The pre-push hook runs it automatically before every `git push`, so CI should never see a failure that didn't appear locally first.
+
+### CI pipeline
+
+| Job | What it checks |
+|---|---|
+| **Validate with hassfest** | HA manifest schema and key ordering |
+| **HACS manifest pre-flight** | Required fields, iot_class, no HA core built-ins in `dependencies` |
+| **Validate with HACS Action** | Full HACS compatibility (runs after pre-flight) |
+| **Lint & type-check** | ruff, mypy, and `strings.json` ↔ `translations/en.json` parity |
+| **Run tests** | Full pytest suite (234 tests) |
+
+### Key rules to know before submitting a PR
+
+- **`manifest.json` `dependencies`** — do NOT list HA core built-ins (`webhook`, `http`, `frontend`, etc.). `hassfest` accepts them but the HACS validator rejects them and will fail CI. Only list external integrations that HACS needs to install.
+- **`strings.json` and `translations/en.json`** must be kept identical. CI diffs them and fails if they diverge.
+- **All I/O must be async** — no `requests`, no blocking calls.
+- **No `configuration.yaml` support** — everything goes through the config flow.
+- **Webhook token auth is mandatory** — do not remove or bypass the `?token=` check in `webhook_handler.py`.
+
+See `CLAUDE.md` for the full developer context and `TESTING.md` for test conventions.

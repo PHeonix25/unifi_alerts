@@ -81,9 +81,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Re-register webhooks and reload options when the entry is updated
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
-    _LOGGER.info("UniFi Alerts set up with %d webhook(s).", len(webhook_urls))
+    _LOGGER.info("UniFi Alerts set up. Registered %d webhook(s).", len(webhook_urls))
     _LOGGER.debug(
-        "Webhook URLs: %s",
+        "UniFi Alerts webhook URLs: %s",
         ", ".join(f"{cat}={url}" for cat, url in webhook_urls.items()),
     )
     return True

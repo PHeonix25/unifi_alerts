@@ -38,22 +38,31 @@ custom_components/unifi_alerts/   # integration source
   sensor.py                       # message, count, and rollup count sensors
   event.py                        # event entities, fire per alert
   button.py                       # manual clear buttons
-  strings.json                    # UI copy for config flow
-  translations/en.json            # copy of strings.json (HA translation convention)
+  strings.json                    # UI copy for config flow; must be identical to translations/en.json — CI enforces this
+  translations/en.json            # runtime translation file loaded by HA; must be identical to strings.json — CI enforces this
 tests/
-  conftest.py                     # shared fixtures, MOCK_CONFIG
+  conftest.py                     # shared fixtures, MOCK_CONFIG; make_hass() and make_entry() module-level helpers for setup/unload tests
   test_models.py
   test_coordinator.py
   test_unifi_client.py
   test_config_flow.py             # config flow steps, webhook URL token display, options flow defaults
   test_diagnostics.py             # diagnostics platform: redaction, webhook URL exposure, coordinator state
+  test_webhook_handler.py         # WebhookManager: register/unregister, token auth, alert dispatch
+  test_init.py                    # async_setup_entry / async_unload_entry lifecycle, teardown order
+  test_entities.py                # all entity property methods: binary_sensor, sensor, event, button
 .github/workflows/
-  ci.yml                          # hassfest + HACS validate + ruff + mypy + pytest
+  ci.yml                          # hassfest + hacs-preflight + HACS action + lint (ruff, mypy, translation drift) + pytest
   release.yml                     # zips and attaches release asset on GitHub release
+.githooks/
+  pre-push                        # local gate: HACS preflight → translation drift → ruff → mypy → pytest; install with: git config core.hooksPath .githooks
+scripts/
+  validate_hacs.py                # pure-Python HACS manifest pre-flight; checks required fields, iot_class, dependencies (no HA core built-ins); run locally or in CI
+Makefile                          # convenience targets: setup, lint, typecheck, validate, test, check (default = all)
+requirements-dev.txt              # single source of truth for all dev dependencies; used by make setup and both CI jobs
 hacs.json
 pyproject.toml                    # ruff and mypy config
 pytest.ini
-README.md                         # user-facing install and setup guide
+README.md                         # user-facing install, setup, and contributing guide
 ```
 
 ## Non-negotiable constraints
@@ -63,6 +72,7 @@ README.md                         # user-facing install and setup guide
 - **No YAML configuration.** Everything goes through the config flow. Do not add `async_setup` or `configuration.yaml` support.
 - **`iot_class: local_push`** must stay in `manifest.json` — this is accurate and affects HA's energy/performance classification.
 - **`manifest.json` key order is enforced by hassfest** — keys must be: `domain`, `name`, then all remaining keys alphabetically. Violating this order breaks CI.
+- **`manifest.json` `dependencies` must only list HA integrations installable by HACS** — do NOT list HA core built-ins (e.g. `webhook`, `http`, `frontend`). hassfest accepts them but the HACS validator rejects them, breaking CI.
 - **`DEFAULT_VERIFY_SSL = True`** — SSL verification is on by default; only disable for controllers with self-signed certificates. Never silently change this default.
 - **Webhooks are `local_only: True`** — do not remove this without a documented reason.
 - **Webhook bearer token auth is mandatory** — every inbound webhook request must be validated against `CONF_WEBHOOK_SECRET` via `?token=` query param. Never remove this check or accept requests that fail it.
@@ -80,8 +90,7 @@ README.md                         # user-facing install and setup guide
 
 - **Never assume — always ask.** If anything about the task, scope, or approach is unclear, ask before proceeding. Do not guess intent.
 - **Move into the working directory at the start of every session** — avoids needing path prefixes on every command.
-- Always run tests before committing — never commit broken code. If tests are failing, fix them before committing.
-- Always run ruff lint and format checks before committing — maintain a clean codebase.
+- Always run `make check` before committing — never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
 - Always update `HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
 - Always update `TODO.md` by removing completed items and adding new ones as needed. This is the primary source of truth for what is pending work. Do not rely on memory or Git history alone.
 - At the end of the day, make sure there are no commits outstanding, no changes locally that need to be pushed, and that the `auto-memory\dirty-files` file is empty (if it exists on disk). This ensures a clean slate for the next session.
@@ -93,16 +102,29 @@ Interruptions (timeouts, hibernation, re-login) are common. When a new conversat
 1. **Read `HISTORY.md`** — the last entry describes what was most recently completed.
 2. **Run `git status` and `git diff HEAD`** — uncommitted changes show exactly what was in-flight.
 3. **Read `TODO.md`** — the top remaining item is what was probably being worked on.
-4. **Check the venv** — run `Test-Path .venv\Scripts\pytest.exe` in PowerShell. If `False`, recreate it:
-   ```powershell
-   py -3.12 -m venv .venv
-   .venv\Scripts\pip install pytest pytest-asyncio aiohttp homeassistant ruff mypy --quiet
-   ```
+4. **Check the venv** — on Linux/Mac: `ls .venv/bin/pytest`; on Windows PowerShell: `Test-Path .venv\Scripts\pytest.exe`. If missing, recreate it:
+   - **Linux/Mac:** `make setup` (or manually: `python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt --quiet`)
+   - **Windows:** `py -3.12 -m venv .venv && .venv\Scripts\pip install -r requirements-dev.txt --quiet`
 5. **Resume from where the diff left off** — do not re-do already-applied changes. Pick up at the next pending step (usually: run tests, fix lint, commit).
 
 ## Before making changes
 
 1. Check `TODO.md` for context on what's known to be incomplete or broken.
-2. Run `.venv\Scripts\pytest tests/ -v` and confirm it passes before and after your change.
-3. Run `.venv\Scripts\ruff check custom_components/` and `.venv\Scripts\ruff format --check custom_components/` before committing.
-4. All test/lint/format commands use the `.venv` in the repo root — never the system Python.
+2. Run `make check` (or `make` — it's the default target) to run all local validation in one shot:
+   - ruff lint + format check
+   - mypy type check
+   - HACS manifest pre-flight (`scripts/validate_hacs.py`)
+   - strings.json ↔ translations/en.json drift check
+   - full pytest suite
+3. Individual targets: `make lint`, `make typecheck`, `make validate`, `make test`.
+4. All commands use the `.venv` in the repo root — never the system Python.
+
+## Pre-push hook (install once per clone)
+
+A git hook at `.githooks/pre-push` runs all of the above automatically before every `git push`. Activate it once after cloning:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+If the hook is not installed, run `scripts/validate_hacs.py` manually before every push that touches `manifest.json` or `hacs.json`.

@@ -67,15 +67,16 @@ The integration's single source of truth at runtime. Key design decisions:
 ### `webhook_handler.py`
 Registers one HA webhook per enabled category using `homeassistant.components.webhook`. Webhooks are:
 - Scoped to `local_only=True` (LAN only)
-- Accepted on both GET and POST (UniFi can send either depending on version)
-- Parsed as JSON; gracefully falls back to `{}` on parse failure (GET requests have no body)
+- Accepted on POST only — GET requests are rejected with HTTP 405. UniFi Alarm Manager must be configured to send POST.
+- Parsed as JSON; gracefully falls back to `{}` on parse failure
 
 The webhook ID format is `unifi_alerts_{category}`. IDs are deterministic so they survive HA restarts without re-registration.
 
 ### `config_flow.py`
-Two-step setup flow:
+Three-step setup flow:
 1. **`async_step_user`** — URL + credentials. Calls `UniFiClient.authenticate()` as a validation step. On success, stores credentials and the detected auth method in `self.context`.
 2. **`async_step_categories`** — one boolean toggle per category, plus `poll_interval` and `clear_timeout`.
+3. **`async_step_finish`** — displays the generated webhook URLs (with bearer token) for the user to copy into UniFi Alarm Manager.
 
 An `OptionsFlow` (`UniFiAlertsOptionsFlow`) mirrors step 2 and allows reconfiguring categories and timing without re-entering credentials. Option changes trigger an entry reload via `_async_update_listener`.
 
@@ -105,6 +106,14 @@ After setup, `entry.data` contains:
 ```
 
 `entry.options` contains only the reconfigurable subset: `enabled_categories`, `poll_interval`, `clear_timeout`. In `__init__.py`, these are merged: `dict(entry.data) | dict(entry.options)` so options always win.
+
+## Tooling and validation
+
+The `scripts/` directory contains project-level tooling that is not part of the integration itself:
+
+- **`scripts/validate_hacs.py`** — pure-Python HACS manifest pre-flight. Checks `manifest.json` for required fields, valid `iot_class`, correct version format, and that `dependencies` contains no HA core built-ins (which the HACS action rejects). Run via `make validate` or automatically by the pre-push hook and CI's `hacs-preflight` job.
+
+The `Makefile` provides convenience targets (`make check`, `make lint`, `make test`, etc.) that wrap the venv commands. `requirements-dev.txt` is the single source of truth for dev dependencies — used by `make setup` and both CI jobs.
 
 ## Key invariants
 

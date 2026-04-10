@@ -2,7 +2,7 @@
 
 This file maps TODO items to planned releases. Items within each release are ordered by priority — complete them top-to-bottom. Check off each item as it is merged to `main`.
 
-> **Current status:** v1-pre2 ready. Four v1.1.0 items resolved during pre-release testing. CI is green.
+> **Current status:** v1pre2 in progress. Blockers found during UCG-Ultra installation testing are being resolved. CI is green.
 
 ---
 
@@ -30,6 +30,13 @@ All blocking bugs, security issues, and UX gaps that will immediately affect new
 - [x] Local-only webhook constraint is undocumented — cloud console users get silent failure (`README.md`)
 - [x] All 7 categories default ON — client/device events will flood busy home networks (`config_flow.py`)
 - [x] README setup buries the "copy webhook URLs" step — make it a numbered step (`README.md`)
+
+### Blockers found during v1pre1 installation testing
+
+- [ ] UCG-Ultra: OS detection fails → `_verify_api_key` hits `/api/s/default/self` (404) instead of `/proxy/network/...` (`unifi_client.py:133,158`)
+- [ ] Config flow API key path instructions are wrong — vary by firmware version; current text misleads users (`strings.json:6`, `translations/en.json`)
+- [ ] Config flow repopulates old username/password after user clears them and switches to API key (`config_flow.py:76-90`)
+- [ ] API key and password fields are plaintext — sensitive values visible on screen; use `TextSelectorType.PASSWORD` (`config_flow.py:83-84,96-97`)
 
 ### Quick wins (one-liners, no reason to defer)
 
@@ -63,14 +70,14 @@ Issues that are non-blocking for a first release but important for production qu
 
 ### Tests
 
-- [ ] Add `tests/test_webhook_handler.py` — valid POST, GET health-check no-op, invalid JSON, unregister
-- [ ] Add lifecycle tests: `async_setup_entry` populates state, `async_unload_entry` tears down cleanly
+- [x] Add `tests/test_webhook_handler.py` — valid POST, GET health-check no-op, invalid JSON, unregister
+- [x] Add lifecycle tests: `async_setup_entry` populates state, `async_unload_entry` tears down cleanly
 
 ### Tech debt
 
 - [ ] Pin CI action versions to commit SHAs instead of `@master` / `@main` (`ci.yml`)
-- [ ] Add `"dependencies": ["webhook"]` to `manifest.json`
-- [ ] Add CI diff check between `strings.json` and `translations/en.json` to prevent drift
+- [~] Add `"dependencies": ["webhook"]` to `manifest.json` — HACS validator rejects HA-core built-ins in this field; reverted
+- [x] Add CI diff check between `strings.json` and `translations/en.json` to prevent drift
 - [ ] Tighten `JSONDecodeError` catch in webhook handler instead of bare `except Exception`
 
 ---

@@ -1,0 +1,9 @@
+# Development dependencies — used by local venv and CI.
+# Install: pip install -r requirements-dev.txt
+aiohttp>=3.9.0
+homeassistant
+mypy
+pytest
+pytest-asyncio
+pytest-homeassistant-custom-component
+ruff
