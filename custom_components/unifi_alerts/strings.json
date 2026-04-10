@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to UniFi Controller",
-        "description": "Enter your UniFi Network controller address and credentials. The integration will auto-detect which method to use.\n\n**API key** (UniFi OS consoles — UDM Pro, UCG Ultra, etc.): leave Username and Password blank. Generate an API key in the UniFi OS web UI — the exact location varies by firmware version. Common paths: **Settings → Admins & Users → API Keys** or **Integrations → New API Key**. See the [README](https://github.com/PHeonix25/unifi_alerts) for device-specific instructions.\n\n**Username / password** (older controllers or Cloud Key): fill in Username and Password, leave API Key blank.\n\nSSL verification is enabled by default. Disable it only if your controller uses a self-signed certificate.",
+        "description": "Enter your UniFi Network controller address and credentials. The integration will auto-detect which method to use.\n\n**API key** (UniFi OS consoles — UDM Pro, UCG Ultra, etc.): leave Username and Password blank. Generate an API key in the UniFi OS web UI — the exact location varies by firmware version. Common paths: **Settings → Admins & Users → API Keys** or **Integrations → New API Key**. See the integration README on GitHub for device-specific instructions.\n\n**Username / password** (older controllers or Cloud Key): fill in Username and Password, leave API Key blank.\n\nSSL verification is enabled by default. Disable it only if your controller uses a self-signed certificate.",
         "data": {
           "controller_url": "Controller URL (e.g. https://192.168.1.1)",
           "username": "Username (leave blank if using API key)",
