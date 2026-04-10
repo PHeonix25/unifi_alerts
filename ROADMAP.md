@@ -2,7 +2,7 @@
 
 This file maps TODO items to planned releases. Items within each release are ordered by priority — complete them top-to-bottom. Check off each item as it is merged to `main`.
 
-> **Current status:** v1.0.0 ready. All blocking bugs, security issues, and UX gaps are resolved. CI is green (hassfest + HACS + lint + tests). Ready to tag v1.0.0.
+> **Current status:** v1-pre2 ready. Four v1.1.0 items resolved during pre-release testing. CI is green.
 
 ---
 
@@ -48,16 +48,17 @@ Issues that are non-blocking for a first release but important for production qu
 ### Security
 
 - [ ] Unvalidated controller URL allows SSRF — validate scheme and optionally reject loopback/link-local (`config_flow.py:53`)
-- [ ] Webhook URLs logged at INFO level on every startup — demote to DEBUG (`__init__.py:71`)
+- [x] Webhook URLs logged at INFO level on every startup — demote to DEBUG (`__init__.py:71`)
 - [ ] Unbounded webhook body stored in memory — apply `max_bytes` cap on `request.json()` (`webhook_handler.py:86`)
 - [ ] Credentials leak risk via exception messages in logs — log class name only, not `str(err)` (`unifi_client.py:105,181`)
-- [ ] Overly broad UniFi OS detection — remove `or resp.status == 200` fallback (`unifi_client.py:142`)
+- [x] Overly broad UniFi OS detection — remove `or resp.status == 200` fallback (`unifi_client.py:142`)
 
 ### Bugs
 
-- [ ] Config flow creates session via `async_create_clientsession` and never closes it (`config_flow.py:56`)
+- [x] UCG-Ultra login failure — try both auth paths (`/api/auth/login` and `/api/login`) with fallback (`unifi_client.py`)
+- [x] Config flow creates session via `async_create_clientsession` and never closes it (`config_flow.py:56`)
 - [ ] No pagination on `/alarm` endpoint — large backlogs block event loop (`unifi_client.py:92`)
-- [ ] No validation that at least one category is enabled (`config_flow.py:94`)
+- [x] No validation that at least one category is enabled (`config_flow.py:94`)
 - [ ] Disabled category `open_count` still updated by polling — skip disabled categories in loop (`coordinator.py:81`)
 
 ### Tests

@@ -1,5 +1,32 @@
 # History
 
+## 2026-04-10 — Pre-release v1pre2: 4 blockers resolved (4 new tests, 134 total)
+
+Four issues surfaced during v1pre1 testing resolved across targeted commits.
+
+### `unifi_client.py` — UCG-Ultra login: dual-path fallback in `_login_userpass`
+- UCG-Ultra (and some other UniFi OS devices) do not return `x-csrf-token` on `GET /`, causing `_detect_unifi_os()` to return a false negative. The client then tries `/api/login` (classic path) instead of `/api/auth/login` (UniFi OS path), which returns 401.
+- `_login_userpass` now tries both paths in order (primary based on detection result, then the alternate) and only raises `InvalidAuthError` after both fail. This makes auth resilient to OS-detection misses.
+- `InvalidAuthError` gained a `login_url` keyword attribute (already added to `_verify_api_key`; now also populated by `_login_userpass`) so the failing endpoint is surfaced in error messages.
+- 2 new tests: `test_invalid_auth_error_carries_login_url`, `test_fallback_path_succeeds_on_ucg_ultra`.
+
+### `__init__.py` — Webhook URLs demoted from INFO to DEBUG
+- Full webhook URLs were written to HA logs at INFO level and exposed in routine bug reports. Now logs only the count at INFO; full URLs at DEBUG.
+- No new tests (logging level is an internal concern).
+
+### `config_flow.py` — Config flow session always closed in `try/finally`
+- `async_create_clientsession` created a session per flow run. `client.close()` only issued an HTTP logout request but left the underlying aiohttp session open, leaking connection-pool resources.
+- Session is now created before a `try/finally` block and `await session.close()` is always called regardless of auth outcome. The `client.close()` call (redundant logout on a temp session) was removed.
+- 1 new test: `test_config_flow_session_closed_on_auth_error`.
+
+### `config_flow.py` + `strings.json` + `translations/en.json` — At-least-one-category validation
+- If the user unchecked every category, setup completed silently with zero entities. Both `async_step_categories` (initial setup) and `async_step_init` (options flow) now reject an empty selection with an `at_least_one_category` error.
+- Error string added to both `strings.json` and `translations/en.json`.
+- 1 new test: `test_categories_all_disabled_shows_error`.
+
+### `TODO.md` cleanup
+- Removed resolved items from the backlog: UCG-Ultra blocker, webhook URL logging, session leak, category validation, and two v1.0.0 quick-wins that were applied but never removed (`CONF_VERIFY_SSL` raw string, `diagnostics.py __import__`).
+
 ## 2026-04-08 — CI housekeeping: GitHub Actions upgraded to Node.js 24
 
 - `actions/checkout`: `@v4` → `@v6`

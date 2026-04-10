@@ -2,14 +2,6 @@
 
 Prioritised backlog. Items are grouped by type. Work top-to-bottom within each group unless there's a dependency noted.
 
-## Blocker for v1
-
-### Cannot login using UCG-Ultra
-**File:** `unifi_client.py:200`
-**Problem**: I cannot log in, I keep on getting authentication failed at https://REDACTED/api/login (HTTP 401)
-
----
-
 ## 🟡 High-value improvements
 
 ### [SECURITY] Unvalidated controller URL allows SSRF
@@ -17,35 +9,10 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 **Problem:** The controller URL field accepts any string and passes it directly to the HTTP client. A malicious or misconfigured user could supply an internal address (e.g. `http://localhost:8123/`) to probe internal services.
 **Fix:** Validate that the URL scheme is `http` or `https`, and optionally reject loopback and link-local addresses using `yarl.URL`.
 
-### [SECURITY] `str(payload)` fallback stores raw webhook payload in alert message
-**File:** `models.py:33`
-**Problem:** When no recognised message field is present in a webhook payload, `from_webhook_payload` falls back to `str(payload)` — the entire payload repr, truncated to 255 chars. This leaks internal payload structure into the message field and into event entity attributes.
-**Fix:** Replace `str(payload)` with a static sentinel `"Unknown alert"`, matching the behaviour of `from_api_alarm`.
-
-### [SECURITY] Webhook URLs logged at INFO level on every startup
-**File:** `__init__.py:71-74`
-**Problem:** Full webhook URLs are written to HA logs at INFO level. Log files are routinely shared in bug reports, exposing the URLs even though they're local-only.
-**Fix:** Demote to `DEBUG` level. Log only the count of registered webhooks at INFO.
-
-### [BUG] Config flow uses `async_create_clientsession` — session is never properly closed
-**File:** `config_flow.py:56`
-**Problem:** `async_create_clientsession` creates a new session per config flow run. The `client.close()` call issues a logout HTTP request but does not close the underlying session. The correct pattern is to use `async_create_clientsession`, store a reference, and call `session.close()` explicitly in a try/finally after the auth check.
-**Fix:** Create a dedicated temporary session for config flow auth, close it in a try/finally, and do not attempt a logout on the shared session.
-
 ### [BUG] No pagination on `/alarm` endpoint — large backlogs block event loop
 **File:** `unifi_client.py:92-103`
 **Problem:** On sites with thousands of unarchived alarms, the API returns a multi-megabyte response in a single call, which may exceed the 10-second timeout and blocks the event loop budget during parsing.
 **Fix:** Add a `?limit=200` query parameter (or equivalent) and document the constraint. Fetch only the most recent N alarms per poll cycle.
-
-### [BUG] UniFi OS detection triggers on any HTTP 200 — wrong path on non-UniFi hosts
-**File:** `unifi_client.py:142`
-**Problem:** `is_os = resp.headers.get("x-csrf-token") is not None or resp.status == 200`. Any HTTP server returning 200 on `/` is misclassified as UniFi OS, causing all API calls to use the wrong path prefix.
-**Fix:** Remove `or resp.status == 200`. The `x-csrf-token` check alone is the correct heuristic.
-
-### [BUG] No validation that at least one category is enabled
-**File:** `config_flow.py:94-95`
-**Problem:** If the user unchecks every category, setup proceeds with zero per-category entities. The integration silently does nothing.
-**Fix:** Validate that `enabled` is non-empty in the categories step and return an error (`at_least_one_category`) if not.
 
 ### Integration tests with the `hass` fixture
 **Problem:** The current test suite uses plain mocks and does not exercise the HA setup lifecycle. Config flow, entity creation, coordinator wiring, and webhook dispatch are all untested end-to-end.
@@ -99,12 +66,6 @@ In `coordinator._async_update_data`, if re-auth succeeds but the second `categor
 ### `strings.json` and `translations/en.json` are manually kept in sync
 HA's tooling expects them to match. A pre-commit hook or CI check that diffs the two files would prevent drift.
 
-### `CONF_VERIFY_SSL` raw string in `__init__.py:36`
-`entry.data.get("verify_ssl", False)` uses a raw string instead of the `CONF_VERIFY_SSL` constant. If the constant's value ever changed, this reference would silently fall back to `False`.
-
-### `diagnostics.py` uses `__import__` for logging instead of `import logging`
-Line 19 uses `_LOGGER = __import__("logging").getLogger(__name__)`. Inconsistent with the stated coding convention and harder to read. No functional impact.
-
 ### `manifest.json` does not declare `webhook` as a dependency
 The integration depends on `homeassistant.components.webhook`. HA loads it early by default so this rarely matters in practice, but explicit declaration via `"dependencies": ["webhook"]` would make the dependency visible to hassfest.
 
@@ -114,5 +75,3 @@ The integration depends on `homeassistant.components.webhook`. HA loads it early
 ### CI action versions are floating (`@master`, `@main`)
 `home-assistant/actions/hassfest@master` and `hacs/action@main` are not pinned to a SHA. A breaking upstream change or supply-chain compromise would silently affect CI. Pin to commit SHAs and update periodically.
 
-### `hacs.json` has contradictory `zip_release: false` and `filename` set
-`"zip_release": false` causes HACS to ignore the `"filename"` field. Either remove `filename` or align both fields to use zip releases (which `release.yml` already generates).
