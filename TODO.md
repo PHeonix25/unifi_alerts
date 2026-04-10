@@ -11,10 +11,55 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 **Problem:** The controller URL field accepts any string and passes it directly to the HTTP client. A malicious or misconfigured user could supply an internal address (e.g. `http://localhost:8123/`) to probe internal services.
 **Fix:** Validate that the URL scheme is `http` or `https`, and optionally reject loopback and link-local addresses using `yarl.URL`.
 
+### [BUG] Config flow API key instructions are wrong / vary by UniFi OS version
+**File:** `strings.json:6`, `translations/en.json` (same line)
+**Problem:** The config flow description tells users to generate an API key via **Settings → Admins & Users → API Keys**. This path is incorrect on at least some versions of UniFi OS (e.g. it's **Integrations → New API Key** on some consoles), and the correct path varies across firmware versions. Users following the instructions will not find the option and give up.
+**Fix:**
+- Audit the actual navigation path for each major UniFi OS variant (UCG-Ultra, UDM Pro, Cloud Key Gen2, hosted controller) and document findings in `UNIFI.md`.
+- Replace the single hard-coded path in the config flow description with a version-agnostic instruction such as: *"Generate an API key in the UniFi OS web UI — the exact location varies by firmware version. Common paths: **Settings → Admins & Users → API Keys** or **Integrations → New API Key**. Refer to the [integration README] for device-specific instructions."*
+- Add a dedicated "Generating an API key" section to `README.md` with per-device navigation paths so users can find it outside the config flow UI.
+
+### [BUG] Config flow repopulates old username/password after switching to API key
+**File:** `config_flow.py:76-90`
+**Problem:** On a failed submission, the schema is rebuilt with `default=user_input.get(...)` for each field. However, HA's config flow frontend can retain or pre-fill field values from a prior schema render. If the user first submits username + password (form repopulates both), then clears those fields and submits with only an API key, the re-displayed form shows all three values — the old username/password are restored even though the user blanked them.
+**Root cause:** Setting `default=user_input.get(CONF_USERNAME, "")` when the user submitted an empty string may interact with HA's `suggested_value` mechanism or frontend caching in a way that restores prior values instead of showing the current empty submission.
+**Fix:** Explicitly omit keys with empty-string values from the schema defaults (use `vol.UNDEFINED` or omit the `default` argument) so HA treats them as truly blank rather than pre-filled. Only pass a non-empty default if the submitted value is a non-empty string:
+```python
+vol.Optional(CONF_USERNAME, **({"default": v} if (v := user_input.get(CONF_USERNAME, "")) else {})): str
+```
+Alternatively, use `description={"suggested_value": ...}` instead of `default=` which gives the frontend a weaker hint that the user can override.
+
+### [BUG] API key and password fields are plaintext — sensitive values visible on screen
+**File:** `config_flow.py:83-84, 96-97`
+**Problem:** Both `CONF_API_KEY` and `CONF_PASSWORD` are declared as plain `str` in the vol schema. HA renders them as unmasked text inputs, so credentials are visible to anyone who can see the screen. Neither field gets the browser's password-field treatment (masked input with an unmask toggle).
+**Fix:** Replace the bare `str` type with `TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))` for both fields. HA's frontend renders password-type selectors as masked inputs with a built-in show/hide toggle, satisfying the requirement to let the user reveal the value to verify a paste. Import from `homeassistant.helpers.selector`:
+```python
+from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
+
+_PASSWORD_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+
+# In both schema branches:
+vol.Optional(CONF_PASSWORD): _PASSWORD_SELECTOR,
+vol.Optional(CONF_API_KEY): _PASSWORD_SELECTOR,
+```
+Apply in both the initial schema and the error-repopulation schema (lines 83-84 and 96-97).
+
 ### [BUG] Config flow uses `async_create_clientsession` — session is never properly closed
 **File:** `config_flow.py:56`
 **Problem:** `async_create_clientsession` creates a new session per config flow run. The `client.close()` call issues a logout HTTP request but does not close the underlying session. The correct pattern is to use `async_create_clientsession`, store a reference, and call `session.close()` explicitly in a try/finally after the auth check.
 **Fix:** Create a dedicated temporary session for config flow auth, close it in a try/finally, and do not attempt a logout on the shared session.
+
+### [BUG] UCG-Ultra: OS detection fails → API key verification hits wrong endpoint (404)
+**File:** `unifi_client.py:133-170`
+**Reported by:** User during installation on UCG-Ultra
+**Error:** `ClientResponseError: 404, message='Not Found', url='.../api/s/default/self'`
+**Root cause:** `_detect_unifi_os()` relies solely on the presence of `x-csrf-token` in the response headers for `/`. On the UCG-Ultra (and possibly other newer UniFi OS consoles), this header is absent or the request fails, causing `_is_unifi_os` to be `False`. As a result, `_network_path()` does not prepend `/proxy/network`, and `_verify_api_key()` calls `/api/s/default/self` — a legacy non-OS endpoint that returns 404 on UniFi OS hardware.
+**Impact:** Setup is completely broken for any UniFi OS console where the detection heuristic fails. The 404 is not handled gracefully and bubbles up as `Unexpected error during auth`.
+**Fix options (pick one or combine):**
+1. After a 404 from `_verify_api_key`, retry with the OS path forced (`/proxy/network/api/s/default/self`) to auto-recover from a misdetected OS type.
+2. Improve `_detect_unifi_os` to also check for additional UCG-Ultra / UniFi OS signals (e.g. specific response body fields, `x-csrf-token` on a redirect destination, or a known OS-only endpoint like `/api/system`).
+3. Expose a manual "UniFi OS" toggle in the config flow so users can override detection when the heuristic fails.
+**Note:** The 404 should also be caught and re-raised as `InvalidAuthError` or `CannotConnectError` with a user-facing message instead of surfacing as a raw `ClientResponseError`.
 
 ### [BUG] No pagination on `/alarm` endpoint — large backlogs block event loop
 **File:** `unifi_client.py:92-103`
