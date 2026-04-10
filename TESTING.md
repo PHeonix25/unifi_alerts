@@ -147,7 +147,7 @@ Mark all integration tests with `@pytest.mark.integration`.
 - **`hass.async_create_background_task`** is used for auto-clear tasks so they do NOT block `hass.async_block_till_done()`. Background tasks are cancelled on entry unload via `coordinator.async_shutdown()`.
 - **pycares Thread-1** (`_run_safe_shutdown_loop`): aiohttp DNS usage can start this daemon thread on first use. The session-scoped `_prime_pycares_shutdown_thread` fixture primes that path by constructing `aiodns.DNSResolver(...)` before tests so the thread is in `verify_cleanup`'s baseline; if `aiodns` is not installed, this is a no-op.
 - **HTTP infrastructure**: The `entry` fixture calls `async_setup_component(hass, "webhook", {})` and sets `internal_url` before setting up the config entry. Tests that don't use the `entry` fixture but need `hass_client` must set this up themselves (see `test_no_secret_config_accepts_post_without_token`).
-- **Auto-clear in tests**: Patch `custom_components.unifi_alerts.coordinator.asyncio.sleep` with `AsyncMock()` to make the auto-clear fire immediately during `async_block_till_done`.
+- **Auto-clear in tests**: Patch `custom_components.unifi_alerts.coordinator.asyncio.sleep` with `AsyncMock()` to make the delay instant, then call `await hass.async_block_till_done(wait_background_tasks=True)` so HA drains the background task queue. Follow with a second `await hass.async_block_till_done()` to flush any HA state-write callbacks triggered by the coordinator update.
 
 ### What's tested
 

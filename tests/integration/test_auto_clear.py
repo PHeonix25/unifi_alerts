@@ -1,8 +1,12 @@
 """Integration tests: auto-clear timeout resets binary sensor to OFF.
 
-The coordinator schedules an asyncio.sleep task after each alert.  We patch
-asyncio.sleep to a no-op so the task completes on the first
-``async_block_till_done`` call and the sensor state is verifiably reset.
+The coordinator schedules the auto-clear via ``hass.async_create_background_task``,
+which is intentionally *not* awaited by ``hass.async_block_till_done()``.  To make
+the task complete deterministically in tests we:
+
+  1. Patch ``asyncio.sleep`` to an ``AsyncMock`` so the delay is instant.
+  2. Call ``hass.async_block_till_done(wait_background_tasks=True)`` so HA also
+     drains the background task queue before returning.
 
 Run only these tests:
     pytest tests/integration/test_auto_clear.py -v
@@ -51,8 +55,8 @@ async def test_push_alert_sets_sensor_on(hass, entry):
 async def test_auto_clear_resets_sensor_to_off(hass, entry):
     """After the auto-clear delay elapses the binary sensor must return to OFF.
 
-    asyncio.sleep is patched to a coroutine that returns immediately so the
-    auto-clear task completes during async_block_till_done.
+    asyncio.sleep is patched to return immediately; wait_background_tasks=True
+    ensures the auto-clear background task is drained before we assert.
     """
     uid = f"{ENTRY_ID}_{TEST_CATEGORY}_binary"
     eid = entity_id_for(hass, "binary_sensor", uid)
@@ -63,8 +67,9 @@ async def test_auto_clear_resets_sensor_to_off(hass, entry):
         new=AsyncMock(),
     ):
         coordinator.push_alert(TEST_CATEGORY, _make_alert())
-        # block_till_done runs the auto-clear task to completion while the
-        # sleep mock is still active
+        # wait_background_tasks=True drains the auto-clear background task;
+        # the second call flushes any HA state-write callbacks it triggers.
+        await hass.async_block_till_done(wait_background_tasks=True)
         await hass.async_block_till_done()
 
     assert hass.states.get(eid).state == "off"
@@ -81,6 +86,7 @@ async def test_auto_clear_also_resets_rollup_sensor(hass, entry):
         new=AsyncMock(),
     ):
         coordinator.push_alert(TEST_CATEGORY, _make_alert())
+        await hass.async_block_till_done(wait_background_tasks=True)
         await hass.async_block_till_done()
 
     assert hass.states.get(rollup_eid).state == "off"
