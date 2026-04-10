@@ -488,7 +488,7 @@ class TestSiteConfig:
         from custom_components.unifi_alerts.const import CONF_SITE
 
         hass = MagicMock()
-        hass.async_create_task = lambda coro, **kw: (coro.close() or MagicMock())
+        hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
 
         client = MagicMock()
         client.categorise_alarms = AsyncMock(return_value={})
@@ -510,7 +510,7 @@ class TestSiteConfig:
     async def test_coordinator_defaults_site_to_default(self):
         """When CONF_SITE is absent, coordinator must use 'default'."""
         hass = MagicMock()
-        hass.async_create_task = lambda coro, **kw: (coro.close() or MagicMock())
+        hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
 
         client = MagicMock()
         client.categorise_alarms = AsyncMock(return_value={})

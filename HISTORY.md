@@ -1,5 +1,27 @@
 # History
 
+## 2026-04-10 (session 6) — Fix auto-clear race condition and lint cleanup (269 tests)
+
+Addressed PR review feedback on the integration tests introduced in session 5.
+
+### Auto-clear race condition fixed (`tests/integration/test_auto_clear.py`)
+
+`_schedule_clear()` uses `hass.async_create_background_task`, which creates tasks intentionally **not** awaited by `hass.async_block_till_done()`. The original tests for `test_auto_clear_resets_sensor_to_off` and `test_auto_clear_also_resets_rollup_sensor` relied on a single `async_block_till_done()` call to complete the background task, making them racey/flaky.
+
+Fix: call `await hass.async_block_till_done(wait_background_tasks=True)` so HA drains the background task queue, followed by a second `await hass.async_block_till_done()` to flush HA state-write callbacks the coordinator triggers. Updated the module docstring and `TESTING.md` to document this two-call pattern.
+
+### Lint fixes (`tests/unit/` and `tests/integration/`)
+
+Seven pre-existing lint errors were carried over when test files were moved from `tests/` to `tests/unit/` in session 5. Fixed with `ruff check --fix` + `ruff format`:
+
+- Removed unused `get_coordinator` import from `test_lifecycle.py`
+- Removed unused `aiohttp` import from `test_config_flow.py`
+- Fixed import sort order in `conftest.py`, `test_config_flow.py`, `test_diagnostics.py`, `test_webhook.py`, `test_coordinator.py`, `test_init.py`
+
+All 269 tests pass, all lint/typecheck/HACS checks clean.
+
+---
+
 ## 2026-04-10 (session 5) — Integration tests with real `hass` fixture (269 tests)
 
 Added a full integration test suite using `pytest_homeassistant_custom_component`'s `hass` fixture. Tests exercise the real HA setup lifecycle without hitting a real controller. All 269 tests pass.

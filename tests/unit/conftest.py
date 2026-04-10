@@ -7,8 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
-
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
     CONF_CLEAR_TIMEOUT,

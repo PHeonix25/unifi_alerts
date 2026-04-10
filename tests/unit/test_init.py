@@ -184,9 +184,7 @@ class TestAsyncSetupEntry:
         ):
             await async_setup_entry(hass, entry)
 
-        warning_messages = " ".join(
-            str(call[0][0]) for call in mock_logger.warning.call_args_list
-        )
+        warning_messages = " ".join(str(call[0][0]) for call in mock_logger.warning.call_args_list)
         assert "SSL certificate verification is disabled" in warning_messages
 
     @pytest.mark.asyncio
@@ -211,9 +209,7 @@ class TestAsyncSetupEntry:
         ):
             await async_setup_entry(hass, entry)
 
-        warning_messages = " ".join(
-            str(call[0][0]) for call in mock_logger.warning.call_args_list
-        )
+        warning_messages = " ".join(str(call[0][0]) for call in mock_logger.warning.call_args_list)
         assert "SSL certificate verification is disabled" not in warning_messages
 
     @pytest.mark.asyncio

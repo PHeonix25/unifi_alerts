@@ -123,12 +123,11 @@ async def test_get_request_does_not_dispatch_alert(hass, entry, hass_client):
 
 
 @pytest.mark.integration
-async def test_no_secret_config_accepts_post_without_token(
-    hass, mock_unifi_client, hass_client
-):
+async def test_no_secret_config_accepts_post_without_token(hass, mock_unifi_client, hass_client):
     """When CONF_WEBHOOK_SECRET is empty, any POST is accepted without a token."""
     from homeassistant.setup import async_setup_component
     from pytest_homeassistant_custom_component.common import MockConfigEntry
+
     from custom_components.unifi_alerts.const import DOMAIN
 
     # Set up HTTP and webhook infrastructure (normally done by the entry fixture)
