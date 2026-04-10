@@ -4,6 +4,25 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 
 ## 🟡 High-value improvements
 
+### [BUG] Config flow closes HA-managed aiohttp session — deprecation warning on every setup
+**File:** `config_flow.py:59,80`
+**Error:** `Detected that custom integration 'unifi_alerts' closes the Home Assistant aiohttp session at config_flow.py, line 80: await session.close()`
+**Root cause:** `async_step_user` creates a session with `async_create_clientsession(self.hass)` (line 59), then explicitly calls `await session.close()` in the `finally` block (line 80). Sessions created with `async_create_clientsession` are HA-managed — HA registers its own cleanup handler and will close them on shutdown. Calling `close()` manually bypasses that contract and triggers a deprecation warning from `homeassistant.helpers.frame`.
+**Fix:** Replace `async_create_clientsession(self.hass)` with a raw `aiohttp.ClientSession()` used as an async context manager, so ownership is explicit and the integration fully controls the session lifetime:
+```python
+import aiohttp
+
+async with aiohttp.ClientSession() as session:
+    client = UniFiClient(session, url, user_input)
+    try:
+        auth_method = await client.authenticate()
+    except InvalidAuthError:
+        errors["base"] = "invalid_auth"
+    ...
+```
+Remove the `finally: await session.close()` block entirely — the context manager handles it. Also remove the `async_create_clientsession` import from `config_flow.py` if it's no longer used elsewhere.
+**Note:** The config flow only needs the session for the duration of the single auth check. A raw `aiohttp.ClientSession()` is appropriate here. `async_create_clientsession` provides a HA-shared cookie jar and SSL context that aren't needed in this short-lived context.
+
 ### [SECURITY] Unvalidated controller URL allows SSRF
 **File:** `config_flow.py:53,57`
 **Problem:** The controller URL field accepts any string and passes it directly to the HTTP client. A malicious or misconfigured user could supply an internal address (e.g. `http://localhost:8123/`) to probe internal services.
