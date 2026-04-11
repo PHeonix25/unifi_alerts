@@ -1,5 +1,40 @@
 # History
 
+## 2026-04-11 (session 8) — Fix silent api.err.InvalidObject: persist UniFi OS detection + validate alarm endpoint at setup
+
+### Root cause
+
+After a successful config flow, the polling path returned `{"meta":{"rc":"error","msg":"api.err.InvalidObject"},"data":[]}` from `/proxy/network/api/s/default/alarm?limit=200`. Two bugs combined to make this silent and unrecoverable:
+
+1. `fetch_alarms()` never validated `meta.rc` — `resp.raise_for_status()` only checks the HTTP status code, which is 200 even for API-level errors. The code then called `data.get("data", [])` on the error payload (which returns `[]`) and silently returned an empty list.
+2. `_is_unifi_os` was re-detected on every `authenticate()` call and never persisted to `entry.data`. If detection flips between config-flow time and post-install (e.g. a reverse proxy strips `x-csrf-token` intermittently), the client silently uses the wrong API path prefix, which causes `api.err.InvalidObject` from the controller.
+
+### `const.py` — new `CONF_IS_UNIFI_OS` constant
+
+Added `CONF_IS_UNIFI_OS = "is_unifi_os"` to the config entry key constants. This value is now stored in `entry.data` after setup and read back by `UniFiClient` on every subsequent load.
+
+### `unifi_client.py` — three changes
+
+1. **Import `CONF_IS_UNIFI_OS`** from `.const`.
+2. **Pre-load `_is_unifi_os` from config**: changed `self._is_unifi_os: bool = False` to `self._is_unifi_os: bool | None = config.get(CONF_IS_UNIFI_OS)`. `None` means "not yet detected"; a stored `True/False` skips detection on the next `authenticate()` call.
+3. **Skip re-detection when already known**: in `authenticate()`, wrapped `self._is_unifi_os = await self._detect_unifi_os()` in `if self._is_unifi_os is None:`. Backward-compatible — existing entries without the key fall back to fresh detection as before.
+4. **Validate `meta.rc` in `fetch_alarms()`**: after `data = await resp.json()`, check `data.get("meta", {}).get("rc") != "ok"` and raise `CannotConnectError(f"UniFi API error: {msg}")` if the API reports an error. Propagates through the coordinator's existing `CannotConnectError → UpdateFailed` path and surfaces in the HA UI.
+
+### `config_flow.py` — validate alarm endpoint + store detected path
+
+1. **Call `await client.fetch_alarms()`** immediately after `await client.authenticate()` in `async_step_user()`. The existing `except CannotConnectError` handler catches any API error and shows `"cannot_connect"` to the user before the entry is created.
+2. **Store `client._is_unifi_os`** in `self._credentials` as `CONF_IS_UNIFI_OS`. This flows through to `self._entry_data` (step 2) and then to `entry.data` (step 3), ensuring the detected path is stable for the lifetime of the entry.
+3. Added `CONF_IS_UNIFI_OS` to the import block.
+
+### `UNIFI.md` — document error response envelope
+
+Added an "Error responses" subsection to "Response structure" documenting the `meta.rc`/`meta.msg` pattern and noting that `fetch_alarms()` raises `CannotConnectError` on non-`"ok"` values.
+
+### Tests
+
+- `test_unifi_client.py`: updated all `fetch_alarms()` / `categorise_alarms()` test response bodies to include `"meta": {"rc": "ok"}`. Added `test_api_error_response_raises_cannot_connect` to `TestFetchAlarms`. Added `TestIsUnifiOsPersistence` class with five tests covering: `None` init when key absent, `True`/`False` pre-load from config, skip-detection when pre-loaded, and run-detection when `None`.
+- `test_config_flow.py`: updated `test_unique_id_set_to_normalised_url` and `test_no_duplicate_proceeds_to_categories` to mock `fetch_alarms` (now called in step 1). Added `test_step_user_fetch_alarms_failure_shows_cannot_connect` and `test_conf_is_unifi_os_stored_in_credentials`.
+
 ## 2026-04-10 (session 7) — Release prep: ROADMAP/TODO tidy-up, version bump to 1.0.0-pre3
 
 Prepared the repository for the `1.0.0-pre3` tag.

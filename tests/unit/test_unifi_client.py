@@ -411,10 +411,11 @@ class TestFetchAlarms:
         client._authenticated = True
         client._is_unifi_os = False
         body = {
+            "meta": {"rc": "ok"},
             "data": [
                 {"key": "EVT_GW_WANTransition", "archived": False},
                 {"key": "EVT_AP_Disconnected", "archived": True},  # should be filtered
-            ]
+            ],
         }
         ctx, _ = _make_json_response(200, body)
         client._session.get = ctx
@@ -427,7 +428,7 @@ class TestFetchAlarms:
         client = make_client()
         client._authenticated = True
         client._is_unifi_os = False
-        body = {"data": [{"key": "EVT_GW_WANTransition", "archived": True}]}
+        body = {"meta": {"rc": "ok"}, "data": [{"key": "EVT_GW_WANTransition", "archived": True}]}
         ctx, _ = _make_json_response(200, body)
         client._session.get = ctx
         alarms = await client.fetch_alarms()
@@ -475,7 +476,7 @@ class TestFetchAlarms:
             resp.status = 200
             resp.headers = {}
             resp.raise_for_status = MagicMock()
-            resp.json = AsyncMock(return_value={"data": []})
+            resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
             yield resp
 
         client._session.get = _tracking_get
@@ -484,13 +485,30 @@ class TestFetchAlarms:
         assert captured_kwargs.get("params") == {"limit": 200}
 
     @pytest.mark.asyncio
+    async def test_api_error_response_raises_cannot_connect(self):
+        """HTTP 200 with meta.rc != 'ok' must raise CannotConnectError.
+
+        The UniFi controller returns HTTP 200 even for API-level errors; only
+        meta.rc distinguishes success from failure.  Silently returning [] would
+        hide misconfigured site names and similar problems from the user.
+        """
+        client = make_client()
+        client._authenticated = True
+        client._is_unifi_os = False
+        body = {"meta": {"rc": "error", "msg": "api.err.InvalidObject"}, "data": []}
+        ctx, _ = _make_json_response(200, body)
+        client._session.get = ctx
+        with pytest.raises(CannotConnectError, match="api.err.InvalidObject"):
+            await client.fetch_alarms()
+
+    @pytest.mark.asyncio
     async def test_not_authenticated_calls_authenticate_first(self):
         """fetch_alarms must call authenticate() when not yet authenticated."""
         client = make_client()
         client._authenticated = False
         # authenticate() is called; after it the client should be marked as authenticated
         # so we patch authenticate to set _authenticated=True and return
-        body = {"data": [{"key": "EVT_GW_WANTransition", "archived": False}]}
+        body = {"meta": {"rc": "ok"}, "data": [{"key": "EVT_GW_WANTransition", "archived": False}]}
         ctx, _ = _make_json_response(200, body)
         client._session.get = ctx
 
@@ -515,11 +533,12 @@ class TestCategoriseAlarms:
         client._authenticated = True
         client._is_unifi_os = False
         body = {
+            "meta": {"rc": "ok"},
             "data": [
                 {"key": "EVT_GW_WANTransition", "msg": "WAN down", "archived": False},
                 {"key": "EVT_IPS_ThreatDetected", "msg": "Threat", "archived": False},
                 {"key": "EVT_GW_Failover", "msg": "Failover", "archived": False},
-            ]
+            ],
         }
         ctx, _ = _make_json_response(200, body)
         client._session.get = ctx
@@ -539,9 +558,10 @@ class TestCategoriseAlarms:
         client._authenticated = True
         client._is_unifi_os = False
         body = {
+            "meta": {"rc": "ok"},
             "data": [
                 {"key": "EVT_UNKNOWN_THING", "msg": "who knows", "archived": False},
-            ]
+            ],
         }
         ctx, _ = _make_json_response(200, body)
         client._session.get = ctx
@@ -553,7 +573,7 @@ class TestCategoriseAlarms:
         client = make_client()
         client._authenticated = True
         client._is_unifi_os = False
-        ctx, _ = _make_json_response(200, {"data": []})
+        ctx, _ = _make_json_response(200, {"meta": {"rc": "ok"}, "data": []})
         client._session.get = ctx
         result = await client.categorise_alarms()
         assert result == {}
@@ -661,3 +681,74 @@ class TestClose:
         client._session.post = AsyncMock()
         await client.close()
         client._session.post.assert_not_awaited()
+
+
+class TestIsUnifiOsPersistence:
+    """Tests for the CONF_IS_UNIFI_OS persistence behaviour."""
+
+    def test_is_unifi_os_none_when_not_in_config(self):
+        """When CONF_IS_UNIFI_OS is absent from config, _is_unifi_os starts as None."""
+        client = make_client()
+        assert client._is_unifi_os is None
+
+    def test_is_unifi_os_loaded_from_config_true(self):
+        """When CONF_IS_UNIFI_OS=True is in config, _is_unifi_os is pre-set to True."""
+        from custom_components.unifi_alerts.const import CONF_IS_UNIFI_OS
+
+        client = make_client({**{"username": "admin", "password": "pw", "verify_ssl": False}, CONF_IS_UNIFI_OS: True})
+        assert client._is_unifi_os is True
+
+    def test_is_unifi_os_loaded_from_config_false(self):
+        """When CONF_IS_UNIFI_OS=False is in config, _is_unifi_os is pre-set to False."""
+        from custom_components.unifi_alerts.const import CONF_IS_UNIFI_OS
+
+        client = make_client({**{"username": "admin", "password": "pw", "verify_ssl": False}, CONF_IS_UNIFI_OS: False})
+        assert client._is_unifi_os is False
+
+    @pytest.mark.asyncio
+    async def test_skips_detection_when_is_unifi_os_in_config(self):
+        """authenticate() must not call _detect_unifi_os() when CONF_IS_UNIFI_OS is pre-set."""
+        from custom_components.unifi_alerts.const import AUTH_METHOD_APIKEY, CONF_IS_UNIFI_OS
+
+        config = {
+            "api_key": "test-key",
+            "auth_method": AUTH_METHOD_APIKEY,
+            "verify_ssl": False,
+            CONF_IS_UNIFI_OS: True,
+        }
+        client = make_client(config)
+        assert client._is_unifi_os is True
+
+        detection_calls: list[int] = []
+
+        async def _no_detect() -> bool:
+            detection_calls.append(1)
+            return False
+
+        client._detect_unifi_os = _no_detect  # type: ignore[method-assign]
+        client._verify_api_key = AsyncMock()
+        await client.authenticate()
+
+        assert detection_calls == [], "_detect_unifi_os must not be called when value is loaded from config"
+        assert client._is_unifi_os is True  # stored value preserved, not overwritten
+
+    @pytest.mark.asyncio
+    async def test_runs_detection_when_is_unifi_os_not_in_config(self):
+        """authenticate() must call _detect_unifi_os() when _is_unifi_os is None."""
+        from custom_components.unifi_alerts.const import AUTH_METHOD_APIKEY
+
+        client = make_client({"api_key": "test-key", "auth_method": AUTH_METHOD_APIKEY, "verify_ssl": False})
+        assert client._is_unifi_os is None
+
+        detection_calls: list[int] = []
+
+        async def _mock_detect() -> bool:
+            detection_calls.append(1)
+            return True
+
+        client._detect_unifi_os = _mock_detect  # type: ignore[method-assign]
+        client._verify_api_key = AsyncMock()
+        await client.authenticate()
+
+        assert len(detection_calls) == 1
+        assert client._is_unifi_os is True
