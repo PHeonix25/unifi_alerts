@@ -18,6 +18,7 @@ CONF_ENABLED_CATEGORIES = "enabled_categories"
 CONF_VERIFY_SSL = "verify_ssl"
 CONF_WEBHOOK_SECRET = "webhook_secret"
 CONF_SITE = "site"
+CONF_IS_UNIFI_OS = "is_unifi_os"
 
 AUTH_METHOD_USERPASS = "userpass"
 AUTH_METHOD_APIKEY = "apikey"

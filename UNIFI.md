@@ -108,6 +108,21 @@ Default site name is `default`. Multi-site deployments are not currently support
 
 The integration filters to `archived: false` records only. Archived alarms are ones the user has dismissed in the UniFi UI.
 
+#### Error responses
+
+The controller returns HTTP 200 even for application-level errors. The `meta.rc` field distinguishes success from failure:
+
+```json
+{
+  "meta": {"rc": "error", "msg": "api.err.InvalidObject"},
+  "data": []
+}
+```
+
+`meta.rc` is `"ok"` on success and `"error"` on failure. `meta.msg` contains a machine-readable error code (e.g. `api.err.InvalidObject` for an unrecognised object reference or invalid site name).
+
+`fetch_alarms()` checks `meta.rc` after parsing the JSON body and raises `CannotConnectError` if it is not `"ok"`. This propagates as `UpdateFailed` in the coordinator and is surfaced as an integration error in Home Assistant.
+
 ### Field reliability
 
 | Field | Reliability | Notes |

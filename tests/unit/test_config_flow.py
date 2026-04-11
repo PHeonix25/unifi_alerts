@@ -75,6 +75,7 @@ async def test_unique_id_set_to_normalised_url() -> None:
     ):
         instance = mock_cls.return_value
         instance.authenticate = AsyncMock(return_value="userpass")
+        instance.fetch_alarms = AsyncMock(return_value=[])
 
         await flow.async_step_user({**_VALID_INPUT, CONF_CONTROLLER_URL: "https://192.168.1.1/"})
 
@@ -138,6 +139,7 @@ async def test_no_duplicate_proceeds_to_categories() -> None:
     ):
         instance = mock_cls.return_value
         instance.authenticate = AsyncMock(return_value="userpass")
+        instance.fetch_alarms = AsyncMock(return_value=[])
 
         result = await flow.async_step_user(_VALID_INPUT)
 
@@ -505,6 +507,60 @@ async def test_options_flow_saves_submitted_values() -> None:
     assert saved[CONF_POLL_INTERVAL] == 300
     assert saved[CONF_CLEAR_TIMEOUT] == 60
     assert saved[CONF_SITE] == "secondary"
+
+
+@pytest.mark.asyncio
+async def test_step_user_fetch_alarms_failure_shows_cannot_connect() -> None:
+    """If fetch_alarms() raises CannotConnectError after successful auth, show cannot_connect error."""
+    from custom_components.unifi_alerts.unifi_client import CannotConnectError
+
+    flow = _make_flow()
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "user"})
+
+    with (
+        patch(
+            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+            return_value=_make_session_mock(),
+        ),
+        patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+    ):
+        instance = mock_cls.return_value
+        instance.authenticate = AsyncMock(return_value="userpass")
+        instance.fetch_alarms = AsyncMock(
+            side_effect=CannotConnectError("UniFi API error: api.err.InvalidObject")
+        )
+
+        result = await flow.async_step_user(_VALID_INPUT)
+
+    assert result["step_id"] == "user"
+    call_kwargs = flow.async_show_form.call_args.kwargs
+    assert call_kwargs["errors"] == {"base": "cannot_connect"}
+
+
+@pytest.mark.asyncio
+async def test_conf_is_unifi_os_stored_in_credentials() -> None:
+    """CONF_IS_UNIFI_OS must be stored in _credentials after a successful step 1."""
+    from custom_components.unifi_alerts.const import CONF_IS_UNIFI_OS
+
+    flow = _make_flow()
+    flow.async_step_categories = AsyncMock(return_value={"type": "form", "step_id": "categories"})
+
+    with (
+        patch(
+            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+            return_value=_make_session_mock(),
+        ),
+        patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+    ):
+        instance = mock_cls.return_value
+        instance.authenticate = AsyncMock(return_value="userpass")
+        instance.fetch_alarms = AsyncMock(return_value=[])
+        instance._is_unifi_os = True  # simulate a detected UniFi OS controller
+
+        await flow.async_step_user(_VALID_INPUT)
+
+    assert CONF_IS_UNIFI_OS in flow._credentials
+    assert flow._credentials[CONF_IS_UNIFI_OS] is True
 
 
 @pytest.mark.asyncio

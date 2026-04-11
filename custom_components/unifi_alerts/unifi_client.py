@@ -12,6 +12,7 @@ from .const import (
     AUTH_METHOD_USERPASS,
     CONF_API_KEY,
     CONF_AUTH_METHOD,
+    CONF_IS_UNIFI_OS,
     CONF_PASSWORD,
     CONF_USERNAME,
     CONF_VERIFY_SSL,
@@ -59,7 +60,7 @@ class UniFiClient:
         self._session = session
         self._base = controller_url.rstrip("/")
         self._config = config
-        self._is_unifi_os: bool = False
+        self._is_unifi_os: bool | None = config.get(CONF_IS_UNIFI_OS)
         self._auth_method: str | None = None
         self._authenticated: bool = False
 
@@ -67,7 +68,8 @@ class UniFiClient:
 
     async def authenticate(self) -> str:
         """Detect controller type and authenticate. Returns the auth method used."""
-        self._is_unifi_os = await self._detect_unifi_os()
+        if self._is_unifi_os is None:
+            self._is_unifi_os = await self._detect_unifi_os()
 
         method = self._config.get(CONF_AUTH_METHOD)
 
@@ -109,6 +111,9 @@ class UniFiClient:
                     raise InvalidAuthError("Session expired")
                 resp.raise_for_status()
                 data = await resp.json()
+                if data.get("meta", {}).get("rc") != "ok":
+                    msg = data.get("meta", {}).get("msg", "unknown error")
+                    raise CannotConnectError(f"UniFi API error: {msg}")
                 return [a for a in data.get("data", []) if not a.get("archived", False)]
         except aiohttp.ClientError as err:
             raise CannotConnectError(str(err)) from err

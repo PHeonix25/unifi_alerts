@@ -22,6 +22,7 @@ from .const import (
     CONF_CLEAR_TIMEOUT,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
+    CONF_IS_UNIFI_OS,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
     CONF_SITE,
@@ -66,9 +67,11 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                     client = UniFiClient(session, url, user_input)
                     try:
                         auth_method = await client.authenticate()
+                        await client.fetch_alarms()  # validate alarm endpoint reachable
                     except InvalidAuthError:
                         errors["base"] = "invalid_auth"
-                    except CannotConnectError:
+                    except CannotConnectError as err:
+                        _LOGGER.error("Cannot reach alarm endpoint: %s", err)
                         errors["base"] = "cannot_connect"
                     except Exception:  # noqa: BLE001
                         _LOGGER.exception("Unexpected error during auth")
@@ -79,6 +82,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                         self._credentials = {
                             **user_input,
                             CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32),
+                            CONF_IS_UNIFI_OS: client._is_unifi_os,
                         }
                         return await self.async_step_categories()
 
