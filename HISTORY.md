@@ -1,5 +1,42 @@
 # History
 
+## 2026-04-15 (session 10) — v1.1 security: credentials leak + unbounded webhook body
+
+### Goal
+
+Close the two remaining security items from the v1.1.0 roadmap. Both were non-blocking for v1.0 but important for production quality.
+
+### `unifi_client.py` — credentials leak via exception messages
+
+`fetch_alarms()` and `_login_userpass()` both had `raise CannotConnectError(str(err)) from err`. Some `aiohttp.ClientError` subclasses embed the full request URL in their `__str__()` representation — which can include usernames, passwords, or API keys when the client was constructed with credentials in the URL. Changed both sites to `raise CannotConnectError(type(err).__name__) from err` so only the exception class name appears in HA logs.
+
+### `const.py` — new `WEBHOOK_MAX_BODY_BYTES` constant
+
+Added `WEBHOOK_MAX_BODY_BYTES = 8192` (8 KB) in the defaults section. 8 KB is far larger than any real UniFi alert payload and provides a generous safety margin.
+
+### `webhook_handler.py` — bounded webhook body read
+
+Replaced `payload = await request.json()` (unbounded) with a three-step pattern:
+1. `raw = await request.content.read(WEBHOOK_MAX_BODY_BYTES + 1)` — reads at most 8 193 bytes.
+2. If `len(raw) > WEBHOOK_MAX_BODY_BYTES` → log warning and return HTTP 413, callback not called.
+3. `payload = json.loads(raw.decode())` with `except (json.JSONDecodeError, UnicodeDecodeError, TypeError)` falling back to `{}`.
+
+Added `WEBHOOK_MAX_BODY_BYTES` to the import from `const`.
+
+### Tests
+
+- `test_unifi_client.py`: added `test_client_error_message_is_class_name_not_url` in `TestFetchAlarms` — asserts that a `ClientConnectionError` with a URL-containing message does not propagate the URL into `CannotConnectError.args[0]`; added `test_login_client_error_message_is_class_name_not_url` in `TestLoginUserpass` with the same assertion for the `_login_userpass` path.
+- `test_webhook_handler.py`: updated `make_request()` helper to mock `req.content.read` (returns `json.dumps(body).encode()`) instead of `req.json`; updated `test_malformed_json_uses_empty_dict_fallback` to pass raw invalid bytes via `content.read`; added `test_oversized_body_returns_413` — feeds `WEBHOOK_MAX_BODY_BYTES + 1` bytes and asserts HTTP 413 and no callback invocation. Added `import json` and `WEBHOOK_MAX_BODY_BYTES` to imports.
+
+All 280 tests pass; lint, mypy, HACS preflight, and translation drift checks clean.
+
+### Documentation
+
+- `ROADMAP.md`: ticked both security items `[x]` in the v1.1.0 section.
+- `TODO.md`: removed both resolved items from the Known issues section.
+
+---
+
 ## 2026-04-15 (session 9) — Move to two-branch model; add versioning CI enforcement
 
 ### Goal

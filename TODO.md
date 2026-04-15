@@ -44,14 +44,6 @@ After the integration is stable and passes `hassfest`, submit a PR to https://gi
 
 ## 🐛 Known issues / technical debt
 
-### Unbounded webhook body stored in memory
-`request.json()` in `webhook_handler.py` reads the full request body without a size cap. A large or malicious payload could spike memory usage.
-**Fix:** Apply a `max_bytes` cap before deserialising. See `webhook_handler.py:86`.
-
-### Credentials leak risk via exception messages in logs
-`unifi_client.py` logs `str(err)` in several exception handlers. Some aiohttp exceptions embed the URL (including credentials) in their string representation.
-**Fix:** Log the exception class name only (`type(err).__name__`). See `unifi_client.py:105,181`.
-
 ### `_device_info` duplication
 The `_device_info()` helper function is duplicated identically across `binary_sensor.py`, `sensor.py`, `event.py`, and `button.py`. Intentional for platform isolation but could be extracted to a shared `entity_base.py` mixin if it becomes a maintenance burden.
 

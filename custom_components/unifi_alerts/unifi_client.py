@@ -116,7 +116,7 @@ class UniFiClient:
                     raise CannotConnectError(f"UniFi API error: {msg}")
                 return [a for a in data.get("data", []) if not a.get("archived", False)]
         except aiohttp.ClientError as err:
-            raise CannotConnectError(str(err)) from err
+            raise CannotConnectError(type(err).__name__) from err
 
     async def categorise_alarms(self, site: str = "default") -> dict[str, list[UniFiAlert]]:
         """Fetch alarms and group them by category."""
@@ -264,7 +264,7 @@ class UniFiClient:
             _LOGGER.warning("Authentication failed at all login paths (last: %s)", last_url)
             raise InvalidAuthError("Invalid username or password", login_url=last_url)
         except aiohttp.ClientError as err:
-            raise CannotConnectError(str(err)) from err
+            raise CannotConnectError(type(err).__name__) from err
 
     def _network_path(self, path: str) -> str:
         """Prefix path with /proxy/network on UniFi OS controllers."""
