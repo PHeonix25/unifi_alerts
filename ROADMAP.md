@@ -2,11 +2,13 @@
 
 This file maps TODO items to planned releases. Items within each release are ordered by priority — complete them top-to-bottom. Check off each item as it is merged to `main`.
 
-> **Current status:** v1.0.0-pre3 ready to tag. All v1.0.0 blockers resolved. Remaining open items target v1.1.0 (security hardening, reliability). CI is green.
+> **Branching model:** all development happens on `dev` (pre-release versions: `X.Y.Z-preN`). Stable releases are tagged on `main` after a PR merge. See `CLAUDE.md § Branching strategy and versioning` for the full workflow.
+
+> **Current status:** v1.0.0 released. Branch model + CI versioning enforcement in place. Active development continues on `dev` targeting v1.1.0.
 
 ---
 
-## v1.0.0 — First stable release
+## v1.0.0 — First stable release ✓
 
 All blocking bugs, security issues, and UX gaps that will immediately affect new users.
 
@@ -50,7 +52,13 @@ All blocking bugs, security issues, and UX gaps that will immediately affect new
 
 ## v1.1.0 — Security hardening + reliability
 
-Issues that are non-blocking for a first release but important for production quality.
+Issues that are non-blocking for a first release but important for production quality. Development for this release happens on `dev` under version `1.1.0-preN`.
+
+### Infrastructure (completed as part of v1.0.0 → v1.1.0 transition)
+
+- [x] Move to two-branch model (`main` = stable, `dev` = pre-release)
+- [x] Add `version-check.yml` CI: enforce `X.Y.Z` on `main`, `X.Y.Z-preN` on `dev`
+- [x] Update `release.yml` CI: trigger on tags, auto-detect pre-release, validate tag vs manifest
 
 ### Security
 
