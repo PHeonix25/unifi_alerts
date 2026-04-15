@@ -51,8 +51,9 @@ tests/
   test_init.py                    # async_setup_entry / async_unload_entry lifecycle, teardown order
   test_entities.py                # all entity property methods: binary_sensor, sensor, event, button
 .github/workflows/
-  ci.yml                          # hassfest + hacs-preflight + HACS action + lint (ruff, mypy, translation drift) + pytest
-  release.yml                     # zips and attaches release asset on GitHub release
+  ci.yml                          # hassfest + hacs-preflight + HACS action + lint (ruff, mypy, translation drift) + pytest; runs on push/PR to main and dev
+  version-check.yml               # enforces version format per branch: main=X.Y.Z stable, dev=X.Y.Z-preN; runs on push/PR to main and dev
+  release.yml                     # triggered by version tags (v1.0.0 for stable, v1.0.0-pre1 for pre-release); validates tag matches manifest; marks GitHub release as pre-release automatically
 .githooks/
   pre-push                        # local gate: HACS preflight → translation drift → ruff → mypy → pytest; install with: git config core.hooksPath .githooks
 scripts/
@@ -86,10 +87,58 @@ README.md                         # user-facing install, setup, and contributing
 - All `const.py` additions go in the appropriate labelled section with a comment.
 - Tests use `MagicMock` / `AsyncMock` for the UniFi client — never make real HTTP calls in tests.
 
+## Branching strategy and versioning
+
+This project uses a two-branch model. All active development happens on `dev`; `main` is stable-only.
+
+### Branches
+
+| Branch | Purpose | Version format | Example |
+|--------|---------|---------------|---------|
+| `main` | Stable releases only. CI enforces no pre-release suffix. | `X.Y.Z` | `1.0.0`, `1.1.0` |
+| `dev` | Active development. CI enforces `-preN` suffix. | `X.Y.Z-preN` | `1.1.0-pre1`, `1.1.0-pre2` |
+| `feature/*` or `claude/*` | Short-lived work. No version format enforced by CI. | Any | — |
+
+### Versioning conventions
+
+- **Minor bumps on main:** releases from `main` increment the minor version (`1.0.0 → 1.1.0 → 1.2.0`). Patch releases (`1.0.1`) are reserved for critical hotfixes.
+- **Pre-release sequence on dev:** each tagged checkpoint on `dev` increments the pre-release counter (`1.1.0-pre1 → 1.1.0-pre2`). The base version (`1.1.0`) matches the *next* planned minor release on `main`.
+- **`manifest.json` is the single source of truth** for the version — the release workflow validates the pushed tag matches it exactly.
+
+### Release workflow
+
+```
+dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-release  (automated)
+       │
+       ├── (work) ──► tag v1.1.0-pre2  ──► GitHub pre-release  (automated)
+       │
+       └── bump manifest to 1.1.0
+            └─► merge PR to main
+                 └─► tag v1.1.0  ──► GitHub stable release  (automated)
+```
+
+1. **Development:** work on `dev`. Version in manifest stays at `X.Y.Z-preN`.
+2. **Pre-release checkpoint:** bump the `N` in manifest (e.g. `pre1 → pre2`), commit, push, then push the tag `vX.Y.Z-preN`. GitHub Actions creates a pre-release automatically.
+3. **Stable release:** bump manifest from `X.Y.Z-preN` to `X.Y.Z`, open a PR from `dev` to `main`. After merge, tag `vX.Y.Z` on `main`. GitHub Actions creates a stable release.
+4. **Start next cycle:** on `dev`, bump manifest to `X.(Y+1).0-pre1` and continue.
+
+### CI enforcement
+
+- `version-check.yml` blocks pushes and PRs that violate the format for the target branch.
+- `release.yml` fails if the pushed tag does not exactly match `manifest.json`.
+- Never manually create a GitHub release — always push a version tag and let the workflow do it.
+
+### Branch protection (configure once in GitHub Settings → Branches)
+
+Recommended rules:
+- **`main`:** require PR, require status checks (`CI / *`, `Version Check / *`), no direct push, no force-push.
+- **`dev`:** require status checks (`CI / *`, `Version Check / *`), allow direct push (for version bumps), no force-push.
+
 ## Working style
 
 - **Never assume — always ask.** If anything about the task, scope, or approach is unclear, ask before proceeding. Do not guess intent.
-- **Always pull `main` before starting work** — run `git pull origin main` at the start of every session to avoid diverging from origin. Never start implementing changes on a stale branch.
+- **Always pull `dev` before starting work** — run `git pull origin dev` at the start of every session to avoid diverging from origin. Never start implementing changes on a stale branch. Pull `main` only when checking stable state.
+- **Work on `dev`, not `main`** — `main` is only updated via PRs from `dev`. Never commit directly to `main`.
 - **Move into the working directory at the start of every session** — avoids needing path prefixes on every command.
 - Always run `make check` before committing — never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
 - Always update `HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.

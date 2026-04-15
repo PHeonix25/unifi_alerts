@@ -1,18 +1,52 @@
 name: Release
 
+# Triggers on version tags pushed from either branch:
+#   main tags  → stable release:    v1.0.0, v1.1.0, v1.2.0
+#   dev tags   → pre-release:       v1.1.0-pre1, v1.1.0-pre2
+#
+# The workflow validates that the tag version exactly matches the version
+# in manifest.json before packaging to prevent mismatched releases.
+
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'           # stable:      v1.0.0, v1.1.0
+      - 'v[0-9]+.[0-9]+.[0-9]+-pre[0-9]+' # pre-release: v1.0.0-pre1, v1.1.0-pre2
 
 permissions:
   contents: write
 
 jobs:
   release:
-    name: Package and attach release asset
+    name: Package and publish release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Determine release type from tag
+        id: release_type
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          if echo "$TAG" | grep -qE '-pre[0-9]+$'; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "Release type: PRE-RELEASE ($TAG)"
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+            echo "Release type: STABLE ($TAG)"
+          fi
+
+      - name: Validate manifest version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          MANIFEST_VERSION=$(python3 -c "import json; print(json.load(open('custom_components/unifi_alerts/manifest.json'))['version'])")
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "ERROR: tag version ($TAG_VERSION) does not match manifest version ($MANIFEST_VERSION)"
+            echo ""
+            echo "Update manifest.json to version $TAG_VERSION before tagging, or retag with v$MANIFEST_VERSION."
+            exit 1
+          fi
+          echo "OK: tag matches manifest version $MANIFEST_VERSION"
 
       - name: Create release zip
         run: |
@@ -24,5 +58,7 @@ jobs:
         uses: softprops/action-gh-release@v2.6.1
         with:
           files: unifi_alerts.zip
+          prerelease: ${{ steps.release_type.outputs.prerelease == 'true' }}
+          name: ${{ steps.release_type.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

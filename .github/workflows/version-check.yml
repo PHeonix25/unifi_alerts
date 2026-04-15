@@ -1,0 +1,53 @@
+name: Version Check
+
+# Enforces that manifest.json version is in the correct format for the target branch:
+#   main  → stable semver only:    X.Y.Z          (e.g. 1.0.0, 1.1.0)
+#   dev   → pre-release only:      X.Y.Z-preN     (e.g. 1.1.0-pre1, 1.1.0-pre2)
+#
+# Feature branches are not checked — any version is accepted while work is in progress.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  version-format:
+    name: Validate version format for branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Extract version from manifest
+        id: version
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('custom_components/unifi_alerts/manifest.json'))['version'])")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Manifest version: $VERSION"
+
+      - name: Validate version format for main
+        if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ERROR: main branch requires a stable semver version (X.Y.Z), got: $VERSION"
+            echo ""
+            echo "Pre-release suffixes (-preN, -alpha, -beta, etc.) are not allowed on main."
+            echo "Merge dev into main only after bumping the version to a stable semver."
+            exit 1
+          fi
+          echo "OK: $VERSION is a valid stable semver for main"
+
+      - name: Validate version format for dev
+        if: github.ref == 'refs/heads/dev' || github.base_ref == 'dev'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-pre[0-9]+$'; then
+            echo "ERROR: dev branch requires a pre-release version (X.Y.Z-preN), got: $VERSION"
+            echo ""
+            echo "Only the -preN suffix is accepted on dev (e.g. 1.1.0-pre1)."
+            echo "Bump to a stable version and merge to main when ready to release."
+            exit 1
+          fi
+          echo "OK: $VERSION is a valid pre-release version for dev"

@@ -1,5 +1,48 @@
 # History
 
+## 2026-04-15 (session 9) — Move to two-branch model; add versioning CI enforcement
+
+### Goal
+
+Transition from trunk-driven development to a two-branch model (`main` = stable, `dev` = active pre-release development), add CI that enforces the correct version format on each branch, and update release automation so tags drive publishing rather than manual GitHub UI releases.
+
+### `.github/workflows/version-check.yml` (new)
+
+New workflow triggered on push and PR to `main` and `dev`. Extracts the version from `manifest.json` and:
+- On `main` (or a PR targeting `main`): validates the version matches `^[0-9]+\.[0-9]+\.[0-9]+$` (stable semver, no suffix). Fails with a clear message if a pre-release suffix is present.
+- On `dev` (or a PR targeting `dev`): validates the version matches `^[0-9]+\.[0-9]+\.[0-9]+-pre[0-9]+$`. Fails if the version is stable or uses a non-standard suffix.
+- Feature branches (`claude/*`, `feature/*`) are not checked — any version is accepted.
+
+### `.github/workflows/release.yml` (updated)
+
+Switched trigger from `release: types: [published]` to `push: tags` matching `v*.*.*` (stable) and `v*.*.*-pre*` (pre-release). New behaviour:
+1. Detects whether the tag is a pre-release by checking for a `-pre` suffix.
+2. Validates that the pushed tag version exactly matches the `version` field in `manifest.json`. Fails fast with a descriptive error if they diverge.
+3. Creates the release zip as before.
+4. Calls `softprops/action-gh-release` with `prerelease: true` for pre-release tags and `prerelease: false` for stable tags — the GitHub release type is now automatic, not manual.
+
+### `.github/workflows/ci.yml` (updated)
+
+Added `dev` to `pull_request.branches` so CI runs on PRs targeting `dev` as well as `main`. (Push triggers for `dev` were already present.)
+
+### `manifest.json` (version bump)
+
+Bumped version from `1.0.0-pre3` to `1.0.0`. All v1.0.0 blockers were resolved in sessions 1–8; this marks the first stable release on `main`.
+
+### `dev` branch (created)
+
+Created `dev` branch from the post-merge state of `main`. Bumped `manifest.json` on `dev` to `1.1.0-pre1` to start the next development cycle. All v1.1.0 work (security hardening, reliability, QA) proceeds on `dev` under that version prefix.
+
+### Documentation
+
+- **`CLAUDE.md`**: added "Branching strategy and versioning" section documenting the two-branch model, version conventions, the release workflow diagram, CI enforcement, and recommended branch protection rules. Updated "Working style" to say pull `dev` (not `main`) at the start of each session, and to note that `main` is only updated via PRs.
+- **`ROADMAP.md`**: updated current status blurb; marked v1.0.0 as released; added an "Infrastructure" subsection to v1.1.0 ticking off the branch model and CI versioning work.
+- **`TODO.md`**: no items removed or added (branch setup was not in the backlog; all relevant changes are now live).
+
+### No test changes
+
+No production code was modified. CI workflow changes are validated by the GitHub Actions runner, not by the local pytest suite.
+
 ## 2026-04-11 (session 8) — Fix silent api.err.InvalidObject: persist UniFi OS detection + validate alarm endpoint at setup
 
 ### Root cause
