@@ -97,7 +97,7 @@ This project uses a two-branch model. All active development happens on `dev`; `
 |--------|---------|---------------|---------|
 | `main` | Stable releases only. CI enforces no pre-release suffix. | `X.Y.Z` | `1.0.0`, `1.1.0` |
 | `dev` | Active development. CI enforces `-preN` suffix. | `X.Y.Z-preN` | `1.1.0-pre1`, `1.1.0-pre2` |
-| `feature/*` or `claude/*` | Short-lived work. No version format enforced by CI. | Any | — |
+| `feature/*` or `claude/*` | Short-lived work. **Must branch off `dev`, not `main`.** No version format enforced by CI. | Any | — |
 
 ### Versioning conventions
 
@@ -139,6 +139,7 @@ Recommended rules:
 - **Never assume — always ask.** If anything about the task, scope, or approach is unclear, ask before proceeding. Do not guess intent.
 - **Always pull `dev` before starting work** — run `git pull origin dev` at the start of every session to avoid diverging from origin. Never start implementing changes on a stale branch. Pull `main` only when checking stable state.
 - **Work on `dev`, not `main`** — `main` is only updated via PRs from `dev`. Never commit directly to `main`.
+- **Feature and claude/* branches must be created from `dev`** — run `git checkout dev && git pull origin dev && git checkout -b <branch>`. Never branch off `main`. PRs from feature branches must target `dev`, not `main`.
 - **Move into the working directory at the start of every session** — avoids needing path prefixes on every command.
 - Always run `make check` before committing — never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
 - Always update `HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
