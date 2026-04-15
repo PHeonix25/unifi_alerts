@@ -277,6 +277,29 @@ class TestLoginUserpass:
             await client._login_userpass()
 
     @pytest.mark.asyncio
+    async def test_login_client_error_message_is_class_name_not_url(self):
+        """CannotConnectError from _login_userpass must use class name, not str(err).
+
+        Same credential-leak prevention as fetch_alarms: aiohttp errors can embed
+        the login URL (which may contain the password) in their string representation.
+        """
+        import aiohttp
+
+        client = make_client()
+        client._is_unifi_os = False
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectionError("https://admin:hunter2@192.168.1.1/api/login")
+            yield
+
+        client._session.post = _raise
+        with pytest.raises(CannotConnectError) as exc_info:
+            await client._login_userpass()
+        assert "hunter2" not in str(exc_info.value)
+        assert exc_info.value.args[0] == "ClientConnectionError"
+
+    @pytest.mark.asyncio
     async def test_http_401_raises_invalid_auth(self):
         """HTTP 401 should still raise InvalidAuthError (bad credentials)."""
         client = make_client()
@@ -459,6 +482,30 @@ class TestFetchAlarms:
         client._session.get = _raise
         with pytest.raises(CannotConnectError):
             await client.fetch_alarms()
+
+    @pytest.mark.asyncio
+    async def test_client_error_message_is_class_name_not_url(self):
+        """CannotConnectError message must be the exception class name, not str(err).
+
+        aiohttp exceptions can embed the controller URL (including credentials) in
+        their string representation.  Using type(err).__name__ prevents credential
+        leaks via HA log output.
+        """
+        import aiohttp
+
+        client = make_client()
+        client._authenticated = True
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectionError("https://admin:secret@192.168.1.1/api")
+            yield
+
+        client._session.get = _raise
+        with pytest.raises(CannotConnectError) as exc_info:
+            await client.fetch_alarms()
+        assert "secret" not in str(exc_info.value)
+        assert exc_info.value.args[0] == "ClientConnectionError"
 
     @pytest.mark.asyncio
     async def test_sends_limit_param(self):

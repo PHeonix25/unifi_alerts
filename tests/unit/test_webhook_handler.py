@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from custom_components.unifi_alerts.const import (
     CATEGORY_SECURITY_THREAT,
     CONF_ENABLED_CATEGORIES,
     CONF_WEBHOOK_SECRET,
+    WEBHOOK_MAX_BODY_BYTES,
 )
 from custom_components.unifi_alerts.webhook_handler import WebhookManager
 
@@ -32,13 +34,9 @@ def make_manager(enabled=None, secret="test-secret-123", hass=None):
 def make_request(token: str | None = "test-secret-123", json_body: dict | None = None):
     """Build a minimal mock aiohttp.web.Request."""
     req = MagicMock()
-    # query is a dict-like object
     req.query = {"token": token} if token is not None else {}
-    # json() is async
-    if json_body is None:
-        req.json = AsyncMock(return_value={"key": "EVT_GW_WANTransition", "message": "WAN down"})
-    else:
-        req.json = AsyncMock(return_value=json_body)
+    body_dict = json_body if json_body is not None else {"key": "EVT_GW_WANTransition", "message": "WAN down"}
+    req.content.read = AsyncMock(return_value=json.dumps(body_dict).encode())
     return req
 
 
@@ -226,17 +224,27 @@ class TestMakeHandler:
     @pytest.mark.asyncio
     async def test_malformed_json_uses_empty_dict_fallback(self):
         """If the body can't be parsed as JSON, push_callback is still called with empty payload."""
-        import json
-
         manager, push_cb = make_manager(secret="tok")
         handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
         req = make_request(token="tok")
-        req.json = AsyncMock(side_effect=json.JSONDecodeError("nope", "", 0))
+        req.content.read = AsyncMock(return_value=b"not valid json {{")
         await handler(manager._hass, "wh-id", req)
         push_cb.assert_called_once()
         # Alert should have fallback message
         call_category, call_alert = push_cb.call_args[0]
         assert call_alert.message == "Unknown alert"
+
+    @pytest.mark.asyncio
+    async def test_oversized_body_returns_413(self):
+        """A webhook body larger than WEBHOOK_MAX_BODY_BYTES must be rejected with HTTP 413."""
+        manager, push_cb = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="tok")
+        req.content.read = AsyncMock(return_value=b"x" * (WEBHOOK_MAX_BODY_BYTES + 1))
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is not None
+        assert response.status == 413
+        push_cb.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_alert_fields_populated_from_payload(self):

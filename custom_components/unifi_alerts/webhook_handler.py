@@ -20,6 +20,7 @@ from .const import (
     CONF_ENABLED_CATEGORIES,
     CONF_WEBHOOK_SECRET,
     DOMAIN,
+    WEBHOOK_MAX_BODY_BYTES,
     webhook_id_for_category,
 )
 from .models import UniFiAlert
@@ -93,8 +94,16 @@ class WebhookManager:
                 return Response(status=401)
 
             try:
-                payload = await request.json()
-            except (json.JSONDecodeError, TypeError):
+                raw = await request.content.read(WEBHOOK_MAX_BODY_BYTES + 1)
+                if len(raw) > WEBHOOK_MAX_BODY_BYTES:
+                    _LOGGER.warning(
+                        "Webhook body for category %s exceeds %d bytes, rejecting",
+                        category,
+                        WEBHOOK_MAX_BODY_BYTES,
+                    )
+                    return Response(status=413)
+                payload = json.loads(raw.decode()) if raw else {}
+            except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
                 payload = {}
 
             _LOGGER.debug("Webhook received for category %s: %s", category, payload)
