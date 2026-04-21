@@ -1,5 +1,19 @@
 # History
 
+## 2026-04-21 — Release v1.1.0
+
+Bumped `manifest.json` from `1.1.0-pre1` to `1.1.0` and merged `dev` to `main` via PR. Tagged `v1.1.0` on `main`; GitHub Actions created the stable release automatically.
+
+**What shipped in v1.1.0 (10 commits since v1.0.0):**
+- Security: credentials leak via exception messages fixed (`unifi_client.py`); unbounded webhook body capped at 8 KB with HTTP 413 on oversize (`webhook_handler.py`)
+- Reliability: re-auth failure now properly distinguished from post-re-auth poll failure (`coordinator.py`); `CONF_IS_UNIFI_OS` persisted so controller path is stable across restarts
+- New features: `unifi_alerts.clear_category` and `unifi_alerts.clear_all` HA services (`services.py`); config entry repair flow with `issue_registry` notification on auth failure; options flow now allows credentials and controller URL to be updated without re-adding the integration
+- Docs: Lovelace card and automation YAML examples added to README; `info.md` HACS display page added
+- CI: GitHub Actions steps pinned to commit SHAs (supply-chain hardening)
+- 324 tests, all passing; lint, mypy, HACS preflight, and translation drift checks all clean
+
+---
+
 ## 2026-04-21 — Extended v1.2 critical-review: full security / architecture / UX audit
 
 - **ROADMAP.md v1.2.0**: expanded from 13 items to 26 items after a comprehensive review from security, senior developer, and user/consumer perspectives.
