@@ -82,7 +82,7 @@ Issues that are non-blocking for a first release but important for production qu
 
 ### Tech debt
 
-- [ ] Pin CI action versions to commit SHAs instead of `@master` / `@main` (`ci.yml`)
+- [x] Pin CI action versions to commit SHAs instead of `@master` / `@main` (`ci.yml`)
 - [ ] Config entry repair flow — surface a HA repair notification when auth fails post-setup (`homeassistant.helpers.issue_registry`)
 - [ ] Options flow: allow credentials and controller URL to be updated without re-adding integration
 - [ ] Service calls: `unifi_alerts.clear_category` and `unifi_alerts.clear_all` (`services.py`, `services.yaml`)
