@@ -66,12 +66,11 @@
   "issues": {
     "auth_failed": {
       "title": "UniFi Alerts: authentication failed for {name}",
-      "description": "The credentials for **{name}** are no longer valid (e.g. the password or API key was changed). Click **Fix** to re-enter your credentials and restore the integration.",
       "fix_flow": {
         "step": {
           "confirm": {
             "title": "Re-authenticate UniFi Alerts",
-            "description": "Enter new credentials for **{name}** to restore the connection."
+            "description": "The credentials for **{name}** are no longer valid (e.g. the password or API key was changed). Enter new credentials to restore the connection."
           }
         }
       }
