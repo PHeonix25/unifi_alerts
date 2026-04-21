@@ -38,11 +38,17 @@ A comprehensive audit after the v1.1 PRs landed surfaced these items. Full detai
 - **SSL fail-open in 4 more call sites:** same `False` default in `_detect_unifi_os()` (`:156`), `_verify_api_key()` (`:202`), `_login_userpass()` (`:238`), and `close()` (`:139`).
 - **Category state lost on reload:** `_category_states` is rebuilt from scratch on every options change; persist `alert_count` and `last_alert` across reloads (`coordinator.py:59-62`).
 - **Partial webhook registration leak:** `WebhookManager.register_all()` has no try/finally — a failure mid-loop leaves registered hooks untracked (`webhook_handler.py:47-73`).
-- **Epoch-ms timestamps silently dropped:** `from_api_alarm()` tries `fromisoformat()` on numeric timestamps, fails, falls back to `now(UTC)` — real alarm time lost (`models.py:54-57`).
+- **Epoch-ms timestamps silently dropped:** `from_api_alarm()` calls `datetime.fromisoformat()` on numeric timestamps, fails, falls back to `now(UTC)` — real alarm time lost (`models.py:52-57`). Add an epoch-ms branch before the ISO fallback; log at WARNING when neither matches.
 - **`open_count` stale on webhook path:** `push_alert()` updates `is_alerting` and `alert_count` but `open_count` stays at whatever the last poll returned (`coordinator.py:123-143`).
+- **`close()` swallows logout errors:** `unifi_client.py:142-143` (`except Exception: pass`). Log at WARNING with class name so operators see stuck sessions.
+- **Webhook decode errors silently dropped:** `webhook_handler.py:105-107` — `UnicodeDecodeError` / `JSONDecodeError` produces an empty payload with no log entry; log at WARNING.
 
 ### Security
 - **Webhook secret cannot be rotated:** add a "Regenerate webhook secret" action to the options flow (reuses `secrets.token_urlsafe(32)`, updates `entry.data`, re-registers webhooks) (`config_flow.py:84`).
+- **Timing attack on token comparison:** `webhook_handler.py:89` uses `!=`; switch to `hmac.compare_digest()`.
+- **Debug logs leak webhook tokens:** `__init__.py:92-95` logs full `?token=...` URLs at DEBUG; redact tokens before logging.
+- **Debug logs leak full webhook payloads:** `webhook_handler.py:109`; narrow to known-safe fields only.
+- **`allow_redirects=True` on probes:** `unifi_client.py:162,178` — disable redirects or assert final-URL host matches configured host.
 - **Config flow creates bare `aiohttp.ClientSession`:** bypasses HA's proxy config, connection pool, and SSL settings. Should use `async_get_clientsession(self.hass, verify_ssl=...)` (`config_flow.py:80,234,343`).
 - **Credential fragments in `__init__.py` exception messages:** `err` is passed into `ConfigEntryAuthFailed`/`ConfigEntryNotReady`, may expose URL fragments or auth details in logs (`__init__.py:53-57`).
 - **No webhook rate limiting / debounce:** a noisy category or misconfigured sender can flood the webhook endpoint with no cooldown, generating unbounded state updates and event fires (`coordinator.py:123`).
@@ -69,6 +75,12 @@ A comprehensive audit after the v1.1 PRs landed surfaced these items. Full detai
 ### Documentation
 - **No supported-firmware matrix:** small table of tested UDM-SE / UCG / UX / CloudKey Gen2 models with any known quirks.
 - **No troubleshooting / FAQ section:** consolidate scattered notes (local_only webhooks, self-signed certs, UniFi OS vs legacy, API-key paths).
+- **No uninstall instructions** in README / info.md.
+- **`info.md` missing upfront local-network warning** — remote-access / Nabu Casa users hit silent failure.
+- **Setup flow doesn't warn "copy URLs before Submit"** — the URLs screen is the final step; users close the dialog without copying.
+- **No privacy / data-retention section** in README explaining which UniFi payload fields are stored in HA state.
+- **Automation README example** doesn't document that disabling a category in options makes its event entity unavailable, breaking dependent automations.
+- **`unique_id` format is undocumented** — users wiring into long-lived automations don't know if UI renames are safe.
 
 ### Split `tests/unit/test_config_flow.py` into a package
 **Problem:** `test_config_flow.py` is ~1060 lines with four logically independent test classes (`TestConfigFlowSteps`, `TestOptionsFlowSteps`, `TestOptionsFlowCredentials`, `TestReauthFlow`). The file is hard to load into context in full, and rebase chains that touch multiple classes (as with PR #19 + PR #20) produce interleaved merge conflicts that are tedious to reconstruct.
