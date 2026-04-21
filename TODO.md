@@ -58,6 +58,19 @@ A second-opinion audit after the v1.1 PRs landed surfaced these items. Full deta
 - **No supported-firmware matrix:** small table of tested UDM-SE / UCG / UX / CloudKey Gen2 models with any known quirks.
 - **No troubleshooting / FAQ section:** consolidate scattered notes (local_only webhooks, self-signed certs, UniFi OS vs legacy, API-key paths).
 
+### Split `tests/unit/test_config_flow.py` into a package
+**Problem:** `test_config_flow.py` is ~1060 lines with four logically independent test classes (`TestConfigFlowSteps`, `TestOptionsFlowSteps`, `TestOptionsFlowCredentials`, `TestReauthFlow`). The file is hard to load into context in full, and rebase chains that touch multiple classes (as with PR #19 + PR #20) produce interleaved merge conflicts that are tedious to reconstruct.
+**Fix:** Convert to a package:
+```
+tests/unit/config_flow/
+  __init__.py
+  conftest.py           # shared fixtures + _make_options_flow / _make_reauth_flow helpers
+  test_setup.py         # TestConfigFlowSteps (credentials → categories → done)
+  test_options.py       # TestOptionsFlowSteps + TestOptionsFlowCredentials
+  test_reauth.py        # TestReauthFlow
+```
+Move `_make_options_flow`, `_make_reauth_flow`, and any shared `MOCK_*` constants into the new `conftest.py`. Do not split the other test files — they are all under 500 lines and healthy. Target: a `v1.1.0-preN` checkpoint on `dev`.
+
 ---
 
 ## 🐛 Known issues / technical debt
