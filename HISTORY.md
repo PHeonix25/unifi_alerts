@@ -1,5 +1,47 @@
 # History
 
+## 2026-04-21 (session 11) — Distinguish re-auth failure from post-re-auth update failure in polling
+
+- **`coordinator.py`**: split the single `except (InvalidAuthError, CannotConnectError)` retry handler into two separate `try/except` blocks — one around `authenticate()` and one around the retried `categorise_alarms()` call.
+- Re-auth failures (`InvalidAuthError` or `CannotConnectError` from `authenticate()`) now raise `ConfigEntryAuthFailed` so HA can surface the reauth flow to the user; log message is "Re-authentication failed; credentials may have changed".
+- Post-re-auth poll failures (`CannotConnectError` from the second `categorise_alarms()`) now raise `UpdateFailed` with "Cannot reach UniFi controller after re-authentication" — clearly distinguishable from the first-pass "Cannot reach UniFi controller" message.
+- Added `ConfigEntryAuthFailed` import from `homeassistant.exceptions`.
+- **`tests/unit/test_coordinator.py`**: replaced the old `test_invalid_auth_on_retry_raises_update_failed` test with three new tests in `TestPollingErrorPaths`: re-auth `InvalidAuthError` → `ConfigEntryAuthFailed`; re-auth `CannotConnectError` → `ConfigEntryAuthFailed`; re-auth succeeds but retry fails → `UpdateFailed` containing "after re-authentication".
+- All 282 tests pass; lint, mypy, HACS preflight, and translation drift checks clean.
+
+---
+
+## 2026-04-21 (session 11) — README: Lovelace card and automation examples
+
+- Added `## Examples` section to `README.md` replacing the minimal one-liner automation stub.
+- Lovelace snippet: `entities` card mixing `binary_sensor.unifi_alerts_any_alert`, five per-category binary sensors, and `sensor.unifi_alerts_total_open_alerts`; only uses entity IDs actually produced by the integration.
+- Automation snippet: `platform: state` trigger on `event.unifi_alerts_security_threat` (correct for HA `EventEntity`); documents all seven event-data attributes (`message`, `category`, `device_name`, `alert_key`, `severity`, `site`, `received_at`) sourced directly from `event.py:_handle_coordinator_update`.
+- Clarified that UniFi Alerts uses HA Event entities (not the hass event bus) — the `event_type` used by `_trigger_event` is `alert_received` and is a per-entity event type, not a bus event.
+- `TODO.md`: removed both nice-to-have items for Lovelace and automation README examples.
+- `ROADMAP.md`: ticked both v1.1.0 UX / Documentation items.
+
+---
+
+## 2026-04-21 (session 11) — Add info.md HACS display page
+
+- Created `info.md` at the repository root as the HACS UI display card (56 lines).
+- Covers features, alert categories, requirements, quick setup, and links; kept concise and scannable per HACS conventions.
+- Ticked `[ ] Create info.md` in `ROADMAP.md` v2.0.0 prerequisites.
+- Noted info.md completion in `TODO.md` HACS default repository submission entry.
+
+---
+
+## 2026-04-21 (session 11) — Pin CI action versions to commit SHAs
+
+- Pinned all `uses:` lines across `ci.yml`, `release.yml`, and `version-check.yml` to full 40-character commit SHAs.
+- Actions pinned: `actions/checkout@v6`, `actions/setup-python@v6`, `home-assistant/actions/hassfest@master`, `hacs/action@main`, `softprops/action-gh-release@v2.6.1`.
+- Each pinned line includes a trailing `# <tag-or-ref>` comment so the human-readable version remains visible.
+- Eliminates supply-chain risk from floating `@master` / `@main` refs silently picking up breaking upstream changes.
+- No source code changes; `make check` passes (only YAML workflow files modified).
+- Removed the `### CI action versions are floating` entry from `TODO.md`; ticked the corresponding item in `ROADMAP.md` v1.1.0 Tech debt.
+
+---
+
 ## 2026-04-21 (session 11) — Config entry repair flow: reauth step + issue_registry
 
 - `__init__.py`: `async_setup_entry` now distinguishes `InvalidAuthError` (raises `ConfigEntryAuthFailed`, triggering HA's standard reauth flow) from generic connection failures (still `ConfigEntryNotReady`).
@@ -8,6 +50,8 @@
 - `strings.json` + `translations/en.json` (kept identical — CI enforces): added `config.step.reauth_confirm`, `config.abort.reauth_successful`, and `issues.auth_failed` (with `fix_flow.step.confirm`).
 - `tests/unit/test_config_flow.py`: new `TestReauthFlow` class with 7 tests covering reauth routing, issue creation, happy path, invalid_auth, cannot_connect, and "don't delete issue on failure".
 - 287 tests pass (280 → 287).
+
+---
 
 ## 2026-04-15 (session 10) — v1.1 security: credentials leak + unbounded webhook body
 
