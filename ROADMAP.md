@@ -89,6 +89,45 @@ Issues that are non-blocking for a first release but important for production qu
 
 ---
 
+## v1.2.0 — Critical-review hardening (pre-HACS-default)
+
+A second-opinion pass after the v1.1 PRs landed surfaced a set of items that are not blocking for a stable release but should be closed before submitting to the HACS default catalogue.  These are the "what did we miss?" findings.  Ordered by impact.
+
+### Reliability / correctness
+
+- [ ] `UniFiClient.fetch_alarms()` caps results at `limit=200` with no pagination loop — controllers with >200 open alarms silently drop the rest (`unifi_client.py:104`).  Remove the `limit` param so the controller returns the full set.
+- [ ] `fetch_alarms()` passes `ssl=self._config.get(CONF_VERIFY_SSL, False)` — if the key is somehow missing from `_config`, SSL verification silently turns OFF (`unifi_client.py:106`).  Change the fallback to `DEFAULT_VERIFY_SSL` (True) so a missing key fails closed, not open.
+- [ ] `_category_states` is rebuilt from scratch on every config-entry reload — `alert_count` and `last_alert` are discarded whenever the user tweaks an option (`coordinator.py:59-62`).  Persist the last-seen state across reloads (e.g. via `hass.data[DOMAIN][entry.entry_id]["_last_states"]` saved in `async_unload_entry` and restored in `async_setup_entry`).
+- [ ] `WebhookManager.register_all()` registers webhooks inside a loop with no try/finally — if one registration fails partway through, the already-registered ones are not tracked in `self._registered`, so `unregister_all()` cannot clean them up (`webhook_handler.py:47-73`).  Wrap per-iteration with `try: register; self._registered.append(...) except: ...` and/or a finally-driven rollback.
+
+### Security
+
+- [ ] Webhook secret cannot be rotated post-setup — it is generated once in `config_flow.py:84` and stored immutably.  If a user believes the token was leaked, the only recovery is delete-and-re-add.  Add a "Regenerate webhook secret" action to the options flow (reuses the `secrets.token_urlsafe(32)` call, updates `entry.data[CONF_WEBHOOK_SECRET]`, re-registers webhooks, shows new URLs).
+
+### Type safety / tech debt
+
+- [ ] `pyproject.toml` has `strict = false` for mypy — `UniFiClient.config` flows as `dict[str, Any]` throughout, hiding type errors.  Migrate `config: dict[str, Any]` to a `TypedDict` or frozen dataclass so `CONF_*` keys are checked, then bump to `strict = true` (or a stricter subset).
+- [ ] Entity naming is ad-hoc — each platform file hard-codes `_attr_name = f"{CATEGORY_LABELS[cat]} Foo"`.  Adopt the `has_entity_name = True` + `_attr_translation_key = "..."` pattern so the strings live in `strings.json` (`binary_sensor.py:60`, `sensor.py:56,109`, `event.py:63`, `button.py`).  Unlocks localisation and cleaner registry IDs.
+- [ ] No sensor `device_class` on the open-count or rollup-count sensors (`sensor.py:96,128`) — add a device_class where one fits (none of HA's built-ins map cleanly to "open alert count"; consider `None` + richer `state_class`).
+
+### Testing
+
+- [ ] No integration-level test covers two UniFi Alerts config entries active at once — services, webhooks, and coordinator state could leak between them.  Add a multi-entry fixture in `tests/unit/test_init.py` and assert coordinator isolation.
+- [ ] No test asserts that a webhook arriving while `_async_update_data()` is mid-await does not produce a regressed `is_alerting` state.  The guard at `coordinator.py:92` (`if alerts and not state.is_alerting`) should prevent it, but there is no test that verifies the interleaving.  Add one in `test_coordinator.py`.
+
+### Release process / repo hygiene
+
+- [ ] No `CHANGELOG.md` at repo root — the GH release workflow auto-writes release notes but a committed CHANGELOG is what HACS-default reviewers typically look for.  Add `CHANGELOG.md` following Keep-a-Changelog and populate retrospectively from v1.0 onwards.
+- [ ] With GitHub Actions now pinned to SHAs (v1.1), nothing keeps them fresh.  Add Renovate or Dependabot config targeting `github-actions` so pinned SHAs are proposed as PRs on upstream updates.
+- [ ] No `SECURITY.md`, `CODEOWNERS`, or GitHub issue templates.  Adds reviewer signal for HACS-default approval and channels bug reports away from general issues.
+
+### Documentation
+
+- [ ] No supported-firmware matrix in README/info.md — users don't know if their UDM-SE / UCG / UX / CloudKey Gen2 model is expected to work.  Add a small table of tested controller models / firmware versions with any known quirks.
+- [ ] No troubleshooting / FAQ section — common issues (local_only webhooks, self-signed certs, UniFi OS vs legacy, API-key generation paths) are scattered across the README prose.  Consolidate into a Troubleshooting section.
+
+---
+
 ## v2.0.0 — HACS default catalogue
 
 Prerequisites for submitting to https://github.com/hacs/default.

@@ -27,6 +27,39 @@ After the integration is stable and passes `hassfest`, submit a PR to https://gi
 
 ---
 
+## 🔥 v1.2 critical-review findings (pre-HACS-default hardening)
+
+A second-opinion audit after the v1.1 PRs landed surfaced these items. Full detail (with file:line anchors and suggested fixes) is in `ROADMAP.md § v1.2.0`. Grouped by impact:
+
+### Reliability / correctness
+- **Unbounded alarm list:** `UniFiClient.fetch_alarms()` silently caps at `limit=200`. Remove the `limit` param (`unifi_client.py:104`).
+- **SSL fail-open on missing key:** `ssl=self._config.get(CONF_VERIFY_SSL, False)` — change fallback to `DEFAULT_VERIFY_SSL` so a missing key fails closed (`unifi_client.py:106`).
+- **Category state lost on reload:** `_category_states` is rebuilt from scratch on every options change; persist `alert_count` and `last_alert` across reloads (`coordinator.py:59-62`).
+- **Partial webhook registration leak:** `WebhookManager.register_all()` has no try/finally — a failure mid-loop leaves registered hooks untracked (`webhook_handler.py:47-73`).
+
+### Security
+- **Webhook secret cannot be rotated:** add a "Regenerate webhook secret" action to the options flow (reuses `secrets.token_urlsafe(32)`, updates `entry.data`, re-registers webhooks) (`config_flow.py:84`).
+
+### Type safety / tech debt
+- **`mypy strict = false`:** migrate `UniFiClient.config: dict[str, Any]` to a TypedDict / frozen dataclass, then bump `pyproject.toml` to `strict = true`.
+- **Ad-hoc entity naming:** adopt `has_entity_name = True` + `_attr_translation_key` pattern across `binary_sensor.py`, `sensor.py`, `event.py`, `button.py` so names live in `strings.json`.
+- **No sensor `device_class`:** consider what fits on the open-count / rollup-count sensors (`sensor.py:96,128`).
+
+### Testing
+- **No multi-entry integration test:** verify two UniFi Alerts entries don't cross-contaminate coordinator/webhook state.
+- **No interleaving test:** assert that a webhook arriving mid-poll doesn't regress `is_alerting` (guard at `coordinator.py:92` should prevent it, but is untested).
+
+### Release process / repo hygiene
+- **No `CHANGELOG.md`:** add Keep-a-Changelog file, back-fill from v1.0.
+- **Pinned SHAs need a refresh mechanism:** add Renovate or Dependabot config for `github-actions` updates.
+- **Missing repo-hygiene files:** `SECURITY.md`, `CODEOWNERS`, GitHub issue templates.
+
+### Documentation
+- **No supported-firmware matrix:** small table of tested UDM-SE / UCG / UX / CloudKey Gen2 models with any known quirks.
+- **No troubleshooting / FAQ section:** consolidate scattered notes (local_only webhooks, self-signed certs, UniFi OS vs legacy, API-key paths).
+
+---
+
 ## 🐛 Known issues / technical debt
 
 ### `_device_info` duplication
