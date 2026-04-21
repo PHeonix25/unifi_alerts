@@ -1,5 +1,16 @@
 # History
 
+## 2026-04-21 (session 11) — README: Lovelace card and automation examples
+
+- Added `## Examples` section to `README.md` replacing the minimal one-liner automation stub.
+- Lovelace snippet: `entities` card mixing `binary_sensor.unifi_alerts_any_alert`, five per-category binary sensors, and `sensor.unifi_alerts_total_open_alerts`; only uses entity IDs actually produced by the integration.
+- Automation snippet: `platform: state` trigger on `event.unifi_alerts_security_threat` (correct for HA `EventEntity`); documents all seven event-data attributes (`message`, `category`, `device_name`, `alert_key`, `severity`, `site`, `received_at`) sourced directly from `event.py:_handle_coordinator_update`.
+- Clarified that UniFi Alerts uses HA Event entities (not the hass event bus) — the `event_type` used by `_trigger_event` is `alert_received` and is a per-entity event type, not a bus event.
+- `TODO.md`: removed both nice-to-have items for Lovelace and automation README examples.
+- `ROADMAP.md`: ticked both v1.1.0 UX / Documentation items.
+
+---
+
 ## 2026-04-15 (session 10) — v1.1 security: credentials leak + unbounded webhook body
 
 ### Goal

@@ -73,8 +73,8 @@ Issues that are non-blocking for a first release but important for production qu
 
 ### UX / Documentation
 
-- [ ] Lovelace / dashboard YAML example in README
-- [ ] Automation example in README — verify correct `event_type` and `event_data` schema
+- [x] Lovelace / dashboard YAML example in README
+- [x] Automation example in README — verify correct `event_type` and `event_data` schema
 
 ### QA
 
