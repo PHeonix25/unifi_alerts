@@ -69,12 +69,12 @@ Issues that are non-blocking for a first release but important for production qu
 ### Bugs / reliability
 
 - [x] No pagination on `/alarm` endpoint — `limit=200` added (`unifi_client.py:92`)
-- [ ] Polling re-auth is fire-and-forget — misleading log message when re-auth succeeds but second poll fails for a different reason (`coordinator.py`)
+- [x] Polling re-auth is fire-and-forget — misleading log message when re-auth succeeds but second poll fails for a different reason (`coordinator.py`)
 
 ### UX / Documentation
 
-- [ ] Lovelace / dashboard YAML example in README
-- [ ] Automation example in README — verify correct `event_type` and `event_data` schema
+- [x] Lovelace / dashboard YAML example in README
+- [x] Automation example in README — verify correct `event_type` and `event_data` schema
 
 ### QA
 
@@ -82,10 +82,10 @@ Issues that are non-blocking for a first release but important for production qu
 
 ### Tech debt
 
-- [ ] Pin CI action versions to commit SHAs instead of `@master` / `@main` (`ci.yml`)
+- [x] Pin CI action versions to commit SHAs instead of `@master` / `@main` (`ci.yml`)
 - [ ] Config entry repair flow — surface a HA repair notification when auth fails post-setup (`homeassistant.helpers.issue_registry`)
 - [x] Options flow: allow credentials and controller URL to be updated without re-adding integration
-- [ ] Service calls: `unifi_alerts.clear_category` and `unifi_alerts.clear_all` (`services.py`, `services.yaml`)
+- [x] Service calls: `unifi_alerts.clear_category` and `unifi_alerts.clear_all` (`services.py`, `services.yaml`)
 
 ---
 
@@ -95,7 +95,7 @@ Prerequisites for submitting to https://github.com/hacs/default.
 
 - [ ] Replace placeholder `brand/icon.png` with a real 256×256 icon
 - [ ] At least 2 tagged releases with passing CI
-- [ ] Create `info.md` (HACS display page)
+- [x] Create `info.md` (HACS display page)
 - [ ] All v1.x issues resolved
 - [ ] Submit PR to `hacs/default`
 

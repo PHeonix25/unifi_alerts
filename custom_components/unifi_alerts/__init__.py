@@ -19,6 +19,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import UniFiAlertsCoordinator
+from .services import async_register_services, async_unregister_services
 from .unifi_client import UniFiClient
 from .webhook_handler import WebhookManager
 
@@ -78,6 +79,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Register domain services (idempotent — safe for multiple entries)
+    async_register_services(hass)
+
     # Re-register webhooks and reload options when the entry is updated
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
@@ -103,6 +107,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         client = entry_data.get("client")
         if client:
             await client.close()
+        # Unregister domain-level services only when the last entry is gone
+        if not hass.data.get(DOMAIN):
+            async_unregister_services(hass)
     return unload_ok
 
 
