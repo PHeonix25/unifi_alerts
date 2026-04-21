@@ -48,6 +48,31 @@ jobs:
           fi
           echo "OK: tag matches manifest version $MANIFEST_VERSION"
 
+      - name: Determine release type from tag
+        id: release_type
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          if echo "$TAG" | grep -qE '-pre[0-9]+$'; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "Release type: PRE-RELEASE ($TAG)"
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+            echo "Release type: STABLE ($TAG)"
+          fi
+
+      - name: Validate manifest version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          MANIFEST_VERSION=$(python3 -c "import json; print(json.load(open('custom_components/unifi_alerts/manifest.json'))['version'])")
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "ERROR: tag version ($TAG_VERSION) does not match manifest version ($MANIFEST_VERSION)"
+            echo ""
+            echo "Update manifest.json to version $TAG_VERSION before tagging, or retag with v$MANIFEST_VERSION."
+            exit 1
+          fi
+          echo "OK: tag matches manifest version $MANIFEST_VERSION"
+
       - name: Create release zip
         run: |
           cd custom_components
