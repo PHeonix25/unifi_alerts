@@ -69,7 +69,7 @@ Issues that are non-blocking for a first release but important for production qu
 ### Bugs / reliability
 
 - [x] No pagination on `/alarm` endpoint — `limit=200` added (`unifi_client.py:92`)
-- [ ] Polling re-auth is fire-and-forget — misleading log message when re-auth succeeds but second poll fails for a different reason (`coordinator.py`)
+- [x] Polling re-auth is fire-and-forget — misleading log message when re-auth succeeds but second poll fails for a different reason (`coordinator.py`)
 
 ### UX / Documentation
 

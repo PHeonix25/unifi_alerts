@@ -1,5 +1,16 @@
 # History
 
+## 2026-04-21 (session 11) — Distinguish re-auth failure from post-re-auth update failure in polling
+
+- **`coordinator.py`**: split the single `except (InvalidAuthError, CannotConnectError)` retry handler into two separate `try/except` blocks — one around `authenticate()` and one around the retried `categorise_alarms()` call.
+- Re-auth failures (`InvalidAuthError` or `CannotConnectError` from `authenticate()`) now raise `ConfigEntryAuthFailed` so HA can surface the reauth flow to the user; log message is "Re-authentication failed; credentials may have changed".
+- Post-re-auth poll failures (`CannotConnectError` from the second `categorise_alarms()`) now raise `UpdateFailed` with "Cannot reach UniFi controller after re-authentication" — clearly distinguishable from the first-pass "Cannot reach UniFi controller" message.
+- Added `ConfigEntryAuthFailed` import from `homeassistant.exceptions`.
+- **`tests/unit/test_coordinator.py`**: replaced the old `test_invalid_auth_on_retry_raises_update_failed` test with three new tests in `TestPollingErrorPaths`: re-auth `InvalidAuthError` → `ConfigEntryAuthFailed`; re-auth `CannotConnectError` → `ConfigEntryAuthFailed`; re-auth succeeds but retry fails → `UpdateFailed` containing "after re-authentication".
+- All 282 tests pass; lint, mypy, HACS preflight, and translation drift checks clean.
+
+---
+
 ## 2026-04-21 (session 11) — README: Lovelace card and automation examples
 
 - Added `## Examples` section to `README.md` replacing the minimal one-liner automation stub.
