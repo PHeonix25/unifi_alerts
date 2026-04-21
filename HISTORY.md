@@ -1,5 +1,19 @@
 # History
 
+## 2026-04-21 — Extended v1.2 critical-review: full security / architecture / UX audit
+
+- **ROADMAP.md v1.2.0**: expanded from 13 items to 26 items after a comprehensive review from security, senior developer, and user/consumer perspectives.
+- **New critical finding — webhook ID collision on multi-entry:** `webhook_id_for_category()` generates IDs without `entry_id`, so two config entries (multi-controller households) silently overwrite each other's webhook handlers. Promoted to the top of the reliability list with a `(CRITICAL)` tag.
+- **New security findings:** config flow creates bare `aiohttp.ClientSession` bypassing HA's proxy/SSL; credential fragments may leak in `__init__.py` exception messages; no webhook rate limiting/debounce.
+- **Expanded SSL fail-open scope:** identified 4 additional call sites (`_detect_unifi_os`, `_verify_api_key`, `_login_userpass`, `close`) with the same `False` default — all need the same fix.
+- **New reliability findings:** `from_api_alarm` silently drops epoch-millisecond timestamps; `open_count` never updated on webhook path (stale between polls).
+- **New tech debt findings:** config flow accesses private `client._is_unifi_os`; `EventDeviceClass.BUTTON` semantically wrong; clear buttons lack `entity_category`.
+- **New testing findings:** no test for epoch-ms timestamp parsing; no test for dedup/rate limiting; multi-entry test annotated as red-green pair against the webhook ID collision bug.
+- **TODO.md**: matching section updated with all new items, grouped by impact.
+- No code changes — docs only. All 324 tests still pass.
+
+---
+
 ## 2026-04-21 (session 11) — Distinguish re-auth failure from post-re-auth update failure in polling
 
 - **`coordinator.py`**: split the single `except (InvalidAuthError, CannotConnectError)` retry handler into two separate `try/except` blocks — one around `authenticate()` and one around the retried `categorise_alarms()` call.
