@@ -40,6 +40,15 @@
           "webhook_url_security_firewall": "Security: Firewall block webhook URL",
           "webhook_url_power": "Power: PoE / power loss webhook URL"
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate UniFi Alerts",
+        "description": "Your UniFi controller credentials for **{name}** are no longer valid. Enter new credentials to restore the connection.",
+        "data": {
+          "username": "Username (leave blank if using API key)",
+          "password": "Password",
+          "api_key": "API Key (UniFi OS only — leave blank if using username/password)"
+        }
       }
     },
     "error": {
@@ -50,11 +59,62 @@
       "unknown": "An unexpected error occurred. Check the Home Assistant logs."
     },
     "abort": {
-      "already_configured": "This UniFi controller is already configured."
+      "already_configured": "This UniFi controller is already configured.",
+      "reauth_successful": "Re-authentication was successful. The integration has been reloaded."
+    }
+  },
+  "issues": {
+    "auth_failed": {
+      "title": "UniFi Alerts: authentication failed for {name}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Re-authenticate UniFi Alerts",
+            "description": "The credentials for **{name}** are no longer valid (e.g. the password or API key was changed). Enter new credentials to restore the connection."
+          }
+        }
+      }
+    }
+  },
+  "services": {
+    "clear_category": {
+      "name": "Clear category",
+      "description": "Manually clear the alert state for a specific category on one or all UniFi Alerts entries.",
+      "fields": {
+        "category": {
+          "name": "Category",
+          "description": "The alert category to clear."
+        },
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Optional config entry ID. Leave blank to clear across all entries."
+        }
+      }
+    },
+    "clear_all": {
+      "name": "Clear all",
+      "description": "Manually clear the alert state for every active category on one or all UniFi Alerts entries.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Optional config entry ID. Leave blank to clear across all entries."
+        }
+      }
     }
   },
   "options": {
     "step": {
+      "credentials": {
+        "title": "Update Controller Credentials",
+        "description": "Optionally update the controller URL or credentials. Leave all fields blank to skip this step and go straight to alert category settings.\n\nCurrent controller: {current_url}",
+        "data": {
+          "controller_url": "New Controller URL (leave blank to keep current)",
+          "username": "New Username (leave blank to keep current)",
+          "password": "New Password (leave blank to keep current)",
+          "api_key": "New API Key (leave blank to keep current)",
+          "verify_ssl": "Verify SSL certificate"
+        }
+      },
       "init": {
         "title": "Update Alert Categories",
         "description": "Update your alert category settings. Webhook URLs for your enabled categories are shown below — copy them into UniFi Alarm Manager as needed.",

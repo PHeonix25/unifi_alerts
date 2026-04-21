@@ -229,7 +229,7 @@ async def test_finish_submit_creates_entry() -> None:
 
 @pytest.mark.asyncio
 async def test_options_init_includes_webhook_urls() -> None:
-    """Options flow init should include webhook URL fields in data_schema."""
+    """Options flow categories step should include webhook URL fields in data_schema."""
     fake_secret = "options-test-secret"
     config_entry = MagicMock()
     config_entry.data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES, CONF_WEBHOOK_SECRET: fake_secret}
@@ -244,7 +244,7 @@ async def test_options_init_includes_webhook_urls() -> None:
         "custom_components.unifi_alerts.config_flow.async_generate_url",
         return_value=fake_url,
     ):
-        result = await flow.async_step_init(user_input=None)
+        result = await flow.async_step_categories(user_input=None)
 
     assert result["step_id"] == "init"
     call_kwargs = flow.async_show_form.call_args.kwargs
@@ -291,7 +291,7 @@ async def test_options_init_reads_entry_options_over_data() -> None:
     with patch(
         "custom_components.unifi_alerts.config_flow.async_generate_url", return_value="http://x"
     ):
-        await flow.async_step_init(user_input=None)
+        await flow.async_step_categories(user_input=None)
 
     call_kwargs = flow.async_show_form.call_args.kwargs
     schema = call_kwargs["data_schema"]
@@ -499,7 +499,7 @@ async def test_options_flow_saves_submitted_values() -> None:
     user_input[CONF_CLEAR_TIMEOUT] = 60
     user_input[CONF_SITE] = "secondary"
 
-    result = await flow.async_step_init(user_input)
+    result = await flow.async_step_categories(user_input)
 
     assert result["type"] == "create_entry"
     saved = flow.async_create_entry.call_args.kwargs["data"]
@@ -579,8 +579,483 @@ async def test_options_flow_rejects_all_disabled() -> None:
         "custom_components.unifi_alerts.config_flow.async_generate_url",
         return_value="http://ha.local/webhook/x",
     ):
-        result = await flow.async_step_init(all_off)
+        result = await flow.async_step_categories(all_off)
 
     assert result["step_id"] == "init"
     call_kwargs = flow.async_show_form.call_args.kwargs
     assert call_kwargs["errors"] == {"base": "at_least_one_category"}
+
+
+# ---------------------------------------------------------------------------
+# Reauth flow tests
+# ---------------------------------------------------------------------------
+
+
+def _make_reauth_flow(entry_id: str = "entry-test") -> UniFiAlertsConfigFlow:
+    """Create a flow wired up for reauth tests."""
+    flow = UniFiAlertsConfigFlow()
+    flow.context = {"entry_id": entry_id}
+
+    mock_entry = MagicMock()
+    mock_entry.entry_id = entry_id
+    mock_entry.title = "UniFi Alerts (https://192.168.1.1)"
+    mock_entry.data = {
+        CONF_CONTROLLER_URL: "https://192.168.1.1",
+        CONF_USERNAME: "admin",
+        CONF_PASSWORD: "oldpassword",
+        CONF_WEBHOOK_SECRET: "secret",
+    }
+
+    hass = MagicMock()
+    hass.config_entries.async_get_entry = MagicMock(return_value=mock_entry)
+    hass.config_entries.async_update_entry = MagicMock()
+    hass.config_entries.async_reload = AsyncMock()
+    flow.hass = hass
+    flow._reauth_entry = mock_entry  # pre-set so reauth_confirm can access it
+    return flow
+
+
+class TestReauthFlow:
+    """Tests for the reauth flow steps."""
+
+    @pytest.mark.asyncio
+    async def test_async_step_reauth_routes_to_reauth_confirm(self) -> None:
+        """async_step_reauth must store the entry and advance to reauth_confirm."""
+        flow = UniFiAlertsConfigFlow()
+        entry_id = "entry-reauth-1"
+        flow.context = {"entry_id": entry_id}
+
+        mock_entry = MagicMock()
+        mock_entry.entry_id = entry_id
+        mock_entry.title = "Test Controller"
+
+        hass = MagicMock()
+        hass.config_entries.async_get_entry = MagicMock(return_value=mock_entry)
+        hass.config_entries.async_reload = AsyncMock()
+        flow.hass = hass
+
+        confirm_result = {"type": "form", "step_id": "reauth_confirm"}
+        flow.async_step_reauth_confirm = AsyncMock(return_value=confirm_result)
+
+        with patch(
+            "custom_components.unifi_alerts.config_flow._create_auth_failed_issue"
+        ):
+            result = await flow.async_step_reauth({})
+
+        assert result == confirm_result
+        assert flow._reauth_entry is mock_entry
+
+    @pytest.mark.asyncio
+    async def test_async_step_reauth_creates_issue(self) -> None:
+        """async_step_reauth must call _create_auth_failed_issue."""
+        flow = UniFiAlertsConfigFlow()
+        entry_id = "entry-issue-test"
+        flow.context = {"entry_id": entry_id}
+
+        mock_entry = MagicMock()
+        mock_entry.entry_id = entry_id
+        mock_entry.title = "Test"
+
+        hass = MagicMock()
+        hass.config_entries.async_get_entry = MagicMock(return_value=mock_entry)
+        hass.config_entries.async_reload = AsyncMock()
+        flow.hass = hass
+        flow.async_step_reauth_confirm = AsyncMock(return_value={"type": "form"})
+
+        with patch(
+            "custom_components.unifi_alerts.config_flow._create_auth_failed_issue"
+        ) as mock_create:
+            await flow.async_step_reauth({})
+
+        mock_create.assert_called_once_with(hass, mock_entry)
+
+    @pytest.mark.asyncio
+    async def test_reauth_confirm_no_input_shows_form(self) -> None:
+        """With no user_input, reauth_confirm must show the credential form."""
+        flow = _make_reauth_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "reauth_confirm"})
+
+        result = await flow.async_step_reauth_confirm(user_input=None)
+
+        assert result["step_id"] == "reauth_confirm"
+        flow.async_show_form.assert_called_once()
+        call_kwargs = flow.async_show_form.call_args.kwargs
+        assert call_kwargs["step_id"] == "reauth_confirm"
+        assert not call_kwargs["errors"]
+
+    @pytest.mark.asyncio
+    async def test_reauth_confirm_valid_credentials_updates_entry_and_aborts(self) -> None:
+        """Valid credentials must update entry.data and abort with reauth_successful."""
+        flow = _make_reauth_flow()
+        flow.async_abort = MagicMock(return_value={"type": "abort", "reason": "reauth_successful"})
+
+        new_creds = {CONF_USERNAME: "admin", CONF_PASSWORD: "newpassword"}
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                return_value=_make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+            patch("custom_components.unifi_alerts.config_flow.ir.async_delete_issue") as mock_del,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value="userpass")
+            instance._is_unifi_os = False
+
+            result = await flow.async_step_reauth_confirm(user_input=new_creds)
+
+        assert result["reason"] == "reauth_successful"
+        flow.hass.config_entries.async_update_entry.assert_called_once()
+        flow.hass.config_entries.async_reload.assert_awaited_once()
+        mock_del.assert_called_once_with(
+            flow.hass, "unifi_alerts", f"auth_failed_{flow._reauth_entry.entry_id}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_reauth_confirm_invalid_credentials_shows_error(self) -> None:
+        """Invalid credentials must re-show the form with invalid_auth error."""
+        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
+
+        flow = _make_reauth_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "reauth_confirm"})
+
+        new_creds = {CONF_USERNAME: "admin", CONF_PASSWORD: "wrongpassword"}
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                return_value=_make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(side_effect=InvalidAuthError("bad"))
+
+            result = await flow.async_step_reauth_confirm(user_input=new_creds)
+
+        assert result["step_id"] == "reauth_confirm"
+        call_kwargs = flow.async_show_form.call_args.kwargs
+        assert call_kwargs["errors"] == {"base": "invalid_auth"}
+
+    @pytest.mark.asyncio
+    async def test_reauth_confirm_cannot_connect_shows_error(self) -> None:
+        """A connection error during reauth must show cannot_connect error."""
+        from custom_components.unifi_alerts.unifi_client import CannotConnectError
+
+        flow = _make_reauth_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "reauth_confirm"})
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                return_value=_make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(side_effect=CannotConnectError("down"))
+
+            result = await flow.async_step_reauth_confirm(
+                user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "pass"}
+            )
+
+        assert result["step_id"] == "reauth_confirm"
+        call_kwargs = flow.async_show_form.call_args.kwargs
+        assert call_kwargs["errors"] == {"base": "cannot_connect"}
+
+    @pytest.mark.asyncio
+    async def test_reauth_confirm_does_not_delete_issue_on_failure(self) -> None:
+        """async_delete_issue must NOT be called when reauth fails."""
+        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
+
+        flow = _make_reauth_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "reauth_confirm"})
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                return_value=_make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+            patch("custom_components.unifi_alerts.config_flow.ir.async_delete_issue") as mock_del,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(side_effect=InvalidAuthError("bad"))
+
+            await flow.async_step_reauth_confirm(
+                user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "wrong"}
+            )
+
+        mock_del.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Options flow — credentials step
+# ---------------------------------------------------------------------------
+
+
+def _make_options_flow(
+    url: str = "https://192.168.1.1",
+    enabled_categories: list[str] | None = None,
+) -> UniFiAlertsOptionsFlow:
+    """Return an options-flow instance wired with a minimal mock config entry and hass."""
+    config_entry = MagicMock()
+    config_entry.entry_id = "entry-options-creds"
+    config_entry.data = {
+        CONF_CONTROLLER_URL: url,
+        CONF_USERNAME: "admin",
+        CONF_PASSWORD: "secret",
+        CONF_API_KEY: "",
+        CONF_VERIFY_SSL: True,
+        CONF_WEBHOOK_SECRET: "fixed-secret",
+        CONF_ENABLED_CATEGORIES: enabled_categories or ALL_CATEGORIES,
+    }
+    config_entry.options = {}
+
+    flow = UniFiAlertsOptionsFlow(config_entry)
+    hass = MagicMock()
+    hass.config_entries.async_entries = MagicMock(return_value=[])
+    hass.config_entries.async_update_entry = MagicMock()
+    hass.config_entries.async_reload = AsyncMock()
+    flow.hass = hass
+    return flow
+
+
+class TestOptionsFlowCredentials:
+    """Tests for the new credentials step in the options flow."""
+
+    @pytest.mark.asyncio
+    async def test_init_routes_to_credentials_step(self) -> None:
+        """Opening the options flow (async_step_init) should show the credentials step first."""
+        flow = _make_options_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "credentials"})
+
+        result = await flow.async_step_init(user_input=None)
+
+        assert result["step_id"] == "credentials"
+        flow.async_show_form.assert_called_once()
+        call_kwargs = flow.async_show_form.call_args.kwargs
+        assert call_kwargs["step_id"] == "credentials"
+
+    @pytest.mark.asyncio
+    async def test_blank_submission_skips_to_categories(self) -> None:
+        """Submitting all-blank credentials skips to the categories step without any auth call."""
+        flow = _make_options_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
+
+        blank_input = {
+            CONF_CONTROLLER_URL: "",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+        }
+
+        with patch(
+            "custom_components.unifi_alerts.config_flow.async_generate_url",
+            return_value="http://ha.local/webhook/x",
+        ):
+            result = await flow.async_step_credentials(blank_input)
+
+        # Should have proceeded to categories (step_id="init" is the categories form)
+        assert result["step_id"] == "init"
+        # No entry update should have occurred
+        flow.hass.config_entries.async_update_entry.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_valid_new_credentials_updates_entry_data(self) -> None:
+        """Submitting new valid credentials must update entry.data and continue to categories."""
+        flow = _make_options_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
+
+        new_creds = {
+            CONF_CONTROLLER_URL: "https://10.0.0.1",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "newpass",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+        }
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                return_value=_make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_generate_url",
+                return_value="http://ha.local/webhook/x",
+            ),
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance._is_unifi_os = False
+
+            result = await flow.async_step_credentials(new_creds)
+
+        # entry.data must have been updated
+        flow.hass.config_entries.async_update_entry.assert_called_once()
+        updated_data = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert updated_data[CONF_CONTROLLER_URL] == "https://10.0.0.1"
+        assert updated_data[CONF_PASSWORD] == "newpass"
+
+        # Should have continued to categories
+        assert result["step_id"] == "init"
+
+    @pytest.mark.asyncio
+    async def test_invalid_credentials_shows_error_and_does_not_update(self) -> None:
+        """When the new credentials fail auth, show invalid_auth and do NOT update entry.data."""
+        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
+
+        flow = _make_options_flow()
+        flow.async_show_form = MagicMock(
+            return_value={"type": "form", "step_id": "credentials"}
+        )
+
+        new_creds = {
+            CONF_CONTROLLER_URL: "",
+            CONF_USERNAME: "baduser",
+            CONF_PASSWORD: "wrongpass",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+        }
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                return_value=_make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(side_effect=InvalidAuthError("bad creds"))
+
+            result = await flow.async_step_credentials(new_creds)
+
+        assert result["step_id"] == "credentials"
+        call_kwargs = flow.async_show_form.call_args.kwargs
+        assert call_kwargs["errors"] == {"base": "invalid_auth"}
+        # entry.data must NOT have been touched
+        flow.hass.config_entries.async_update_entry.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_invalid_url_scheme_shows_error(self) -> None:
+        """A non-http/https URL scheme must show a field-level error without hitting the network."""
+        flow = _make_options_flow()
+        flow.async_show_form = MagicMock(
+            return_value={"type": "form", "step_id": "credentials"}
+        )
+
+        bad_url_input = {
+            CONF_CONTROLLER_URL: "ftp://192.168.1.1",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+        }
+
+        with patch(
+            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+            return_value=_make_session_mock(),
+        ) as mock_session_cls:
+            result = await flow.async_step_credentials(bad_url_input)
+
+        assert result["step_id"] == "credentials"
+        call_kwargs = flow.async_show_form.call_args.kwargs
+        assert call_kwargs["errors"].get(CONF_CONTROLLER_URL) == "invalid_url_scheme"
+        # No network call should have been made
+        mock_session_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_url_collision_aborts(self) -> None:
+        """Changing to a URL already used by another entry must abort with already_configured."""
+        flow = _make_options_flow(url="https://192.168.1.1")
+
+        # Simulate an existing OTHER entry with the new URL
+        other_entry = MagicMock()
+        other_entry.entry_id = "other-entry"
+        other_entry.data = {CONF_CONTROLLER_URL: "https://10.0.0.1"}
+        flow.hass.config_entries.async_entries = MagicMock(return_value=[other_entry])
+
+        flow.async_abort = MagicMock(return_value={"type": "abort", "reason": "already_configured"})
+
+        new_creds = {
+            CONF_CONTROLLER_URL: "https://10.0.0.1",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+        }
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                return_value=_make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance._is_unifi_os = False
+
+            result = await flow.async_step_credentials(new_creds)
+
+        assert result["reason"] == "already_configured"
+        flow.hass.config_entries.async_update_entry.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_after_credential_update_categories_proceeds_normally(self) -> None:
+        """After a successful credentials update, the categories step saves options as usual."""
+        from custom_components.unifi_alerts.const import CONF_CLEAR_TIMEOUT, CONF_POLL_INTERVAL
+
+        flow = _make_options_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
+        flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+
+        # First: update credentials
+        new_creds = {
+            CONF_CONTROLLER_URL: "",
+            CONF_USERNAME: "newadmin",
+            CONF_PASSWORD: "",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: False,
+        }
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                return_value=_make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_generate_url",
+                return_value="http://ha.local/webhook/x",
+            ),
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance._is_unifi_os = True
+
+            await flow.async_step_credentials(new_creds)
+
+        # Now: submit the categories step
+        first_cat = ALL_CATEGORIES[0]
+        cat_input = {f"cat_{cat}": (cat == first_cat) for cat in ALL_CATEGORIES}
+        cat_input[CONF_POLL_INTERVAL] = 90
+        cat_input[CONF_CLEAR_TIMEOUT] = 15
+
+        with patch(
+            "custom_components.unifi_alerts.config_flow.async_generate_url",
+            return_value="http://ha.local/webhook/x",
+        ):
+            result = await flow.async_step_categories(cat_input)
+
+        assert result["type"] == "create_entry"
+        saved = flow.async_create_entry.call_args.kwargs["data"]
+        assert saved[CONF_ENABLED_CATEGORIES] == [first_cat]
+        assert saved[CONF_POLL_INTERVAL] == 90
+        assert saved[CONF_CLEAR_TIMEOUT] == 15

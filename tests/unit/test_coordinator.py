@@ -318,9 +318,9 @@ class TestPollingErrorPaths:
         client.authenticate.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_invalid_auth_on_retry_raises_update_failed(self):
-        """If re-auth also fails, UpdateFailed must be raised."""
-        from homeassistant.helpers.update_coordinator import UpdateFailed
+    async def test_reauth_raises_invalid_auth_raises_config_entry_auth_failed(self):
+        """If re-auth itself raises InvalidAuthError, ConfigEntryAuthFailed must be raised."""
+        from homeassistant.exceptions import ConfigEntryAuthFailed
 
         from custom_components.unifi_alerts.unifi_client import InvalidAuthError
 
@@ -342,8 +342,71 @@ class TestPollingErrorPaths:
             CONF_CLEAR_TIMEOUT: 30,
         }
         coord = UniFiAlertsCoordinator(hass, client, config)
-        with pytest.raises(UpdateFailed):
+        with pytest.raises(ConfigEntryAuthFailed):
             await coord._async_update_data()
+
+    @pytest.mark.asyncio
+    async def test_reauth_raises_cannot_connect_raises_config_entry_auth_failed(self):
+        """If re-auth raises CannotConnectError, ConfigEntryAuthFailed must be raised."""
+        from homeassistant.exceptions import ConfigEntryAuthFailed
+
+        from custom_components.unifi_alerts.unifi_client import CannotConnectError, InvalidAuthError
+
+        hass = MagicMock()
+
+        def _create_task(coro, **kwargs):
+            coro.close()
+            return MagicMock()
+
+        hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
+        client = MagicMock()
+        client.categorise_alarms = AsyncMock(side_effect=InvalidAuthError("expired"))
+        client.authenticate = AsyncMock(side_effect=CannotConnectError("unreachable during reauth"))
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        with pytest.raises(ConfigEntryAuthFailed):
+            await coord._async_update_data()
+
+    @pytest.mark.asyncio
+    async def test_reauth_succeeds_but_retry_fails_raises_update_failed_with_distinctive_message(
+        self,
+    ):
+        """Re-auth succeeds but retried categorise_alarms fails → UpdateFailed with 'after re-authentication'."""
+        from homeassistant.helpers.update_coordinator import UpdateFailed
+
+        from custom_components.unifi_alerts.unifi_client import CannotConnectError, InvalidAuthError
+
+        hass = MagicMock()
+
+        def _create_task(coro, **kwargs):
+            coro.close()
+            return MagicMock()
+
+        hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
+        client = MagicMock()
+        # First categorise_alarms call fails with auth error; re-auth succeeds; second call fails
+        client.categorise_alarms = AsyncMock(
+            side_effect=[InvalidAuthError("expired"), CannotConnectError("controller 500")]
+        )
+        client.authenticate = AsyncMock()  # re-auth succeeds
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        with pytest.raises(UpdateFailed) as exc_info:
+            await coord._async_update_data()
+
+        assert "after re-authentication" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_cannot_connect_raises_update_failed(self):

@@ -27,6 +27,7 @@ DEFAULT_POLL_INTERVAL = 60  # seconds
 DEFAULT_CLEAR_TIMEOUT = 30  # minutes
 DEFAULT_VERIFY_SSL = True  # disable in config flow if controller has a self-signed cert
 DEFAULT_SITE = "default"
+WEBHOOK_MAX_BODY_BYTES = 8192  # 8 KB ceiling on inbound webhook bodies
 
 # ──────────────────────────────────────────────
 # Category identifiers

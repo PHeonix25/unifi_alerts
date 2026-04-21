@@ -7,7 +7,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
@@ -19,7 +19,8 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import UniFiAlertsCoordinator
-from .unifi_client import UniFiClient
+from .services import async_register_services, async_unregister_services
+from .unifi_client import InvalidAuthError, UniFiClient
 from .webhook_handler import WebhookManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,6 +49,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     try:
         await client.authenticate()
+    except InvalidAuthError as err:
+        _LOGGER.error("Authentication failed for UniFi controller: %s", err)
+        raise ConfigEntryAuthFailed(f"Invalid credentials for UniFi controller: {err}") from err
     except Exception as err:  # noqa: BLE001
         _LOGGER.error("Failed to authenticate to UniFi controller: %s", err)
         raise ConfigEntryNotReady(f"Could not connect to UniFi controller: {err}") from err
@@ -78,6 +82,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Register domain services (idempotent — safe for multiple entries)
+    async_register_services(hass)
+
     # Re-register webhooks and reload options when the entry is updated
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
@@ -103,6 +110,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         client = entry_data.get("client")
         if client:
             await client.close()
+        # Unregister domain-level services only when the last entry is gone
+        if not hass.data.get(DOMAIN):
+            async_unregister_services(hass)
     return unload_ok
 
 

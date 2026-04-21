@@ -11,6 +11,7 @@ import voluptuous as vol
 from homeassistant.components.webhook import async_generate_url
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 from yarl import URL
 
@@ -39,6 +40,19 @@ from .const import (
 from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _create_auth_failed_issue(hass: Any, entry: Any) -> None:
+    """Create a repair issue in the HA issue registry when credentials fail post-setup."""
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"auth_failed_{entry.entry_id}",
+        is_fixable=True,
+        severity=ir.IssueSeverity.ERROR,
+        translation_key="auth_failed",
+        translation_placeholders={"name": entry.title},
+    )
 
 
 class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -194,6 +208,70 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(fields),
         )
 
+    # ── Reauth flow ───────────────────────────────────────────────────────
+
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
+        """Entry point called by HA when ConfigEntryAuthFailed is raised.
+
+        Creates a repair issue so users see a repair card even if the standard
+        reauth notification is missed.
+        """
+        self._reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        # Surface a repair card in addition to the standard reauth prompt
+        if self._reauth_entry is not None:
+            _create_auth_failed_issue(self.hass, self._reauth_entry)
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show credential form and validate new credentials on submit."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None and self._reauth_entry is not None:
+            entry = self._reauth_entry
+            url: str = entry.data.get(CONF_CONTROLLER_URL, "")
+            async with aiohttp.ClientSession() as session:
+                client = UniFiClient(session, url, user_input)
+                try:
+                    auth_method = await client.authenticate()
+                except InvalidAuthError:
+                    errors["base"] = "invalid_auth"
+                except CannotConnectError as err:
+                    _LOGGER.error("Cannot reach controller during reauth: %s", err)
+                    errors["base"] = "cannot_connect"
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("Unexpected error during reauth")
+                    errors["base"] = "unknown"
+                else:
+                    # Merge updated credentials into the entry
+                    new_data = {
+                        **entry.data,
+                        **user_input,
+                        CONF_AUTH_METHOD: auth_method,
+                        CONF_IS_UNIFI_OS: client._is_unifi_os,
+                    }
+                    self.hass.config_entries.async_update_entry(entry, data=new_data)
+                    # Clear the repair issue now that auth is restored
+                    ir.async_delete_issue(self.hass, DOMAIN, f"auth_failed_{entry.entry_id}")
+                    await self.hass.config_entries.async_reload(entry.entry_id)
+                    return self.async_abort(reason="reauth_successful")
+
+        _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+        _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_USERNAME): str,
+                vol.Optional(CONF_PASSWORD): _password_selector,
+                vol.Optional(CONF_API_KEY): _api_key_selector,
+            }
+        )
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=schema,
+            errors=errors,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
@@ -207,6 +285,131 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
         self._config_entry = config_entry
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Router: always start with the credentials step."""
+        return await self.async_step_credentials()
+
+    async def async_step_credentials(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Optional step: update controller URL and/or credentials.
+
+        All fields are optional.  If the user leaves every field blank the step
+        is skipped and the flow continues straight to the categories step.  If
+        any credential field is filled in, the new values are validated against
+        the controller before being saved.
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            new_url_raw: str = (user_input.get(CONF_CONTROLLER_URL) or "").strip()
+            new_username: str = (user_input.get(CONF_USERNAME) or "").strip()
+            new_password: str = (user_input.get(CONF_PASSWORD) or "").strip()
+            new_api_key: str = (user_input.get(CONF_API_KEY) or "").strip()
+            # verify_ssl always comes through as a bool (voluptuous default)
+            new_verify_ssl: bool = user_input.get(
+                CONF_VERIFY_SSL,
+                self._config_entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+            )
+
+            credentials_changed = bool(new_url_raw or new_username or new_password or new_api_key)
+
+            if not credentials_changed:
+                # Nothing changed — skip straight to categories
+                return await self.async_step_categories()
+
+            # Determine the effective values to test
+            effective_url = (
+                new_url_raw.rstrip("/")
+                if new_url_raw
+                else self._config_entry.data[CONF_CONTROLLER_URL]
+            )
+
+            if URL(effective_url).scheme not in ("http", "https"):
+                errors[CONF_CONTROLLER_URL] = "invalid_url_scheme"
+            else:
+                # Build a merged credential dict for the test client
+                test_data: dict[str, Any] = {
+                    **self._config_entry.data,
+                    CONF_CONTROLLER_URL: effective_url,
+                    CONF_VERIFY_SSL: new_verify_ssl,
+                }
+                if new_username:
+                    test_data[CONF_USERNAME] = new_username
+                if new_password:
+                    test_data[CONF_PASSWORD] = new_password
+                if new_api_key:
+                    test_data[CONF_API_KEY] = new_api_key
+
+                async with aiohttp.ClientSession() as session:
+                    client = UniFiClient(session, effective_url, test_data)
+                    try:
+                        auth_method = await client.authenticate()
+                        await client.fetch_alarms()
+                    except InvalidAuthError:
+                        errors["base"] = "invalid_auth"
+                    except CannotConnectError as err:
+                        _LOGGER.error("Cannot reach controller during options update: %s", err)
+                        errors["base"] = "cannot_connect"
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.exception("Unexpected error during options credentials update")
+                        errors["base"] = "unknown"
+                    else:
+                        # Check whether the new URL would collide with another entry
+                        if effective_url != self._config_entry.data[CONF_CONTROLLER_URL]:
+                            for entry in self.hass.config_entries.async_entries(DOMAIN):
+                                if (
+                                    entry.entry_id != self._config_entry.entry_id
+                                    and entry.data.get(CONF_CONTROLLER_URL) == effective_url
+                                ):
+                                    return self.async_abort(reason="already_configured")
+
+                        # Persist the updated credentials into entry.data
+                        updated_data = {
+                            **self._config_entry.data,
+                            CONF_CONTROLLER_URL: effective_url,
+                            CONF_VERIFY_SSL: new_verify_ssl,
+                            CONF_AUTH_METHOD: auth_method,
+                            CONF_IS_UNIFI_OS: client._is_unifi_os,
+                        }
+                        if new_username:
+                            updated_data[CONF_USERNAME] = new_username
+                        if new_password:
+                            updated_data[CONF_PASSWORD] = new_password
+                        if new_api_key:
+                            updated_data[CONF_API_KEY] = new_api_key
+
+                        self.hass.config_entries.async_update_entry(
+                            self._config_entry, data=updated_data
+                        )
+                        # Proceed to categories; reload will happen after the full options save
+                        return await self.async_step_categories()
+
+        # Build the credentials form — all fields optional with current values as hints
+        _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+        _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+        current_url: str = self._config_entry.data.get(CONF_CONTROLLER_URL, "")
+        current_verify_ssl: bool = self._config_entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_CONTROLLER_URL): str,
+                vol.Optional(CONF_USERNAME): str,
+                vol.Optional(CONF_PASSWORD): _password_selector,
+                vol.Optional(CONF_API_KEY): _api_key_selector,
+                vol.Optional(CONF_VERIFY_SSL, default=current_verify_ssl): bool,
+            }
+        )
+        return self.async_show_form(
+            step_id="credentials",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"current_url": current_url},
+        )
+
+    async def async_step_categories(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Update alert categories, poll interval, clear timeout, and site."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
