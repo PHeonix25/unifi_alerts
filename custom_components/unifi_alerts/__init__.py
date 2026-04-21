@@ -7,7 +7,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
@@ -20,7 +20,7 @@ from .const import (
 )
 from .coordinator import UniFiAlertsCoordinator
 from .services import async_register_services, async_unregister_services
-from .unifi_client import UniFiClient
+from .unifi_client import InvalidAuthError, UniFiClient
 from .webhook_handler import WebhookManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,6 +49,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     try:
         await client.authenticate()
+    except InvalidAuthError as err:
+        _LOGGER.error("Authentication failed for UniFi controller: %s", err)
+        raise ConfigEntryAuthFailed(f"Invalid credentials for UniFi controller: {err}") from err
     except Exception as err:  # noqa: BLE001
         _LOGGER.error("Failed to authenticate to UniFi controller: %s", err)
         raise ConfigEntryNotReady(f"Could not connect to UniFi controller: {err}") from err

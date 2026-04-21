@@ -17,10 +17,6 @@ If a restart is required, investigate why (e.g. Python module caching, import-ti
 
 ## 🟢 Nice-to-have
 
-### Config entry repair flow
-If authentication fails after setup (e.g. password changed), HA should surface a repair notification prompting the user to re-enter credentials rather than just showing the entry as unavailable.
-**Reference:** `homeassistant.helpers.issue_registry` and `async_create_issue`.
-
 ### Options flow: allow credentials to be updated without re-adding integration
 Currently the only way to change the controller URL or credentials is to delete and re-add the integration. Add a re-auth step to the options flow. Document the current limitation in the README as a workaround.
 
