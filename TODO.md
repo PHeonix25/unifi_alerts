@@ -50,5 +50,3 @@ The `_device_info()` helper function is duplicated identically across `binary_se
 ### Polling re-auth is fire-and-forget
 In `coordinator._async_update_data`, if re-auth succeeds but the second `categorise_alarms()` call fails for a different reason, the error path is the generic `CannotConnectError` branch which may give a misleading log message.
 
-### CI action versions are floating (`@master`, `@main`)
-`home-assistant/actions/hassfest@master` and `hacs/action@main` are not pinned to a SHA. A breaking upstream change or supply-chain compromise would silently affect CI. Pin to commit SHAs and update periodically.
