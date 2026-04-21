@@ -1,5 +1,54 @@
 # History
 
+## 2026-04-21 (session 11) — Options flow: edit credentials and controller URL without re-adding integration
+
+### Goal
+
+Close the `Options flow: allow credentials and controller URL to be updated without re-adding integration` v1.1 roadmap item.  Previously the only way to change credentials or the controller URL was to delete the integration and set it up again from scratch — a painful workflow whenever the UniFi admin password rotated or the controller was moved to a new address.
+
+### `config_flow.py` — new `async_step_credentials` step in the options flow
+
+Added a new first step to `UniFiAlertsOptionsFlow` that optionally updates credentials before the existing categories step.  All fields are optional:
+
+- `CONF_CONTROLLER_URL`, `CONF_USERNAME`, `CONF_PASSWORD`, `CONF_API_KEY` — blank values mean "leave unchanged".
+- `CONF_VERIFY_SSL` — always defaulted from the current entry value.
+
+Router step (`async_step_init`) now delegates straight to `async_step_credentials`.  The legacy options-flow logic (category toggles, poll interval, clear timeout, site, webhook URL display) was renamed to `async_step_categories` and is reached either after a successful credentials update or when the credentials step is skipped (all fields blank).
+
+Validation flow for a non-blank submission:
+
+1. Merge the new fields over the existing `entry.data` to produce a test credential dict.
+2. Validate the URL scheme (`http`/`https` only — same check as initial setup).
+3. Construct a temporary `UniFiClient`, call `authenticate()` and `fetch_alarms()`.  Surface `invalid_auth`, `cannot_connect`, or `unknown` as form errors.
+4. If a new URL would collide with another configured entry for this domain, abort with `already_configured`.
+5. On success, call `hass.config_entries.async_update_entry(...)` with the merged `data`, updating `CONF_AUTH_METHOD` and `CONF_IS_UNIFI_OS` from the validated client too.
+
+Only fields the user actually filled in are overwritten — blank fields preserve the existing values.  This means a user can change just the password without having to re-enter the URL or API key.
+
+### `strings.json` / `translations/en.json` — new options-flow strings
+
+Added `options.step.credentials` (title, description, field labels) and the existing `options.error.invalid_auth`, `options.error.cannot_connect`, `options.error.invalid_url_scheme`, `options.error.unknown`, and `options.abort.already_configured`.  Both files remain byte-identical (CI enforces this).
+
+### Tests
+
+Added `TestOptionsFlowCredentials` in `tests/unit/test_config_flow.py` covering:
+
+- All fields blank → credentials step skipped, flows straight to categories.
+- Valid password update → `entry.data[CONF_PASSWORD]` overwritten, auth_method persisted.
+- Valid URL + API key update → both persisted, old username left untouched.
+- Invalid URL scheme → form re-shown with `invalid_url_scheme` error, no `async_update_entry` call.
+- Invalid auth → `invalid_auth` error on form.
+- URL collision with existing entry → abort with `already_configured`.
+- Verify SSL toggle → persisted even when other fields blank (treated as credentials change only if truly blank).
+
+Test count: 280 → 287 (+7).  `make check` passes cleanly.
+
+### Why this matters
+
+This is the last UX paper-cut from v1.0.  Combined with the config-entry repair flow (session 11a) it means credentials can now be rotated or corrected entirely in-place: HA surfaces a repair notification on auth failure, the user clicks through to a re-auth form, or they can proactively open Options → Configure to pre-emptively rotate a password.  No more "delete and re-add the integration" dance.
+
+---
+
 ## 2026-04-15 (session 10) — v1.1 security: credentials leak + unbounded webhook body
 
 ### Goal
