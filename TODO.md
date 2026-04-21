@@ -24,12 +24,6 @@ If authentication fails after setup (e.g. password changed), HA should surface a
 ### Options flow: allow credentials to be updated without re-adding integration
 Currently the only way to change the controller URL or credentials is to delete and re-add the integration. Add a re-auth step to the options flow. Document the current limitation in the README as a workaround.
 
-### Lovelace card / dashboard example in README
-Add a simple Lovelace YAML snippet showing how to build a network health card using the binary sensors and count sensors. Reduces friction for new users.
-
-### Automation example in README
-Add a simple automation YAML example showing how to trigger on the `unifi_alerts` event entity. Verify the correct `event_type` and `event_data` schema before publishing.
-
 ### Service calls
 Expose `unifi_alerts.clear_category` and `unifi_alerts.clear_all` as HA services in addition to the button entities. This allows clearing alerts from automations without needing a button press.
 **File to create:** `services.py` (register with `hass.services.async_register`), `services.yaml` (service descriptions).
