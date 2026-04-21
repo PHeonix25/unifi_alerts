@@ -8,6 +8,7 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -75,9 +76,19 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             _LOGGER.warning("Auth expired, re-authenticating: %s", err)
             try:
                 await self._client.authenticate()
+            except (InvalidAuthError, CannotConnectError) as reauth_err:
+                _LOGGER.error(
+                    "Re-authentication failed; credentials may have changed: %s", reauth_err
+                )
+                raise ConfigEntryAuthFailed(
+                    f"Re-authentication failed; credentials may have changed: {reauth_err}"
+                ) from reauth_err
+            try:
                 categorised = await self._client.categorise_alarms(self._site)
-            except (InvalidAuthError, CannotConnectError) as retry_err:
-                raise UpdateFailed(f"UniFi auth failed: {retry_err}") from retry_err
+            except CannotConnectError as retry_err:
+                raise UpdateFailed(
+                    f"Cannot reach UniFi controller after re-authentication: {retry_err}"
+                ) from retry_err
         except CannotConnectError as err:
             raise UpdateFailed(f"Cannot reach UniFi controller: {err}") from err
 
