@@ -20,10 +20,6 @@ If a restart is required, investigate why (e.g. Python module caching, import-ti
 ### Options flow: allow credentials to be updated without re-adding integration
 Currently the only way to change the controller URL or credentials is to delete and re-add the integration. Add a re-auth step to the options flow. Document the current limitation in the README as a workaround.
 
-### Service calls
-Expose `unifi_alerts.clear_category` and `unifi_alerts.clear_all` as HA services in addition to the button entities. This allows clearing alerts from automations without needing a button press.
-**File to create:** `services.py` (register with `hass.services.async_register`), `services.yaml` (service descriptions).
-
 ### Replace placeholder `brand/icon.png` with a real 256×256 icon
 The current brand asset is a minimal placeholder PNG. Replace with a proper UniFi-themed icon before submitting to the HACS default catalogue.
 
