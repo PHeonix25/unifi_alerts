@@ -104,6 +104,17 @@
   },
   "options": {
     "step": {
+      "credentials": {
+        "title": "Update Controller Credentials",
+        "description": "Optionally update the controller URL or credentials. Leave all fields blank to skip this step and go straight to alert category settings.\n\nCurrent controller: {current_url}",
+        "data": {
+          "controller_url": "New Controller URL (leave blank to keep current)",
+          "username": "New Username (leave blank to keep current)",
+          "password": "New Password (leave blank to keep current)",
+          "api_key": "New API Key (leave blank to keep current)",
+          "verify_ssl": "Verify SSL certificate"
+        }
+      },
       "init": {
         "title": "Update Alert Categories",
         "description": "Update your alert category settings. Webhook URLs for your enabled categories are shown below — copy them into UniFi Alarm Manager as needed.",

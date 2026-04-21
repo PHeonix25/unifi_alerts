@@ -17,9 +17,6 @@ If a restart is required, investigate why (e.g. Python module caching, import-ti
 
 ## 🟢 Nice-to-have
 
-### Options flow: allow credentials to be updated without re-adding integration
-Currently the only way to change the controller URL or credentials is to delete and re-add the integration. Add a re-auth step to the options flow. Document the current limitation in the README as a workaround.
-
 ### Replace placeholder `brand/icon.png` with a real 256×256 icon
 The current brand asset is a minimal placeholder PNG. Replace with a proper UniFi-themed icon before submitting to the HACS default catalogue.
 
