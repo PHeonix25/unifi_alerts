@@ -53,6 +53,32 @@
       "already_configured": "This UniFi controller is already configured."
     }
   },
+  "services": {
+    "clear_category": {
+      "name": "Clear category",
+      "description": "Manually clear the alert state for a specific category on one or all UniFi Alerts entries.",
+      "fields": {
+        "category": {
+          "name": "Category",
+          "description": "The alert category to clear."
+        },
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Optional config entry ID. Leave blank to clear across all entries."
+        }
+      }
+    },
+    "clear_all": {
+      "name": "Clear all",
+      "description": "Manually clear the alert state for every active category on one or all UniFi Alerts entries.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Optional config entry ID. Leave blank to clear across all entries."
+        }
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {
