@@ -39,6 +39,8 @@ The current brand asset is a minimal placeholder PNG. Replace with a proper UniF
 
 ### HACS default repository submission
 After the integration is stable and passes `hassfest`, submit a PR to https://github.com/hacs/default to be listed in the default HACS catalogue. Requirements: 2+ releases, passing CI, `hacs.json`, `info.md`, HA brand icon.
+- `info.md` is now present (added session 11).
+- Remaining: 2+ tagged releases, real brand icon (replace placeholder), PR submission to hacs/default.
 
 ---
 
