@@ -95,7 +95,7 @@ Prerequisites for submitting to https://github.com/hacs/default.
 
 - [ ] Replace placeholder `brand/icon.png` with a real 256×256 icon
 - [ ] At least 2 tagged releases with passing CI
-- [ ] Create `info.md` (HACS display page)
+- [x] Create `info.md` (HACS display page)
 - [ ] All v1.x issues resolved
 - [ ] Submit PR to `hacs/default`
 

@@ -22,6 +22,15 @@
 
 ---
 
+## 2026-04-21 (session 11) — Add info.md HACS display page
+
+- Created `info.md` at the repository root as the HACS UI display card (56 lines).
+- Covers features, alert categories, requirements, quick setup, and links; kept concise and scannable per HACS conventions.
+- Ticked `[ ] Create info.md` in `ROADMAP.md` v2.0.0 prerequisites.
+- Noted info.md completion in `TODO.md` HACS default repository submission entry.
+
+---
+
 ## 2026-04-21 (session 11) — Pin CI action versions to commit SHAs
 
 - Pinned all `uses:` lines across `ci.yml`, `release.yml`, and `version-check.yml` to full 40-character commit SHAs.
