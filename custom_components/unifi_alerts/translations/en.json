@@ -40,6 +40,15 @@
           "webhook_url_security_firewall": "Security: Firewall block webhook URL",
           "webhook_url_power": "Power: PoE / power loss webhook URL"
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate UniFi Alerts",
+        "description": "Your UniFi controller credentials for **{name}** are no longer valid. Enter new credentials to restore the connection.",
+        "data": {
+          "username": "Username (leave blank if using API key)",
+          "password": "Password",
+          "api_key": "API Key (UniFi OS only — leave blank if using username/password)"
+        }
       }
     },
     "error": {
@@ -50,7 +59,22 @@
       "unknown": "An unexpected error occurred. Check the Home Assistant logs."
     },
     "abort": {
-      "already_configured": "This UniFi controller is already configured."
+      "already_configured": "This UniFi controller is already configured.",
+      "reauth_successful": "Re-authentication was successful. The integration has been reloaded."
+    }
+  },
+  "issues": {
+    "auth_failed": {
+      "title": "UniFi Alerts: authentication failed for {name}",
+      "description": "The credentials for **{name}** are no longer valid (e.g. the password or API key was changed). Click **Fix** to re-enter your credentials and restore the integration.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Re-authenticate UniFi Alerts",
+            "description": "Enter new credentials for **{name}** to restore the connection."
+          }
+        }
+      }
     }
   },
   "options": {
