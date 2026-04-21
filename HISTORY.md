@@ -31,6 +31,17 @@
 
 ---
 
+## 2026-04-21 (session 11) — Pin CI action versions to commit SHAs
+
+- Pinned all `uses:` lines across `ci.yml`, `release.yml`, and `version-check.yml` to full 40-character commit SHAs.
+- Actions pinned: `actions/checkout@v6`, `actions/setup-python@v6`, `home-assistant/actions/hassfest@master`, `hacs/action@main`, `softprops/action-gh-release@v2.6.1`.
+- Each pinned line includes a trailing `# <tag-or-ref>` comment so the human-readable version remains visible.
+- Eliminates supply-chain risk from floating `@master` / `@main` refs silently picking up breaking upstream changes.
+- No source code changes; `make check` passes (only YAML workflow files modified).
+- Removed the `### CI action versions are floating` entry from `TODO.md`; ticked the corresponding item in `ROADMAP.md` v1.1.0 Tech debt.
+
+---
+
 ## 2026-04-21 (session 11) — Add clear_category and clear_all services
 
 - Created `custom_components/unifi_alerts/services.py`: defines `SERVICE_CLEAR_CATEGORY` and `SERVICE_CLEAR_ALL` with voluptuous schemas; handlers call `coordinator.cancel_clear(category)`, mutate `state.clear()`, and dispatch `coordinator.async_set_updated_data()` — matching button entity behaviour exactly.
@@ -41,6 +52,8 @@
 - All 308 tests pass (280 pre-existing + 28 new); lint, mypy, HACS preflight, and translation drift checks all clean.
 - `TODO.md`: removed `### Service calls` entry under Nice-to-have.
 - `ROADMAP.md`: ticked `[ ] Service calls: ...` to `[x]` under v1.1.0 Tech debt.
+
+---
 
 ## 2026-04-15 (session 10) — v1.1 security: credentials leak + unbounded webhook body
 
