@@ -17,10 +17,6 @@ If a restart is required, investigate why (e.g. Python module caching, import-ti
 
 ## 🟢 Nice-to-have
 
-### Config entry repair flow
-If authentication fails after setup (e.g. password changed), HA should surface a repair notification prompting the user to re-enter credentials rather than just showing the entry as unavailable.
-**Reference:** `homeassistant.helpers.issue_registry` and `async_create_issue`.
-
 ### Replace placeholder `brand/icon.png` with a real 256×256 icon
 The current brand asset is a minimal placeholder PNG. Replace with a proper UniFi-themed icon before submitting to the HACS default catalogue.
 

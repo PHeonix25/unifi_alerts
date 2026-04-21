@@ -11,6 +11,7 @@ import voluptuous as vol
 from homeassistant.components.webhook import async_generate_url
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 from yarl import URL
 
@@ -39,6 +40,19 @@ from .const import (
 from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _create_auth_failed_issue(hass: Any, entry: Any) -> None:
+    """Create a repair issue in the HA issue registry when credentials fail post-setup."""
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"auth_failed_{entry.entry_id}",
+        is_fixable=True,
+        severity=ir.IssueSeverity.ERROR,
+        translation_key="auth_failed",
+        translation_placeholders={"name": entry.title},
+    )
 
 
 class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -192,6 +206,70 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="finish",
             data_schema=vol.Schema(fields),
+        )
+
+    # ── Reauth flow ───────────────────────────────────────────────────────
+
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
+        """Entry point called by HA when ConfigEntryAuthFailed is raised.
+
+        Creates a repair issue so users see a repair card even if the standard
+        reauth notification is missed.
+        """
+        self._reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        # Surface a repair card in addition to the standard reauth prompt
+        if self._reauth_entry is not None:
+            _create_auth_failed_issue(self.hass, self._reauth_entry)
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show credential form and validate new credentials on submit."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None and self._reauth_entry is not None:
+            entry = self._reauth_entry
+            url: str = entry.data.get(CONF_CONTROLLER_URL, "")
+            async with aiohttp.ClientSession() as session:
+                client = UniFiClient(session, url, user_input)
+                try:
+                    auth_method = await client.authenticate()
+                except InvalidAuthError:
+                    errors["base"] = "invalid_auth"
+                except CannotConnectError as err:
+                    _LOGGER.error("Cannot reach controller during reauth: %s", err)
+                    errors["base"] = "cannot_connect"
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("Unexpected error during reauth")
+                    errors["base"] = "unknown"
+                else:
+                    # Merge updated credentials into the entry
+                    new_data = {
+                        **entry.data,
+                        **user_input,
+                        CONF_AUTH_METHOD: auth_method,
+                        CONF_IS_UNIFI_OS: client._is_unifi_os,
+                    }
+                    self.hass.config_entries.async_update_entry(entry, data=new_data)
+                    # Clear the repair issue now that auth is restored
+                    ir.async_delete_issue(self.hass, DOMAIN, f"auth_failed_{entry.entry_id}")
+                    await self.hass.config_entries.async_reload(entry.entry_id)
+                    return self.async_abort(reason="reauth_successful")
+
+        _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+        _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_USERNAME): str,
+                vol.Optional(CONF_PASSWORD): _password_selector,
+                vol.Optional(CONF_API_KEY): _api_key_selector,
+            }
+        )
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=schema,
+            errors=errors,
         )
 
     @staticmethod

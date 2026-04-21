@@ -55,6 +55,17 @@
 
 ---
 
+## 2026-04-21 (session 11) — Config entry repair flow: reauth step + issue_registry
+
+- `__init__.py`: `async_setup_entry` now distinguishes `InvalidAuthError` (raises `ConfigEntryAuthFailed`, triggering HA's standard reauth flow) from generic connection failures (still `ConfigEntryNotReady`).
+- `config_flow.py`: added `async_step_reauth` and `async_step_reauth_confirm` implementing HA's reauth convention. The reauth step also calls `ir.async_create_issue(...)` so a repair card appears in Settings → Repairs, giving users a fixable notification even if the standard reauth prompt is dismissed.
+- On successful reauth the entry is updated, reloaded, and the repair issue is deleted via `ir.async_delete_issue(...)`. Invalid credentials or connection failures redisplay the form with `invalid_auth` / `cannot_connect` errors.
+- `strings.json` + `translations/en.json` (kept identical — CI enforces): added `config.step.reauth_confirm`, `config.abort.reauth_successful`, and `issues.auth_failed` (with `fix_flow.step.confirm`).
+- `tests/unit/test_config_flow.py`: new `TestReauthFlow` class with 7 tests covering reauth routing, issue creation, happy path, invalid_auth, cannot_connect, and "don't delete issue on failure".
+- 287 tests pass (280 → 287).
+
+---
+
 ## 2026-04-21 (session 11) — Options flow: edit credentials and controller URL without re-adding integration
 
 ### Goal
