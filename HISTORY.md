@@ -1,5 +1,16 @@
 # History
 
+## 2026-04-21 (session 11) — Add clear_category and clear_all services
+
+- Created `custom_components/unifi_alerts/services.py`: defines `SERVICE_CLEAR_CATEGORY` and `SERVICE_CLEAR_ALL` with voluptuous schemas; handlers call `coordinator.cancel_clear(category)`, mutate `state.clear()`, and dispatch `coordinator.async_set_updated_data()` — matching button entity behaviour exactly.
+- Created `custom_components/unifi_alerts/services.yaml`: HA service descriptions with `selector.select` for the `category` field (all 7 slugs listed) and an optional `entry_id` `selector.text` on both services.
+- Wired services into `custom_components/unifi_alerts/__init__.py`: `async_register_services(hass)` called after platform setup (idempotent, safe for multiple entries); `async_unregister_services(hass)` called in `async_unload_entry` only when `hass.data[DOMAIN]` is empty (i.e. last entry is gone).
+- Added `"services"` top-level key to both `custom_components/unifi_alerts/strings.json` and `custom_components/unifi_alerts/translations/en.json` (kept identical — CI drift check verified).
+- Created `tests/unit/test_services.py` with 28 new tests covering: schema validation (valid/invalid category, missing required field, optional entry_id); `clear_category` clears state, cancels clear task, dispatches listeners, skips non-alerting, filters by entry_id; `clear_all` clears all alerting categories with one dispatch per coordinator, skips non-alerting, filters by entry_id; registration idempotency; unregistration only on last-entry unload.
+- All 308 tests pass (280 pre-existing + 28 new); lint, mypy, HACS preflight, and translation drift checks all clean.
+- `TODO.md`: removed `### Service calls` entry under Nice-to-have.
+- `ROADMAP.md`: ticked `[ ] Service calls: ...` to `[x]` under v1.1.0 Tech debt.
+
 ## 2026-04-15 (session 10) — v1.1 security: credentials leak + unbounded webhook body
 
 ### Goal

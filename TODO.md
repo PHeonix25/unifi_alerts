@@ -30,10 +30,6 @@ Add a simple Lovelace YAML snippet showing how to build a network health card us
 ### Automation example in README
 Add a simple automation YAML example showing how to trigger on the `unifi_alerts` event entity. Verify the correct `event_type` and `event_data` schema before publishing.
 
-### Service calls
-Expose `unifi_alerts.clear_category` and `unifi_alerts.clear_all` as HA services in addition to the button entities. This allows clearing alerts from automations without needing a button press.
-**File to create:** `services.py` (register with `hass.services.async_register`), `services.yaml` (service descriptions).
-
 ### Replace placeholder `brand/icon.png` with a real 256×256 icon
 The current brand asset is a minimal placeholder PNG. Replace with a proper UniFi-themed icon before submitting to the HACS default catalogue.
 
