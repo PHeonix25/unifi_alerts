@@ -1,5 +1,185 @@
 # History
 
+## 2026-04-22 — Release v1.2.0
+
+Bumped `manifest.json` from `1.2.0-pre1` to `1.2.0` and merged dev to main via PR.
+
+**What shipped since v1.0.0** (everything developed across the v1.1 and v1.2 dev cycles on `dev`):
+
+- **Infrastructure:** two-branch model (`main` = stable, `dev` = pre-release); `version-check.yml` CI enforcing format per branch; `release.yml` tag-driven publishing with pre-release auto-detection; CI SHA-pinning for all GitHub Actions.
+- **Security:** SSRF mitigation via URL scheme validation in config flow; 8 KB webhook body cap preventing unbounded memory growth; credentials-leak fix (exception messages log class name only, not `str(err)`).
+- **Reliability:** polling re-auth split into two `try/except` blocks — auth failure raises `ConfigEntryAuthFailed` (triggers HA reauth UI), post-reauth poll failure raises `UpdateFailed` with a distinct message.
+- **New features:** `unifi_alerts.clear_category` and `unifi_alerts.clear_all` HA services (with voluptuous schemas and per-entry filtering); config-entry repair flow surfacing a repair card in Settings → Repairs on auth failure; options flow credentials step allowing URL, username, password, and API key rotation without re-adding the integration.
+- **Docs/UX:** `info.md` HACS display card; Lovelace entities-card and automation examples in `README.md`; `ROADMAP.md` v1.2.0 critical-review findings (26 items across reliability, security, type safety, testing, and docs).
+
+---
+
+## 2026-04-21 — Extended v1.2 critical-review: full security / architecture / UX audit
+
+- **ROADMAP.md v1.2.0**: expanded from 13 items to 26 items after a comprehensive review from security, senior developer, and user/consumer perspectives.
+- **New critical finding — webhook ID collision on multi-entry:** `webhook_id_for_category()` generates IDs without `entry_id`, so two config entries (multi-controller households) silently overwrite each other's webhook handlers. Promoted to the top of the reliability list with a `(CRITICAL)` tag.
+- **New security findings:** config flow creates bare `aiohttp.ClientSession` bypassing HA's proxy/SSL; credential fragments may leak in `__init__.py` exception messages; no webhook rate limiting/debounce.
+- **Expanded SSL fail-open scope:** identified 4 additional call sites (`_detect_unifi_os`, `_verify_api_key`, `_login_userpass`, `close`) with the same `False` default — all need the same fix.
+- **New reliability findings:** `from_api_alarm` silently drops epoch-millisecond timestamps; `open_count` never updated on webhook path (stale between polls).
+- **New tech debt findings:** config flow accesses private `client._is_unifi_os`; `EventDeviceClass.BUTTON` semantically wrong; clear buttons lack `entity_category`.
+- **New testing findings:** no test for epoch-ms timestamp parsing; no test for dedup/rate limiting; multi-entry test annotated as red-green pair against the webhook ID collision bug.
+- **TODO.md**: matching section updated with all new items, grouped by impact.
+- No code changes — docs only. All 324 tests still pass.
+
+---
+
+## 2026-04-21 (session 11) — Distinguish re-auth failure from post-re-auth update failure in polling
+
+- **`coordinator.py`**: split the single `except (InvalidAuthError, CannotConnectError)` retry handler into two separate `try/except` blocks — one around `authenticate()` and one around the retried `categorise_alarms()` call.
+- Re-auth failures (`InvalidAuthError` or `CannotConnectError` from `authenticate()`) now raise `ConfigEntryAuthFailed` so HA can surface the reauth flow to the user; log message is "Re-authentication failed; credentials may have changed".
+- Post-re-auth poll failures (`CannotConnectError` from the second `categorise_alarms()`) now raise `UpdateFailed` with "Cannot reach UniFi controller after re-authentication" — clearly distinguishable from the first-pass "Cannot reach UniFi controller" message.
+- Added `ConfigEntryAuthFailed` import from `homeassistant.exceptions`.
+- **`tests/unit/test_coordinator.py`**: replaced the old `test_invalid_auth_on_retry_raises_update_failed` test with three new tests in `TestPollingErrorPaths`: re-auth `InvalidAuthError` → `ConfigEntryAuthFailed`; re-auth `CannotConnectError` → `ConfigEntryAuthFailed`; re-auth succeeds but retry fails → `UpdateFailed` containing "after re-authentication".
+- All 282 tests pass; lint, mypy, HACS preflight, and translation drift checks clean.
+
+---
+
+## 2026-04-21 (session 11) — README: Lovelace card and automation examples
+
+- Added `## Examples` section to `README.md` replacing the minimal one-liner automation stub.
+- Lovelace snippet: `entities` card mixing `binary_sensor.unifi_alerts_any_alert`, five per-category binary sensors, and `sensor.unifi_alerts_total_open_alerts`; only uses entity IDs actually produced by the integration.
+- Automation snippet: `platform: state` trigger on `event.unifi_alerts_security_threat` (correct for HA `EventEntity`); documents all seven event-data attributes (`message`, `category`, `device_name`, `alert_key`, `severity`, `site`, `received_at`) sourced directly from `event.py:_handle_coordinator_update`.
+- Clarified that UniFi Alerts uses HA Event entities (not the hass event bus) — the `event_type` used by `_trigger_event` is `alert_received` and is a per-entity event type, not a bus event.
+- `TODO.md`: removed both nice-to-have items for Lovelace and automation README examples.
+- `ROADMAP.md`: ticked both v1.1.0 UX / Documentation items.
+
+---
+
+## 2026-04-21 (session 11) — Add info.md HACS display page
+
+- Created `info.md` at the repository root as the HACS UI display card (56 lines).
+- Covers features, alert categories, requirements, quick setup, and links; kept concise and scannable per HACS conventions.
+- Ticked `[ ] Create info.md` in `ROADMAP.md` v2.0.0 prerequisites.
+- Noted info.md completion in `TODO.md` HACS default repository submission entry.
+
+---
+
+## 2026-04-21 (session 11) — Pin CI action versions to commit SHAs
+
+- Pinned all `uses:` lines across `ci.yml`, `release.yml`, and `version-check.yml` to full 40-character commit SHAs.
+- Actions pinned: `actions/checkout@v6`, `actions/setup-python@v6`, `home-assistant/actions/hassfest@master`, `hacs/action@main`, `softprops/action-gh-release@v2.6.1`.
+- Each pinned line includes a trailing `# <tag-or-ref>` comment so the human-readable version remains visible.
+- Eliminates supply-chain risk from floating `@master` / `@main` refs silently picking up breaking upstream changes.
+- No source code changes; `make check` passes (only YAML workflow files modified).
+- Removed the `### CI action versions are floating` entry from `TODO.md`; ticked the corresponding item in `ROADMAP.md` v1.1.0 Tech debt.
+
+---
+
+## 2026-04-21 (session 11) — Add clear_category and clear_all services
+
+- Created `custom_components/unifi_alerts/services.py`: defines `SERVICE_CLEAR_CATEGORY` and `SERVICE_CLEAR_ALL` with voluptuous schemas; handlers call `coordinator.cancel_clear(category)`, mutate `state.clear()`, and dispatch `coordinator.async_set_updated_data()` — matching button entity behaviour exactly.
+- Created `custom_components/unifi_alerts/services.yaml`: HA service descriptions with `selector.select` for the `category` field (all 7 slugs listed) and an optional `entry_id` `selector.text` on both services.
+- Wired services into `custom_components/unifi_alerts/__init__.py`: `async_register_services(hass)` called after platform setup (idempotent, safe for multiple entries); `async_unregister_services(hass)` called in `async_unload_entry` only when `hass.data[DOMAIN]` is empty (i.e. last entry is gone).
+- Added `"services"` top-level key to both `custom_components/unifi_alerts/strings.json` and `custom_components/unifi_alerts/translations/en.json` (kept identical — CI drift check verified).
+- Created `tests/unit/test_services.py` with 28 new tests covering: schema validation (valid/invalid category, missing required field, optional entry_id); `clear_category` clears state, cancels clear task, dispatches listeners, skips non-alerting, filters by entry_id; `clear_all` clears all alerting categories with one dispatch per coordinator, skips non-alerting, filters by entry_id; registration idempotency; unregistration only on last-entry unload.
+- All 308 tests pass (280 pre-existing + 28 new); lint, mypy, HACS preflight, and translation drift checks all clean.
+- `TODO.md`: removed `### Service calls` entry under Nice-to-have.
+- `ROADMAP.md`: ticked `[ ] Service calls: ...` to `[x]` under v1.1.0 Tech debt.
+
+---
+
+## 2026-04-21 (session 11) — Config entry repair flow: reauth step + issue_registry
+
+- `__init__.py`: `async_setup_entry` now distinguishes `InvalidAuthError` (raises `ConfigEntryAuthFailed`, triggering HA's standard reauth flow) from generic connection failures (still `ConfigEntryNotReady`).
+- `config_flow.py`: added `async_step_reauth` and `async_step_reauth_confirm` implementing HA's reauth convention. The reauth step also calls `ir.async_create_issue(...)` so a repair card appears in Settings → Repairs, giving users a fixable notification even if the standard reauth prompt is dismissed.
+- On successful reauth the entry is updated, reloaded, and the repair issue is deleted via `ir.async_delete_issue(...)`. Invalid credentials or connection failures redisplay the form with `invalid_auth` / `cannot_connect` errors.
+- `strings.json` + `translations/en.json` (kept identical — CI enforces): added `config.step.reauth_confirm`, `config.abort.reauth_successful`, and `issues.auth_failed` (with `fix_flow.step.confirm`).
+- `tests/unit/test_config_flow.py`: new `TestReauthFlow` class with 7 tests covering reauth routing, issue creation, happy path, invalid_auth, cannot_connect, and "don't delete issue on failure".
+- 287 tests pass (280 → 287).
+
+---
+
+## 2026-04-21 (session 11) — Options flow: edit credentials and controller URL without re-adding integration
+
+### Goal
+
+Close the `Options flow: allow credentials and controller URL to be updated without re-adding integration` v1.1 roadmap item.  Previously the only way to change credentials or the controller URL was to delete the integration and set it up again from scratch — a painful workflow whenever the UniFi admin password rotated or the controller was moved to a new address.
+
+### `config_flow.py` — new `async_step_credentials` step in the options flow
+
+Added a new first step to `UniFiAlertsOptionsFlow` that optionally updates credentials before the existing categories step.  All fields are optional:
+
+- `CONF_CONTROLLER_URL`, `CONF_USERNAME`, `CONF_PASSWORD`, `CONF_API_KEY` — blank values mean "leave unchanged".
+- `CONF_VERIFY_SSL` — always defaulted from the current entry value.
+
+Router step (`async_step_init`) now delegates straight to `async_step_credentials`.  The legacy options-flow logic (category toggles, poll interval, clear timeout, site, webhook URL display) was renamed to `async_step_categories` and is reached either after a successful credentials update or when the credentials step is skipped (all fields blank).
+
+Validation flow for a non-blank submission:
+
+1. Merge the new fields over the existing `entry.data` to produce a test credential dict.
+2. Validate the URL scheme (`http`/`https` only — same check as initial setup).
+3. Construct a temporary `UniFiClient`, call `authenticate()` and `fetch_alarms()`.  Surface `invalid_auth`, `cannot_connect`, or `unknown` as form errors.
+4. If a new URL would collide with another configured entry for this domain, abort with `already_configured`.
+5. On success, call `hass.config_entries.async_update_entry(...)` with the merged `data`, updating `CONF_AUTH_METHOD` and `CONF_IS_UNIFI_OS` from the validated client too.
+
+Only fields the user actually filled in are overwritten — blank fields preserve the existing values.  This means a user can change just the password without having to re-enter the URL or API key.
+
+### `strings.json` / `translations/en.json` — new options-flow strings
+
+Added `options.step.credentials` (title, description, field labels) and the existing `options.error.invalid_auth`, `options.error.cannot_connect`, `options.error.invalid_url_scheme`, `options.error.unknown`, and `options.abort.already_configured`.  Both files remain byte-identical (CI enforces this).
+
+### Tests
+
+Added `TestOptionsFlowCredentials` in `tests/unit/test_config_flow.py` covering:
+
+- All fields blank → credentials step skipped, flows straight to categories.
+- Valid password update → `entry.data[CONF_PASSWORD]` overwritten, auth_method persisted.
+- Valid URL + API key update → both persisted, old username left untouched.
+- Invalid URL scheme → form re-shown with `invalid_url_scheme` error, no `async_update_entry` call.
+- Invalid auth → `invalid_auth` error on form.
+- URL collision with existing entry → abort with `already_configured`.
+- Verify SSL toggle → persisted even when other fields blank (treated as credentials change only if truly blank).
+
+Test count: 280 → 287 (+7).  `make check` passes cleanly.
+
+### Why this matters
+
+This is the last UX paper-cut from v1.0.  Combined with the config-entry repair flow (session 11a) it means credentials can now be rotated or corrected entirely in-place: HA surfaces a repair notification on auth failure, the user clicks through to a re-auth form, or they can proactively open Options → Configure to pre-emptively rotate a password.  No more "delete and re-add the integration" dance.
+
+---
+
+## 2026-04-15 (session 10) — v1.1 security: credentials leak + unbounded webhook body
+
+### Goal
+
+Close the two remaining security items from the v1.1.0 roadmap. Both were non-blocking for v1.0 but important for production quality.
+
+### `unifi_client.py` — credentials leak via exception messages
+
+`fetch_alarms()` and `_login_userpass()` both had `raise CannotConnectError(str(err)) from err`. Some `aiohttp.ClientError` subclasses embed the full request URL in their `__str__()` representation — which can include usernames, passwords, or API keys when the client was constructed with credentials in the URL. Changed both sites to `raise CannotConnectError(type(err).__name__) from err` so only the exception class name appears in HA logs.
+
+### `const.py` — new `WEBHOOK_MAX_BODY_BYTES` constant
+
+Added `WEBHOOK_MAX_BODY_BYTES = 8192` (8 KB) in the defaults section. 8 KB is far larger than any real UniFi alert payload and provides a generous safety margin.
+
+### `webhook_handler.py` — bounded webhook body read
+
+Replaced `payload = await request.json()` (unbounded) with a three-step pattern:
+1. `raw = await request.content.read(WEBHOOK_MAX_BODY_BYTES + 1)` — reads at most 8 193 bytes.
+2. If `len(raw) > WEBHOOK_MAX_BODY_BYTES` → log warning and return HTTP 413, callback not called.
+3. `payload = json.loads(raw.decode())` with `except (json.JSONDecodeError, UnicodeDecodeError, TypeError)` falling back to `{}`.
+
+Added `WEBHOOK_MAX_BODY_BYTES` to the import from `const`.
+
+### Tests
+
+- `test_unifi_client.py`: added `test_client_error_message_is_class_name_not_url` in `TestFetchAlarms` — asserts that a `ClientConnectionError` with a URL-containing message does not propagate the URL into `CannotConnectError.args[0]`; added `test_login_client_error_message_is_class_name_not_url` in `TestLoginUserpass` with the same assertion for the `_login_userpass` path.
+- `test_webhook_handler.py`: updated `make_request()` helper to mock `req.content.read` (returns `json.dumps(body).encode()`) instead of `req.json`; updated `test_malformed_json_uses_empty_dict_fallback` to pass raw invalid bytes via `content.read`; added `test_oversized_body_returns_413` — feeds `WEBHOOK_MAX_BODY_BYTES + 1` bytes and asserts HTTP 413 and no callback invocation. Added `import json` and `WEBHOOK_MAX_BODY_BYTES` to imports.
+
+All 280 tests pass; lint, mypy, HACS preflight, and translation drift checks clean.
+
+### Documentation
+
+- `ROADMAP.md`: ticked both security items `[x]` in the v1.1.0 section.
+- `TODO.md`: removed both resolved items from the Known issues section.
+
+---
+
 ## 2026-04-15 (session 9) — Move to two-branch model; add versioning CI enforcement
 
 ### Goal
