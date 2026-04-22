@@ -152,6 +152,28 @@ A second-opinion pass after the v1.1 PRs landed surfaced a set of items that are
 
 ---
 
+## v1.3.0 — UniFi OS only
+
+**Decision (2026-04-22):** the integration will officially support only UniFi OS controllers (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+). Classic self-hosted controllers (Network Application running on bare Linux/Windows) are excluded. Rationale: the userbase is almost entirely on UniFi OS hardware, API keys (the preferred auth method) are UniFi OS-only, and the dual-path detection code is a persistent source of bugs (see HISTORY.md 2026-04-22). Supporting both paths adds fragile detection logic that has already caused two known production incidents.
+
+### Documentation
+
+- [ ] **Add UniFi OS prerequisite to README** — opening paragraph + Prerequisites section; list tested console models (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+); state explicitly that classic Network Application (self-hosted) is not supported. (`README.md`)
+- [ ] **Add UniFi OS prerequisite to info.md** — same message, first paragraph, with a bold "⚠ Requires UniFi OS" callout. (`info.md`)
+
+### Code simplification
+
+- [ ] **Remove legacy self-hosted code paths from `unifi_client.py`** — once docs land, remove:
+  - `_detect_unifi_os()` entirely — detection is only needed for the legacy/OS branch
+  - `_network_path()` — always prefix with `/proxy/network`; make it a constant or inline it
+  - Login path ordering in `_login_userpass()` — always try `/api/auth/login` first (UniFi OS path); remove the second fallback path (or keep just the UniFi OS endpoint)
+  - Logout path branch in `close()` — always use `/api/auth/logout`
+  - `CONF_IS_UNIFI_OS` persistence in config flow — no longer needed; remove from `config_flow.py`, `const.py`, and stored `entry.data`
+  - This removes ~30-40 lines and eliminates the root cause of the v1.2 API-key/detection mismatch bug
+- [ ] **Update tests** — remove tests that only exist to cover the legacy path (detection returning False, path without `/proxy/network`, classic controller login ordering); update remaining tests to not set `_is_unifi_os` explicitly (it will always be True after v1.3)
+
+---
+
 ## v2.0.0 — HACS default catalogue
 
 Prerequisites for submitting to https://github.com/hacs/default.

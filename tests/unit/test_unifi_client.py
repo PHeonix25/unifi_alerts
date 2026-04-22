@@ -508,6 +508,47 @@ class TestFetchAlarms:
         assert exc_info.value.args[0] == "ClientConnectionError"
 
     @pytest.mark.asyncio
+    async def test_response_error_preserves_status_code_in_message(self):
+        """A ClientResponseError (e.g. 404) must surface its status code in the error.
+
+        Before this test existed, the handler wrapped all aiohttp errors as
+        ``CannotConnectError(type(err).__name__)``, which produced the opaque
+        'Cannot reach alarm endpoint: ClientResponseError' log line with no
+        status code. Status code only — no URL — to avoid leaking credentials
+        that may be embedded in a misconfigured controller URL.
+        """
+        import aiohttp
+
+        client = make_client()
+        client._authenticated = True
+        client._is_unifi_os = True
+
+        @asynccontextmanager
+        async def _ctx(*args, **kwargs):
+            resp = MagicMock()
+            resp.status = 404
+            resp.headers = {}
+            resp.raise_for_status = MagicMock(
+                side_effect=aiohttp.ClientResponseError(
+                    request_info=MagicMock(),
+                    history=(),
+                    status=404,
+                    message="Not Found",
+                )
+            )
+            yield resp
+
+        client._session.get = _ctx
+        with pytest.raises(CannotConnectError) as exc_info:
+            await client.fetch_alarms()
+
+        message = str(exc_info.value)
+        assert "404" in message, f"Status code must be in the error message; got: {message!r}"
+        assert "ClientResponseError" in message, (
+            f"Exception class name must be in the error message; got: {message!r}"
+        )
+
+    @pytest.mark.asyncio
     async def test_sends_limit_param(self):
         """fetch_alarms must include limit=200 to avoid loading the full alarm backlog."""
         client = make_client()
@@ -679,6 +720,82 @@ class TestAuthenticate:
         client._verify_api_key = _bad_verify
         with pytest.raises(InvalidAuthError):
             await client.authenticate()
+
+    @pytest.mark.asyncio
+    async def test_apikey_success_coerces_is_unifi_os_true(self):
+        """Successful API-key auth must force _is_unifi_os=True.
+
+        API keys are UniFi OS-only by construction, so a successful verify proves
+        the controller is UniFi OS — even if _detect_unifi_os() returned a false
+        negative (e.g. UCG-Ultra with no x-csrf-token and /api/system not 200).
+        Without this coercion, later network calls like fetch_alarms() would
+        drop the /proxy/network prefix and 404 on the very controller that just
+        accepted the API key.
+        """
+        from custom_components.unifi_alerts.const import AUTH_METHOD_APIKEY
+
+        client = make_client(
+            {"api_key": "my-key", "auth_method": AUTH_METHOD_APIKEY, "verify_ssl": False}
+        )
+        client._is_unifi_os = False  # simulate detection false-negative
+
+        async def _detect_returns_false() -> bool:
+            return False
+
+        client._detect_unifi_os = _detect_returns_false  # type: ignore[method-assign]
+        client._verify_api_key = AsyncMock()  # verify succeeds
+
+        # Re-set to None so authenticate() runs detection (which returns False)
+        client._is_unifi_os = None
+        result = await client.authenticate()
+
+        assert result == AUTH_METHOD_APIKEY
+        assert client._is_unifi_os is True, (
+            "API-key success must override false-negative OS detection"
+        )
+
+    @pytest.mark.asyncio
+    async def test_fetch_alarms_after_apikey_auth_uses_proxy_path(self):
+        """End-to-end: detection false-negative → API-key auth → fetch_alarms hits /proxy/network.
+
+        Reproduces the reported 'Cannot reach alarm endpoint: ClientResponseError' bug:
+        detection says non-OS, API-key auth succeeds (hard-coded to /proxy/network), then
+        fetch_alarms must use /proxy/network too (not the bare /api/s/... path).
+        """
+        from custom_components.unifi_alerts.const import AUTH_METHOD_APIKEY
+
+        client = make_client(
+            {"api_key": "my-key", "auth_method": AUTH_METHOD_APIKEY, "verify_ssl": False}
+        )
+
+        async def _detect_returns_false() -> bool:
+            return False
+
+        client._detect_unifi_os = _detect_returns_false  # type: ignore[method-assign]
+        client._verify_api_key = AsyncMock()
+
+        captured_urls: list[str] = []
+
+        @asynccontextmanager
+        async def _tracking_get(*args, **kwargs):
+            captured_urls.append(args[0] if args else "")
+            resp = MagicMock()
+            resp.status = 200
+            resp.headers = {}
+            resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
+            yield resp
+
+        client._session.get = _tracking_get
+
+        await client.authenticate()
+        await client.fetch_alarms()
+
+        assert captured_urls, "Expected at least one GET call to the alarm endpoint"
+        alarm_url = captured_urls[-1]
+        assert "/proxy/network/api/s/default/alarm" in alarm_url, (
+            f"After API-key auth, fetch_alarms must use /proxy/network path; got: {alarm_url}"
+        )
 
 
 class TestClose:

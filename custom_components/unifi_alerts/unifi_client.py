@@ -78,6 +78,10 @@ class UniFiClient:
                 await self._verify_api_key()
                 self._auth_method = AUTH_METHOD_APIKEY
                 self._authenticated = True
+                # API keys are UniFi OS-only, so a successful verify proves the controller
+                # is UniFi OS — override any false-negative from _detect_unifi_os() so later
+                # calls (fetch_alarms, logout) use the correct /proxy/network path.
+                self._is_unifi_os = True
                 _LOGGER.debug("Authenticated via API key")
                 return AUTH_METHOD_APIKEY
             except InvalidAuthError:
@@ -115,6 +119,10 @@ class UniFiClient:
                     msg = data.get("meta", {}).get("msg", "unknown error")
                     raise CannotConnectError(f"UniFi API error: {msg}")
                 return [a for a in data.get("data", []) if not a.get("archived", False)]
+        except aiohttp.ClientResponseError as err:
+            # Include HTTP status so users (and logs) can tell a 404 from a 500.
+            # Status-only — no URL — to avoid leaking creds that may be embedded in a URL.
+            raise CannotConnectError(f"{type(err).__name__} {err.status}") from err
         except aiohttp.ClientError as err:
             raise CannotConnectError(type(err).__name__) from err
 
@@ -263,6 +271,8 @@ class UniFiClient:
             last_url = paths[-1]
             _LOGGER.warning("Authentication failed at all login paths (last: %s)", last_url)
             raise InvalidAuthError("Invalid username or password", login_url=last_url)
+        except aiohttp.ClientResponseError as err:
+            raise CannotConnectError(f"{type(err).__name__} {err.status}") from err
         except aiohttp.ClientError as err:
             raise CannotConnectError(type(err).__name__) from err
 
