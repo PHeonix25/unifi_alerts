@@ -4,7 +4,7 @@ This file maps TODO items to planned releases. Items within each release are ord
 
 > **Branching model:** all development happens on `dev` (pre-release versions: `X.Y.Z-preN`). Stable releases are tagged on `main` after a PR merge. See `CLAUDE.md § Branching strategy and versioning` for the full workflow.
 
-> **Current status:** v1.0.0 released. Branch model + CI versioning enforcement in place. Active development continues on `dev` targeting v1.1.0.
+> **Current status:** v1.0.0 and v1.1.0 released. v1.2.0 released (2026-04-22). Active development continues on `dev` targeting v1.3.0.
 
 ---
 
