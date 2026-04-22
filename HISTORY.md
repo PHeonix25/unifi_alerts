@@ -1,5 +1,12 @@
 # History
 
+## 2026-04-22 — Fix release workflow: pre-release detection regex + Node 20 deprecation
+
+- **Bug 1 — every release tagged Stable:** [`.github/workflows/release.yml:31`](.github/workflows/release.yml:31) used `grep -qE '-pre[0-9]+$'` to detect pre-release tags. Because the pattern begins with `-`, `grep` parsed it as options (`-p`, `-r`, `-e`) and exited with `grep: invalid option -- 'p'`. The `if` saw the non-zero exit as "no pre-release match" and fell through to the stable branch, so `v1.x.y-preN` tags were being published as stable GitHub releases. Fixed by adding `--` before the pattern (`grep -qE -- '-pre[0-9]+$'`) to terminate `grep`'s option parsing. Verified with both `v1.3.0-pre2` (→ PRE) and `v1.3.0` (→ STABLE) inputs.
+- **Bug 2 — Node 20 deprecation warning on `softprops/action-gh-release`:** bumped [`.github/workflows/release.yml:58`](.github/workflows/release.yml:58) from `v2.6.1` (`153bb8e0…`) to `v3.0.0` (`b4309332981a82ec1c5618f44dd2e27cc8bfbfda`). v3.0.0's only change is moving the action runtime from Node 20 to Node 24, addressing the GitHub-Actions deprecation that forces migration by 2026-06-02. SHA verified via `gh api repos/softprops/action-gh-release/git/refs/tags/v3.0.0`. The inputs we use (`files`, `prerelease`, `name`) are unchanged between v2 and v3, so no other edits required.
+- **No test coverage added:** workflow YAML is exercised only at release-tag push time. End-to-end verification requires cutting a `v1.x.y-preN` tag on `dev` after merge and confirming the published GitHub release is marked "Pre-release".
+- No other third-party actions in the repo are affected — `actions/checkout@v6`, `actions/setup-python@v6`, and the HA/HACS Docker-based actions are exempt or already on Node 24.
+
 ## 2026-04-22 — Fix alarm endpoint: remove invalid limit param, try-both path fallback, surface 400 detail
 
 - **Follow-up bug (same session):** after the API-key coercion fix (PR #31) corrected the UniFi OS path, the integration now correctly hit `/proxy/network/api/s/default/alarm` — but returned a new `ClientResponseError 400`. Root-caused: the `params={"limit": 200}` query parameter is not accepted by the UniFi alarm endpoint and causes `api.err.InvalidObject` (HTTP 400). Additionally, the community wiki and field testing revealed that alarm endpoint paths vary by firmware (`/alarm` works on some, `/stat/alarm` on others).

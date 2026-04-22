@@ -78,6 +78,7 @@ README.md                         # user-facing install, setup, and contributing
 - **Webhooks are `local_only: True`** — do not remove this without a documented reason.
 - **Webhook bearer token auth is mandatory** — every inbound webhook request must be validated against `CONF_WEBHOOK_SECRET` via `?token=` query param. Never remove this check or accept requests that fail it.
 - **Category state lives only in the coordinator** — entities must not cache state themselves.
+- **Every GitHub Actions `uses:` reference must be pinned to a full 40-character commit SHA** — no branch names (`@main`, `@master`), no tag names (`@v2`, `@v6`), no short SHAs. Add a trailing comment noting the resolved version or branch for human readers (e.g. `# v3.0.0` or `# master tip 2026-04-22`). This applies to every workflow in `.github/workflows/`. When bumping an action, resolve the new SHA via `gh api repos/OWNER/REPO/git/refs/tags/TAG` (or `.../heads/BRANCH` for repos without tags) and replace both the SHA and its comment in the same edit.
 
 ## Coding conventions
 
