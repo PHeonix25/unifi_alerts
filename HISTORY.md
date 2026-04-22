@@ -1,5 +1,19 @@
 # History
 
+## 2026-04-22 — Release v1.2.0
+
+Bumped `manifest.json` from `1.2.0-pre1` to `1.2.0` and merged dev to main via PR.
+
+**What shipped since v1.0.0** (everything developed across the v1.1 and v1.2 dev cycles on `dev`):
+
+- **Infrastructure:** two-branch model (`main` = stable, `dev` = pre-release); `version-check.yml` CI enforcing format per branch; `release.yml` tag-driven publishing with pre-release auto-detection; CI SHA-pinning for all GitHub Actions.
+- **Security:** SSRF mitigation via URL scheme validation in config flow; 8 KB webhook body cap preventing unbounded memory growth; credentials-leak fix (exception messages log class name only, not `str(err)`).
+- **Reliability:** polling re-auth split into two `try/except` blocks — auth failure raises `ConfigEntryAuthFailed` (triggers HA reauth UI), post-reauth poll failure raises `UpdateFailed` with a distinct message.
+- **New features:** `unifi_alerts.clear_category` and `unifi_alerts.clear_all` HA services (with voluptuous schemas and per-entry filtering); config-entry repair flow surfacing a repair card in Settings → Repairs on auth failure; options flow credentials step allowing URL, username, password, and API key rotation without re-adding the integration.
+- **Docs/UX:** `info.md` HACS display card; Lovelace entities-card and automation examples in `README.md`; `ROADMAP.md` v1.2.0 critical-review findings (26 items across reliability, security, type safety, testing, and docs).
+
+---
+
 ## 2026-04-21 — Extended v1.2 critical-review: full security / architecture / UX audit
 
 - **ROADMAP.md v1.2.0**: expanded from 13 items to 26 items after a comprehensive review from security, senior developer, and user/consumer perspectives.
