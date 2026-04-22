@@ -101,11 +101,29 @@ class UniFiClient:
         if not self._authenticated:
             await self.authenticate()
 
-        path = self._network_path(f"/api/s/{site}/alarm")
+        # Different firmware versions expose different alarm endpoint paths.
+        # We try the documented /stat/alarm path first, then fall back to the
+        # bare /alarm path for older firmware that may not expose /stat/alarm.
+        alarm_paths = [
+            self._network_path(f"/api/s/{site}/stat/alarm"),
+            self._network_path(f"/api/s/{site}/alarm"),
+        ]
+        for path in alarm_paths:
+            result = await self._try_fetch_alarms(path, site)
+            if result is not None:
+                return result
+            # None means 404 — try the next path
+        raise CannotConnectError(
+            f"Could not find the alarm endpoint for site '{site}'. Tried: {', '.join(alarm_paths)}"
+        )
+
+    async def _try_fetch_alarms(self, path: str, site: str) -> list[dict] | None:
+        """Fetch alarms from one path. Returns None on 404 (caller tries next path)."""
+        url = f"{self._base}{path}"
+        _LOGGER.debug("Fetching alarms from %s", url)
         try:
             async with self._session.get(
-                f"{self._base}{path}",
-                params={"limit": 200},
+                url,
                 headers=self._headers(),
                 ssl=self._config.get(CONF_VERIFY_SSL, False),
                 timeout=aiohttp.ClientTimeout(total=10),
@@ -113,6 +131,23 @@ class UniFiClient:
                 if resp.status == 401:
                     self._authenticated = False
                     raise InvalidAuthError("Session expired")
+                if resp.status == 404:
+                    _LOGGER.debug("Alarm path %s returned 404 — trying next path", path)
+                    return None
+                if resp.status == 400:
+                    # UniFi returns JSON even on 400 — try to surface the msg field.
+                    detail = ""
+                    try:
+                        body = await resp.json(content_type=None)
+                        unifi_msg = body.get("meta", {}).get("msg", "")
+                        if unifi_msg:
+                            detail = f" ({unifi_msg})"
+                    except Exception:  # noqa: BLE001
+                        pass
+                    raise CannotConnectError(
+                        f"Alarm endpoint rejected the request (HTTP 400{detail}). "
+                        f"Check that the site name '{site}' exists on the controller."
+                    )
                 resp.raise_for_status()
                 data = await resp.json()
                 if data.get("meta", {}).get("rc") != "ok":

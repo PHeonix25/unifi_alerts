@@ -70,7 +70,7 @@ X-API-Key: your-key-here
 
 This endpoint **always** requires the `/proxy/network` prefix — it does not exist at `/api/s/default/self`. `_verify_api_key()` hardcodes the `/proxy/network` prefix and does not rely on `_detect_unifi_os()`, so it works correctly even when detection returns a false negative.
 
-> **Note on newer API (v2):** UniFi Network Application 8.x introduced a newer REST API under `/proxy/network/v2/api/`. For example, `GET /proxy/network/v2/api/site` lists all sites. The alarm endpoint remains at the classic `/proxy/network/api/s/{site}/alarm` path as of the time of writing, but this may change in future firmware versions. The v2 API may be a better verification target if the `self` endpoint is deprecated.
+> **Note on newer API (v2):** UniFi Network Application 8.x introduced a newer REST API under `/proxy/network/v2/api/`. For example, `GET /proxy/network/v2/api/site` lists all sites. The alarm endpoint remains at the classic `/proxy/network/api/s/{site}/alarm` (or `/stat/alarm` on some firmware) path as of the time of writing, but this may change in future firmware versions. The v2 API may be a better verification target if the classic endpoint is deprecated.
 
 ### Auto-detect logic (in `UniFiClient.authenticate()`)
 
@@ -83,6 +83,8 @@ This endpoint **always** requires the `/proxy/network` prefix — it does not ex
 
 **Self-hosted:** `GET /api/s/{site}/alarm`
 **UniFi OS:** `GET /proxy/network/api/s/{site}/alarm`
+
+> **Path variation by firmware:** Some controller firmware versions expose `/api/s/{site}/stat/alarm` instead of the bare `/alarm`. The integration tries `/alarm` first, then `/stat/alarm` as a fallback.
 
 Default site name is `default`. Multi-site deployments are not currently supported (see `TODO.md`).
 
