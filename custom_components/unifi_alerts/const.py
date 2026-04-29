@@ -17,6 +17,8 @@ CONF_CLEAR_TIMEOUT = "clear_timeout"
 CONF_ENABLED_CATEGORIES = "enabled_categories"
 CONF_VERIFY_SSL = "verify_ssl"
 CONF_WEBHOOK_SECRET = "webhook_secret"
+CONF_WEBHOOK_ID_SUFFIX = "webhook_id_suffix"
+CONF_REGENERATE_WEBHOOK_SECRET = "regenerate_webhook_secret"
 CONF_SITE = "site"
 CONF_IS_UNIFI_OS = "is_unifi_os"
 
@@ -28,6 +30,9 @@ DEFAULT_CLEAR_TIMEOUT = 30  # minutes
 DEFAULT_VERIFY_SSL = True  # disable in config flow if controller has a self-signed cert
 DEFAULT_SITE = "default"
 WEBHOOK_MAX_BODY_BYTES = 8192  # 8 KB ceiling on inbound webhook bodies
+WEBHOOK_DEDUP_WINDOW_SECONDS = (
+    5.0  # suppress duplicate (category, alert_key) pushes within this window
+)
 
 # ──────────────────────────────────────────────
 # Category identifiers
@@ -176,11 +181,20 @@ UNIFI_KEY_TO_CATEGORY: dict[str, str] = {
     "EVT_UPS_": CATEGORY_POWER,
 }
 
-# Webhook IDs — one per category, auto-registered by the integration
+# Webhook IDs — one per category, auto-registered by the integration.
+# The optional `suffix` (CONF_WEBHOOK_ID_SUFFIX, generated per-entry by the
+# config flow) prevents two config entries from colliding on the same webhook
+# ID. Entries created before the suffix was introduced pass `suffix=""` and
+# fall back to the legacy format so their existing UniFi Alarm Manager URLs
+# keep working — only multi-entry users need to re-paste URLs after adding a
+# second entry, which they had to do anyway because that case was silently
+# broken pre-fix.
 WEBHOOK_ID_PREFIX = "unifi_alerts_"
 
 
-def webhook_id_for_category(category: str) -> str:
+def webhook_id_for_category(category: str, suffix: str = "") -> str:
+    if suffix:
+        return f"{WEBHOOK_ID_PREFIX}{suffix}_{category}"
     return f"{WEBHOOK_ID_PREFIX}{category}"
 
 

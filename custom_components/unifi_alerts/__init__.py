@@ -111,11 +111,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     _LOGGER.info("UniFi Alerts set up. Registered %d webhook(s).", len(webhook_urls))
-    _LOGGER.debug(
-        "UniFi Alerts webhook URLs: %s",
-        ", ".join(f"{cat}={url}" for cat, url in webhook_urls.items()),
-    )
+    if _LOGGER.isEnabledFor(logging.DEBUG):
+        # Redact ?token=<secret> before logging — DEBUG logs commonly end up
+        # in GitHub issues, and the token is the only thing protecting the
+        # webhook endpoint from local-network forgery.
+        _LOGGER.debug(
+            "UniFi Alerts webhook URLs: %s",
+            ", ".join(f"{cat}={_redact_webhook_token(url)}" for cat, url in webhook_urls.items()),
+        )
     return True
+
+
+def _redact_webhook_token(url: str) -> str:
+    """Strip ``?token=<secret>`` from a webhook URL for safe DEBUG logging."""
+    token_marker = "?token="
+    idx = url.find(token_marker)
+    if idx == -1:
+        return url
+    return f"{url[:idx]}?token=***"
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

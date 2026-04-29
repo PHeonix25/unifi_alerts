@@ -427,3 +427,29 @@ class TestAsyncUpdateListener:
         entry = make_entry()
         await _async_update_listener(hass, entry)
         hass.config_entries.async_reload.assert_awaited_once_with(entry.entry_id)
+
+
+class TestRedactWebhookToken:
+    """`?token=<secret>` must be stripped from URLs before they hit DEBUG logs."""
+
+    def test_redacts_token_query_param(self):
+        from custom_components.unifi_alerts import _redact_webhook_token
+
+        url = "http://homeassistant.local:8123/api/webhook/unifi_alerts_x?token=supersecret123"
+        redacted = _redact_webhook_token(url)
+        assert "supersecret123" not in redacted
+        assert redacted.endswith("?token=***")
+
+    def test_passthrough_when_no_token_present(self):
+        from custom_components.unifi_alerts import _redact_webhook_token
+
+        url = "http://homeassistant.local:8123/api/webhook/unifi_alerts_x"
+        assert _redact_webhook_token(url) == url
+
+    def test_redacted_when_token_anywhere_after_question_mark(self):
+        """Even if the token is the only query param, redaction stops at end-of-string."""
+        from custom_components.unifi_alerts import _redact_webhook_token
+
+        url = "http://h/api/webhook/x?token=abc"
+        redacted = _redact_webhook_token(url)
+        assert "abc" not in redacted
