@@ -124,7 +124,7 @@ Default site name is `default`. Multi-site deployments are not currently support
 }
 ```
 
-The integration filters to `archived: false` records only. Archived alarms are ones the user has dismissed in the UniFi UI.
+The integration filters to `archived: false` records only. The `archived` field exists in API responses but **there is no documented write API to set it and no option in the UniFi Network UI to archive/dismiss individual alarms**. The field appears to be set only by internal Ubiquiti housekeeping processes that are opaque to integrators. In practice, `open_count` is a lifetime cumulative counter that can only grow.
 
 #### Error responses
 
@@ -173,13 +173,14 @@ The integration only accepts POST webhooks — GET requests are rejected with HT
 **What the integration can do:**
 - Read open (`archived: false`) alarms via the poll API
 - Receive real-time pushes via UniFi Alarm Manager webhooks
-- Reset HA sensor state locally via Clear buttons / `clear_category` / `clear_all` services
+- Reset HA-local alert state via Clear buttons / `clear_category` / `clear_all` services; each Clear sets a per-category acknowledgement watermark so `open_count` reflects "alarms since last cleared" rather than a lifetime total
 
-**What the integration cannot do:**
-- Archive/dismiss an alert on the controller. There is no official documented write API for dismissing individual Network alarms. (A community-discovered endpoint `POST /cmd/evtmgt {"cmd":"archive-all-alarms"}` exists but is undocumented and not implemented.)
-- Pressing **Clear** in HA resets HA-local state only (`is_alerting → false`, `alert_count → 0`). The alert remains open on the controller and will reappear on the next poll if still unresolved.
+**What the integration cannot do — clearing alerts on the controller is not possible:**
+- There is no documented write API for archiving individual Network alarms. The community-discovered `POST /cmd/evtmgt {"cmd":"archive-all-alarms"}` endpoint returns `api.err.NotFound` on current UniFi Network firmware — it no longer exists.
+- There is no option in the UniFi Network UI to dismiss or archive individual alarms.
+- Pressing **Clear** in HA resets HA-local state only (`is_alerting → false`, `alert_count → 0`, acknowledgement watermark → now). The underlying alarms remain on the controller indefinitely. Without the per-category watermark, `open_count` would grow to thousands without ever decreasing.
 
-To permanently clear an alert from both HA and the controller, dismiss it in the UniFi Network UI (which marks it `archived: true`). The integration filters to `archived: false` only, so it will not reappear after dismissal.
+> **Design implication:** `open_count` without a watermark is a meaningless lifetime counter. The integration addresses this by persisting a `last_acknowledged_at` timestamp per category in `entry.options`. Polling counts only alarms newer than that timestamp. Pressing Clear advances the timestamp to now.
 
 ### Event entities and webhooks
 
