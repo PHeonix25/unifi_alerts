@@ -1,5 +1,79 @@
 # History
 
+## 2026-04-29 — Overnight v1.4.0 hardening pass (clusters A and D)
+
+Two PRs targeting the v1.4.0 hardening backlog from `docs/ROADMAP.md`. Both bracketed by full security/architecture/quality audits (BEFORE on clean `dev`, AFTER on the merged audit branch) using three parallel agents per pass.
+
+### BEFORE-state audit findings (added to TODO/ROADMAP before any code changed)
+
+The BEFORE audit identified one new item not previously tracked: `unifi_client.py:153-154` `except Exception: pass` silently drops any failure to parse the UniFi 400-error JSON body, masking the `api.err.InvalidObject` fallback if the body shape changes. Logged in TODO.md and ROADMAP.md § v1.4.0 as a separate cluster (not part of A or D). Everything else surfaced by the audits was already tracked in `docs/ROADMAP.md § v1.4.0`.
+
+### Cluster A — webhook security hardening (PR #50, merged into `claude/webhook-security-hardening`)
+
+Closes the v1.4.0 webhook-security backlog in one focused PR. Each item cross-cuts `const`, `webhook_handler`, `coordinator`, `config_flow`, and `__init__` and the tests share fixtures, so landing them together produced a single coherent security pass with red-green tests.
+
+- **Multi-entry webhook ID collision (CRITICAL):** new `CONF_WEBHOOK_ID_SUFFIX` (`secrets.token_hex(4)`, 32 bits) generated per entry by the config flow. `webhook_id_for_category(category, suffix="")` embeds the suffix when present and falls back to the legacy unprefixed format when absent — existing single-entry users keep their already-pasted Alarm Manager URLs; multi-entry collisions become impossible. (`const.py`, `webhook_handler.py`, `config_flow.py`)
+- **Timing-safe token comparison:** `hmac.compare_digest` replaces `!=` for webhook bearer-token validation. (`webhook_handler.py`)
+- **DEBUG token redaction:** new `_redact_webhook_token()` scrubs `?token=<secret>` to `?token=***` in the setup log. (`__init__.py`)
+- **DEBUG payload narrowing:** webhook payload DEBUG log now restricted to a `_SAFE_DEBUG_FIELDS` allow-list (`{key, alert_key, severity, device_name, category}`). (`webhook_handler.py`)
+- **Per-(category, alert_key) 5s rate limit / debounce:** `coordinator.push_alert()` checks `_last_push_at` against `WEBHOOK_DEDUP_WINDOW_SECONDS = 5.0`. (`coordinator.py`)
+- **Webhook secret rotation:** new "Regenerate webhook secret" checkbox on the options-flow credentials step. Works alone (no other input) or alongside credential changes; persists a fresh `token_urlsafe(32)` and re-shows the URLs on the finish step. (`config_flow.py`, `strings.json`, `translations/en.json`)
+- **`register_all()` rollback:** each iteration is wrapped in `try/except` so a single `async_register` failure no longer aborts the loop. `self._registered` only gets appended after a successful registration. (`webhook_handler.py`)
+- **Webhook decode logging:** `UnicodeDecodeError`, `JSONDecodeError`, and `TypeError` now log at WARNING with the exception class name and a 80-byte body preview, instead of falling through silently to `{}`. (`webhook_handler.py`)
+
+**Tests (+26 tests, 344 → 370 total).** New classes: `TestMultiEntryWebhookIdIsolation`, `TestHmacTokenComparison`, `TestDecodeErrorLogging`, `TestDebugPayloadNarrowing`, `TestRegisterAllRollback` (all in `test_webhook_handler.py`); `TestPushDedup` (in `test_coordinator.py`); `TestWebhookSecretRotation`, `TestWebhookIdSuffix` (in `test_config_flow.py`); `TestRedactWebhookToken` (in `test_init.py`); plus new file `tests/integration/test_multi_entry.py` with the multi-entry red-green pair (two real config entries set up side-by-side, posting to entry A's URL only flips entry A's coordinator and vice versa — would have failed before the suffix fix landed). One follow-up commit added `test_finish_step_displays_new_url_after_rotation` after the AFTER audit raised a hypothetical concern about secret-rotation showing the OLD token in the finish step; verified against HA source (`config_entries.py:2229` `_setter(entry, "data", ...)`) that `async_update_entry` mutates `entry.data` synchronously, so the concern was a false positive — the test makes that invariant explicit so it can't silently regress.
+
+### Cluster D — repo hygiene + release pipeline (PR #51, merged into `claude/repo-hygiene-and-release`)
+
+No source-code changes. Closes the v1.4.0 repo-hygiene backlog with `.github/` policy files and a release-workflow migration off the third-party `softprops/action-gh-release`.
+
+- **`CHANGELOG.md`** added in Keep-a-Changelog format, back-filled from v1.0.0 through v1.3.0. Pre-release entries (`X.Y.Z-preN`) collapsed into the consolidated stable entry; `docs/HISTORY.md` remains the dated narrative source-of-truth.
+- **`SECURITY.md`** added with vulnerability disclosure guidance (private GitHub advisory + fallback path for users without a GitHub account, in-/out-of-scope listing, disclosure timing).
+- **`CODEOWNERS`** added (everything → `@PHeonix25`, with more specific paths for `custom_components/`, `tests/`, `.github/workflows/`, `docs/`, and policy files).
+- **GitHub issue templates** added: `bug_report.yml`, `feature_request.yml`, `config.yml` (disables blank issues; surfaces the private security-advisory link and Discussions for usage questions). The existing `unclassified_event_key.yml` is unchanged.
+- **`.github/dependabot.yml`** configured for the `github-actions` ecosystem only (Python deps in `requirements-dev.txt` need manual review tied to HA core compatibility). Weekly Monday cadence, Brisbane timezone; minor + patch grouped, major bumps individual. Keeps the 40-char SHA pins enforced by `CLAUDE.md` from going stale.
+- **`.github/release.yml`** added so `--generate-notes` groups merged PRs by label (Security, Bug Fixes, Features, Documentation, Tests, CI / Release, Other).
+- **`release.yml` workflow migrated** from `softprops/action-gh-release@v3` to `gh release create --generate-notes`. The GH CLI is pre-installed on `ubuntu-latest` runners so no extra setup step is needed. `fetch-depth: 0` added to `actions/checkout` so the previous-tag boundary can be computed for the auto-generated notes. Pre-release detection logic (the v1.3.0 `grep --` terminator fix) is preserved verbatim. **Eliminates the only third-party action in the release pipeline.**
+
+### AFTER-state audit findings
+
+Three parallel agents audited the merged state. Headline: cluster A is solid, cluster D is low-risk and improves maintainability, no NEW security regressions introduced by either PR.
+
+The two MEDIUM findings raised by the security and architecture agents both turned out to be false positives:
+
+- **Secret-rotation finish-step "shows old token"** — verified against HA source that `async_update_entry` mutates `entry.data` in place via `object.__setattr__`. Locked in by a new regression test (`test_finish_step_displays_new_url_after_rotation`).
+- **Dedup key collision in multi-entry with empty alert keys** — auditor missed that each entry has its own coordinator instance with its own `_last_push_at` dict, so cross-entry collision is impossible. Within a single entry, two webhook posts that both lack a `key` field do dedup (intentional flood prevention).
+
+Genuinely actionable items added to TODO/ROADMAP as new v1.4.0 backlog items:
+
+- **Document that secret rotation rotates the bearer token but reuses the webhook ID.** The HA webhook endpoint URL (the path component) does not change on rotation; only the `?token=` query parameter does. An attacker who captured the old token can still POST to the webhook endpoint, but the token check rejects them. If true revocation is ever required (e.g., to stop traffic from a compromised network sender), the suffix and webhook ID would also need to rotate. Add a note to SECURITY.md and a comment in `config_flow.py`.
+- **Expand `make lint` to cover `tests/`.** The Makefile's `lint` target only runs ruff against `custom_components/`, so 6 pre-existing `I001` / `F401` issues in `tests/unit/test_services.py` and `tests/unit/test_config_flow.py` (mid-function imports, unused imports) escaped local validation. None were introduced by clusters A or D — they're pre-existing on `dev` — but the Makefile gap is the right thing to close. Cluster A's commit ran ruff on `tests/` voluntarily and surfaced these as separate cleanup work.
+- **Optional: brittle test indexing in `TestDebugPayloadNarrowing`** (low priority) — accesses `mock_logger.debug.call_args[0][2]` to retrieve the logged payload dict. Still passes; could be made more declarative.
+- **Optional: integration test for full reload flow after rotation** (low priority) — the existing `tests/integration/test_multi_entry.py` exercises the suffix isolation directly but not the full options-flow → entry-update → reload → re-register cycle. Cluster A's existing tests cover each step in isolation; an end-to-end test would be an extra guard.
+
+### Coverage of the v1.4.0 hardening backlog (this overnight session)
+
+**Closed by cluster A:**
+- ✓ Webhook ID collision on multi-entry (CRITICAL)
+- ✓ Non-constant-time webhook token comparison (timing attack)
+- ✓ Webhook URLs containing `?token=` logged at DEBUG
+- ✓ Full webhook payload logged at DEBUG
+- ✓ No webhook rate limiting / debounce
+- ✓ Webhook secret cannot be rotated post-setup
+- ✓ `WebhookManager.register_all()` partial-failure leak
+- ✓ Webhook decode errors silently dropped
+
+**Closed by cluster D:**
+- ✓ No `CHANGELOG.md`
+- ✓ No `SECURITY.md`, `CODEOWNERS`, GitHub issue templates
+- ✓ Pinned SHAs need a refresh mechanism (Dependabot for `github-actions`)
+- ✓ Release notes auto-generated from all commits, not scoped to release window (migrated to `gh release create --generate-notes` + `.github/release.yml` categories)
+
+**Still open (separate clusters, unchanged this session):**
+SSL fail-open across 5 call sites; `_category_states` reload persistence; epoch-ms timestamp parsing; `open_count` stale on webhook path; `close()` swallows logout errors; `allow_redirects=True` on probes; config-flow bare `aiohttp.ClientSession`; credential fragments in `__init__.py` exception messages; `mypy strict = false`; entity naming `has_entity_name` migration; sensor `device_class`; private-attr access `client._is_unifi_os`; UniFi-OS-only documentation and code path removal; the post-audit additions above; everything in the documentation and tests sub-sections of the v1.4.0 backlog.
+
+---
+
 ## 2026-04-29 — Option C: per-category acknowledgement watermark for open_count
 
 Confirmed via live testing that the UniFi Network controller offers no documented way to archive/dismiss alarms — `POST /cmd/evtmgt {"cmd":"archive-all-alarms"}` returns `api.err.NotFound` on current firmware, and there is no dismiss UI. Without intervention, `open_count` is a lifetime cumulative counter that only grows (a production install showed 3000+ immediately on setup).
