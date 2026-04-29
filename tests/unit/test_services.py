@@ -380,6 +380,7 @@ class TestServicesWiredFromInit:
                 return_value=mock_coord,
             ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
             patch(
                 "custom_components.unifi_alerts.async_register_services"
             ) as mock_register,

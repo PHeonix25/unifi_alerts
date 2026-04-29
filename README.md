@@ -193,6 +193,11 @@ automation:
 
 > **Tip:** Replace `event.unifi_alerts_security_threat` with any per-category event entity (e.g. `event.unifi_alerts_network_device`, `event.unifi_alerts_power`). Swap `persistent_notification.create` for `notify.mobile_app_your_phone` or any other notify action.
 
+#### Automation caveats
+
+- **Event entities show `unknown` until the first alert fires.** `EventEntity` has no persistent state — it only carries the data from the most recent event. On a fresh install or after an HA restart, all event entities start in `unknown` state. This is normal and expected; your automations will trigger correctly once the first alert arrives.
+- **Disabling a category makes its event entity `unavailable`.** If you disable a category in **Settings → Devices & Services → UniFi Alerts → Configure**, the corresponding event entity becomes unavailable and any automation that triggers on it will silently stop firing. Re-enable the category or update the automation accordingly.
+
 ---
 
 ## Contributing

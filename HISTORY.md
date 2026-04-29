@@ -1,5 +1,26 @@
 # History
 
+## 2026-04-29 — v1.3.0 post-install bug fixes: options flow loop, device registry, blank entities
+
+Three bugs confirmed on a production install of v1.3.0-pre2. All fixed in `claude/fix-config-flow-loop-kvZw7`. Bundled in three v1.2 ROADMAP polish items (touching the same files) to minimise churn.
+
+- **Bug 1 — Options flow loops between pages 1 and 2:** `UniFiAlertsOptionsFlow.async_step_categories` rendered its form with `step_id="init"`. Every submit routed back to `async_step_init`, which unconditionally called `async_step_credentials()`, landing the user on page 1 again — an infinite loop that never saved any changes. Root cause: the categories form used the wrong `step_id` value.
+  - **Fix:** restructured `UniFiAlertsOptionsFlow` to exactly mirror the initial setup's 3-step flow — credentials (page 1, blank = skip) → categories (page 2, settings only) → finish (page 3, webhook URL display + final submit). Added `self._pending_options` to carry data from categories to finish. The `async_step_finish` in the options flow is a new method that calls `self.async_create_entry(title="", data=self._pending_options)`.
+  - **Files:** `custom_components/unifi_alerts/config_flow.py:281-500`, `strings.json`, `translations/en.json`
+  - **Tests:** rewrote `test_options_init_includes_webhook_urls` → `test_options_finish_includes_webhook_urls`; renamed `test_options_init_reads_entry_options_over_data` → `test_options_categories_reads_entry_options_over_data`; updated `test_options_flow_saves_submitted_values`, `test_options_flow_rejects_all_disabled`, and `test_blank_submission_skips_to_categories` / `test_valid_new_credentials_updates_entry_data` / `test_after_credential_update_categories_proceeds_normally` in `TestOptionsFlowCredentials`; added `test_options_categories_submit_routes_to_finish`, `test_options_finish_submit_creates_entry`, `test_options_flow_full_cycle`.
+
+- **Bug 2 — No device/service parent visible on integration page:** All four platform files (`binary_sensor`, `sensor`, `event`, `button`) already set `_attr_device_info` with correct shared `identifiers` and `DeviceEntryType.SERVICE`. However, HA's "Services" section does not always render the card prominently when the device is created lazily (on first entity registration) and when `configuration_url` is absent.
+  - **Fix:** added proactive device registration via `dr.async_get(hass).async_get_or_create(...)` in `async_setup_entry` — runs before platform forwarding, guaranteeing the device exists immediately. Added `configuration_url=entry.data.get(CONF_CONTROLLER_URL)` to all four `_device_info()` helpers and to the proactive call, so the Services card links directly to the UniFi controller web UI.
+  - **Files:** `custom_components/unifi_alerts/__init__.py`, `binary_sensor.py`, `sensor.py`, `event.py`, `button.py` (all touched for `CONF_CONTROLLER_URL` import + `configuration_url` field)
+  - **Tests:** added `TestDeviceRegistration.test_setup_creates_service_device` and `test_setup_device_has_configuration_url` in `test_init.py`; added `TestDeviceInfo` class (5 tests) in `test_entities.py`.
+
+- **Bug 3 — Blank entities / can't get detail:** `UniFiCategoryMessageSensor.native_value` returned `None` on a fresh install (no alert ever received), which HA rendered as a blank "unknown" state with no useful detail view. Three v1.2 ROADMAP polish items were bundled in since they touched the same files:
+  - **Fix (message sensor default):** `native_value` now returns `"No alerts yet"` when `state.last_alert is None`. Entity is always clickable and self-explanatory. Return type annotation changed to `str` (was `str | None`). (`sensor.py:60-64`)
+  - **Fix (message sensor category):** added `_attr_entity_category = EntityCategory.DIAGNOSTIC` to `UniFiCategoryMessageSensor` — keeps informational message sensors off the default dashboard. (`sensor.py`)
+  - **Fix (button categories):** added `_attr_entity_category = EntityCategory.CONFIG` to both `UniFiClearCategoryButton` and `UniFiClearAllButton` — removes them from voice assistant entity lists and default dashboards. (`button.py`)
+  - **Fix (event device class):** removed `_attr_device_class = EventDeviceClass.BUTTON` from `UniFiAlertEventEntity`. The comment admitted it was "closest semantic match" but it misleads device-class-based automation UIs. `device_class` is now unset. (`event.py`)
+  - **Tests:** added `TestEntityCategories` class (6 tests: DIAGNOSTIC on message sensor, CONFIG on both clear buttons, no device_class on event entity, "No alerts yet" default, message returned when alert present) in `test_entities.py`.
+
 ## 2026-04-22 — Fix release workflow: pre-release detection regex + Node 20 deprecation
 
 - **Bug 1 — every release tagged Stable:** [`.github/workflows/release.yml:31`](.github/workflows/release.yml:31) used `grep -qE '-pre[0-9]+$'` to detect pre-release tags. Because the pattern begins with `-`, `grep` parsed it as options (`-p`, `-r`, `-e`) and exited with `grep: invalid option -- 'p'`. The `if` saw the non-zero exit as "no pre-release match" and fell through to the stable branch, so `v1.x.y-preN` tags were being published as stable GitHub releases. Fixed by adding `--` before the pattern (`grep -qE -- '-pre[0-9]+$'`) to terminate `grep`'s option parsing. Verified with both `v1.3.0-pre2` (→ PRE) and `v1.3.0` (→ STABLE) inputs.
