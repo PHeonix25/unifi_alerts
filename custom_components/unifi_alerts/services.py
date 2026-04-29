@@ -56,12 +56,8 @@ async def _handle_clear_category(call: ServiceCall) -> None:
     entry_id: str | None = call.data.get(ATTR_ENTRY_ID)
 
     for coordinator in _get_coordinators(hass, entry_id):
-        coordinator.cancel_clear(category)
-        state = coordinator.get_category_state(category)
-        if state and state.is_alerting:
-            state.clear()
-            coordinator.async_set_updated_data(coordinator.category_states)
-            _LOGGER.debug("Service clear_category: cleared category %s", category)
+        await coordinator.async_clear_category(category)
+        _LOGGER.debug("Service clear_category: cleared category %s", category)
 
 
 async def _handle_clear_all(call: ServiceCall) -> None:
@@ -70,15 +66,8 @@ async def _handle_clear_all(call: ServiceCall) -> None:
     entry_id: str | None = call.data.get(ATTR_ENTRY_ID)
 
     for coordinator in _get_coordinators(hass, entry_id):
-        cleared_any = False
-        for category, state in coordinator.category_states.items():
-            if state.is_alerting:
-                coordinator.cancel_clear(category)
-                state.clear()
-                cleared_any = True
-        if cleared_any:
-            coordinator.async_set_updated_data(coordinator.category_states)
-            _LOGGER.debug("Service clear_all: cleared all alerting categories")
+        await coordinator.async_clear_all()
+        _LOGGER.debug("Service clear_all: cleared all categories")
 
 
 def async_register_services(hass: HomeAssistant) -> None:

@@ -72,7 +72,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         configuration_url=entry.data.get(CONF_CONTROLLER_URL),
     )
 
-    coordinator = UniFiAlertsCoordinator(hass, client, dict(entry.data) | dict(entry.options))
+    coordinator = UniFiAlertsCoordinator(
+        hass, client, dict(entry.data) | dict(entry.options), entry.entry_id
+    )
+
+    # Restore persisted acknowledgement watermarks before first poll so that
+    # open_count is filtered correctly from the very first data fetch.
+    await coordinator.async_restore_watermarks()
 
     # Perform an initial poll so entities have data before first render
     try:

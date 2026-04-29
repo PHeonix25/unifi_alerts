@@ -18,6 +18,9 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 
 ## 🟡 High-value improvements
 
+### Expose `last_acknowledged_at` in diagnostics
+The `last_cleared_at` watermark per category is not currently surfaced in the diagnostics platform. Add it to `diagnostics.py` alongside `open_count` and `is_alerting` so users can debug unexpected `open_count` values. Low-effort, diagnostic-only change.
+
 ### Verify update-in-place works without HA reboot
 **Problem:** Unknown whether updating the integration (e.g. via HACS or copying files) requires a full Home Assistant restart, or whether reloading the config entry is sufficient. A reboot requirement would be a significant friction point for self-hosted users pushing frequent updates.
 **Fix:** Test the update-in-place flow manually:
