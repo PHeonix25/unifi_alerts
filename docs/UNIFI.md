@@ -2,6 +2,12 @@
 
 Reference for the UniFi Network controller API as used by this integration. The API is partially undocumented and community-reverse-engineered — treat all field names as potentially unstable across controller versions.
 
+## Scope
+
+This integration monitors **UniFi Network** alerts — events surfaced in the Network Application's System Log and SIEM feed (AP/switch/gateway events, IPS/threat detections, WAN transitions, honeypot alerts, client blocks, PoE events, etc.).
+
+**UniFi Protect is not supported.** Protect (cameras, doorbells, motion/person detection, NVR) uses a completely separate API, device model, and event key taxonomy. Protect events will not be classified by this integration and will be silently ignored. A separate integration would be required for Protect monitoring.
+
 ## Controller types
 
 The integration must handle two distinct controller environments:
@@ -150,17 +156,44 @@ The controller returns HTTP 200 even for application-level errors. The `meta.rc`
 
 ## Webhook payloads
 
-When UniFi Alarm Manager sends a webhook POST, the JSON body structure differs from the polled alarm format. It is less consistent and varies by UniFi application (Network vs Protect) and version.
+When UniFi Alarm Manager sends a webhook POST, the JSON body structure differs from the polled alarm format. It is less consistent and varies across UniFi Network firmware versions.
 
-Known field names for the message:
-- `message` (most common in recent Network versions)
-- `msg` (older Network, some Protect)
-- `text` (some Protect events)
-- `description` (rare)
+Known field names for the alert message:
+- `message` (most common in recent Network firmware)
+- `msg` (some older Network firmware versions)
+- `text` (observed in some Network firmware versions; treated as fallback)
+- `description` (rare; observed in some Network firmware versions)
 
-`UniFiAlert.from_webhook_payload()` tries these in order.
+`UniFiAlert.from_webhook_payload()` tries these in order. These field names are all tried as defensive fallbacks regardless of which Network firmware version is sending the webhook. UniFi Protect webhooks are not supported.
 
 The integration only accepts POST webhooks — GET requests are rejected with HTTP 405. UniFi Alarm Manager must be configured to send POST. JSON parse failures are caught and fall back to `{}`.
+
+### Alert lifecycle
+
+**What the integration can do:**
+- Read open (`archived: false`) alarms via the poll API
+- Receive real-time pushes via UniFi Alarm Manager webhooks
+- Reset HA sensor state locally via Clear buttons / `clear_category` / `clear_all` services
+
+**What the integration cannot do:**
+- Archive/dismiss an alert on the controller. There is no official documented write API for dismissing individual Network alarms. (A community-discovered endpoint `POST /cmd/evtmgt {"cmd":"archive-all-alarms"}` exists but is undocumented and not implemented.)
+- Pressing **Clear** in HA resets HA-local state only (`is_alerting → false`, `alert_count → 0`). The alert remains open on the controller and will reappear on the next poll if still unresolved.
+
+To permanently clear an alert from both HA and the controller, dismiss it in the UniFi Network UI (which marks it `archived: true`). The integration filters to `archived: false` only, so it will not reappear after dismissal.
+
+### Event entities and webhooks
+
+**HA Event entities fire only via webhooks — not via polling.** This is by design:
+- **Webhook path:** `push_alert()` increments `alert_count` → event entity detects the change in `_handle_coordinator_update` and fires `alert_received`
+- **Polling path:** `open_count` and `is_alerting` are updated, but `alert_count` is NOT incremented — no Event entity fires
+
+If webhooks are not configured in UniFi Alarm Manager, Event entities will never fire, even though binary sensors and sensors update normally via polling.
+
+**Troubleshooting if events don't fire:**
+1. Confirm webhooks are configured in UniFi Network → System → Alarm Manager → Integrations, pointing at the URLs shown during HA setup
+2. Enable DEBUG logging for `custom_components.unifi_alerts` and look for `"Alert pushed to category"` — if absent, the webhook is not reaching the integration
+3. Check HA logs for HTTP 401 responses — this indicates a webhook token mismatch
+4. Verify the category configured in UniFi matches a category enabled in the HA integration options
 
 ## Event key taxonomy
 

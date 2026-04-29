@@ -6,6 +6,8 @@ This is the primary context file for Claude Code. Read this first, then follow t
 
 A Home Assistant custom integration (`domain: unifi_alerts`) that aggregates UniFi Network controller alerts into HA sensors, binary sensors, event entities, and buttons. It is intended for publication as a HACS custom repository.
 
+This integration covers **UniFi Network** only (System Logs / SIEM events from the Network Application on UniFi OS). It does **not** support UniFi Protect (cameras, motion detection, NVR).
+
 **Two data paths run in parallel:**
 - **Webhook push** — UniFi Alarm Manager POSTs to per-category webhook URLs registered by HA. This is the real-time path.
 - **REST polling** — the integration polls the UniFi controller's alarm API on a configurable interval to populate open-count sensors and catch alerts that missed the webhook.
