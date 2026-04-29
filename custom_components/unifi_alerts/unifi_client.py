@@ -102,17 +102,17 @@ class UniFiClient:
             await self.authenticate()
 
         # Different firmware versions expose different alarm endpoint paths.
-        # We try the documented /stat/alarm path first, then fall back to the
-        # bare /alarm path for older firmware that may not expose /stat/alarm.
+        # Try the bare /alarm path first (more universally supported), then
+        # fall back to /stat/alarm for firmware that only exposes that variant.
         alarm_paths = [
-            self._network_path(f"/api/s/{site}/stat/alarm"),
             self._network_path(f"/api/s/{site}/alarm"),
+            self._network_path(f"/api/s/{site}/stat/alarm"),
         ]
         for path in alarm_paths:
             result = await self._try_fetch_alarms(path, site)
             if result is not None:
                 return result
-            # None means 404 — try the next path
+            # None means path not found (404 or api.err.InvalidObject) — try next
         raise CannotConnectError(
             f"Could not find the alarm endpoint for site '{site}'. Tried: {', '.join(alarm_paths)}"
         )
@@ -135,15 +135,24 @@ class UniFiClient:
                     _LOGGER.debug("Alarm path %s returned 404 — trying next path", path)
                     return None
                 if resp.status == 400:
-                    # UniFi returns JSON even on 400 — try to surface the msg field.
-                    detail = ""
+                    # UniFi returns JSON even on 400 — parse the msg field.
+                    # Some firmware returns 400 + api.err.InvalidObject for paths that
+                    # don't exist on that firmware version (instead of 404), so treat
+                    # that error code as "path not found" and let the caller try the
+                    # next path. Any other 400 is a genuine error worth surfacing.
+                    unifi_msg = ""
                     try:
                         body = await resp.json(content_type=None)
                         unifi_msg = body.get("meta", {}).get("msg", "")
-                        if unifi_msg:
-                            detail = f" ({unifi_msg})"
                     except Exception:  # noqa: BLE001
                         pass
+                    if unifi_msg == "api.err.InvalidObject":
+                        _LOGGER.debug(
+                            "Alarm path %s returned 400 api.err.InvalidObject — trying next path",
+                            path,
+                        )
+                        return None
+                    detail = f" ({unifi_msg})" if unifi_msg else ""
                     raise CannotConnectError(
                         f"Alarm endpoint rejected the request (HTTP 400{detail}). "
                         f"Check that the site name '{site}' exists on the controller."
