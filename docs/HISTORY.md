@@ -51,6 +51,20 @@ Genuinely actionable items added to TODO/ROADMAP as new v1.4.0 backlog items:
 - **Optional: brittle test indexing in `TestDebugPayloadNarrowing`** (low priority) — accesses `mock_logger.debug.call_args[0][2]` to retrieve the logged payload dict. Still passes; could be made more declarative.
 - **Optional: integration test for full reload flow after rotation** (low priority) — the existing `tests/integration/test_multi_entry.py` exercises the suffix isolation directly but not the full options-flow → entry-update → reload → re-register cycle. Cluster A's existing tests cover each step in isolation; an end-to-end test would be an extra guard.
 
+### Copilot review pass on PR #50
+
+After the AFTER-audit, GitHub's Copilot reviewer ran a pass on PR #50 and surfaced four threads. One was a real bug fixed in cluster A's branch (commit [`a011a36`](https://github.com/PHeonix25/unifi_alerts/commit/a011a36)); the other three were pre-existing patterns deferred to a focused follow-up PR.
+
+**Fixed in cluster A:**
+
+- **`_last_push_at` unbounded growth** — the dedup-tracking dict in `coordinator.push_alert()` was insert-only, so a misconfigured controller emitting high-cardinality alert keys could grow it without bound over the lifetime of the process. `push_alert()` now opportunistically drops entries older than `WEBHOOK_DEDUP_WINDOW_SECONDS` right before recording each new push. Bound becomes "distinct (category, alert_key) pairs received within the window" rather than the controller's lifetime vocabulary. Cost is O(n) per push but n is naturally small. Test count 370 → 371 with `test_last_push_at_dict_bounded_by_dedup_window` (50-key burst at t=0, jump past window, push one more, assert only the fresh entry remains).
+
+**Deferred to a follow-up PR (filed in TODO and ROADMAP under v1.4.0 § Security):**
+
+- **Options-flow credential changes persist before the user submits the flow** — pre-existing pattern for credential updates on `dev`; cluster A inherited it for the rotate-only branch to stay consistent. Proper fix is a coordinated refactor that stages credentials AND secret in `self._pending_data` and persists atomically inside `async_step_finish` — touches the existing credentials path too, so it wants its own PR with its own tests.
+- **Same root cause at the credential-validation branch** — same response, same TODO.
+- **`verify_ssl` toggle alone does not persist** — `credentials_changed` predicate ignores `verify_ssl`. Pre-existing on `dev`, lands naturally alongside the staging refactor.
+
 ### Coverage of the v1.4.0 hardening backlog (this overnight session)
 
 **Closed by cluster A:**
