@@ -119,9 +119,16 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
 ```
 
 1. **Development:** work on `dev`. Version in manifest stays at `X.Y.Z-preN`.
-2. **Pre-release checkpoint:** bump the `N` in manifest (e.g. `pre1 → pre2`), commit, push, then push the tag `vX.Y.Z-preN`. GitHub Actions creates a pre-release automatically.
+2. **Pre-release checkpoint:** bump the `N` in manifest (e.g. `pre1 → pre2`) on a short-lived `chore/bump-X.Y.Z-preN` branch, open a PR targeting `dev`, merge it, then provide the user with the tag command (Claude cannot push tags). After the PR merges, the user runs:
+   ```bash
+   git checkout dev && git pull origin dev
+   git tag vX.Y.Z-preN && git push origin vX.Y.Z-preN
+   ```
+   GitHub Actions creates a pre-release automatically.
 3. **Stable release:** bump manifest from `X.Y.Z-preN` to `X.Y.Z`, open a PR from `dev` to `main`. After merge, tag `vX.Y.Z` on `main`. GitHub Actions creates a stable release.
 4. **Start next cycle:** on `dev`, bump manifest to `X.(Y+1).0-pre1` and continue.
+
+> **Tag convention reminder:** Claude cannot push tags directly. Whenever the user says "update the tag", "cut a release", "tag the branch", or similar — open a version-bump PR to `dev` (or `main` for stable), wait for merge, then give the user the exact `git tag` + `git push origin <tag>` commands to run locally.
 
 ### CI enforcement
 
@@ -133,7 +140,7 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
 
 Recommended rules:
 - **`main`:** require PR, require status checks (`CI / *`, `Version Check / *`), no direct push, no force-push.
-- **`dev`:** require status checks (`CI / *`, `Version Check / *`), allow direct push (for version bumps), no force-push.
+- **`dev`:** require PR, require status checks (`CI / *`, `Version Check / *`), no direct push, no force-push. Version bumps go via a short-lived `chore/bump-*` branch PR.
 
 ## Working style
 
