@@ -1,0 +1,23 @@
+# GitHub CODEOWNERS — see https://docs.github.com/articles/about-code-owners
+#
+# This file lists the maintainers responsible for reviewing changes in each
+# part of the repository. Listed users are automatically requested for review
+# on every PR that modifies the matching paths.
+
+# Default: everything is owned by the integration maintainer
+*                                              @PHeonix25
+
+# Custom integration source
+/custom_components/unifi_alerts/               @PHeonix25
+
+# Tests
+/tests/                                        @PHeonix25
+
+# CI / release pipeline — gate on a maintainer review for any workflow change
+/.github/workflows/                            @PHeonix25
+
+# Repo policies and metadata
+/CHANGELOG.md                                  @PHeonix25
+/SECURITY.md                                   @PHeonix25
+/CODEOWNERS                                    @PHeonix25
+/docs/                                         @PHeonix25

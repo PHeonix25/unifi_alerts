@@ -1,0 +1,41 @@
+# Configures GitHub's `--generate-notes` so the auto-generated release notes
+# group merged PRs by category instead of dumping a flat list. Categories are
+# matched by PR labels; PRs with no matching label fall through to "Other".
+#
+# Pair this file with `gh release create --generate-notes` in
+# `.github/workflows/release.yml` so each release surfaces a categorised
+# summary scoped to commits between the previous tag and the current one.
+changelog:
+  exclude:
+    labels:
+      - "ignore-for-release"
+      - "duplicate"
+      - "wontfix"
+    authors:
+      - "dependabot"
+  categories:
+    - title: 🔒 Security
+      labels:
+        - "security"
+    - title: 🐛 Bug Fixes
+      labels:
+        - "bug"
+    - title: 🚀 Features
+      labels:
+        - "enhancement"
+        - "feature"
+    - title: 📚 Documentation
+      labels:
+        - "documentation"
+        - "docs"
+    - title: 🧪 Tests
+      labels:
+        - "tests"
+    - title: ⚙️ CI / Release
+      labels:
+        - "ci"
+        - "github-actions"
+        - "dependencies"
+    - title: 🧹 Other Changes
+      labels:
+        - "*"
