@@ -549,11 +549,12 @@ class TestFetchAlarms:
         )
 
     @pytest.mark.asyncio
-    async def test_tries_bare_alarm_path_first(self):
-        """fetch_alarms must try bare /alarm before the /stat/alarm fallback.
+    async def test_tries_list_alarm_path_first(self):
+        """fetch_alarms must try /list/alarm before any older path.
 
-        /alarm is more universally supported across firmware versions; /stat/alarm
-        is kept as a fallback for firmware that only exposes that variant.
+        /list/alarm is the newest UniFi Network endpoint (9.x+); the older /alarm
+        and /stat/alarm paths are kept as fallbacks so the integration keeps
+        working on older firmware. See docs/UNIFI.md § "Alarm API endpoint".
         """
         client = make_client()
         client._authenticated = True
@@ -576,18 +577,60 @@ class TestFetchAlarms:
 
         assert captured_urls, "Expected at least one GET call"
         first_url = captured_urls[0]
-        assert first_url.endswith("/alarm") and not first_url.endswith("/stat/alarm"), (
-            f"First URL tried must end with bare /alarm; got: {first_url}"
+        assert first_url.endswith("/list/alarm"), (
+            f"First URL tried must end with /list/alarm; got: {first_url}"
         )
-        # Only one call expected — /alarm worked, no fallback needed
+        # Only one call expected — /list/alarm worked, no fallback needed
         assert len(captured_urls) == 1
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_stat_alarm_on_404(self):
-        """fetch_alarms must try /stat/alarm when bare /alarm returns 404.
+    async def test_falls_back_through_full_path_chain(self):
+        """fetch_alarms must walk the full path chain when each preceding path is missing.
 
-        Some controller firmware versions expose /stat/alarm but not bare /alarm.
-        The fallback ensures the integration works across firmware versions.
+        Order is: /list/alarm (newest) → /alarm → /stat/alarm (oldest). A 404 on each
+        of the first two must continue to the next; the third must succeed. This guards
+        against future regressions if someone reorders or drops an entry from
+        ``alarm_paths`` without updating both code and docs.
+        """
+        client = make_client()
+        client._authenticated = True
+        client._is_unifi_os = True
+
+        captured_urls: list[str] = []
+
+        @asynccontextmanager
+        async def _404_404_then_200(*args, **kwargs):
+            captured_urls.append(args[0] if args else "")
+            call_index = len(captured_urls)
+            resp = MagicMock()
+            resp.headers = {}
+            resp.raise_for_status = MagicMock()
+            if call_index < 3:
+                resp.status = 404
+            else:
+                resp.status = 200
+                resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
+            yield resp
+
+        client._session.get = _404_404_then_200
+        result = await client.fetch_alarms()
+
+        assert len(captured_urls) == 3, (
+            f"Expected exactly three GET calls walking the chain; got {len(captured_urls)}"
+        )
+        assert captured_urls[0].endswith("/list/alarm")
+        assert captured_urls[1].endswith("/alarm") and not captured_urls[1].endswith(
+            "/list/alarm"
+        )
+        assert captured_urls[2].endswith("/stat/alarm")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_next_path_on_404(self):
+        """fetch_alarms must try the next path when the current one returns 404.
+
+        Verifies the basic fallback contract for any single-step transition in the
+        chain. The first path returns 404, the second returns success.
         """
         client = make_client()
         client._authenticated = True
@@ -617,8 +660,8 @@ class TestFetchAlarms:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_stat_alarm_on_400_invalid_object(self):
-        """fetch_alarms must try /stat/alarm when bare /alarm returns 400 api.err.InvalidObject.
+    async def test_falls_back_to_next_path_on_400_invalid_object(self):
+        """fetch_alarms must try the next path on 400 api.err.InvalidObject.
 
         Some firmware returns 400 + api.err.InvalidObject for endpoint paths that don't
         exist on that firmware version (instead of the more conventional 404).  The

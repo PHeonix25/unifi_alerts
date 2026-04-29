@@ -81,10 +81,20 @@ This endpoint **always** requires the `/proxy/network` prefix — it does not ex
 
 ## Alarm API endpoint
 
-**Self-hosted:** `GET /api/s/{site}/alarm`
-**UniFi OS:** `GET /proxy/network/api/s/{site}/alarm`
+**Self-hosted:** `GET /api/s/{site}/<path>`
+**UniFi OS:** `GET /proxy/network/api/s/{site}/<path>`
 
-> **Path variation by firmware:** Some controller firmware versions expose `/api/s/{site}/stat/alarm` instead of the bare `/alarm`. The integration tries `/alarm` first, then `/stat/alarm` as a fallback.
+> **Path variation by firmware — flagged for future maintainers.** UniFi has changed the alarm endpoint path multiple times. The integration probes them in newest-to-oldest order so modern firmware succeeds in one call:
+>
+> | Path | Era | Notes |
+> |---|---|---|
+> | `/list/alarm` | newest (UniFi Network 9.x+) | Tried first. Replaced `/stat/alarm` at some point in the 9.x release line. |
+> | `/alarm` | long-standing | Universal historical path; still present on most firmware. Tried second. |
+> | `/stat/alarm` | older intermediate | Some firmware exposes only this variant. Tried last. |
+>
+> A path that doesn't exist may return either `404` or `400 api.err.InvalidObject` depending on firmware — both are treated as "try the next path". A genuine `400` (e.g. wrong site name) is surfaced to the user only after **all** paths have been tried.
+>
+> **If UniFi changes the endpoint again:** add the new path to the head of `alarm_paths` in `unifi_client.py::fetch_alarms`, update this table, and add a fallback test in `tests/unit/test_unifi_client.py` (see `TestFetchAlarms::test_falls_back_*`).
 
 Default site name is `default`. Multi-site deployments are not currently supported (see `TODO.md`).
 
