@@ -1,5 +1,11 @@
 # History
 
+## 2026-04-29 — Start v1.4.0-pre1 cycle
+
+Bumped `manifest.json` from `1.3.0` to `1.4.0-pre1` to open the next development cycle. See `docs/TODO.md` and `docs/ROADMAP.md § v1.4.0` for the planned work: UniFi OS only simplification, open-count watermark (PR #44), and the hardening backlog carried over from the v1.2.0 audit.
+
+---
+
 ## 2026-04-29 — Release v1.3.0
 
 Bumped `manifest.json` from `1.3.0-pre5` to `1.3.0` and merged dev to main via PR. Updated ROADMAP.md and TODO.md: v1.3.0 marked complete; "UniFi OS only" and hardening backlog items moved to v1.4.0.
