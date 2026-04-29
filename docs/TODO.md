@@ -2,9 +2,9 @@
 
 Prioritised backlog. Items are grouped by type. Work top-to-bottom within each group unless there's a dependency noted.
 
-## 🔵 v1.3.0 — UniFi OS only
+## 🔵 v1.4.0 — UniFi OS only
 
-**Decision (2026-04-22):** officially support only UniFi OS controllers. Classic self-hosted controllers (Network Application on bare Linux/Windows) are excluded. See `ROADMAP.md § v1.3.0` for full rationale.
+**Decision (2026-04-22):** officially support only UniFi OS controllers. Classic self-hosted controllers (Network Application on bare Linux/Windows) are excluded. See `ROADMAP.md § v1.4.0` for full rationale. (Was planned for v1.3.0; deferred to v1.4.0 to ship v1.3.0 bug fixes first.)
 
 ### Document the prerequisite (do first — ships ahead of code change)
 
@@ -12,7 +12,11 @@ Prioritised backlog. Items are grouped by type. Work top-to-bottom within each g
 
 ### Remove legacy self-hosted code paths (do after docs)
 
-**Strip `unifi_client.py` of non-UniFi-OS paths** — removes `_detect_unifi_os()`, the `_network_path()` method, login path ordering in `_login_userpass()`, logout branch in `close()`, and `CONF_IS_UNIFI_OS` persistence in config flow + `const.py`. Also remove/update tests that existed only to cover the legacy path. Expected reduction: ~30-40 lines. See `ROADMAP.md § v1.3.0` for the full list of touch points.
+**Strip `unifi_client.py` of non-UniFi-OS paths** — removes `_detect_unifi_os()`, the `_network_path()` method, login path ordering in `_login_userpass()`, logout branch in `close()`, and `CONF_IS_UNIFI_OS` persistence in config flow + `const.py`. Also remove/update tests that existed only to cover the legacy path. Expected reduction: ~30-40 lines. See `ROADMAP.md § v1.4.0` for the full list of touch points.
+
+### Per-category open_count watermark (PR #44)
+
+**Implement acknowledgement watermark for `open_count`** — `open_count` currently accumulates as a lifetime counter (3000+ observed on production installs). Pressing "Clear" should bound the count to "alarms since last cleared". See PR #44 (`claude/open-count-watermark`) for the full design and implementation.
 
 ---
 
@@ -39,13 +43,13 @@ After the integration is stable and passes `hassfest`, submit a PR to https://gi
 
 ---
 
-## 🔥 v1.2 critical-review findings (pre-HACS-default hardening)
+## 🔥 v1.4.0 — Hardening backlog (critical-review carry-overs)
 
-A comprehensive audit after the v1.1 PRs landed surfaced these items. Full detail (with file:line anchors and suggested fixes) is in `ROADMAP.md § v1.2.0`. Grouped by impact:
+Items from the post-v1.1 audit that were planned for v1.2.0 but carried forward. Now targeting v1.4.0. Full detail (with file:line anchors and suggested fixes) is in `ROADMAP.md § v1.4.0`. Grouped by impact:
 
 ### Reliability / correctness
 - **🔴 Webhook ID collision on multi-entry (CRITICAL):** `webhook_id_for_category()` returns `unifi_alerts_{category}` without `entry_id` — two config entries silently overwrite each other's webhook handlers (`const.py:183-184`). This is the root cause of the multi-entry isolation gap.
-- **Unbounded alarm list:** `UniFiClient.fetch_alarms()` silently caps at `limit=200`. Remove the `limit` param (`unifi_client.py:104`).
+- ~~**Unbounded alarm list:** `UniFiClient.fetch_alarms()` silently caps at `limit=200`.~~ — fixed in v1.3.0 (limit param removed entirely).
 - **SSL fail-open on missing key:** `ssl=self._config.get(CONF_VERIFY_SSL, False)` — change fallback to `DEFAULT_VERIFY_SSL` so a missing key fails closed (`unifi_client.py:106`).
 - **SSL fail-open in 4 more call sites:** same `False` default in `_detect_unifi_os()` (`:156`), `_verify_api_key()` (`:202`), `_login_userpass()` (`:238`), and `close()` (`:139`).
 - **Category state lost on reload:** `_category_states` is rebuilt from scratch on every options change; persist `alert_count` and `last_alert` across reloads (`coordinator.py:59-62`).
