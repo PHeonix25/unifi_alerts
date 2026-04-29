@@ -101,7 +101,7 @@ This project uses a two-branch model. All active development happens on `dev`; `
 | Branch | Purpose | Version format | Example |
 |--------|---------|---------------|---------|
 | `main` | Stable releases only. CI enforces no pre-release suffix. | `X.Y.Z` | `1.0.0`, `1.1.0` |
-| `dev` | Active development. CI enforces `-preN` suffix. | `X.Y.Z-preN` | `1.1.0-pre1`, `1.1.0-pre2` |
+| `dev` | Active development. CI accepts `-preN` during development, or stable `X.Y.Z` when preparing a release — no merge-back needed. | `X.Y.Z-preN` or `X.Y.Z` | `1.1.0-pre1`, `1.1.0` |
 | `feature/*` or `claude/*` | Short-lived work. **Must branch off `dev`, not `main`.** No version format enforced by CI. | Any | — |
 
 ### Versioning conventions
@@ -117,20 +117,27 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
        │
        ├── (work) ──► tag v1.1.0-pre2  ──► GitHub pre-release  (automated)
        │
-       └── bump manifest to 1.1.0
-            └─► merge PR to main
-                 └─► tag v1.1.0  ──► GitHub stable release  (automated)
+       ├── bump manifest to 1.1.0 (via claude/* PR → dev)
+       │    └─► PR dev → main
+       │         └─► tag v1.1.0  ──► GitHub stable release  (automated)
+       │
+       └── bump manifest to 1.2.0-pre1 (via claude/* PR → dev)  ← start next cycle
 ```
 
 1. **Development:** work on `dev`. Version in manifest stays at `X.Y.Z-preN`.
-2. **Pre-release checkpoint:** bump the `N` in manifest (e.g. `pre1 → pre2`) on a short-lived `chore/bump-X.Y.Z-preN` branch, open a PR targeting `dev`, merge it, then provide the user with the tag command (Claude cannot push tags). After the PR merges, the user runs:
+2. **Pre-release checkpoint:** bump the `N` in manifest (e.g. `pre1 → pre2`) on a short-lived `claude/*` branch, open a PR targeting `dev`, merge it, then provide the user with the tag command (Claude cannot push tags). After the PR merges, the user runs:
    ```bash
    git checkout dev && git pull origin dev
    git tag vX.Y.Z-preN && git push origin vX.Y.Z-preN
    ```
    GitHub Actions creates a pre-release automatically.
-3. **Stable release:** bump manifest from `X.Y.Z-preN` to `X.Y.Z`, open a PR from `dev` to `main`. After merge, tag `vX.Y.Z` on `main`. GitHub Actions creates a stable release.
-4. **Start next cycle:** on `dev`, bump manifest to `X.(Y+1).0-pre1` and continue.
+3. **Stable release:** bump manifest from `X.Y.Z-preN` to `X.Y.Z` on a `claude/*` branch, open PR targeting `dev`. `dev` CI now accepts stable versions, so this passes. Merge to `dev`, then open a PR from `dev` → `main`. After that merges, provide the user with the tag command:
+   ```bash
+   git checkout main && git pull origin main
+   git tag vX.Y.Z && git push origin vX.Y.Z
+   ```
+   GitHub Actions creates a stable release automatically.
+4. **Start next cycle:** bump manifest to `X.(Y+1).0-pre1` on a `claude/*` branch, open PR targeting `dev`, merge. Development continues forward — no merge-back from `main` to `dev` needed.
 
 > **Tag convention reminder:** Claude cannot push tags directly. Whenever the user says "update the tag", "cut a release", "tag the branch", or similar — open a version-bump PR to `dev` (or `main` for stable), wait for merge, then give the user the exact `git tag` + `git push origin <tag>` commands to run locally.
 
