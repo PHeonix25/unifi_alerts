@@ -1262,6 +1262,86 @@ class TestWebhookSecretRotation:
         # No update at all because nothing changed
         flow.hass.config_entries.async_update_entry.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_finish_step_displays_new_url_after_rotation(self) -> None:
+        """After secret rotation, the finish step must show URLs with the NEW token.
+
+        Regression guard: HA's ``async_update_entry`` mutates ``entry.data``
+        synchronously via ``object.__setattr__(entry, "data", ...)``. Our flow
+        relies on that — between calling ``async_update_entry`` and reading
+        ``self._config_entry.data[CONF_WEBHOOK_SECRET]`` in the finish step,
+        no awaits intervene that could swap data. If HA ever changed those
+        semantics (or if a regression introduced an extra await between the
+        update and the read), users would see the OLD token displayed in the
+        finish step despite the new one being persisted — a confusing UX
+        bug. This test simulates the real HA behaviour and asserts the URL
+        contains the freshly-rotated secret.
+        """
+        from custom_components.unifi_alerts.const import (
+            CONF_REGENERATE_WEBHOOK_SECRET,
+            CONF_WEBHOOK_ID_SUFFIX,
+        )
+
+        flow = _make_options_flow()
+
+        # Simulate HA's real async_update_entry: mutate entry.data in-place
+        def _fake_update(entry, *, data=None, **kwargs):
+            if data is not None:
+                entry.data = data
+
+        flow.hass.config_entries.async_update_entry = MagicMock(side_effect=_fake_update)
+        # Make data a real dict (not MagicMock) so .get() / mutation work cleanly
+        flow._config_entry.data = {
+            **flow._config_entry.data,
+            CONF_WEBHOOK_ID_SUFFIX: "deadbeef",
+        }
+
+        # Step 1: rotate-only credentials submission
+        flow.async_show_form = MagicMock(
+            side_effect=lambda **kwargs: {"type": "form", "step_id": kwargs["step_id"]}
+        )
+        await flow.async_step_credentials({
+            CONF_CONTROLLER_URL: "",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+            CONF_REGENERATE_WEBHOOK_SECRET: True,
+        })
+
+        # Capture the new secret that was just persisted
+        new_secret = flow._config_entry.data[CONF_WEBHOOK_SECRET]
+        assert new_secret != "fixed-secret"
+        assert len(new_secret) >= 40
+
+        # Step 2: submit categories so the flow advances to finish. The
+        # categories step calls async_step_finish() internally to render the
+        # URL display form, so the async_generate_url patch must wrap this
+        # call too.
+        cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+        with patch(
+            "custom_components.unifi_alerts.config_flow.async_generate_url",
+            side_effect=lambda hass, wid: f"http://ha.local/api/webhook/{wid}",
+        ):
+            await flow.async_step_categories(cat_input)
+
+        # Inspect the form schema's default URLs — they must contain the NEW secret
+        finish_call = flow.async_show_form.call_args_list[-1]
+        schema = finish_call.kwargs["data_schema"]
+        url_defaults = [
+            marker.default()
+            for marker in schema.schema
+            if isinstance(marker, vol.Optional)
+            and isinstance(marker.schema, str)
+            and marker.schema.startswith("webhook_url_")
+        ]
+        assert url_defaults, "Expected at least one webhook_url_* field on the finish step"
+        for url in url_defaults:
+            assert new_secret in url, (
+                f"Finish step displayed an old/wrong token. URL: {url}, "
+                f"expected new secret: {new_secret}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # CONF_WEBHOOK_ID_SUFFIX generated for new entries (multi-entry collision fix)
