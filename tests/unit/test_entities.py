@@ -234,14 +234,14 @@ class TestUniFiCategoryMessageSensor:
         entity = self._make(state)
         assert entity.native_value == "WAN went down"
 
-    def test_native_value_none_when_no_alert(self):
+    def test_native_value_default_when_no_alert(self):
         state = make_state()
         entity = self._make(state)
-        assert entity.native_value is None
+        assert entity.native_value == "No alerts yet"
 
-    def test_native_value_none_when_state_missing(self):
+    def test_native_value_default_when_state_missing(self):
         entity = self._make(None)
-        assert entity.native_value is None
+        assert entity.native_value == "No alerts yet"
 
     def test_available_true_when_enabled(self):
         state = make_state(enabled=True)
@@ -523,3 +523,105 @@ class TestUniFiClearAllButton:
         entity = self._make(states)
         await entity.async_press()
         entity._coordinator.async_set_updated_data.assert_called_once()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Device info — configuration_url + proactive registration cross-checks
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestDeviceInfo:
+    """_device_info() helpers in all four platforms must include configuration_url."""
+
+    def test_binary_sensor_device_info_has_configuration_url(self):
+        from custom_components.unifi_alerts.binary_sensor import _device_info
+
+        entry = make_entry()
+        info = _device_info(entry)
+        assert info["configuration_url"] == entry.data["controller_url"]
+
+    def test_sensor_device_info_has_configuration_url(self):
+        from custom_components.unifi_alerts.sensor import _device_info
+
+        entry = make_entry()
+        info = _device_info(entry)
+        assert info["configuration_url"] == entry.data["controller_url"]
+
+    def test_event_device_info_has_configuration_url(self):
+        from custom_components.unifi_alerts.event import _device_info
+
+        entry = make_entry()
+        info = _device_info(entry)
+        assert info["configuration_url"] == entry.data["controller_url"]
+
+    def test_button_device_info_has_configuration_url(self):
+        from custom_components.unifi_alerts.button import _device_info
+
+        entry = make_entry()
+        info = _device_info(entry)
+        assert info["configuration_url"] == entry.data["controller_url"]
+
+    def test_all_platforms_share_identical_identifiers(self):
+        from custom_components.unifi_alerts.binary_sensor import _device_info as bs_info
+        from custom_components.unifi_alerts.button import _device_info as btn_info
+        from custom_components.unifi_alerts.event import _device_info as ev_info
+        from custom_components.unifi_alerts.sensor import _device_info as s_info
+
+        entry = make_entry()
+        assert bs_info(entry)["identifiers"] == s_info(entry)["identifiers"]
+        assert bs_info(entry)["identifiers"] == ev_info(entry)["identifiers"]
+        assert bs_info(entry)["identifiers"] == btn_info(entry)["identifiers"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Entity categories + message sensor default
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestEntityCategories:
+    """Verify entity_category assignments for the polish items bundled into v1.3."""
+
+    def test_message_sensor_is_diagnostic(self):
+        from homeassistant.const import EntityCategory
+
+        from custom_components.unifi_alerts.sensor import UniFiCategoryMessageSensor
+
+        # CachedProperties metaclass stores _attr_* backing values as __attr_* in __dict__
+        assert UniFiCategoryMessageSensor.__dict__.get("__attr_entity_category") == EntityCategory.DIAGNOSTIC
+
+    def test_clear_category_button_is_config(self):
+        from homeassistant.const import EntityCategory
+
+        from custom_components.unifi_alerts.button import UniFiClearCategoryButton
+
+        assert UniFiClearCategoryButton.__dict__.get("__attr_entity_category") == EntityCategory.CONFIG
+
+    def test_clear_all_button_is_config(self):
+        from homeassistant.const import EntityCategory
+
+        from custom_components.unifi_alerts.button import UniFiClearAllButton
+
+        assert UniFiClearAllButton.__dict__.get("__attr_entity_category") == EntityCategory.CONFIG
+
+    def test_event_entity_has_no_device_class(self):
+        from custom_components.unifi_alerts.event import UniFiAlertEventEntity
+
+        # __attr_device_class is the CachedProperties backing key; absent means no override
+        assert "__attr_device_class" not in UniFiAlertEventEntity.__dict__
+
+    def test_message_sensor_returns_no_alerts_yet_when_empty(self):
+        from custom_components.unifi_alerts.sensor import UniFiCategoryMessageSensor
+
+        coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
+        entry = make_entry()
+        entity = UniFiCategoryMessageSensor(coord, entry, CATEGORY_NETWORK_WAN)
+        assert entity.native_value == "No alerts yet"
+
+    def test_message_sensor_returns_message_when_alert_present(self):
+        from custom_components.unifi_alerts.sensor import UniFiCategoryMessageSensor
+
+        alert = make_alert(message="WAN went down")
+        coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state(last_alert=alert)})
+        entry = make_entry()
+        entity = UniFiCategoryMessageSensor(coord, entry, CATEGORY_NETWORK_WAN)
+        assert entity.native_value == "WAN went down"

@@ -6,7 +6,7 @@ for automations that should trigger on *each* alert rather than a state change.
 
 from __future__ import annotations
 
-from homeassistant.components.event import EventDeviceClass, EventEntity
+from homeassistant.components.event import EventEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType
@@ -18,6 +18,7 @@ from .const import (
     ALL_CATEGORIES,
     CATEGORY_ICONS,
     CATEGORY_LABELS,
+    CONF_CONTROLLER_URL,
     DATA_COORDINATOR,
     DOMAIN,
 )
@@ -48,7 +49,6 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
     """
 
     _attr_has_entity_name = True
-    _attr_device_class = EventDeviceClass.BUTTON  # closest semantic match
     _attr_event_types = ["alert_received"]
 
     def __init__(
@@ -110,4 +110,5 @@ def _device_info(entry: ConfigEntry) -> DeviceInfo:
         manufacturer="Ubiquiti",
         model="UniFi Network Controller",
         entry_type=DeviceEntryType.SERVICE,
+        configuration_url=entry.data.get(CONF_CONTROLLER_URL),
     )

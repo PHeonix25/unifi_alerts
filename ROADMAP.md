@@ -123,8 +123,8 @@ A second-opinion pass after the v1.1 PRs landed surfaced a set of items that are
 - [ ] Entity naming is ad-hoc — each platform file hard-codes `_attr_name = f"{CATEGORY_LABELS[cat]} Foo"`.  Adopt the `has_entity_name = True` + `_attr_translation_key = "..."` pattern so the strings live in `strings.json` (`binary_sensor.py:60`, `sensor.py:56,109`, `event.py:63`, `button.py`).  Unlocks localisation and cleaner registry IDs.
 - [ ] No sensor `device_class` on the open-count or rollup-count sensors (`sensor.py:96,128`) — add a device_class where one fits (none of HA's built-ins map cleanly to "open alert count"; consider `None` + richer `state_class`).
 - [ ] **Config flow accesses private `client._is_unifi_os`** — `config_flow.py:99,253,372` read a private attribute directly.  If the client internals change, this breaks silently.  Fix: expose `is_unifi_os` as a public `@property` on `UniFiClient` (`unifi_client.py`).
-- [ ] **`EventDeviceClass.BUTTON` is semantically incorrect for alert events** — `event.py:51` uses `BUTTON` as "closest semantic match" but this is misleading in device-class-based automation UIs.  Fix: remove `_attr_device_class` entirely (or set to `None`); no built-in class fits "alert received" (`event.py:51`).
-- [ ] **Clear buttons and diagnostic entities lack `entity_category`** — `UniFiClearCategoryButton` and `UniFiClearAllButton` don't set `_attr_entity_category = EntityCategory.CONFIG` (`button.py:37,63`).  Without this, they appear on the default dashboard and in voice assistant entity lists, which is confusing.  Similarly, message sensors could use `EntityCategory.DIAGNOSTIC`.
+- [x] **`EventDeviceClass.BUTTON` is semantically incorrect for alert events** — resolved in v1.3.0 post-install fix PR.
+- [x] **Clear buttons and diagnostic entities lack `entity_category`** — resolved in v1.3.0 post-install fix PR.
 
 ### Testing
 
@@ -149,6 +149,16 @@ A second-opinion pass after the v1.1 PRs landed surfaced a set of items that are
 - [ ] **No privacy / data retention section in README** — users don't know which UniFi payload fields end up in HA state (message, device_name, site, severity, raw) or how long they persist. Add a short "Data handling" section: what fields are stored, that nothing leaves the local network, and that auto-clear removes `is_alerting`/`last_alert` after the configured timeout.
 - [ ] **Automation example doesn't document the "category disabled → event entity unavailable" edge case** — if a user disables the `security_threat` category via options after wiring up an automation, the event entity becomes unavailable and the automation silently stops firing. Add a one-liner caveat to the README automation section.
 - [ ] **`unique_id` format is undocumented** (README) — power users wiring entities into long-lived automations don't know whether renaming entities in the UI is safe. Document the `{entry_id}_{category}_{sensor_type}` pattern and explicitly note that UI renames preserve `unique_id`, so automations are safe.
+
+---
+
+## v1.3.0 — Post-install bug fixes
+
+Three bugs confirmed in production on v1.3.0-pre2. Resolved in `claude/fix-config-flow-loop-kvZw7`.
+
+- [x] **Options flow loop** — `UniFiAlertsOptionsFlow` restructured to mirror 3-step initial-setup (credentials → categories → webhook URLs). (`config_flow.py`, `strings.json`, `translations/en.json`)
+- [x] **No device/service parent** — proactive device registration via `dr.async_get_or_create` in `async_setup_entry`; `configuration_url` added to all `_device_info()` helpers. (`__init__.py`, all platform files)
+- [x] **Blank / unclickable entities** — message sensor defaults to `"No alerts yet"` instead of `None`; `EntityCategory.DIAGNOSTIC` on message sensors; `EntityCategory.CONFIG` on clear buttons; removed wrong `EventDeviceClass.BUTTON` from event entities. (`sensor.py`, `button.py`, `event.py`)
 
 ---
 

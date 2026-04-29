@@ -10,6 +10,7 @@ from conftest import make_entry, make_hass
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
     CONF_CLEAR_TIMEOUT,
+    CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
     CONF_POLL_INTERVAL,
     CONF_VERIFY_SSL,
@@ -68,6 +69,7 @@ class TestAsyncSetupEntry:
                 return_value=mock_coordinator,
             ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
         ):
             result = await async_setup_entry(hass, entry)
 
@@ -91,6 +93,7 @@ class TestAsyncSetupEntry:
                 return_value=mock_coordinator,
             ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
         ):
             await async_setup_entry(hass, entry)
 
@@ -121,6 +124,7 @@ class TestAsyncSetupEntry:
                 return_value=mock_coordinator,
             ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
             pytest.raises(ConfigEntryNotReady),
         ):
             await async_setup_entry(hass, entry)
@@ -147,6 +151,7 @@ class TestAsyncSetupEntry:
                 return_value=mock_coordinator,
             ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
             pytest.raises(ConfigEntryNotReady),
         ):
             await async_setup_entry(hass, entry)
@@ -181,6 +186,7 @@ class TestAsyncSetupEntry:
                 return_value=mock_coordinator,
             ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
         ):
             await async_setup_entry(hass, entry)
 
@@ -206,6 +212,7 @@ class TestAsyncSetupEntry:
                 return_value=mock_coordinator,
             ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
         ):
             await async_setup_entry(hass, entry)
 
@@ -230,6 +237,7 @@ class TestAsyncSetupEntry:
                 return_value=mock_coordinator,
             ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
         ):
             await async_setup_entry(hass, entry)
 
@@ -334,6 +342,76 @@ class TestAsyncUnloadEntry:
         await async_unload_entry(hass, entry)
 
         assert call_order == ["shutdown", "unregister", "close"]
+
+
+# ── device registry ───────────────────────────────────────────────────────────
+
+
+class TestDeviceRegistration:
+    """async_setup_entry must proactively register the hub device."""
+
+    @pytest.mark.asyncio
+    async def test_setup_creates_service_device(self):
+        """async_setup_entry must call async_get_or_create with SERVICE entry type."""
+        from homeassistant.helpers.device_registry import DeviceEntryType
+
+        from custom_components.unifi_alerts import async_setup_entry
+
+        hass = make_hass()
+        entry = make_entry()
+        mock_client, mock_coordinator, mock_wm = _patch_all()
+
+        mock_dev_reg = MagicMock()
+        mock_dev_reg.async_get_or_create = MagicMock()
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
+            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
+            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=mock_dev_reg),
+        ):
+            await async_setup_entry(hass, entry)
+
+        mock_dev_reg.async_get_or_create.assert_called_once()
+        call_kwargs = mock_dev_reg.async_get_or_create.call_args.kwargs
+        assert call_kwargs["config_entry_id"] == entry.entry_id
+        assert call_kwargs["entry_type"] == DeviceEntryType.SERVICE
+        assert (DOMAIN, entry.entry_id) in call_kwargs["identifiers"]
+
+    @pytest.mark.asyncio
+    async def test_setup_device_has_configuration_url(self):
+        """The registered device must carry the controller URL as configuration_url."""
+        from custom_components.unifi_alerts import async_setup_entry
+
+        hass = make_hass()
+        entry = make_entry()
+        mock_client, mock_coordinator, mock_wm = _patch_all()
+
+        mock_dev_reg = MagicMock()
+        mock_dev_reg.async_get_or_create = MagicMock()
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
+            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
+            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=mock_dev_reg),
+        ):
+            await async_setup_entry(hass, entry)
+
+        call_kwargs = mock_dev_reg.async_get_or_create.call_args.kwargs
+        assert call_kwargs["configuration_url"] == entry.data[CONF_CONTROLLER_URL]
 
 
 # ── _async_update_listener ────────────────────────────────────────────────────
