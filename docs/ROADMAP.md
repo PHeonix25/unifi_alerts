@@ -4,7 +4,7 @@ This file maps TODO items to planned releases. Items within each release are ord
 
 > **Branching model:** all development happens on `dev` (pre-release versions: `X.Y.Z-preN`). Stable releases are tagged on `main` after a PR merge. See `CLAUDE.md § Branching strategy and versioning` for the full workflow.
 
-> **Current status:** v1.0.0 and v1.1.0 released. v1.2.0 released (2026-04-22). Active development continues on `dev` targeting v1.3.0.
+> **Current status:** v1.0.0, v1.1.0, v1.2.0 released. v1.3.0 released (2026-04-29). Active development continues on `dev` targeting v1.4.0.
 
 ---
 
@@ -96,7 +96,7 @@ A second-opinion pass after the v1.1 PRs landed surfaced a set of items that are
 ### Reliability / correctness
 
 - [ ] **Webhook ID collision on multi-entry (CRITICAL)** — `webhook_id_for_category()` returns `unifi_alerts_{category}` without including `entry_id` (`const.py:183-184`).  Two config entries (multi-controller households) will collide on webhook registration — the second entry silently overwrites the first's handlers.  This is the root cause behind the multi-entry isolation gap noted in the Testing section below.  Fix: include `entry_id` (or a short hash) in the webhook ID, update `WebhookManager` and the config-flow URL display.  Affects `const.py:183-184`, `webhook_handler.py:56`, `config_flow.py:200-205,462-465`.
-- [ ] `UniFiClient.fetch_alarms()` caps results at `limit=200` with no pagination loop — controllers with >200 open alarms silently drop the rest (`unifi_client.py:104`).  Remove the `limit` param so the controller returns the full set.
+- [x] `UniFiClient.fetch_alarms()` caps results at `limit=200` with no pagination loop — fixed in v1.3.0: `limit` param removed entirely.
 - [ ] `fetch_alarms()` passes `ssl=self._config.get(CONF_VERIFY_SSL, False)` — if the key is somehow missing from `_config`, SSL verification silently turns OFF (`unifi_client.py:106`).  Change the fallback to `DEFAULT_VERIFY_SSL` (True) so a missing key fails closed, not open.
 - [ ] **SSL fail-open in 4 additional call sites** — the same `self._config.get(CONF_VERIFY_SSL, False)` pattern with a `False` default exists in `_detect_unifi_os()` (`unifi_client.py:156`), `_verify_api_key()` (`unifi_client.py:202`), `_login_userpass()` (`unifi_client.py:238`), and `close()` (`unifi_client.py:139`).  All must be changed to `DEFAULT_VERIFY_SSL` alongside the `fetch_alarms()` fix above.
 - [ ] `_category_states` is rebuilt from scratch on every config-entry reload — `alert_count` and `last_alert` are discarded whenever the user tweaks an option (`coordinator.py:59-62`).  Persist the last-seen state across reloads (e.g. via `hass.data[DOMAIN][entry.entry_id]["_last_states"]` saved in `async_unload_entry` and restored in `async_setup_entry`).
@@ -153,35 +153,113 @@ A second-opinion pass after the v1.1 PRs landed surfaced a set of items that are
 
 ---
 
-## v1.3.0 — Post-install bug fixes
+## v1.3.0 — Post-install hardening ✓
 
-Three bugs confirmed in production on v1.3.0-pre2. Resolved in `claude/fix-config-flow-loop-kvZw7`.
+Released 2026-04-29. Five pre-release checkpoints (`pre1`–`pre5`) on `dev`.
+
+### Bug fixes
 
 - [x] **Options flow loop** — `UniFiAlertsOptionsFlow` restructured to mirror 3-step initial-setup (credentials → categories → webhook URLs). (`config_flow.py`, `strings.json`, `translations/en.json`)
 - [x] **No device/service parent** — proactive device registration via `dr.async_get_or_create` in `async_setup_entry`; `configuration_url` added to all `_device_info()` helpers. (`__init__.py`, all platform files)
 - [x] **Blank / unclickable entities** — message sensor defaults to `"No alerts yet"` instead of `None`; `EntityCategory.DIAGNOSTIC` on message sensors; `EntityCategory.CONFIG` on clear buttons; removed wrong `EventDeviceClass.BUTTON` from event entities. (`sensor.py`, `button.py`, `event.py`)
+- [x] **`_is_unifi_os` misdetected on API-key auth** — coerced to `True` on successful API-key verification so subsequent API calls use the correct `/proxy/network` path prefix. (`unifi_client.py`)
+- [x] **HTTP status codes missing from connection errors** — surfaced in `CannotConnectError` messages for easier troubleshooting. (`unifi_client.py`)
+
+### Alarm endpoint improvements
+
+- [x] **Extended probe chain for UniFi Network 9.x+** — `fetch_alarms()` now walks `[/list/alarm, /alarm, /stat/alarm]` newest-to-oldest. Modern firmware succeeds in one call; legacy firmware falls back. (`unifi_client.py`)
+- [x] **Removed invalid `limit=200` param** — controllers with >200 open alarms no longer silently drop results. (`unifi_client.py`)
+
+### CI / infrastructure
+
+- [x] **Pre-release grep regex** — added `--` terminator to prevent `grep` from parsing `-pre[0-9]+` as CLI flags; every `vX.Y.Z-preN` tag was incorrectly publishing as a stable release. (`.github/workflows/release.yml`)
+- [x] **`action-gh-release` bumped to v3 (Node 24)** — ahead of the 2026-06-02 Node 20 EOL on GitHub-hosted runners. (`.github/workflows/release.yml`)
 
 ---
 
-## v1.3.0 — UniFi OS only
+## v1.4.0 — UniFi OS only + open-count watermark + hardening
 
-**Decision (2026-04-22):** the integration will officially support only UniFi OS controllers (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+). Classic self-hosted controllers (Network Application running on bare Linux/Windows) are excluded. Rationale: the userbase is almost entirely on UniFi OS hardware, API keys (the preferred auth method) are UniFi OS-only, and the dual-path detection code is a persistent source of bugs (see HISTORY.md 2026-04-22). Supporting both paths adds fragile detection logic that has already caused two known production incidents.
+### UniFi OS only
 
-### Documentation
+**Decision (2026-04-22):** the integration will officially support only UniFi OS controllers (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+). Classic self-hosted controllers (Network Application running on bare Linux/Windows) are excluded. Rationale: the userbase is almost entirely on UniFi OS hardware, API keys (the preferred auth method) are UniFi OS-only, and the dual-path detection code is a persistent source of bugs. Supporting both paths adds fragile detection logic that has already caused two known production incidents.
+
+#### Documentation (do first — ships ahead of code change)
 
 - [ ] **Add UniFi OS prerequisite to README** — opening paragraph + Prerequisites section; list tested console models (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+); state explicitly that classic Network Application (self-hosted) is not supported. (`README.md`)
 - [ ] **Add UniFi OS prerequisite to info.md** — same message, first paragraph, with a bold "⚠ Requires UniFi OS" callout. (`info.md`)
 
-### Code simplification
+#### Code simplification (do after docs)
 
 - [ ] **Remove legacy self-hosted code paths from `unifi_client.py`** — once docs land, remove:
   - `_detect_unifi_os()` entirely — detection is only needed for the legacy/OS branch
   - `_network_path()` — always prefix with `/proxy/network`; make it a constant or inline it
-  - Login path ordering in `_login_userpass()` — always try `/api/auth/login` first (UniFi OS path); remove the second fallback path (or keep just the UniFi OS endpoint)
+  - Login path ordering in `_login_userpass()` — always try `/api/auth/login` first (UniFi OS path); remove the second fallback path
   - Logout path branch in `close()` — always use `/api/auth/logout`
   - `CONF_IS_UNIFI_OS` persistence in config flow — no longer needed; remove from `config_flow.py`, `const.py`, and stored `entry.data`
   - This removes ~30-40 lines and eliminates the root cause of the v1.2 API-key/detection mismatch bug
-- [ ] **Update tests** — remove tests that only exist to cover the legacy path (detection returning False, path without `/proxy/network`, classic controller login ordering); update remaining tests to not set `_is_unifi_os` explicitly (it will always be True after v1.3)
+- [ ] **Update tests** — remove tests that only exist to cover the legacy path (detection returning False, path without `/proxy/network`, classic controller login ordering); update remaining tests to not set `_is_unifi_os` explicitly.
+
+### Open-count watermark (PR #44)
+
+- [ ] **Per-category acknowledgement watermark for `open_count`** — `open_count` is currently a lifetime cumulative counter (3000+ observed on production installs). Pressing "Clear" should bound the count to "alarms since last cleared". Watermarks persisted via `homeassistant.helpers.storage.Store` keyed per `entry_id`, survive HA restarts. See PR #44 (`claude/open-count-watermark`) for full design and implementation.
+
+### Hardening carry-overs (from v1.2.0 audit)
+
+The items below were identified in the post-v1.1.0 critical review, planned for v1.2.0, and carried forward. Now targeting v1.4.0.
+
+#### Reliability / correctness
+
+- [ ] **Webhook ID collision on multi-entry (CRITICAL)** — `webhook_id_for_category()` returns `unifi_alerts_{category}` without including `entry_id` (`const.py:183-184`). Two config entries (multi-controller households) will collide on webhook registration — the second entry silently overwrites the first's handlers. Fix: include `entry_id` (or a short hash) in the webhook ID, update `WebhookManager` and the config-flow URL display. Affects `const.py:183-184`, `webhook_handler.py:56`, `config_flow.py:200-205,462-465`.
+- [ ] `fetch_alarms()` passes `ssl=self._config.get(CONF_VERIFY_SSL, False)` — if the key is somehow missing from `_config`, SSL verification silently turns OFF (`unifi_client.py:106`). Change the fallback to `DEFAULT_VERIFY_SSL` (True) so a missing key fails closed, not open.
+- [ ] **SSL fail-open in 4 additional call sites** — same `self._config.get(CONF_VERIFY_SSL, False)` pattern in `_detect_unifi_os()` (`:156`), `_verify_api_key()` (`:202`), `_login_userpass()` (`:238`), and `close()` (`:139`). All must be changed to `DEFAULT_VERIFY_SSL` alongside the fix above.
+- [ ] `_category_states` is rebuilt from scratch on every config-entry reload — `alert_count` and `last_alert` are discarded whenever the user tweaks an option (`coordinator.py:59-62`). Persist the last-seen state across reloads.
+- [ ] `WebhookManager.register_all()` registers webhooks inside a loop with no try/finally — a failure mid-loop leaves registered hooks untracked (`webhook_handler.py:47-73`).
+- [ ] **`datetime.fromisoformat()` called on epoch-millisecond input** (`models.py:52-57`) — numeric timestamps silently fall through to `datetime.now(UTC)`, losing the real alarm time. Add an epoch-ms branch before the ISO fallback; log at WARNING when neither matches.
+- [ ] **`UniFiClient.close()` silently swallows logout errors** (`unifi_client.py:142-143`) — `except Exception: pass` leaves session tokens valid on the controller indefinitely. Log at WARNING with `type(err).__name__`.
+- [ ] **Webhook decode errors silently converted to empty payload** (`webhook_handler.py:105-107`) — `UnicodeDecodeError` / `JSONDecodeError` replaced with `{}` with nothing in logs. Log at WARNING with exception class name and first 80 bytes of raw body.
+
+#### Security
+
+- [ ] Webhook secret cannot be rotated post-setup — add a "Regenerate webhook secret" action to the options flow (`config_flow.py:84`).
+- [ ] **Non-constant-time webhook token comparison** (`webhook_handler.py:89`) — replace `!=` with `hmac.compare_digest()`.
+- [ ] **Webhook URLs containing `?token=<secret>` logged at DEBUG** (`__init__.py:92-95`) — redact tokens before logging.
+- [ ] **Full webhook payload logged at DEBUG** (`webhook_handler.py:109`) — narrow to `{category, alert_key, severity, device_name}`.
+- [ ] **`allow_redirects=True` on unauthenticated probes** (`unifi_client.py:162,178`) — set `allow_redirects=False` or assert final-URL host matches configured host.
+- [ ] **Config flow creates bare `aiohttp.ClientSession`** (`config_flow.py:80,234,343`) — use `async_get_clientsession(self.hass, verify_ssl=...)`.
+- [ ] **Credential fragments may leak in `__init__.py` exception messages** (`__init__.py:53-57`) — log `type(err).__name__` only.
+- [ ] **No webhook rate limiting / debounce** — add a configurable per-category cooldown in `push_alert()` (`coordinator.py:123`).
+
+#### Type safety / tech debt
+
+- [ ] `pyproject.toml` has `strict = false` for mypy — migrate `UniFiClient.config: dict[str, Any]` to a `TypedDict` / frozen dataclass, then bump to `strict = true`.
+- [ ] Entity naming is ad-hoc — adopt `has_entity_name = True` + `_attr_translation_key` pattern so strings live in `strings.json`.
+- [ ] No sensor `device_class` on the open-count or rollup-count sensors (`sensor.py:96,128`).
+- [ ] **Config flow accesses private `client._is_unifi_os`** (`config_flow.py:99,253,372`) — expose as a public `@property`.
+
+#### Testing
+
+- [ ] No integration-level test for two config entries active at once (multi-entry isolation).
+- [ ] No test for webhook-arrives-mid-poll interleaving.
+- [ ] **No test for `from_api_alarm` with epoch-millisecond timestamp** (`models.py:54-57`).
+- [ ] **No test for alert deduplication / rate limiting** — add once debounce is implemented.
+
+#### Release process / repo hygiene
+
+- [ ] No `CHANGELOG.md` at repo root — add Keep-a-Changelog file, back-fill from v1.0.
+- [ ] Add Renovate or Dependabot config targeting `github-actions` so pinned SHAs are proposed as PRs.
+- [ ] No `SECURITY.md`, `CODEOWNERS`, or GitHub issue templates.
+- [ ] Replace `softprops/action-gh-release` with `gh release create` — pass `--generate-notes`, add `.github/release.yml` categories file, mark pre-releases with `--prerelease`. Eliminates the only third-party action in `release.yml`.
+
+#### Documentation
+
+- [ ] No supported-firmware matrix in README/info.md.
+- [ ] No troubleshooting / FAQ section.
+- [ ] No uninstall instructions (README / info.md).
+- [ ] **`info.md` doesn't warn about the local-network requirement up front**.
+- [ ] **Setup flow doesn't warn that webhook URLs must be copied before submitting**.
+- [ ] No privacy / data-retention section in README.
+- [ ] Automation example doesn't document the "category disabled → event entity unavailable" edge case.
+- [ ] `unique_id` format is undocumented.
 
 ---
 

@@ -1,5 +1,18 @@
 # History
 
+## 2026-04-29 — Release v1.3.0
+
+Bumped `manifest.json` from `1.3.0-pre5` to `1.3.0` and merged dev to main via PR. Updated ROADMAP.md and TODO.md: v1.3.0 marked complete; "UniFi OS only" and hardening backlog items moved to v1.4.0.
+
+**What shipped in v1.3.0** (all developed across the v1.3 dev cycle, five pre-release checkpoints on `dev`):
+
+- **Bug fixes:** resolved three post-install bugs confirmed on production (options flow infinite loop; missing device/service card; blank/unclickable entities). Two v1.2 hardening items bundled in the same PR: `EntityCategory.DIAGNOSTIC` on message sensors; `EntityCategory.CONFIG` on clear buttons; `EventDeviceClass.BUTTON` removed from event entities.
+- **Auth reliability:** `_is_unifi_os` coerced to `True` on successful API-key authentication, preventing a misdetection that caused subsequent API calls to use the wrong path prefix. HTTP status codes now surfaced in connection error messages for easier troubleshooting.
+- **Alarm endpoint:** probe chain extended to `[/list/alarm, /alarm, /stat/alarm]` newest-to-oldest, picking up UniFi Network 9.x+ which moved to `/list/alarm`. Removed the invalid `limit=200` param so controllers with >200 open alarms no longer silently drop results.
+- **CI:** pre-release `grep` regex corrected (`--` terminator added so `-pre[0-9]+` isn't parsed as CLI flags — every `vX.Y.Z-preN` tag was incorrectly publishing as stable); `softprops/action-gh-release` bumped from v2 to v3 (Node 24, ahead of the 2026-06-02 Node 20 EOL).
+
+---
+
 ## 2026-04-29 — Add `/list/alarm` to alarm endpoint probe chain
 
 UniFi Network 9.x changed the alarm endpoint path from `/stat/alarm` to `/list/alarm`. Modern firmware reporting `404` (or `400 api.err.InvalidObject`) on the previously-tried paths meant alarm polling silently fell through to error-out instead of finding the new path.
