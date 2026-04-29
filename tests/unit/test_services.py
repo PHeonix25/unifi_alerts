@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import voluptuous as vol
@@ -43,6 +43,8 @@ def make_coordinator(states: dict[str, CategoryState] | None = None) -> MagicMoc
     coord.get_category_state = lambda cat: _states.get(cat)
     coord.cancel_clear = MagicMock()
     coord.async_set_updated_data = MagicMock()
+    coord.async_clear_category = AsyncMock()
+    coord.async_clear_all = AsyncMock()
     return coord
 
 
@@ -105,57 +107,20 @@ class TestClearAllSchema:
 
 class TestHandleClearCategory:
     @pytest.mark.asyncio
-    async def test_clears_alerting_category(self):
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coordinator = make_coordinator({CATEGORY_NETWORK_WAN: wan_state})
+    async def test_delegates_to_coordinator(self):
+        coordinator = make_coordinator()
         hass = make_hass({"entry-abc": coordinator})
         call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN})
 
         await _handle_clear_category(call)
 
-        assert wan_state.is_alerting is False
-
-    @pytest.mark.asyncio
-    async def test_cancels_pending_clear_task(self):
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coordinator = make_coordinator({CATEGORY_NETWORK_WAN: wan_state})
-        hass = make_hass({"entry-abc": coordinator})
-        call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN})
-
-        await _handle_clear_category(call)
-
-        coordinator.cancel_clear.assert_called_once_with(CATEGORY_NETWORK_WAN)
-
-    @pytest.mark.asyncio
-    async def test_calls_async_set_updated_data(self):
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coordinator = make_coordinator({CATEGORY_NETWORK_WAN: wan_state})
-        hass = make_hass({"entry-abc": coordinator})
-        call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN})
-
-        await _handle_clear_category(call)
-
-        coordinator.async_set_updated_data.assert_called_once_with(coordinator.category_states)
-
-    @pytest.mark.asyncio
-    async def test_non_alerting_category_does_not_notify(self):
-        """If the category is not alerting, no update should be dispatched."""
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=False)
-        coordinator = make_coordinator({CATEGORY_NETWORK_WAN: wan_state})
-        hass = make_hass({"entry-abc": coordinator})
-        call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN})
-
-        await _handle_clear_category(call)
-
-        coordinator.async_set_updated_data.assert_not_called()
+        coordinator.async_clear_category.assert_awaited_once_with(CATEGORY_NETWORK_WAN)
 
     @pytest.mark.asyncio
     async def test_entry_id_filter_targets_only_matching_entry(self):
         """entry_id kwarg must restrict clearing to only the specified entry."""
-        state_a = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        state_b = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coord_a = make_coordinator({CATEGORY_NETWORK_WAN: state_a})
-        coord_b = make_coordinator({CATEGORY_NETWORK_WAN: state_b})
+        coord_a = make_coordinator()
+        coord_b = make_coordinator()
         hass = make_hass({"entry-a": coord_a, "entry-b": coord_b})
         call = make_call(
             hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "entry-a"}
@@ -163,13 +128,12 @@ class TestHandleClearCategory:
 
         await _handle_clear_category(call)
 
-        assert state_a.is_alerting is False
-        assert state_b.is_alerting is True  # not touched
+        coord_a.async_clear_category.assert_awaited_once_with(CATEGORY_NETWORK_WAN)
+        coord_b.async_clear_category.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_unknown_entry_id_logs_warning_and_does_nothing(self):
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coordinator = make_coordinator({CATEGORY_NETWORK_WAN: wan_state})
+        coordinator = make_coordinator()
         hass = make_hass({"entry-abc": coordinator})
         call = make_call(
             hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "no-such-entry"}
@@ -179,22 +143,20 @@ class TestHandleClearCategory:
             await _handle_clear_category(call)
 
         mock_log.warning.assert_called_once()
-        assert wan_state.is_alerting is True  # unchanged
+        coordinator.async_clear_category.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_affects_all_entries_when_entry_id_omitted(self):
-        """Without entry_id, every coordinator's state should be cleared."""
-        state_a = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        state_b = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coord_a = make_coordinator({CATEGORY_NETWORK_WAN: state_a})
-        coord_b = make_coordinator({CATEGORY_NETWORK_WAN: state_b})
+        """Without entry_id, every coordinator should receive the clear call."""
+        coord_a = make_coordinator()
+        coord_b = make_coordinator()
         hass = make_hass({"entry-a": coord_a, "entry-b": coord_b})
         call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN})
 
         await _handle_clear_category(call)
 
-        assert state_a.is_alerting is False
-        assert state_b.is_alerting is False
+        coord_a.async_clear_category.assert_awaited_once_with(CATEGORY_NETWORK_WAN)
+        coord_b.async_clear_category.assert_awaited_once_with(CATEGORY_NETWORK_WAN)
 
 
 # ── _handle_clear_all ─────────────────────────────────────────────────────────
@@ -202,88 +164,38 @@ class TestHandleClearCategory:
 
 class TestHandleClearAll:
     @pytest.mark.asyncio
-    async def test_clears_all_alerting_categories(self):
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        threat_state = make_state(CATEGORY_SECURITY_THREAT, is_alerting=True)
-        coordinator = make_coordinator(
-            {CATEGORY_NETWORK_WAN: wan_state, CATEGORY_SECURITY_THREAT: threat_state}
-        )
+    async def test_delegates_to_coordinator(self):
+        coordinator = make_coordinator()
         hass = make_hass({"entry-abc": coordinator})
         call = make_call(hass, {})
 
         await _handle_clear_all(call)
 
-        assert wan_state.is_alerting is False
-        assert threat_state.is_alerting is False
-
-    @pytest.mark.asyncio
-    async def test_skips_non_alerting_categories(self):
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        quiet_state = make_state(CATEGORY_SECURITY_THREAT, is_alerting=False)
-        coordinator = make_coordinator(
-            {CATEGORY_NETWORK_WAN: wan_state, CATEGORY_SECURITY_THREAT: quiet_state}
-        )
-        hass = make_hass({"entry-abc": coordinator})
-        call = make_call(hass, {})
-
-        await _handle_clear_all(call)
-
-        # Only WAN was alerting — cancel_clear should be called once for it
-        coordinator.cancel_clear.assert_called_once_with(CATEGORY_NETWORK_WAN)
-
-    @pytest.mark.asyncio
-    async def test_calls_async_set_updated_data_once_per_coordinator(self):
-        """Even with multiple alerting categories, only one listener dispatch per coordinator."""
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        threat_state = make_state(CATEGORY_SECURITY_THREAT, is_alerting=True)
-        coordinator = make_coordinator(
-            {CATEGORY_NETWORK_WAN: wan_state, CATEGORY_SECURITY_THREAT: threat_state}
-        )
-        hass = make_hass({"entry-abc": coordinator})
-        call = make_call(hass, {})
-
-        await _handle_clear_all(call)
-
-        coordinator.async_set_updated_data.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_no_dispatch_when_nothing_alerting(self):
-        quiet_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=False)
-        coordinator = make_coordinator({CATEGORY_NETWORK_WAN: quiet_state})
-        hass = make_hass({"entry-abc": coordinator})
-        call = make_call(hass, {})
-
-        await _handle_clear_all(call)
-
-        coordinator.async_set_updated_data.assert_not_called()
+        coordinator.async_clear_all.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_entry_id_filter_targets_only_matching_entry(self):
-        state_a = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        state_b = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coord_a = make_coordinator({CATEGORY_NETWORK_WAN: state_a})
-        coord_b = make_coordinator({CATEGORY_NETWORK_WAN: state_b})
+        coord_a = make_coordinator()
+        coord_b = make_coordinator()
         hass = make_hass({"entry-a": coord_a, "entry-b": coord_b})
         call = make_call(hass, {ATTR_ENTRY_ID: "entry-a"})
 
         await _handle_clear_all(call)
 
-        assert state_a.is_alerting is False
-        assert state_b.is_alerting is True  # not touched
+        coord_a.async_clear_all.assert_awaited_once()
+        coord_b.async_clear_all.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_affects_all_entries_when_entry_id_omitted(self):
-        state_a = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        state_b = make_state(CATEGORY_SECURITY_THREAT, is_alerting=True)
-        coord_a = make_coordinator({CATEGORY_NETWORK_WAN: state_a})
-        coord_b = make_coordinator({CATEGORY_SECURITY_THREAT: state_b})
+        coord_a = make_coordinator()
+        coord_b = make_coordinator()
         hass = make_hass({"entry-a": coord_a, "entry-b": coord_b})
         call = make_call(hass, {})
 
         await _handle_clear_all(call)
 
-        assert state_a.is_alerting is False
-        assert state_b.is_alerting is False
+        coord_a.async_clear_all.assert_awaited_once()
+        coord_b.async_clear_all.assert_awaited_once()
 
 
 # ── async_register_services / async_unregister_services ──────────────────────
@@ -347,6 +259,7 @@ class TestServicesWiredFromInit:
         from unittest.mock import AsyncMock
 
         mock_coordinator.async_config_entry_first_refresh = AsyncMock()
+        mock_coordinator.async_restore_watermarks = AsyncMock()
         mock_coordinator.async_shutdown = AsyncMock()
         mock_coordinator.push_alert = MagicMock()
 

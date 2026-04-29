@@ -1,5 +1,37 @@
 # History
 
+## 2026-04-29 — Option C: per-category acknowledgement watermark for open_count
+
+Confirmed via live testing that the UniFi Network controller offers no documented way to archive/dismiss alarms — `POST /cmd/evtmgt {"cmd":"archive-all-alarms"}` returns `api.err.NotFound` on current firmware, and there is no dismiss UI. Without intervention, `open_count` is a lifetime cumulative counter that only grows (a production install showed 3000+ immediately on setup).
+
+Implemented Option C: a per-category acknowledgement watermark stored in `last_cleared_at` (`CategoryState`). Pressing any Clear button advances the watermark to "now". Polling counts only alarms newer than the watermark, so `open_count` reflects "alerts since last cleared" rather than a lifetime total. Watermarks are persisted via `homeassistant.helpers.storage.Store` (keyed by entry_id) so they survive HA restarts.
+
+**`coordinator.py`:**
+- `__init__` takes a new `entry_id: str = ""` parameter; creates a `Store` instance at `{DOMAIN}_watermarks_{entry_id}`.
+- `async_restore_watermarks()` — loads persisted ISO-8601 timestamps from the store on startup and applies them to `_category_states[cat].last_cleared_at`. Call this before `async_config_entry_first_refresh()`.
+- `_async_persist_watermarks()` (private) — saves all non-None `last_cleared_at` values to the store. Called by every clear operation.
+- `async_clear_category(category)` — the sole clear entry point for a single category: cancels auto-clear task, calls `state.clear()` (advances watermark), persists, notifies entities.
+- `async_clear_all()` — clears all enabled categories (regardless of `is_alerting`), persists once, notifies once.
+- `_async_update_data()` — `open_count` is now `len([a for a in alerts if a.received_at > state.last_cleared_at])` when a watermark is set, or `len(alerts)` when not (first boot / never cleared).
+
+**`__init__.py`:** passes `entry.entry_id` to coordinator constructor; awaits `coordinator.async_restore_watermarks()` before `async_config_entry_first_refresh()`.
+
+**`button.py`:** `async_press()` on both button classes reduced to a single `await coordinator.async_clear_category()` / `await coordinator.async_clear_all()` call — all logic delegated to coordinator.
+
+**`services.py`:** `_handle_clear_category` and `_handle_clear_all` reduced to delegation calls — no more manual cancel/clear/notify scattered across the handler. The `is_alerting` guard was removed from the service layer (coordinator handles unconditional watermark advancement, which is the correct behavior for "acknowledge everything").
+
+**`docs/UNIFI.md` alert lifecycle section:** corrected false statements about archiving (the `archive-all-alarms` endpoint is 404; there is no UI dismiss option). Added design note explaining the watermark approach.
+
+**`docs/ARCHITECTURE.md`:** updated `CategoryState` and coordinator descriptions to cover watermarks and storage.
+
+**Tests (344 total, all passing):**
+- `TestWatermarks` in `test_coordinator.py` (9 new tests): `async_restore_watermarks` loads/skips-invalid/handles-empty; `async_clear_category` sets watermark + cancels task + persists + notifies; `async_clear_all` sets watermark on all enabled categories; `open_count` filtered by watermark; `open_count` unfiltered when no watermark.
+- `test_entities.py` button tests: replaced 8 behavioural tests (which tested coordinator behaviour, not button behaviour) with 2 delegation tests verifying `async_clear_category` / `async_clear_all` are awaited. Added `AsyncMock` for both to `make_coordinator`.
+- `test_services.py` service handler tests: replaced 12 behavioural tests with 6 delegation tests verifying the handler routes to the correct coordinator method and applies entry_id filtering. Added `AsyncMock` for both to `make_coordinator`.
+- `test_init.py` / `test_services.py` (wired-from-init): added `async_restore_watermarks = AsyncMock()` to coordinator mocks.
+
+--- 
+
 ## 2026-04-29 — Start v1.4.0-pre1 cycle
 
 Bumped `manifest.json` from `1.3.0` to `1.4.0-pre1` to open the next development cycle. See `docs/TODO.md` and `docs/ROADMAP.md § v1.4.0` for the planned work: UniFi OS only simplification, open-count watermark (PR #44), and the hardening backlog carried over from the v1.2.0 audit.

@@ -31,6 +31,7 @@ def _patch_all(authenticate_side_effect=None, first_refresh_side_effect=None):
     mock_coordinator.async_config_entry_first_refresh = AsyncMock(
         side_effect=first_refresh_side_effect
     )
+    mock_coordinator.async_restore_watermarks = AsyncMock()
     mock_coordinator.async_shutdown = AsyncMock()
     mock_coordinator.push_alert = MagicMock()
 
