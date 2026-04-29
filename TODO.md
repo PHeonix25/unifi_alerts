@@ -95,6 +95,7 @@ A comprehensive audit after the v1.1 PRs landed surfaced these items. Full detai
 - **No `CHANGELOG.md`:** add Keep-a-Changelog file, back-fill from v1.0.
 - **Pinned SHAs need a refresh mechanism:** add Renovate or Dependabot config for `github-actions` updates.
 - **Missing repo-hygiene files:** `SECURITY.md`, `CODEOWNERS`, GitHub issue templates.
+- **Release notes are auto-generated from all commits, not scoped to the release window:** `release.yml` currently lets GitHub generate notes from the entire history rather than from the previous tag to the current one. Fix: add `generate_release_notes: true` to `softprops/action-gh-release` and supply a `.github/release.yml` categories file so PR titles are grouped into sections (e.g. Bug Fixes, Chores). The `previous_tag` for pre-releases should be the prior `vX.Y.Z-preN-1` tag; for stable releases it should be the prior `vX.Y.Z` tag. GitHub's auto-generator already does this scoping when both tags exist — the categories config is the main thing to add.
 
 ### Documentation
 - **No supported-firmware matrix:** small table of tested UDM-SE / UCG / UX / CloudKey Gen2 models with any known quirks.
