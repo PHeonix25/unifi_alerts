@@ -228,8 +228,8 @@ async def test_finish_submit_creates_entry() -> None:
 
 
 @pytest.mark.asyncio
-async def test_options_init_includes_webhook_urls() -> None:
-    """Options flow categories step should include webhook URL fields in data_schema."""
+async def test_options_finish_includes_webhook_urls() -> None:
+    """Options flow finish step should include webhook URL fields with the stored secret."""
     fake_secret = "options-test-secret"
     config_entry = MagicMock()
     config_entry.data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES, CONF_WEBHOOK_SECRET: fake_secret}
@@ -237,28 +237,127 @@ async def test_options_init_includes_webhook_urls() -> None:
 
     flow = UniFiAlertsOptionsFlow(config_entry)
     flow.hass = MagicMock()
-    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
+    flow._pending_options = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES}
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "finish"})
 
     fake_url = "http://homeassistant.local:8123/api/webhook/unifi_alerts_network_device"
     with patch(
         "custom_components.unifi_alerts.config_flow.async_generate_url",
         return_value=fake_url,
     ):
-        result = await flow.async_step_categories(user_input=None)
+        result = await flow.async_step_finish(user_input=None)
 
-    assert result["step_id"] == "init"
+    assert result["step_id"] == "finish"
     call_kwargs = flow.async_show_form.call_args.kwargs
     schema = call_kwargs["data_schema"]
-    # Webhook URLs must be present as field defaults in the schema (filter to strings only
-    # because the options schema also contains booleans for category toggles).
     str_defaults = [v for v in (k.default() for k in schema.schema) if isinstance(v, str)]
     assert any(f"?token={fake_secret}" in v for v in str_defaults)
     assert any(fake_url in v for v in str_defaults)
 
 
 @pytest.mark.asyncio
-async def test_options_init_reads_entry_options_over_data() -> None:
-    """Options flow must prefer entry.options over entry.data for saved settings."""
+async def test_options_categories_submit_routes_to_finish() -> None:
+    """Submitting valid categories should call async_step_finish (not create_entry directly)."""
+    config_entry = MagicMock()
+    config_entry.data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES, CONF_WEBHOOK_SECRET: "s"}
+    config_entry.options = {}
+
+    flow = UniFiAlertsOptionsFlow(config_entry)
+    flow.hass = MagicMock()
+    finish_result = {"type": "form", "step_id": "finish"}
+    flow.async_step_finish = AsyncMock(return_value=finish_result)
+
+    cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+    result = await flow.async_step_categories(cat_input)
+
+    flow.async_step_finish.assert_called_once()
+    assert result["step_id"] == "finish"
+
+
+@pytest.mark.asyncio
+async def test_options_finish_submit_creates_entry() -> None:
+    """Submitting the finish step (empty user_input) must call async_create_entry with pending options."""
+    from custom_components.unifi_alerts.const import CONF_CLEAR_TIMEOUT, CONF_POLL_INTERVAL, CONF_SITE
+
+    config_entry = MagicMock()
+    config_entry.data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES, CONF_WEBHOOK_SECRET: "s"}
+    config_entry.options = {}
+
+    flow = UniFiAlertsOptionsFlow(config_entry)
+    flow.hass = MagicMock()
+    flow._pending_options = {
+        CONF_ENABLED_CATEGORIES: [ALL_CATEGORIES[0]],
+        CONF_POLL_INTERVAL: 300,
+        CONF_CLEAR_TIMEOUT: 60,
+        CONF_SITE: "default",
+    }
+    flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+
+    result = await flow.async_step_finish(user_input={})
+
+    flow.async_create_entry.assert_called_once()
+    call_kwargs = flow.async_create_entry.call_args.kwargs
+    assert call_kwargs["title"] == ""
+    assert call_kwargs["data"] is flow._pending_options
+    assert result["type"] == "create_entry"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_full_cycle() -> None:
+    """Full options flow: blank credentials → categories → finish → create_entry."""
+    from custom_components.unifi_alerts.const import CONF_CLEAR_TIMEOUT, CONF_POLL_INTERVAL, CONF_SITE
+
+    config_entry = MagicMock()
+    config_entry.data = {
+        CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+        CONF_WEBHOOK_SECRET: "full-cycle-secret",
+        CONF_POLL_INTERVAL: 60,
+        CONF_CLEAR_TIMEOUT: 5,
+    }
+    config_entry.options = {}
+
+    flow = UniFiAlertsOptionsFlow(config_entry)
+    hass = MagicMock()
+    hass.config_entries.async_entries = MagicMock(return_value=[])
+    hass.config_entries.async_update_entry = MagicMock()
+    flow.hass = hass
+    flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+
+    # Step 1: blank credentials → skip to categories
+    blank_creds = {CONF_CONTROLLER_URL: "", CONF_USERNAME: "", CONF_PASSWORD: "", CONF_API_KEY: "", CONF_VERIFY_SSL: True}
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
+    await flow.async_step_credentials(blank_creds)
+
+    # Step 2: submit categories
+    first_cat = ALL_CATEGORIES[0]
+    cat_input = {f"cat_{cat}": (cat == first_cat) for cat in ALL_CATEGORIES}
+    cat_input[CONF_POLL_INTERVAL] = 120
+    cat_input[CONF_CLEAR_TIMEOUT] = 10
+    cat_input[CONF_SITE] = "default"
+
+    with patch(
+        "custom_components.unifi_alerts.config_flow.async_generate_url",
+        return_value="http://ha.local/webhook/x",
+    ):
+        await flow.async_step_categories(cat_input)
+
+    # Step 3: submit finish → create_entry
+    with patch(
+        "custom_components.unifi_alerts.config_flow.async_generate_url",
+        return_value="http://ha.local/webhook/x",
+    ):
+        result = await flow.async_step_finish(user_input={})
+
+    assert result["type"] == "create_entry"
+    saved = flow.async_create_entry.call_args.kwargs["data"]
+    assert saved[CONF_ENABLED_CATEGORIES] == [first_cat]
+    assert saved[CONF_POLL_INTERVAL] == 120
+    assert saved[CONF_CLEAR_TIMEOUT] == 10
+
+
+@pytest.mark.asyncio
+async def test_options_categories_reads_entry_options_over_data() -> None:
+    """Options flow categories step must prefer entry.options over entry.data for saved settings."""
     from custom_components.unifi_alerts.const import (
         CONF_CLEAR_TIMEOUT,
         CONF_POLL_INTERVAL,
@@ -286,14 +385,12 @@ async def test_options_init_reads_entry_options_over_data() -> None:
 
     flow = UniFiAlertsOptionsFlow(config_entry)
     flow.hass = MagicMock()
-    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
 
-    with patch(
-        "custom_components.unifi_alerts.config_flow.async_generate_url", return_value="http://x"
-    ):
-        await flow.async_step_categories(user_input=None)
+    await flow.async_step_categories(user_input=None)
 
     call_kwargs = flow.async_show_form.call_args.kwargs
+    assert call_kwargs["step_id"] == "categories"
     schema = call_kwargs["data_schema"]
     # The schema's defaults must reflect the options values, not the data values
     schema_defaults = {str(k): k.default() for k in schema.schema}
@@ -472,7 +569,7 @@ async def test_categories_step_accepts_boundary_clear_timeouts(clear_timeout: in
 
 @pytest.mark.asyncio
 async def test_options_flow_saves_submitted_values() -> None:
-    """Submitting the options flow must persist the selected categories and intervals."""
+    """Submitting the options flow (categories → finish) must persist the selected categories and intervals."""
     from custom_components.unifi_alerts.const import (
         CONF_CLEAR_TIMEOUT,
         CONF_POLL_INTERVAL,
@@ -499,7 +596,19 @@ async def test_options_flow_saves_submitted_values() -> None:
     user_input[CONF_CLEAR_TIMEOUT] = 60
     user_input[CONF_SITE] = "secondary"
 
-    result = await flow.async_step_categories(user_input)
+    # Submit categories (stores in _pending_options, routes to finish)
+    with patch(
+        "custom_components.unifi_alerts.config_flow.async_generate_url",
+        return_value="http://ha.local/webhook/x",
+    ):
+        await flow.async_step_categories(user_input)
+
+    # Submit finish → creates entry
+    with patch(
+        "custom_components.unifi_alerts.config_flow.async_generate_url",
+        return_value="http://ha.local/webhook/x",
+    ):
+        result = await flow.async_step_finish(user_input={})
 
     assert result["type"] == "create_entry"
     saved = flow.async_create_entry.call_args.kwargs["data"]
@@ -572,16 +681,12 @@ async def test_options_flow_rejects_all_disabled() -> None:
 
     flow = UniFiAlertsOptionsFlow(config_entry)
     flow.hass = MagicMock()
-    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
 
     all_off = {f"cat_{cat}": False for cat in ALL_CATEGORIES}
-    with patch(
-        "custom_components.unifi_alerts.config_flow.async_generate_url",
-        return_value="http://ha.local/webhook/x",
-    ):
-        result = await flow.async_step_categories(all_off)
+    result = await flow.async_step_categories(all_off)
 
-    assert result["step_id"] == "init"
+    assert result["step_id"] == "categories"
     call_kwargs = flow.async_show_form.call_args.kwargs
     assert call_kwargs["errors"] == {"base": "at_least_one_category"}
 
@@ -842,7 +947,7 @@ class TestOptionsFlowCredentials:
     async def test_blank_submission_skips_to_categories(self) -> None:
         """Submitting all-blank credentials skips to the categories step without any auth call."""
         flow = _make_options_flow()
-        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
 
         blank_input = {
             CONF_CONTROLLER_URL: "",
@@ -852,14 +957,10 @@ class TestOptionsFlowCredentials:
             CONF_VERIFY_SSL: True,
         }
 
-        with patch(
-            "custom_components.unifi_alerts.config_flow.async_generate_url",
-            return_value="http://ha.local/webhook/x",
-        ):
-            result = await flow.async_step_credentials(blank_input)
+        result = await flow.async_step_credentials(blank_input)
 
-        # Should have proceeded to categories (step_id="init" is the categories form)
-        assert result["step_id"] == "init"
+        # Should have proceeded to categories
+        assert result["step_id"] == "categories"
         # No entry update should have occurred
         flow.hass.config_entries.async_update_entry.assert_not_called()
 
@@ -867,7 +968,7 @@ class TestOptionsFlowCredentials:
     async def test_valid_new_credentials_updates_entry_data(self) -> None:
         """Submitting new valid credentials must update entry.data and continue to categories."""
         flow = _make_options_flow()
-        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
 
         new_creds = {
             CONF_CONTROLLER_URL: "https://10.0.0.1",
@@ -883,10 +984,6 @@ class TestOptionsFlowCredentials:
                 return_value=_make_session_mock(),
             ),
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
-            patch(
-                "custom_components.unifi_alerts.config_flow.async_generate_url",
-                return_value="http://ha.local/webhook/x",
-            ),
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value="userpass")
@@ -902,7 +999,7 @@ class TestOptionsFlowCredentials:
         assert updated_data[CONF_PASSWORD] == "newpass"
 
         # Should have continued to categories
-        assert result["step_id"] == "init"
+        assert result["step_id"] == "categories"
 
     @pytest.mark.asyncio
     async def test_invalid_credentials_shows_error_and_does_not_update(self) -> None:
@@ -1008,11 +1105,11 @@ class TestOptionsFlowCredentials:
 
     @pytest.mark.asyncio
     async def test_after_credential_update_categories_proceeds_normally(self) -> None:
-        """After a successful credentials update, the categories step saves options as usual."""
+        """After a successful credentials update, categories → finish → create_entry works end-to-end."""
         from custom_components.unifi_alerts.const import CONF_CLEAR_TIMEOUT, CONF_POLL_INTERVAL
 
         flow = _make_options_flow()
-        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "init"})
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
         flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
 
         # First: update credentials
@@ -1030,10 +1127,6 @@ class TestOptionsFlowCredentials:
                 return_value=_make_session_mock(),
             ),
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
-            patch(
-                "custom_components.unifi_alerts.config_flow.async_generate_url",
-                return_value="http://ha.local/webhook/x",
-            ),
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value="userpass")
@@ -1042,7 +1135,7 @@ class TestOptionsFlowCredentials:
 
             await flow.async_step_credentials(new_creds)
 
-        # Now: submit the categories step
+        # Now: submit the categories step (stores in _pending_options, routes to finish)
         first_cat = ALL_CATEGORIES[0]
         cat_input = {f"cat_{cat}": (cat == first_cat) for cat in ALL_CATEGORIES}
         cat_input[CONF_POLL_INTERVAL] = 90
@@ -1052,7 +1145,14 @@ class TestOptionsFlowCredentials:
             "custom_components.unifi_alerts.config_flow.async_generate_url",
             return_value="http://ha.local/webhook/x",
         ):
-            result = await flow.async_step_categories(cat_input)
+            await flow.async_step_categories(cat_input)
+
+        # Submit finish → create_entry
+        with patch(
+            "custom_components.unifi_alerts.config_flow.async_generate_url",
+            return_value="http://ha.local/webhook/x",
+        ):
+            result = await flow.async_step_finish(user_input={})
 
         assert result["type"] == "create_entry"
         saved = flow.async_create_entry.call_args.kwargs["data"]

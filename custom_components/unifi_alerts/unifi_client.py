@@ -78,6 +78,10 @@ class UniFiClient:
                 await self._verify_api_key()
                 self._auth_method = AUTH_METHOD_APIKEY
                 self._authenticated = True
+                # API keys are UniFi OS-only, so a successful verify proves the controller
+                # is UniFi OS — override any false-negative from _detect_unifi_os() so later
+                # calls (fetch_alarms, logout) use the correct /proxy/network path.
+                self._is_unifi_os = True
                 _LOGGER.debug("Authenticated via API key")
                 return AUTH_METHOD_APIKEY
             except InvalidAuthError:
@@ -97,11 +101,35 @@ class UniFiClient:
         if not self._authenticated:
             await self.authenticate()
 
-        path = self._network_path(f"/api/s/{site}/alarm")
+        # Different firmware versions expose the alarm endpoint at different paths.
+        # Try the newest path first so modern firmware succeeds in one call; fall
+        # back to older variants for backwards compatibility. Order matters —
+        # update docs/UNIFI.md § "Alarm API endpoint" if you change this list.
+        #
+        #   /list/alarm  — newest (UniFi Network 9.x+)
+        #   /alarm       — long-standing universal path
+        #   /stat/alarm  — older intermediate variant; some firmware exposes only this
+        alarm_paths = [
+            self._network_path(f"/api/s/{site}/list/alarm"),
+            self._network_path(f"/api/s/{site}/alarm"),
+            self._network_path(f"/api/s/{site}/stat/alarm"),
+        ]
+        for path in alarm_paths:
+            result = await self._try_fetch_alarms(path, site)
+            if result is not None:
+                return result
+            # None means path not found (404 or api.err.InvalidObject) — try next
+        raise CannotConnectError(
+            f"Could not find the alarm endpoint for site '{site}'. Tried: {', '.join(alarm_paths)}"
+        )
+
+    async def _try_fetch_alarms(self, path: str, site: str) -> list[dict] | None:
+        """Fetch alarms from one path. Returns None on 404 (caller tries next path)."""
+        url = f"{self._base}{path}"
+        _LOGGER.debug("Fetching alarms from %s", url)
         try:
             async with self._session.get(
-                f"{self._base}{path}",
-                params={"limit": 200},
+                url,
                 headers=self._headers(),
                 ssl=self._config.get(CONF_VERIFY_SSL, False),
                 timeout=aiohttp.ClientTimeout(total=10),
@@ -109,12 +137,42 @@ class UniFiClient:
                 if resp.status == 401:
                     self._authenticated = False
                     raise InvalidAuthError("Session expired")
+                if resp.status == 404:
+                    _LOGGER.debug("Alarm path %s returned 404 — trying next path", path)
+                    return None
+                if resp.status == 400:
+                    # UniFi returns JSON even on 400 — parse the msg field.
+                    # Some firmware returns 400 + api.err.InvalidObject for paths that
+                    # don't exist on that firmware version (instead of 404), so treat
+                    # that error code as "path not found" and let the caller try the
+                    # next path. Any other 400 is a genuine error worth surfacing.
+                    unifi_msg = ""
+                    try:
+                        body = await resp.json(content_type=None)
+                        unifi_msg = body.get("meta", {}).get("msg", "")
+                    except Exception:  # noqa: BLE001
+                        pass
+                    if unifi_msg == "api.err.InvalidObject":
+                        _LOGGER.debug(
+                            "Alarm path %s returned 400 api.err.InvalidObject — trying next path",
+                            path,
+                        )
+                        return None
+                    detail = f" ({unifi_msg})" if unifi_msg else ""
+                    raise CannotConnectError(
+                        f"Alarm endpoint rejected the request (HTTP 400{detail}). "
+                        f"Check that the site name '{site}' exists on the controller."
+                    )
                 resp.raise_for_status()
                 data = await resp.json()
                 if data.get("meta", {}).get("rc") != "ok":
                     msg = data.get("meta", {}).get("msg", "unknown error")
                     raise CannotConnectError(f"UniFi API error: {msg}")
                 return [a for a in data.get("data", []) if not a.get("archived", False)]
+        except aiohttp.ClientResponseError as err:
+            # Include HTTP status so users (and logs) can tell a 404 from a 500.
+            # Status-only — no URL — to avoid leaking creds that may be embedded in a URL.
+            raise CannotConnectError(f"{type(err).__name__} {err.status}") from err
         except aiohttp.ClientError as err:
             raise CannotConnectError(type(err).__name__) from err
 
@@ -263,6 +321,8 @@ class UniFiClient:
             last_url = paths[-1]
             _LOGGER.warning("Authentication failed at all login paths (last: %s)", last_url)
             raise InvalidAuthError("Invalid username or password", login_url=last_url)
+        except aiohttp.ClientResponseError as err:
+            raise CannotConnectError(f"{type(err).__name__} {err.status}") from err
         except aiohttp.ClientError as err:
             raise CannotConnectError(type(err).__name__) from err
 

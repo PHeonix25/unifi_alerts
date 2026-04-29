@@ -2,6 +2,24 @@
 
 Prioritised backlog. Items are grouped by type. Work top-to-bottom within each group unless there's a dependency noted.
 
+## 🔵 v1.4.0 — UniFi OS only
+
+**Decision (2026-04-22):** officially support only UniFi OS controllers. Classic self-hosted controllers (Network Application on bare Linux/Windows) are excluded. See `ROADMAP.md § v1.4.0` for full rationale. (Was planned for v1.3.0; deferred to v1.4.0 to ship v1.3.0 bug fixes first.)
+
+### Document the prerequisite (do first — ships ahead of code change)
+
+**Add "Requires UniFi OS" to README.md and info.md** — opening paragraph + Prerequisites section; list tested models (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+); bold "⚠ Requires UniFi OS" callout in `info.md` first paragraph. This must land before the code change so any existing users on classic controllers get advance notice via the HACS update description.
+
+### Remove legacy self-hosted code paths (do after docs)
+
+**Strip `unifi_client.py` of non-UniFi-OS paths** — removes `_detect_unifi_os()`, the `_network_path()` method, login path ordering in `_login_userpass()`, logout branch in `close()`, and `CONF_IS_UNIFI_OS` persistence in config flow + `const.py`. Also remove/update tests that existed only to cover the legacy path. Expected reduction: ~30-40 lines. See `ROADMAP.md § v1.4.0` for the full list of touch points.
+
+### Per-category open_count watermark (PR #44)
+
+**Implement acknowledgement watermark for `open_count`** — `open_count` currently accumulates as a lifetime counter (3000+ observed on production installs). Pressing "Clear" should bound the count to "alarms since last cleared". See PR #44 (`claude/open-count-watermark`) for the full design and implementation.
+
+---
+
 ## 🟡 High-value improvements
 
 ### Verify update-in-place works without HA reboot
@@ -21,19 +39,17 @@ If a restart is required, investigate why (e.g. Python module caching, import-ti
 The current brand asset is a minimal placeholder PNG. Replace with a proper UniFi-themed icon before submitting to the HACS default catalogue.
 
 ### HACS default repository submission
-After the integration is stable and passes `hassfest`, submit a PR to https://github.com/hacs/default to be listed in the default HACS catalogue. Requirements: 2+ releases, passing CI, `hacs.json`, `info.md`, HA brand icon.
-- `info.md` is now present (added session 11).
-- Remaining: 2+ tagged releases, real brand icon (replace placeholder), PR submission to hacs/default.
+After the integration is stable and passes `hassfest`, submit a PR to https://github.com/hacs/default to be listed in the default HACS catalogue. Requirements: 2+ releases, passing CI, `hacs.json`, `info.md`, HA brand icon. Remaining work: real brand icon (replace placeholder), PR submission to hacs/default.
 
 ---
 
-## 🔥 v1.2 critical-review findings (pre-HACS-default hardening)
+## 🔥 v1.4.0 — Hardening backlog (critical-review carry-overs)
 
-A comprehensive audit after the v1.1 PRs landed surfaced these items. Full detail (with file:line anchors and suggested fixes) is in `ROADMAP.md § v1.2.0`. Grouped by impact:
+Items from the post-v1.1 audit that were planned for v1.2.0 but carried forward. Now targeting v1.4.0. Full detail (with file:line anchors and suggested fixes) is in `ROADMAP.md § v1.4.0`. Grouped by impact:
 
 ### Reliability / correctness
 - **🔴 Webhook ID collision on multi-entry (CRITICAL):** `webhook_id_for_category()` returns `unifi_alerts_{category}` without `entry_id` — two config entries silently overwrite each other's webhook handlers (`const.py:183-184`). This is the root cause of the multi-entry isolation gap.
-- **Unbounded alarm list:** `UniFiClient.fetch_alarms()` silently caps at `limit=200`. Remove the `limit` param (`unifi_client.py:104`).
+- ~~**Unbounded alarm list:** `UniFiClient.fetch_alarms()` silently caps at `limit=200`.~~ — fixed in v1.3.0 (limit param removed entirely).
 - **SSL fail-open on missing key:** `ssl=self._config.get(CONF_VERIFY_SSL, False)` — change fallback to `DEFAULT_VERIFY_SSL` so a missing key fails closed (`unifi_client.py:106`).
 - **SSL fail-open in 4 more call sites:** same `False` default in `_detect_unifi_os()` (`:156`), `_verify_api_key()` (`:202`), `_login_userpass()` (`:238`), and `close()` (`:139`).
 - **Category state lost on reload:** `_category_states` is rebuilt from scratch on every options change; persist `alert_count` and `last_alert` across reloads (`coordinator.py:59-62`).
@@ -58,8 +74,8 @@ A comprehensive audit after the v1.1 PRs landed surfaced these items. Full detai
 - **Ad-hoc entity naming:** adopt `has_entity_name = True` + `_attr_translation_key` pattern across `binary_sensor.py`, `sensor.py`, `event.py`, `button.py` so names live in `strings.json`.
 - **No sensor `device_class`:** consider what fits on the open-count / rollup-count sensors (`sensor.py:96,128`).
 - **Config flow accesses private `client._is_unifi_os`:** expose as a public `@property` on `UniFiClient` (`config_flow.py:99,253,372`).
-- **`EventDeviceClass.BUTTON` wrong for alert events:** remove the device_class or set to `None` (`event.py:51`).
-- **Clear buttons lack `entity_category`:** set `_attr_entity_category = EntityCategory.CONFIG` on `UniFiClearCategoryButton` and `UniFiClearAllButton` (`button.py:37,63`).
+- ~~**`EventDeviceClass.BUTTON` wrong for alert events**~~ — resolved in v1.3.0 post-install fix PR.
+- ~~**Clear buttons lack `entity_category`**~~ — resolved in v1.3.0 post-install fix PR.
 
 ### Testing
 - **No multi-entry integration test:** verify two UniFi Alerts entries don't cross-contaminate coordinator/webhook state. Note: the webhook ID collision above means this test will fail until the code is fixed — write it first as a red-green pair.
@@ -71,6 +87,7 @@ A comprehensive audit after the v1.1 PRs landed surfaced these items. Full detai
 - **No `CHANGELOG.md`:** add Keep-a-Changelog file, back-fill from v1.0.
 - **Pinned SHAs need a refresh mechanism:** add Renovate or Dependabot config for `github-actions` updates.
 - **Missing repo-hygiene files:** `SECURITY.md`, `CODEOWNERS`, GitHub issue templates.
+- **Release notes are auto-generated from all commits, not scoped to the release window; `release.yml` relies on a third-party action:** replace `softprops/action-gh-release` with `gh release create` (GitHub CLI, pre-installed on all GitHub-hosted runners — no third-party action needed). Pass `--generate-notes` so GitHub scopes notes to commits between the previous tag and the current one automatically. Upload the zip asset with `--attach unifi_alerts.zip`. Add a `.github/release.yml` categories file to group PR titles into labelled sections (e.g. Bug Fixes, Chores). Mark pre-releases with `--prerelease`. This eliminates the only third-party action in `release.yml`.
 
 ### Documentation
 - **No supported-firmware matrix:** small table of tested UDM-SE / UCG / UX / CloudKey Gen2 models with any known quirks.
@@ -93,7 +110,7 @@ tests/unit/config_flow/
   test_options.py       # TestOptionsFlowSteps + TestOptionsFlowCredentials
   test_reauth.py        # TestReauthFlow
 ```
-Move `_make_options_flow`, `_make_reauth_flow`, and any shared `MOCK_*` constants into the new `conftest.py`. Do not split the other test files — they are all under 500 lines and healthy. Target: a `v1.1.0-preN` checkpoint on `dev`.
+Move `_make_options_flow`, `_make_reauth_flow`, and any shared `MOCK_*` constants into the new `conftest.py`. Do not split the other test files — they are all under 500 lines and healthy.
 
 ---
 

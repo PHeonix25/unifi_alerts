@@ -8,9 +8,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.device_registry import DeviceEntryType
 
 from .const import (
+    CONF_CONTROLLER_URL,
     CONF_VERIFY_SSL,
     DATA_COORDINATOR,
     DATA_UNREGISTER_WEBHOOKS,
@@ -55,6 +58,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as err:  # noqa: BLE001
         _LOGGER.error("Failed to authenticate to UniFi controller: %s", err)
         raise ConfigEntryNotReady(f"Could not connect to UniFi controller: {err}") from err
+
+    # Proactively register the hub device so it appears in HA's Services section
+    # immediately after setup — before any entity is registered.
+    dev_reg = dr.async_get(hass)
+    dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="UniFi Alerts",
+        manufacturer="Ubiquiti",
+        model="UniFi Network Controller",
+        entry_type=DeviceEntryType.SERVICE,
+        configuration_url=entry.data.get(CONF_CONTROLLER_URL),
+    )
 
     coordinator = UniFiAlertsCoordinator(hass, client, dict(entry.data) | dict(entry.options))
 

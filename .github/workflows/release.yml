@@ -28,7 +28,7 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          if echo "$TAG" | grep -qE '-pre[0-9]+$'; then
+          if echo "$TAG" | grep -qE -- '-pre[0-9]+$'; then
             echo "prerelease=true" >> $GITHUB_OUTPUT
             echo "Release type: PRE-RELEASE ($TAG)"
           else
@@ -55,7 +55,7 @@ jobs:
           cd ..
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe  # v2.6.1
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:
           files: unifi_alerts.zip
           prerelease: ${{ steps.release_type.outputs.prerelease == 'true' }}

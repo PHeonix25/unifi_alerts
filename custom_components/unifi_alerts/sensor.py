@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
@@ -15,6 +16,7 @@ from .const import (
     CATEGORY_ICONS,
     CATEGORY_ICONS_OK,
     CATEGORY_LABELS,
+    CONF_CONTROLLER_URL,
     DATA_COORDINATOR,
     DOMAIN,
 )
@@ -43,6 +45,7 @@ class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sens
     """Sensor whose state is the last alert message for a category."""
 
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
         self,
@@ -57,10 +60,10 @@ class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sens
         self._attr_device_info = _device_info(entry)
 
     @property
-    def native_value(self) -> str | None:
+    def native_value(self) -> str:
         state: CategoryState | None = self.coordinator.get_category_state(self._category)
         if not state or not state.last_alert:
-            return None
+            return "No alerts yet"
         return state.last_alert.message
 
     @property
@@ -160,4 +163,5 @@ def _device_info(entry: ConfigEntry) -> DeviceInfo:
         manufacturer="Ubiquiti",
         model="UniFi Network Controller",
         entry_type=DeviceEntryType.SERVICE,
+        configuration_url=entry.data.get(CONF_CONTROLLER_URL),
     )

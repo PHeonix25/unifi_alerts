@@ -6,6 +6,8 @@ This is the primary context file for Claude Code. Read this first, then follow t
 
 A Home Assistant custom integration (`domain: unifi_alerts`) that aggregates UniFi Network controller alerts into HA sensors, binary sensors, event entities, and buttons. It is intended for publication as a HACS custom repository.
 
+This integration covers **UniFi Network** only (System Logs / SIEM events from the Network Application on UniFi OS). It does **not** support UniFi Protect (cameras, motion detection, NVR).
+
 **Two data paths run in parallel:**
 - **Webhook push** — UniFi Alarm Manager POSTs to per-category webhook URLs registered by HA. This is the real-time path.
 - **REST polling** — the integration polls the UniFi controller's alarm API on a configurable interval to populate open-count sensors and catch alerts that missed the webhook.
@@ -14,12 +16,14 @@ A Home Assistant custom integration (`domain: unifi_alerts`) that aggregates Uni
 
 | File | Read when you need to... |
 |---|---|
-| `ARCHITECTURE.md` | Understand how the modules fit together, data flow, and design decisions |
-| `HOMEASSISTANT.md` | Work with HA-specific patterns: coordinators, entity classes, config flows, platforms |
-| `UNIFI.md` | Understand the UniFi API, auth methods, alarm payloads, and event key taxonomy |
-| `TESTING.md` | Run, write, or extend tests |
-| `TODO.md` | Find the prioritised backlog of next steps |
-| `ROADMAP.md` | See which TODOs are planned for each release (v1.0, v1.1, v1.2, v2.0) |
+| `docs/ARCHITECTURE.md` | Understand how the modules fit together, data flow, and design decisions |
+| `docs/HOMEASSISTANT.md` | Work with HA-specific patterns: coordinators, entity classes, config flows, platforms |
+| `docs/UNIFI.md` | Understand the UniFi API, auth methods, alarm payloads, and event key taxonomy |
+| `docs/TESTING.md` | Run, write, or extend tests |
+| `docs/DEVELOPING.md` | Set up a local dev environment, run tests, contribute changes |
+| `docs/TODO.md` | Find the prioritised backlog of next steps |
+| `docs/ROADMAP.md` | See which TODOs are planned for each release (v1.0, v1.1, v1.2, v2.0) |
+| `docs/HISTORY.md` | Read the chronological log of completed work (append a dated entry after each task) |
 
 ## Repository layout
 
@@ -78,6 +82,7 @@ README.md                         # user-facing install, setup, and contributing
 - **Webhooks are `local_only: True`** — do not remove this without a documented reason.
 - **Webhook bearer token auth is mandatory** — every inbound webhook request must be validated against `CONF_WEBHOOK_SECRET` via `?token=` query param. Never remove this check or accept requests that fail it.
 - **Category state lives only in the coordinator** — entities must not cache state themselves.
+- **Every GitHub Actions `uses:` reference must be pinned to a full 40-character commit SHA** — no branch names (`@main`, `@master`), no tag names (`@v2`, `@v6`), no short SHAs. Add a trailing comment noting the resolved version or branch for human readers (e.g. `# v3.0.0` or `# master tip 2026-04-22`). This applies to every workflow in `.github/workflows/`. When bumping an action, resolve the new SHA via `gh api repos/OWNER/REPO/git/refs/tags/TAG` (or `.../heads/BRANCH` for repos without tags) and replace both the SHA and its comment in the same edit.
 
 ## Coding conventions
 
@@ -96,7 +101,7 @@ This project uses a two-branch model. All active development happens on `dev`; `
 | Branch | Purpose | Version format | Example |
 |--------|---------|---------------|---------|
 | `main` | Stable releases only. CI enforces no pre-release suffix. | `X.Y.Z` | `1.0.0`, `1.1.0` |
-| `dev` | Active development. CI enforces `-preN` suffix. | `X.Y.Z-preN` | `1.1.0-pre1`, `1.1.0-pre2` |
+| `dev` | Active development. CI accepts `-preN` during development, or stable `X.Y.Z` when preparing a release — no merge-back needed. | `X.Y.Z-preN` or `X.Y.Z` | `1.1.0-pre1`, `1.1.0` |
 | `feature/*` or `claude/*` | Short-lived work. **Must branch off `dev`, not `main`.** No version format enforced by CI. | Any | — |
 
 ### Versioning conventions
@@ -112,15 +117,29 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
        │
        ├── (work) ──► tag v1.1.0-pre2  ──► GitHub pre-release  (automated)
        │
-       └── bump manifest to 1.1.0
-            └─► merge PR to main
-                 └─► tag v1.1.0  ──► GitHub stable release  (automated)
+       ├── bump manifest to 1.1.0 (via claude/* PR → dev)
+       │    └─► PR dev → main
+       │         └─► tag v1.1.0  ──► GitHub stable release  (automated)
+       │
+       └── bump manifest to 1.2.0-pre1 (via claude/* PR → dev)  ← start next cycle
 ```
 
 1. **Development:** work on `dev`. Version in manifest stays at `X.Y.Z-preN`.
-2. **Pre-release checkpoint:** bump the `N` in manifest (e.g. `pre1 → pre2`), commit, push, then push the tag `vX.Y.Z-preN`. GitHub Actions creates a pre-release automatically.
-3. **Stable release:** bump manifest from `X.Y.Z-preN` to `X.Y.Z`, open a PR from `dev` to `main`. After merge, tag `vX.Y.Z` on `main`. GitHub Actions creates a stable release.
-4. **Start next cycle:** on `dev`, bump manifest to `X.(Y+1).0-pre1` and continue.
+2. **Pre-release checkpoint:** bump the `N` in manifest (e.g. `pre1 → pre2`) on a short-lived `claude/*` branch, open a PR targeting `dev`, merge it, then provide the user with the tag command (Claude cannot push tags). After the PR merges, the user runs:
+   ```bash
+   git checkout dev && git pull origin dev
+   git tag vX.Y.Z-preN && git push origin vX.Y.Z-preN
+   ```
+   GitHub Actions creates a pre-release automatically.
+3. **Stable release:** bump manifest from `X.Y.Z-preN` to `X.Y.Z` on a `claude/*` branch, open PR targeting `dev`. `dev` CI now accepts stable versions, so this passes. Merge to `dev`, then open a PR from `dev` → `main`. After that merges, provide the user with the tag command:
+   ```bash
+   git checkout main && git pull origin main
+   git tag vX.Y.Z && git push origin vX.Y.Z
+   ```
+   GitHub Actions creates a stable release automatically.
+4. **Start next cycle:** bump manifest to `X.(Y+1).0-pre1` on a `claude/*` branch, open PR targeting `dev`, merge. Development continues forward — no merge-back from `main` to `dev` needed.
+
+> **Tag convention reminder:** Claude cannot push tags directly. Whenever the user says "update the tag", "cut a release", "tag the branch", or similar — open a version-bump PR to `dev` (or `main` for stable), wait for merge, then give the user the exact `git tag` + `git push origin <tag>` commands to run locally.
 
 ### CI enforcement
 
@@ -132,7 +151,7 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
 
 Recommended rules:
 - **`main`:** require PR, require status checks (`CI / *`, `Version Check / *`), no direct push, no force-push.
-- **`dev`:** require status checks (`CI / *`, `Version Check / *`), allow direct push (for version bumps), no force-push.
+- **`dev`:** require PR, require status checks (`CI / *`, `Version Check / *`), no direct push, no force-push. Version bumps go via a short-lived `chore/bump-*` branch PR.
 
 ## Working style
 
@@ -140,19 +159,21 @@ Recommended rules:
 - **Always pull `dev` before starting work** — run `git pull origin dev` at the start of every session to avoid diverging from origin. Never start implementing changes on a stale branch. Pull `main` only when checking stable state.
 - **Work on `dev`, not `main`** — `main` is only updated via PRs from `dev`. Never commit directly to `main`.
 - **Feature and claude/* branches must be created from `dev`** — run `git checkout dev && git pull origin dev && git checkout -b <branch>`. Never branch off `main`. PRs from feature branches must target `dev`, not `main`.
+- **Always start fresh from `dev` for new work.** At the very start of a new task, even if a branch is already specified by the system instructions, run `git checkout dev && git pull origin dev` first, then create or recreate the working branch from that fresh `dev` tip. Never inherit whatever branch the previous session left checked out — it may be a stale `chore/bump-*` or other already-merged branch, and committing on top of it produces a branch that contains commits already in `dev`.
+- **After a PR merges, delete the local branch and switch back to `dev`** — run `git checkout dev && git pull origin dev && git branch -D <merged-branch>`. This forces the next task to branch off a clean `dev` instead of accidentally building on a stale, already-merged branch.
 - **Move into the working directory at the start of every session** — avoids needing path prefixes on every command.
 - Always run `make check` before committing — never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
-- Always update `HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
-- Always update `TODO.md` by removing completed items and adding new ones as needed. This is the primary source of truth for what is pending work. Do not rely on memory or Git history alone.
+- Always update `docs/HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
+- Always update `docs/TODO.md` by removing completed items and adding new ones as needed. This is the primary source of truth for what is pending work. Do not rely on memory or Git history alone.
 - At the end of the day, make sure there are no commits outstanding, no changes locally that need to be pushed, and that the `auto-memory\dirty-files` file is empty (if it exists on disk). This ensures a clean slate for the next session.
 
 ## Resuming an interrupted session
 
 Interruptions (timeouts, hibernation, re-login) are common. When a new conversation starts mid-task, always do this before anything else:
 
-1. **Read `HISTORY.md`** — the last entry describes what was most recently completed.
+1. **Read `docs/HISTORY.md`** — the last entry describes what was most recently completed.
 2. **Run `git status` and `git diff HEAD`** — uncommitted changes show exactly what was in-flight.
-3. **Read `TODO.md`** — the top remaining item is what was probably being worked on.
+3. **Read `docs/TODO.md`** — the top remaining item is what was probably being worked on.
 4. **Check the venv** — on Linux/Mac: `ls .venv/bin/pytest`; on Windows PowerShell: `Test-Path .venv\Scripts\pytest.exe`. If missing, recreate it:
    - **Linux/Mac:** `make setup` (or manually: `python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt --quiet`)
    - **Windows:** `py -3.12 -m venv .venv && .venv\Scripts\pip install -r requirements-dev.txt --quiet`
@@ -160,7 +181,7 @@ Interruptions (timeouts, hibernation, re-login) are common. When a new conversat
 
 ## Before making changes
 
-1. Check `TODO.md` for context on what's known to be incomplete or broken.
+1. Check `docs/TODO.md` for context on what's known to be incomplete or broken.
 2. Run `make check` (or `make` — it's the default target) to run all local validation in one shot:
    - ruff lint + format check
    - mypy type check

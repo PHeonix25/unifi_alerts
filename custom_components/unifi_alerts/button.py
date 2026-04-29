@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
@@ -12,6 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import (
     ALL_CATEGORIES,
     CATEGORY_LABELS,
+    CONF_CONTROLLER_URL,
     DATA_COORDINATOR,
     DOMAIN,
 )
@@ -39,6 +41,7 @@ class UniFiClearCategoryButton(ButtonEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:bell-off"
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(
         self,
@@ -66,6 +69,7 @@ class UniFiClearAllButton(ButtonEntity):
     _attr_has_entity_name = True
     _attr_name = "Clear All Alerts"
     _attr_icon = "mdi:shield-off"
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(
         self,
@@ -91,4 +95,5 @@ def _device_info(entry: ConfigEntry) -> DeviceInfo:
         manufacturer="Ubiquiti",
         model="UniFi Network Controller",
         entry_type=DeviceEntryType.SERVICE,
+        configuration_url=entry.data.get(CONF_CONTROLLER_URL),
     )

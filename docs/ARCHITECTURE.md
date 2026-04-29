@@ -4,6 +4,8 @@
 
 The integration has three layers: **data ingestion** (webhook + polling), **state management** (coordinator), and **HA entity projection** (platforms). These are deliberately kept separate — no entity holds its own state.
 
+> **Scope:** UniFi Network alerts only (System Logs / SIEM). UniFi Protect is out of scope — different API, different event taxonomy, not implemented.
+
 ```
 UniFi Controller
     │

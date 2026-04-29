@@ -1,5 +1,75 @@
 # History
 
+## 2026-04-29 — Release v1.3.0
+
+Bumped `manifest.json` from `1.3.0-pre5` to `1.3.0` and merged dev to main via PR. Updated ROADMAP.md and TODO.md: v1.3.0 marked complete; "UniFi OS only" and hardening backlog items moved to v1.4.0.
+
+**What shipped in v1.3.0** (all developed across the v1.3 dev cycle, five pre-release checkpoints on `dev`):
+
+- **Bug fixes:** resolved three post-install bugs confirmed on production (options flow infinite loop; missing device/service card; blank/unclickable entities). Two v1.2 hardening items bundled in the same PR: `EntityCategory.DIAGNOSTIC` on message sensors; `EntityCategory.CONFIG` on clear buttons; `EventDeviceClass.BUTTON` removed from event entities.
+- **Auth reliability:** `_is_unifi_os` coerced to `True` on successful API-key authentication, preventing a misdetection that caused subsequent API calls to use the wrong path prefix. HTTP status codes now surfaced in connection error messages for easier troubleshooting.
+- **Alarm endpoint:** probe chain extended to `[/list/alarm, /alarm, /stat/alarm]` newest-to-oldest, picking up UniFi Network 9.x+ which moved to `/list/alarm`. Removed the invalid `limit=200` param so controllers with >200 open alarms no longer silently drop results.
+- **CI:** pre-release `grep` regex corrected (`--` terminator added so `-pre[0-9]+` isn't parsed as CLI flags — every `vX.Y.Z-preN` tag was incorrectly publishing as stable); `softprops/action-gh-release` bumped from v2 to v3 (Node 24, ahead of the 2026-06-02 Node 20 EOL).
+
+---
+
+## 2026-04-29 — Add `/list/alarm` to alarm endpoint probe chain
+
+UniFi Network 9.x changed the alarm endpoint path from `/stat/alarm` to `/list/alarm`. Modern firmware reporting `404` (or `400 api.err.InvalidObject`) on the previously-tried paths meant alarm polling silently fell through to error-out instead of finding the new path.
+
+- **`unifi_client.py` — added `/list/alarm` as the first probe path:** `fetch_alarms()` now walks the chain `[/list/alarm, /alarm, /stat/alarm]` newest-to-oldest. Modern firmware succeeds in one call; legacy firmware still works via fallback. The existing 404 / 400 `api.err.InvalidObject` handling treats any failure as "try the next path" and only surfaces an error to the user after every path is exhausted.
+- **`docs/UNIFI.md` — endpoint history table:** replaced the previous one-line note with an explicit three-row table (`/list/alarm` → newest, `/alarm` → long-standing, `/stat/alarm` → older intermediate). Includes a "if UniFi changes the endpoint again" pointer to the exact code + test files to update, so future maintainers don't have to rediscover the chain.
+- **Tests:** updated `TestFetchAlarms::test_tries_bare_alarm_path_first` → `test_tries_list_alarm_path_first` (asserts `/list/alarm` is the first URL fetched). Added `test_falls_back_through_full_path_chain` (404 on `/list/alarm` and `/alarm`, success on `/stat/alarm` — guards against future regressions where the chain order or contents are changed). Renamed the two existing fallback tests from `..._to_stat_alarm_...` → `..._to_next_path_...` since the chain is now three deep. 348 tests pass.
+
+## 2026-04-29 — v1.3.0 post-install bug fixes: options flow loop, device registry, blank entities
+
+Three bugs confirmed on a production install of v1.3.0-pre2. All fixed in `claude/fix-config-flow-loop-kvZw7`. Bundled in three v1.2 ROADMAP polish items (touching the same files) to minimise churn.
+
+- **Bug 1 — Options flow loops between pages 1 and 2:** `UniFiAlertsOptionsFlow.async_step_categories` rendered its form with `step_id="init"`. Every submit routed back to `async_step_init`, which unconditionally called `async_step_credentials()`, landing the user on page 1 again — an infinite loop that never saved any changes. Root cause: the categories form used the wrong `step_id` value.
+  - **Fix:** restructured `UniFiAlertsOptionsFlow` to exactly mirror the initial setup's 3-step flow — credentials (page 1, blank = skip) → categories (page 2, settings only) → finish (page 3, webhook URL display + final submit). Added `self._pending_options` to carry data from categories to finish. The `async_step_finish` in the options flow is a new method that calls `self.async_create_entry(title="", data=self._pending_options)`.
+  - **Files:** `custom_components/unifi_alerts/config_flow.py:281-500`, `strings.json`, `translations/en.json`
+  - **Tests:** rewrote `test_options_init_includes_webhook_urls` → `test_options_finish_includes_webhook_urls`; renamed `test_options_init_reads_entry_options_over_data` → `test_options_categories_reads_entry_options_over_data`; updated `test_options_flow_saves_submitted_values`, `test_options_flow_rejects_all_disabled`, and `test_blank_submission_skips_to_categories` / `test_valid_new_credentials_updates_entry_data` / `test_after_credential_update_categories_proceeds_normally` in `TestOptionsFlowCredentials`; added `test_options_categories_submit_routes_to_finish`, `test_options_finish_submit_creates_entry`, `test_options_flow_full_cycle`.
+
+- **Bug 2 — No device/service parent visible on integration page:** All four platform files (`binary_sensor`, `sensor`, `event`, `button`) already set `_attr_device_info` with correct shared `identifiers` and `DeviceEntryType.SERVICE`. However, HA's "Services" section does not always render the card prominently when the device is created lazily (on first entity registration) and when `configuration_url` is absent.
+  - **Fix:** added proactive device registration via `dr.async_get(hass).async_get_or_create(...)` in `async_setup_entry` — runs before platform forwarding, guaranteeing the device exists immediately. Added `configuration_url=entry.data.get(CONF_CONTROLLER_URL)` to all four `_device_info()` helpers and to the proactive call, so the Services card links directly to the UniFi controller web UI.
+  - **Files:** `custom_components/unifi_alerts/__init__.py`, `binary_sensor.py`, `sensor.py`, `event.py`, `button.py` (all touched for `CONF_CONTROLLER_URL` import + `configuration_url` field)
+  - **Tests:** added `TestDeviceRegistration.test_setup_creates_service_device` and `test_setup_device_has_configuration_url` in `test_init.py`; added `TestDeviceInfo` class (5 tests) in `test_entities.py`.
+
+- **Bug 3 — Blank entities / can't get detail:** `UniFiCategoryMessageSensor.native_value` returned `None` on a fresh install (no alert ever received), which HA rendered as a blank "unknown" state with no useful detail view. Three v1.2 ROADMAP polish items were bundled in since they touched the same files:
+  - **Fix (message sensor default):** `native_value` now returns `"No alerts yet"` when `state.last_alert is None`. Entity is always clickable and self-explanatory. Return type annotation changed to `str` (was `str | None`). (`sensor.py:60-64`)
+  - **Fix (message sensor category):** added `_attr_entity_category = EntityCategory.DIAGNOSTIC` to `UniFiCategoryMessageSensor` — keeps informational message sensors off the default dashboard. (`sensor.py`)
+  - **Fix (button categories):** added `_attr_entity_category = EntityCategory.CONFIG` to both `UniFiClearCategoryButton` and `UniFiClearAllButton` — removes them from voice assistant entity lists and default dashboards. (`button.py`)
+  - **Fix (event device class):** removed `_attr_device_class = EventDeviceClass.BUTTON` from `UniFiAlertEventEntity`. The comment admitted it was "closest semantic match" but it misleads device-class-based automation UIs. `device_class` is now unset. (`event.py`)
+  - **Tests:** added `TestEntityCategories` class (6 tests: DIAGNOSTIC on message sensor, CONFIG on both clear buttons, no device_class on event entity, "No alerts yet" default, message returned when alert present) in `test_entities.py`.
+
+## 2026-04-22 — Fix release workflow: pre-release detection regex + Node 20 deprecation
+
+- **Bug 1 — every release tagged Stable:** [`.github/workflows/release.yml:31`](.github/workflows/release.yml:31) used `grep -qE '-pre[0-9]+$'` to detect pre-release tags. Because the pattern begins with `-`, `grep` parsed it as options (`-p`, `-r`, `-e`) and exited with `grep: invalid option -- 'p'`. The `if` saw the non-zero exit as "no pre-release match" and fell through to the stable branch, so `v1.x.y-preN` tags were being published as stable GitHub releases. Fixed by adding `--` before the pattern (`grep -qE -- '-pre[0-9]+$'`) to terminate `grep`'s option parsing. Verified with both `v1.3.0-pre2` (→ PRE) and `v1.3.0` (→ STABLE) inputs.
+- **Bug 2 — Node 20 deprecation warning on `softprops/action-gh-release`:** bumped [`.github/workflows/release.yml:58`](.github/workflows/release.yml:58) from `v2.6.1` (`153bb8e0…`) to `v3.0.0` (`b4309332981a82ec1c5618f44dd2e27cc8bfbfda`). v3.0.0's only change is moving the action runtime from Node 20 to Node 24, addressing the GitHub-Actions deprecation that forces migration by 2026-06-02. SHA verified via `gh api repos/softprops/action-gh-release/git/refs/tags/v3.0.0`. The inputs we use (`files`, `prerelease`, `name`) are unchanged between v2 and v3, so no other edits required.
+- **No test coverage added:** workflow YAML is exercised only at release-tag push time. End-to-end verification requires cutting a `v1.x.y-preN` tag on `dev` after merge and confirming the published GitHub release is marked "Pre-release".
+- No other third-party actions in the repo are affected — `actions/checkout@v6`, `actions/setup-python@v6`, and the HA/HACS Docker-based actions are exempt or already on Node 24.
+
+## 2026-04-22 — Fix alarm endpoint: remove invalid limit param, try-both path fallback, surface 400 detail
+
+- **Follow-up bug (same session):** after the API-key coercion fix (PR #31) corrected the UniFi OS path, the integration now correctly hit `/proxy/network/api/s/default/alarm` — but returned a new `ClientResponseError 400`. Root-caused: the `params={"limit": 200}` query parameter is not accepted by the UniFi alarm endpoint and causes `api.err.InvalidObject` (HTTP 400). Additionally, the community wiki and field testing revealed that alarm endpoint paths vary by firmware (`/alarm` works on some, `/stat/alarm` on others).
+- **`unifi_client.py` — removed `limit=200` param:** the undocumented `limit` query parameter caused HTTP 400 (`api.err.InvalidObject`) on the alarm endpoint. Removed entirely; the endpoint returns up to 3000 results by default, which is sufficient.
+- **`unifi_client.py` — try-both path fallback:** `fetch_alarms()` now delegates to a new `_try_fetch_alarms()` helper and attempts `/api/s/{site}/alarm` first, then falls through to `/api/s/{site}/stat/alarm` if the first returns 404. Covers the firmware-version variability observed in production without breaking existing setups.
+- **`unifi_client.py` — improved 400 handling:** `_try_fetch_alarms()` handles HTTP 400 explicitly before `raise_for_status()`, reads the JSON body to extract `meta.msg` (e.g. `api.err.InvalidObject`), and includes it in the `CannotConnectError` message. Users now see `HTTP 400 (api.err.InvalidObject)` and a hint about the site name, not the bare exception class name.
+- **`unifi_client.py` — DEBUG log of URL:** every alarm fetch attempt now logs `Fetching alarms from <url>` at DEBUG level, making future diagnosis of path/connectivity issues straightforward without modifying code.
+- **`tests/unit/test_unifi_client.py`**: replaced `test_sends_limit_param` (no longer correct) with five new tests: `test_tries_stat_alarm_path_first`, `test_falls_back_to_stat_alarm_on_404`, `test_all_paths_404_raises_cannot_connect`, `test_http_400_raises_cannot_connect_with_site_hint`. Updated `test_response_error_preserves_status_code_in_message` to use status 503 (404 now correctly triggers fallback, not the error handler). Updated `test_fetch_alarms_after_apikey_auth_uses_proxy_path` path assertion. All 314 unit tests pass.
+- **`UNIFI.md`**: corrected alarm path documentation to reflect the try-both approach and note firmware variability.
+
+## 2026-04-22 — Fix ClientResponseError on UniFi OS after API-key auth; surface HTTP status in connect errors
+
+- **Bug reported from production:** config-flow setup failed with `Cannot reach alarm endpoint: ClientResponseError` at [`config_flow.py:88`](custom_components/unifi_alerts/config_flow.py:88) even though the UniFi controller showed the API key was used successfully (its "last seen" timestamp updated). Root-caused to a false-negative in [`_detect_unifi_os()`](custom_components/unifi_alerts/unifi_client.py:147) on controllers where neither the `x-csrf-token` header nor the `/api/system` probe confirms UniFi OS (e.g. UCG-Ultra, some reverse-proxy setups). [`_verify_api_key()`](custom_components/unifi_alerts/unifi_client.py:191) is already hard-coded to the `/proxy/network` prefix (see line 195-197 comment) so API-key auth still succeeded, but [`fetch_alarms()`](custom_components/unifi_alerts/unifi_client.py:95) went through [`_network_path()`](custom_components/unifi_alerts/unifi_client.py:269) which trusted the stale `_is_unifi_os=False` and hit the bare `/api/s/default/alarm` → 404 → opaque `ClientResponseError`.
+- **`unifi_client.py` Change 1 (authenticate):** set `self._is_unifi_os = True` immediately after a successful API-key verify. API keys are UniFi OS-only by construction (UNIFI.md:24), so verify success is a more reliable OS signal than `_detect_unifi_os()`. Fixes the 404 on `fetch_alarms` and the wrong logout path end-to-end, without touching the fragile detection code.
+- **`unifi_client.py` Change 2 (error messages):** split the `except aiohttp.ClientError` handler in `fetch_alarms()` and `_login_userpass()` to catch `aiohttp.ClientResponseError` first and include the HTTP status in the `CannotConnectError` message (`f"{type(err).__name__} {err.status}"`). Status-only, no URL — preserves the existing credentials-leak guard (see `test_client_error_message_is_class_name_not_url` at [tests/unit/test_unifi_client.py:487](tests/unit/test_unifi_client.py:487)). Users now see e.g. `ClientResponseError 404` in HA logs instead of the opaque `ClientResponseError`.
+- **`tests/unit/test_unifi_client.py`**: three new tests. `TestAuthenticate::test_apikey_success_coerces_is_unifi_os_true` — asserts `_is_unifi_os` flips to True after a successful API-key verify even when detection said False. `TestAuthenticate::test_fetch_alarms_after_apikey_auth_uses_proxy_path` — end-to-end reproduction of the reported bug (detection miss → API-key auth → fetch_alarms must hit `/proxy/network/...`). `TestFetchAlarms::test_response_error_preserves_status_code_in_message` — asserts a 404 `ClientResponseError` surfaces `"404"` and `"ClientResponseError"` in the raised `CannotConnectError`. Written TDD-first: all three failed with meaningful assertions before the fix, then passed after.
+- **Decision on "should we drop non-UniFi-OS support?"** — deferred to v2.0 as a ROADMAP discussion. The current bug is fixed with a 1-line change; dropping legacy self-hosted support would remove ~30-40 lines but is a breaking change for any username/password users on classic controllers, so not warranted as part of a bug fix.
+- All 311 unit tests pass; ruff (lint + format), mypy, HACS validation, and translation-drift check are clean.
+
+---
+
 ## 2026-04-22 — Release v1.2.0
 
 Bumped `manifest.json` from `1.2.0-pre1` to `1.2.0` and merged dev to main via PR.
@@ -13,6 +83,7 @@ Bumped `manifest.json` from `1.2.0-pre1` to `1.2.0` and merged dev to main via P
 - **Docs/UX:** `info.md` HACS display card; Lovelace entities-card and automation examples in `README.md`; `ROADMAP.md` v1.2.0 critical-review findings (26 items across reliability, security, type safety, testing, and docs).
 
 ---
+
 
 ## 2026-04-21 — Extended v1.2 critical-review: full security / architecture / UX audit
 

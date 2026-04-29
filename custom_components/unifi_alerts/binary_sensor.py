@@ -18,6 +18,7 @@ from .const import (
     CATEGORY_ICONS,
     CATEGORY_ICONS_OK,
     CATEGORY_LABELS,
+    CONF_CONTROLLER_URL,
     DATA_COORDINATOR,
     DOMAIN,
 )
@@ -142,4 +143,5 @@ def _device_info(entry: ConfigEntry) -> DeviceInfo:
         manufacturer="Ubiquiti",
         model="UniFi Network Controller",
         entry_type=DeviceEntryType.SERVICE,
+        configuration_url=entry.data.get(CONF_CONTROLLER_URL),
     )

@@ -283,6 +283,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
+        self._pending_options: dict[str, Any] = {}
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Router: always start with the credentials step."""
@@ -417,19 +418,13 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             if not enabled:
                 errors["base"] = "at_least_one_category"
             else:
-                return self.async_create_entry(
-                    title="",
-                    data={
-                        CONF_ENABLED_CATEGORIES: enabled,
-                        CONF_POLL_INTERVAL: user_input.get(
-                            CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL
-                        ),
-                        CONF_CLEAR_TIMEOUT: user_input.get(
-                            CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT
-                        ),
-                        CONF_SITE: user_input.get(CONF_SITE, DEFAULT_SITE),
-                    },
-                )
+                self._pending_options = {
+                    CONF_ENABLED_CATEGORIES: enabled,
+                    CONF_POLL_INTERVAL: user_input.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
+                    CONF_CLEAR_TIMEOUT: user_input.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT),
+                    CONF_SITE: user_input.get(CONF_SITE, DEFAULT_SITE),
+                }
+                return await self.async_step_finish()
 
         current_enabled: list[str] = self._config_entry.options.get(
             CONF_ENABLED_CATEGORIES,
@@ -459,12 +454,28 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
         )
         fields[vol.Optional(CONF_SITE, default=current_site)] = str
 
-        secret: str = self._config_entry.data.get(CONF_WEBHOOK_SECRET, "")
-        for cat in ALL_CATEGORIES:
-            url = f"{async_generate_url(self.hass, webhook_id_for_category(cat))}?token={secret}"
-            fields[vol.Optional(f"webhook_url_{cat}", default=url)] = str
         return self.async_show_form(
-            step_id="init",
+            step_id="categories",
             data_schema=vol.Schema(fields),
             errors=errors,
+            description_placeholders={cat: CATEGORY_LABELS[cat] for cat in ALL_CATEGORIES},
+        )
+
+    async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Display webhook URLs, then save options on submit."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=self._pending_options)
+
+        enabled: list[str] = self._pending_options.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
+        secret: str = self._config_entry.data.get(CONF_WEBHOOK_SECRET, "")
+        fields: dict = {}
+        for cat in ALL_CATEGORIES:
+            if cat in enabled:
+                url = (
+                    f"{async_generate_url(self.hass, webhook_id_for_category(cat))}?token={secret}"
+                )
+                fields[vol.Optional(f"webhook_url_{cat}", default=url)] = str
+        return self.async_show_form(
+            step_id="finish",
+            data_schema=vol.Schema(fields),
         )

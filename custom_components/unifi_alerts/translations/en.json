@@ -115,9 +115,9 @@
           "verify_ssl": "Verify SSL certificate"
         }
       },
-      "init": {
+      "categories": {
         "title": "Update Alert Categories",
-        "description": "Update your alert category settings. Webhook URLs for your enabled categories are shown below — copy them into UniFi Alarm Manager as needed.",
+        "description": "Update which alert types to monitor and adjust polling settings. Webhook URLs will be shown in the next step.",
         "data": {
           "cat_network_device": "Network: Device offline/online",
           "cat_network_wan": "Network: WAN offline/latency",
@@ -128,7 +128,13 @@
           "cat_power": "Power: PoE / power loss",
           "poll_interval": "Polling interval (seconds)",
           "clear_timeout": "Auto-clear timeout (minutes)",
-          "site": "UniFi site name",
+          "site": "UniFi site name"
+        }
+      },
+      "finish": {
+        "title": "Webhook URLs",
+        "description": "Copy each webhook URL into UniFi Alarm Manager, then click **Submit** to save the changes.",
+        "data": {
           "webhook_url_network_device": "Network: Device offline/online webhook URL",
           "webhook_url_network_wan": "Network: WAN offline/latency webhook URL",
           "webhook_url_network_client": "Network: Client connect/disconnect webhook URL",
