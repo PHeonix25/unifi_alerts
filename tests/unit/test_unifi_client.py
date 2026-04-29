@@ -549,12 +549,11 @@ class TestFetchAlarms:
         )
 
     @pytest.mark.asyncio
-    async def test_tries_stat_alarm_path_first(self):
-        """fetch_alarms must try /stat/alarm before the bare /alarm fallback.
+    async def test_tries_bare_alarm_path_first(self):
+        """fetch_alarms must try bare /alarm before the /stat/alarm fallback.
 
-        /stat/alarm is the documented UniFi Network API path and works on
-        modern firmware.  The bare /alarm is kept as a fallback for older firmware
-        that may not expose /stat/alarm.
+        /alarm is more universally supported across firmware versions; /stat/alarm
+        is kept as a fallback for firmware that only exposes that variant.
         """
         client = make_client()
         client._authenticated = True
@@ -577,15 +576,15 @@ class TestFetchAlarms:
 
         assert captured_urls, "Expected at least one GET call"
         first_url = captured_urls[0]
-        assert first_url.endswith("/stat/alarm"), (
-            f"First URL tried must end with /stat/alarm; got: {first_url}"
+        assert first_url.endswith("/alarm") and not first_url.endswith("/stat/alarm"), (
+            f"First URL tried must end with bare /alarm; got: {first_url}"
         )
-        # Only one call expected — /stat/alarm worked, no fallback needed
+        # Only one call expected — /alarm worked, no fallback needed
         assert len(captured_urls) == 1
 
     @pytest.mark.asyncio
     async def test_falls_back_to_stat_alarm_on_404(self):
-        """fetch_alarms must try /stat/alarm when /alarm returns 404.
+        """fetch_alarms must try /stat/alarm when bare /alarm returns 404.
 
         Some controller firmware versions expose /stat/alarm but not bare /alarm.
         The fallback ensures the integration works across firmware versions.
@@ -618,6 +617,43 @@ class TestFetchAlarms:
         assert result == []
 
     @pytest.mark.asyncio
+    async def test_falls_back_to_stat_alarm_on_400_invalid_object(self):
+        """fetch_alarms must try /stat/alarm when bare /alarm returns 400 api.err.InvalidObject.
+
+        Some firmware returns 400 + api.err.InvalidObject for endpoint paths that don't
+        exist on that firmware version (instead of the more conventional 404).  The
+        integration must treat this the same as 404 and try the next path.
+        """
+        client = make_client()
+        client._authenticated = True
+        client._is_unifi_os = True
+
+        call_count = [0]
+        invalid_body = {"meta": {"rc": "error", "msg": "api.err.InvalidObject"}, "data": []}
+
+        @asynccontextmanager
+        async def _invalid_object_then_200(*args, **kwargs):
+            call_count[0] += 1
+            resp = MagicMock()
+            if call_count[0] == 1:
+                resp.status = 400
+                resp.headers = {}
+                resp.raise_for_status = MagicMock()
+                resp.json = AsyncMock(return_value=invalid_body)
+            else:
+                resp.status = 200
+                resp.headers = {}
+                resp.raise_for_status = MagicMock()
+                resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
+            yield resp
+
+        client._session.get = _invalid_object_then_200
+        result = await client.fetch_alarms()
+
+        assert call_count[0] == 2, "Expected exactly two GET calls (primary + fallback)"
+        assert result == []
+
+    @pytest.mark.asyncio
     async def test_all_paths_404_raises_cannot_connect(self):
         """When all alarm paths return 404, raise CannotConnectError with the tried paths."""
         client = make_client()
@@ -631,16 +667,29 @@ class TestFetchAlarms:
 
     @pytest.mark.asyncio
     async def test_http_400_raises_cannot_connect_with_site_hint(self):
-        """HTTP 400 from the alarm endpoint must raise CannotConnectError with actionable hint.
+        """HTTP 400 (non-InvalidObject) from the alarm endpoint raises CannotConnectError.
 
-        A 400 typically means the site name is wrong or the firmware rejects the request.
-        The error message must name the site so the user knows what to check.
+        A 400 with any error other than api.err.InvalidObject means a genuine rejection
+        (e.g. wrong site name).  The error message must name the site so the user knows
+        what to check.  api.err.InvalidObject is treated as "path not found" (see separate
+        test) and causes a fallback rather than an immediate error.
         """
         client = make_client()
         client._authenticated = True
         client._is_unifi_os = True
-        ctx = _make_response(400)
-        client._session.get = ctx
+        # Return 400 with a non-InvalidObject body so neither path is treated as "not found"
+        bad_body = {"meta": {"rc": "error", "msg": "api.err.Invalid"}, "data": []}
+
+        @asynccontextmanager
+        async def _400_bad(*args, **kwargs):
+            resp = MagicMock()
+            resp.status = 400
+            resp.headers = {}
+            resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(return_value=bad_body)
+            yield resp
+
+        client._session.get = _400_bad
 
         with pytest.raises(CannotConnectError) as exc_info:
             await client.fetch_alarms()
