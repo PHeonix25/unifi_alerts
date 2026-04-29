@@ -24,6 +24,8 @@ This integration covers **UniFi Network** only (System Logs / SIEM events from t
 | `docs/TODO.md` | Find the prioritised backlog of next steps |
 | `docs/ROADMAP.md` | See which TODOs are planned for each release (v1.0, v1.1, v1.2, v2.0) |
 | `docs/HISTORY.md` | Read the chronological log of completed work (append a dated entry after each task) |
+| `CHANGELOG.md` | User-facing release summary in Keep-a-Changelog format. Update the `[Unreleased]` section as user-visible changes land. |
+| `SECURITY.md` | Vulnerability disclosure policy. If a task touches security-relevant components, check the in-/out-of-scope listing here before responding to a security report. |
 
 ## Repository layout
 
@@ -57,7 +59,15 @@ tests/
 .github/workflows/
   ci.yml                          # hassfest + hacs-preflight + HACS action + lint (ruff, mypy, translation drift) + pytest; runs on push/PR to main and dev
   version-check.yml               # enforces version format per branch: main=X.Y.Z stable, dev=X.Y.Z-preN; runs on push/PR to main and dev
-  release.yml                     # triggered by version tags (v1.0.0 for stable, v1.0.0-pre1 for pre-release); validates tag matches manifest; marks GitHub release as pre-release automatically
+  release.yml                     # triggered by version tags (v1.0.0 stable, v1.0.0-pre1 pre-release); validates tag matches manifest, packages the integration, and publishes via `gh release create --generate-notes` (NOT softprops/action-gh-release — that was removed; do not re-introduce it). Pre-release detection regex uses `grep -qE -- '-pre[0-9]+$'` (the `--` terminator is load-bearing).
+.github/
+  dependabot.yml                  # tracks the github-actions ecosystem only (weekly, Brisbane TZ); minor+patch grouped, major bumps individual. Required to keep the SHA pins fresh — do NOT remove. Python deps stay manual.
+  release.yml                     # release-notes categories file used by `gh release create --generate-notes` to group merged PRs by label (Security / Bug Fixes / Features / Documentation / Tests / CI / Other). DIFFERENT FILE from .github/workflows/release.yml.
+  ISSUE_TEMPLATE/
+    bug_report.yml                # required-field bug template; warns users to redact `?token=...` from logs.
+    feature_request.yml           # problem → solution → alternatives template.
+    config.yml                    # disables blank issues; surfaces the security-advisory link + Discussions.
+    unclassified_event_key.yml    # for reporting UniFi event keys not yet in UNIFI_KEY_TO_CATEGORY.
 .githooks/
   pre-push                        # local gate: HACS preflight → translation drift → ruff → mypy → pytest; install with: git config core.hooksPath .githooks
 scripts/
@@ -68,6 +78,9 @@ hacs.json
 pyproject.toml                    # ruff and mypy config
 pytest.ini
 README.md                         # user-facing install, setup, and contributing guide
+CHANGELOG.md                      # Keep-a-Changelog file. The `[Unreleased]` section accumulates user-visible changes between tags. `docs/HISTORY.md` is the dated narrative source-of-truth; `CHANGELOG.md` is the user-facing summary scoped to releases. Pre-releases (`X.Y.Z-preN`) are NOT listed individually — only the consolidated `X.Y.Z` entry that bundles them.
+SECURITY.md                       # vulnerability disclosure policy. Reports go via GitHub private security advisories. Do NOT funnel security reports through public issues.
+CODEOWNERS                        # auto-requests review from @PHeonix25 on every PR.
 ```
 
 ## Non-negotiable constraints
@@ -82,7 +95,10 @@ README.md                         # user-facing install, setup, and contributing
 - **Webhooks are `local_only: True`** — do not remove this without a documented reason.
 - **Webhook bearer token auth is mandatory** — every inbound webhook request must be validated against `CONF_WEBHOOK_SECRET` via `?token=` query param. Never remove this check or accept requests that fail it.
 - **Category state lives only in the coordinator** — entities must not cache state themselves.
-- **Every GitHub Actions `uses:` reference must be pinned to a full 40-character commit SHA** — no branch names (`@main`, `@master`), no tag names (`@v2`, `@v6`), no short SHAs. Add a trailing comment noting the resolved version or branch for human readers (e.g. `# v3.0.0` or `# master tip 2026-04-22`). This applies to every workflow in `.github/workflows/`. When bumping an action, resolve the new SHA via `gh api repos/OWNER/REPO/git/refs/tags/TAG` (or `.../heads/BRANCH` for repos without tags) and replace both the SHA and its comment in the same edit.
+- **Every GitHub Actions `uses:` reference must be pinned to a full 40-character commit SHA** — no branch names (`@main`, `@master`), no tag names (`@v2`, `@v6`), no short SHAs. Add a trailing comment noting the resolved version or branch for human readers (e.g. `# v3.0.0` or `# master tip 2026-04-22`). This applies to every workflow in `.github/workflows/`. When bumping an action, resolve the new SHA via `gh api repos/OWNER/REPO/git/refs/tags/TAG` (or `.../heads/BRANCH` for repos without tags) and replace both the SHA and its comment in the same edit. Dependabot (`.github/dependabot.yml`) proposes these bumps weekly — review the SHA against the upstream tag before merging.
+- **The release pipeline uses `gh release create --generate-notes` only** — no third-party release actions. `softprops/action-gh-release` was deliberately removed in cluster D; do NOT re-introduce it (or any other third-party release publisher) when editing `.github/workflows/release.yml`. The GitHub CLI is pre-installed on `ubuntu-latest` runners. `actions/checkout` in that workflow MUST keep `fetch-depth: 0` — `--generate-notes` needs the full tag history to compute the previous-tag boundary.
+- **`CHANGELOG.md` must be updated alongside notable user-visible changes.** Add bullets under `[Unreleased]` as features/fixes/security work lands; never edit released sections. When bumping the manifest from `X.Y.Z-preN` to a stable `X.Y.Z`, rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD`, add a fresh empty `[Unreleased]` above it, and update the link references at the bottom. Pre-release version bumps (`-preN`) do NOT touch `CHANGELOG.md`. `docs/HISTORY.md` is still the dated narrative source-of-truth for everything; `CHANGELOG.md` is just the user-facing release summary.
+- **PRs must carry one of the labels recognised by `.github/release.yml`** so auto-generated release notes group them correctly: `security`, `bug`, `enhancement` / `feature`, `documentation` / `docs`, `tests`, `ci` / `github-actions` / `dependencies`. Unlabelled PRs fall through to "🧹 Other Changes". Apply the label when opening the PR; reviewers don't need to remember.
 
 ## Coding conventions
 
@@ -131,13 +147,13 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
    git tag vX.Y.Z-preN && git push origin vX.Y.Z-preN
    ```
    GitHub Actions creates a pre-release automatically.
-3. **Stable release:** bump manifest from `X.Y.Z-preN` to `X.Y.Z` on a `claude/*` branch, open PR targeting `dev`. `dev` CI now accepts stable versions, so this passes. Merge to `dev`, then open a PR from `dev` → `main`. After that merges, provide the user with the tag command:
+3. **Stable release:** bump manifest from `X.Y.Z-preN` to `X.Y.Z` on a `claude/*` branch, open PR targeting `dev`. **In the same PR, finalise `CHANGELOG.md`:** rename the `[Unreleased]` heading to `[X.Y.Z] — YYYY-MM-DD`, insert a fresh empty `[Unreleased]` above it, and add a `[X.Y.Z]: …/releases/tag/vX.Y.Z` link at the bottom. `dev` CI now accepts stable versions, so this passes. Merge to `dev`, then open a PR from `dev` → `main`. After that merges, provide the user with the tag command:
    ```bash
    git checkout main && git pull origin main
    git tag vX.Y.Z && git push origin vX.Y.Z
    ```
-   GitHub Actions creates a stable release automatically.
-4. **Start next cycle:** bump manifest to `X.(Y+1).0-pre1` on a `claude/*` branch, open PR targeting `dev`, merge. Development continues forward — no merge-back from `main` to `dev` needed.
+   GitHub Actions creates a stable release automatically; the auto-generated notes are grouped by the labels on PRs merged between the previous tag and this one.
+4. **Start next cycle:** bump manifest to `X.(Y+1).0-pre1` on a `claude/*` branch, open PR targeting `dev`, merge. Development continues forward — no merge-back from `main` to `dev` needed. Notable changes between releases accumulate under `CHANGELOG.md` `[Unreleased]` as their PRs land — don't batch them at release time.
 
 > **Tag convention reminder:** Claude cannot push tags directly. Whenever the user says "update the tag", "cut a release", "tag the branch", or similar — open a version-bump PR to `dev` (or `main` for stable), wait for merge, then give the user the exact `git tag` + `git push origin <tag>` commands to run locally.
 
