@@ -6,6 +6,8 @@ This is the primary context file for Claude Code. Read this first, then follow t
 
 A Home Assistant custom integration (`domain: unifi_alerts`) that aggregates UniFi Network controller alerts into HA sensors, binary sensors, event entities, and buttons. It is intended for publication as a HACS custom repository.
 
+This integration covers **UniFi Network** only (System Logs / SIEM events from the Network Application on UniFi OS). It does **not** support UniFi Protect (cameras, motion detection, NVR).
+
 **Two data paths run in parallel:**
 - **Webhook push** — UniFi Alarm Manager POSTs to per-category webhook URLs registered by HA. This is the real-time path.
 - **REST polling** — the integration polls the UniFi controller's alarm API on a configurable interval to populate open-count sensors and catch alerts that missed the webhook.
@@ -150,6 +152,8 @@ Recommended rules:
 - **Always pull `dev` before starting work** — run `git pull origin dev` at the start of every session to avoid diverging from origin. Never start implementing changes on a stale branch. Pull `main` only when checking stable state.
 - **Work on `dev`, not `main`** — `main` is only updated via PRs from `dev`. Never commit directly to `main`.
 - **Feature and claude/* branches must be created from `dev`** — run `git checkout dev && git pull origin dev && git checkout -b <branch>`. Never branch off `main`. PRs from feature branches must target `dev`, not `main`.
+- **Always start fresh from `dev` for new work.** At the very start of a new task, even if a branch is already specified by the system instructions, run `git checkout dev && git pull origin dev` first, then create or recreate the working branch from that fresh `dev` tip. Never inherit whatever branch the previous session left checked out — it may be a stale `chore/bump-*` or other already-merged branch, and committing on top of it produces a branch that contains commits already in `dev`.
+- **After a PR merges, delete the local branch and switch back to `dev`** — run `git checkout dev && git pull origin dev && git branch -D <merged-branch>`. This forces the next task to branch off a clean `dev` instead of accidentally building on a stale, already-merged branch.
 - **Move into the working directory at the start of every session** — avoids needing path prefixes on every command.
 - Always run `make check` before committing — never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
 - Always update `docs/HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
