@@ -63,6 +63,7 @@ Items from the post-v1.1 audit that were planned for v1.2.0 but carried forward.
 - **`open_count` stale on webhook path:** `push_alert()` updates `is_alerting` and `alert_count` but `open_count` stays at whatever the last poll returned (`coordinator.py:123-143`).
 - **`close()` swallows logout errors:** `unifi_client.py:142-143` (`except Exception: pass`). Log at WARNING with class name so operators see stuck sessions.
 - **Webhook decode errors silently dropped:** `webhook_handler.py:105-107` — `UnicodeDecodeError` / `JSONDecodeError` produces an empty payload with no log entry; log at WARNING.
+- **Silent JSON-parse failure during 400-error inspection:** `unifi_client.py:153-154` — `except Exception: pass` swallows any failure to parse the UniFi JSON error body, so the `api.err.InvalidObject` fallback is silently skipped if the body is malformed. Log at DEBUG (or WARNING) with the exception class name so future endpoint variations are diagnosable. Found in 2026-04-29 BEFORE-state audit.
 
 ### Security
 

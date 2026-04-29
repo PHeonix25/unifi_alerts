@@ -217,6 +217,7 @@ The items below were identified in the post-v1.1.0 critical review, planned for 
 - [ ] **`datetime.fromisoformat()` called on epoch-millisecond input** (`models.py:52-57`) — numeric timestamps silently fall through to `datetime.now(UTC)`, losing the real alarm time. Add an epoch-ms branch before the ISO fallback; log at WARNING when neither matches.
 - [ ] **`UniFiClient.close()` silently swallows logout errors** (`unifi_client.py:142-143`) — `except Exception: pass` leaves session tokens valid on the controller indefinitely. Log at WARNING with `type(err).__name__`.
 - [ ] **Webhook decode errors silently converted to empty payload** (`webhook_handler.py:105-107`) — `UnicodeDecodeError` / `JSONDecodeError` replaced with `{}` with nothing in logs. Log at WARNING with exception class name and first 80 bytes of raw body.
+- [ ] **Silent JSON-parse failure during 400-error inspection** (`unifi_client.py:153-154`) — `except Exception: pass` swallows any failure to parse the UniFi JSON error body. The `api.err.InvalidObject` fallback is silently skipped if the body is malformed. Log at DEBUG with exception class name. Surfaced by 2026-04-29 BEFORE-state audit.
 
 #### Security
 
