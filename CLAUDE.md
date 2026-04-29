@@ -14,12 +14,14 @@ A Home Assistant custom integration (`domain: unifi_alerts`) that aggregates Uni
 
 | File | Read when you need to... |
 |---|---|
-| `ARCHITECTURE.md` | Understand how the modules fit together, data flow, and design decisions |
-| `HOMEASSISTANT.md` | Work with HA-specific patterns: coordinators, entity classes, config flows, platforms |
-| `UNIFI.md` | Understand the UniFi API, auth methods, alarm payloads, and event key taxonomy |
-| `TESTING.md` | Run, write, or extend tests |
-| `TODO.md` | Find the prioritised backlog of next steps |
-| `ROADMAP.md` | See which TODOs are planned for each release (v1.0, v1.1, v1.2, v2.0) |
+| `docs/ARCHITECTURE.md` | Understand how the modules fit together, data flow, and design decisions |
+| `docs/HOMEASSISTANT.md` | Work with HA-specific patterns: coordinators, entity classes, config flows, platforms |
+| `docs/UNIFI.md` | Understand the UniFi API, auth methods, alarm payloads, and event key taxonomy |
+| `docs/TESTING.md` | Run, write, or extend tests |
+| `docs/DEVELOPING.md` | Set up a local dev environment, run tests, contribute changes |
+| `docs/TODO.md` | Find the prioritised backlog of next steps |
+| `docs/ROADMAP.md` | See which TODOs are planned for each release (v1.0, v1.1, v1.2, v2.0) |
+| `docs/HISTORY.md` | Read the chronological log of completed work (append a dated entry after each task) |
 
 ## Repository layout
 
@@ -150,17 +152,17 @@ Recommended rules:
 - **Feature and claude/* branches must be created from `dev`** — run `git checkout dev && git pull origin dev && git checkout -b <branch>`. Never branch off `main`. PRs from feature branches must target `dev`, not `main`.
 - **Move into the working directory at the start of every session** — avoids needing path prefixes on every command.
 - Always run `make check` before committing — never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
-- Always update `HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
-- Always update `TODO.md` by removing completed items and adding new ones as needed. This is the primary source of truth for what is pending work. Do not rely on memory or Git history alone.
+- Always update `docs/HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
+- Always update `docs/TODO.md` by removing completed items and adding new ones as needed. This is the primary source of truth for what is pending work. Do not rely on memory or Git history alone.
 - At the end of the day, make sure there are no commits outstanding, no changes locally that need to be pushed, and that the `auto-memory\dirty-files` file is empty (if it exists on disk). This ensures a clean slate for the next session.
 
 ## Resuming an interrupted session
 
 Interruptions (timeouts, hibernation, re-login) are common. When a new conversation starts mid-task, always do this before anything else:
 
-1. **Read `HISTORY.md`** — the last entry describes what was most recently completed.
+1. **Read `docs/HISTORY.md`** — the last entry describes what was most recently completed.
 2. **Run `git status` and `git diff HEAD`** — uncommitted changes show exactly what was in-flight.
-3. **Read `TODO.md`** — the top remaining item is what was probably being worked on.
+3. **Read `docs/TODO.md`** — the top remaining item is what was probably being worked on.
 4. **Check the venv** — on Linux/Mac: `ls .venv/bin/pytest`; on Windows PowerShell: `Test-Path .venv\Scripts\pytest.exe`. If missing, recreate it:
    - **Linux/Mac:** `make setup` (or manually: `python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt --quiet`)
    - **Windows:** `py -3.12 -m venv .venv && .venv\Scripts\pip install -r requirements-dev.txt --quiet`
@@ -168,7 +170,7 @@ Interruptions (timeouts, hibernation, re-login) are common. When a new conversat
 
 ## Before making changes
 
-1. Check `TODO.md` for context on what's known to be incomplete or broken.
+1. Check `docs/TODO.md` for context on what's known to be incomplete or broken.
 2. Run `make check` (or `make` — it's the default target) to run all local validation in one shot:
    - ruff lint + format check
    - mypy type check

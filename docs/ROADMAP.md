@@ -138,6 +138,7 @@ A second-opinion pass after the v1.1 PRs landed surfaced a set of items that are
 - [ ] No `CHANGELOG.md` at repo root — the GH release workflow auto-writes release notes but a committed CHANGELOG is what HACS-default reviewers typically look for.  Add `CHANGELOG.md` following Keep-a-Changelog and populate retrospectively from v1.0 onwards.
 - [ ] With GitHub Actions now pinned to SHAs (v1.1), nothing keeps them fresh.  Add Renovate or Dependabot config targeting `github-actions` so pinned SHAs are proposed as PRs on upstream updates.
 - [ ] No `SECURITY.md`, `CODEOWNERS`, or GitHub issue templates.  Adds reviewer signal for HACS-default approval and channels bug reports away from general issues.
+- [ ] **Release notes are auto-generated from all commits and `release.yml` relies on a third-party action** — replace `softprops/action-gh-release` with `gh release create` (GitHub CLI, pre-installed on runners). Pass `--generate-notes` so notes are scoped between the previous tag and the current one. Upload the asset with `--attach unifi_alerts.zip`, mark pre-releases with `--prerelease`. Add a `.github/release.yml` categories file to group PR titles into labelled sections. Eliminates the only third-party action in `release.yml`.
 
 ### Documentation
 
