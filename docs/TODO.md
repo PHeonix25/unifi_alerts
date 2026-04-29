@@ -2,16 +2,6 @@
 
 Prioritised backlog. Items are grouped by type. Work top-to-bottom within each group unless there's a dependency noted.
 
-## 🔵 v1.3.0 — Post-install bug fixes
-
-Three bugs confirmed in production after v1.3.0-pre2 install on `https://unifi.home.hermens.com.au`. All resolved in `claude/fix-config-flow-loop-kvZw7` (merged to dev):
-
-- [x] **Options flow loops between pages 1 and 2** — `async_step_categories` used `step_id="init"` causing every submit to re-route to `async_step_init` → credentials. Fixed by restructuring `UniFiAlertsOptionsFlow` to mirror the 3-step initial-setup flow: credentials → categories → finish (webhook URLs). (`config_flow.py:281-470`, `strings.json`, `translations/en.json`)
-- [x] **No device/service parent visible** — entities had correct `DeviceInfo` but no proactive registration in `async_setup_entry`. Added `dr.async_get_or_create(...)` call before platform forwarding, and added `configuration_url` to all four `_device_info()` helpers so the Services card is clickable to the controller URL. (`__init__.py`, `binary_sensor.py`, `sensor.py`, `event.py`, `button.py`)
-- [x] **Blank entities / can't click** — `UniFiCategoryMessageSensor.native_value` returned `None` before first alert. Changed to return `"No alerts yet"`. Also bundled v1.2 polish: `EntityCategory.DIAGNOSTIC` on message sensors, `EntityCategory.CONFIG` on clear buttons, removed wrong `EventDeviceClass.BUTTON` from event entities. (`sensor.py`, `button.py`, `event.py`)
-
----
-
 ## 🔵 v1.3.0 — UniFi OS only
 
 **Decision (2026-04-22):** officially support only UniFi OS controllers. Classic self-hosted controllers (Network Application on bare Linux/Windows) are excluded. See `ROADMAP.md § v1.3.0` for full rationale.
@@ -45,9 +35,7 @@ If a restart is required, investigate why (e.g. Python module caching, import-ti
 The current brand asset is a minimal placeholder PNG. Replace with a proper UniFi-themed icon before submitting to the HACS default catalogue.
 
 ### HACS default repository submission
-After the integration is stable and passes `hassfest`, submit a PR to https://github.com/hacs/default to be listed in the default HACS catalogue. Requirements: 2+ releases, passing CI, `hacs.json`, `info.md`, HA brand icon.
-- `info.md` is now present (added session 11).
-- Remaining: 2+ tagged releases, real brand icon (replace placeholder), PR submission to hacs/default.
+After the integration is stable and passes `hassfest`, submit a PR to https://github.com/hacs/default to be listed in the default HACS catalogue. Requirements: 2+ releases, passing CI, `hacs.json`, `info.md`, HA brand icon. Remaining work: real brand icon (replace placeholder), PR submission to hacs/default.
 
 ---
 
@@ -118,7 +106,7 @@ tests/unit/config_flow/
   test_options.py       # TestOptionsFlowSteps + TestOptionsFlowCredentials
   test_reauth.py        # TestReauthFlow
 ```
-Move `_make_options_flow`, `_make_reauth_flow`, and any shared `MOCK_*` constants into the new `conftest.py`. Do not split the other test files — they are all under 500 lines and healthy. Target: a `v1.1.0-preN` checkpoint on `dev`.
+Move `_make_options_flow`, `_make_reauth_flow`, and any shared `MOCK_*` constants into the new `conftest.py`. Do not split the other test files — they are all under 500 lines and healthy.
 
 ---
 

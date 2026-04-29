@@ -252,4 +252,4 @@ make test       # pytest only
 - **No `configuration.yaml` support** — everything goes through the config flow.
 - **Webhook token auth is mandatory** — do not remove or bypass the `?token=` check in `webhook_handler.py`.
 
-See `CLAUDE.md` for the full developer context and `TESTING.md` for test conventions.
+See `CLAUDE.md` for the full developer context and `docs/TESTING.md` for test conventions.
