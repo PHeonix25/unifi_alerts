@@ -1159,3 +1159,247 @@ class TestOptionsFlowCredentials:
         assert saved[CONF_ENABLED_CATEGORIES] == [first_cat]
         assert saved[CONF_POLL_INTERVAL] == 90
         assert saved[CONF_CLEAR_TIMEOUT] == 15
+
+
+# ---------------------------------------------------------------------------
+# Webhook secret rotation in options flow
+# ---------------------------------------------------------------------------
+
+
+class TestWebhookSecretRotation:
+    """Cluster A: users must be able to regenerate the webhook secret without
+    deleting and re-adding the integration.
+
+    The options flow's credentials step now exposes a
+    ``CONF_REGENERATE_WEBHOOK_SECRET`` checkbox. When ticked:
+    - With no other credential changes: persist a new secret and continue.
+    - With credential changes: persist new credentials AND new secret atomically.
+    """
+
+    @pytest.mark.asyncio
+    async def test_rotate_only_persists_new_secret_and_skips_auth(self) -> None:
+        """Ticking only the regenerate checkbox must NOT call authenticate()."""
+        from custom_components.unifi_alerts.const import CONF_REGENERATE_WEBHOOK_SECRET
+
+        flow = _make_options_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
+
+        rotate_only = {
+            CONF_CONTROLLER_URL: "",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+            CONF_REGENERATE_WEBHOOK_SECRET: True,
+        }
+
+        with patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls:
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock()  # must NOT be called
+            await flow.async_step_credentials(rotate_only)
+            instance.authenticate.assert_not_called()
+
+        flow.hass.config_entries.async_update_entry.assert_called_once()
+        updated = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        # New secret must differ from the fixture-installed one
+        assert updated[CONF_WEBHOOK_SECRET] != "fixed-secret"
+        # And it must be a non-empty token (token_urlsafe(32) is at least 40 chars)
+        assert len(updated[CONF_WEBHOOK_SECRET]) >= 40
+
+    @pytest.mark.asyncio
+    async def test_rotate_with_credential_change_updates_both(self) -> None:
+        """Ticking regenerate alongside new creds rotates the secret AND updates creds."""
+        from custom_components.unifi_alerts.const import CONF_REGENERATE_WEBHOOK_SECRET
+
+        flow = _make_options_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
+
+        new_input = {
+            CONF_CONTROLLER_URL: "",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "newpass",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+            CONF_REGENERATE_WEBHOOK_SECRET: True,
+        }
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                return_value=_make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance._is_unifi_os = False
+            await flow.async_step_credentials(new_input)
+
+        flow.hass.config_entries.async_update_entry.assert_called_once()
+        updated = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert updated[CONF_PASSWORD] == "newpass"
+        assert updated[CONF_WEBHOOK_SECRET] != "fixed-secret"
+
+    @pytest.mark.asyncio
+    async def test_unticked_does_not_rotate(self) -> None:
+        """If the checkbox is unset, the existing secret must remain intact."""
+        from custom_components.unifi_alerts.const import CONF_REGENERATE_WEBHOOK_SECRET
+
+        flow = _make_options_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
+
+        no_rotate = {
+            CONF_CONTROLLER_URL: "",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+            CONF_REGENERATE_WEBHOOK_SECRET: False,
+        }
+
+        await flow.async_step_credentials(no_rotate)
+        # No update at all because nothing changed
+        flow.hass.config_entries.async_update_entry.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_finish_step_displays_new_url_after_rotation(self) -> None:
+        """After secret rotation, the finish step must show URLs with the NEW token.
+
+        Regression guard: HA's ``async_update_entry`` mutates ``entry.data``
+        synchronously via ``object.__setattr__(entry, "data", ...)``. Our flow
+        relies on that — between calling ``async_update_entry`` and reading
+        ``self._config_entry.data[CONF_WEBHOOK_SECRET]`` in the finish step,
+        no awaits intervene that could swap data. If HA ever changed those
+        semantics (or if a regression introduced an extra await between the
+        update and the read), users would see the OLD token displayed in the
+        finish step despite the new one being persisted — a confusing UX
+        bug. This test simulates the real HA behaviour and asserts the URL
+        contains the freshly-rotated secret.
+        """
+        from custom_components.unifi_alerts.const import (
+            CONF_REGENERATE_WEBHOOK_SECRET,
+            CONF_WEBHOOK_ID_SUFFIX,
+        )
+
+        flow = _make_options_flow()
+
+        # Simulate HA's real async_update_entry: mutate entry.data in-place
+        def _fake_update(entry, *, data=None, **kwargs):
+            if data is not None:
+                entry.data = data
+
+        flow.hass.config_entries.async_update_entry = MagicMock(side_effect=_fake_update)
+        # Make data a real dict (not MagicMock) so .get() / mutation work cleanly
+        flow._config_entry.data = {
+            **flow._config_entry.data,
+            CONF_WEBHOOK_ID_SUFFIX: "deadbeef",
+        }
+
+        # Step 1: rotate-only credentials submission
+        flow.async_show_form = MagicMock(
+            side_effect=lambda **kwargs: {"type": "form", "step_id": kwargs["step_id"]}
+        )
+        await flow.async_step_credentials({
+            CONF_CONTROLLER_URL: "",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+            CONF_REGENERATE_WEBHOOK_SECRET: True,
+        })
+
+        # Capture the new secret that was just persisted
+        new_secret = flow._config_entry.data[CONF_WEBHOOK_SECRET]
+        assert new_secret != "fixed-secret"
+        assert len(new_secret) >= 40
+
+        # Step 2: submit categories so the flow advances to finish. The
+        # categories step calls async_step_finish() internally to render the
+        # URL display form, so the async_generate_url patch must wrap this
+        # call too.
+        cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+        with patch(
+            "custom_components.unifi_alerts.config_flow.async_generate_url",
+            side_effect=lambda hass, wid: f"http://ha.local/api/webhook/{wid}",
+        ):
+            await flow.async_step_categories(cat_input)
+
+        # Inspect the form schema's default URLs — they must contain the NEW secret
+        finish_call = flow.async_show_form.call_args_list[-1]
+        schema = finish_call.kwargs["data_schema"]
+        url_defaults = [
+            marker.default()
+            for marker in schema.schema
+            if isinstance(marker, vol.Optional)
+            and isinstance(marker.schema, str)
+            and marker.schema.startswith("webhook_url_")
+        ]
+        assert url_defaults, "Expected at least one webhook_url_* field on the finish step"
+        for url in url_defaults:
+            assert new_secret in url, (
+                f"Finish step displayed an old/wrong token. URL: {url}, "
+                f"expected new secret: {new_secret}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# CONF_WEBHOOK_ID_SUFFIX generated for new entries (multi-entry collision fix)
+# ---------------------------------------------------------------------------
+
+
+class TestWebhookIdSuffix:
+    """Cluster A: new entries must get a per-entry CONF_WEBHOOK_ID_SUFFIX so
+    two config entries can never collide on the same webhook ID."""
+
+    @pytest.mark.asyncio
+    async def test_user_step_generates_webhook_id_suffix(self) -> None:
+        from custom_components.unifi_alerts.const import CONF_WEBHOOK_ID_SUFFIX
+
+        flow = _make_flow()
+        flow.async_step_categories = AsyncMock(return_value={"type": "form"})
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                return_value=_make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance._is_unifi_os = False
+
+            await flow.async_step_user(_VALID_INPUT)
+
+        suffix = flow._credentials.get(CONF_WEBHOOK_ID_SUFFIX)
+        assert suffix is not None
+        assert len(suffix) == 8  # token_hex(4) → 8 hex chars
+        assert all(c in "0123456789abcdef" for c in suffix)
+
+    @pytest.mark.asyncio
+    async def test_two_distinct_setups_get_distinct_suffixes(self) -> None:
+        """Running two independent config flows must produce two distinct suffixes
+        (collisions would be vanishingly rare on 32 bits but the test guards
+        against accidentally hardcoding the value)."""
+        from custom_components.unifi_alerts.const import CONF_WEBHOOK_ID_SUFFIX
+
+        suffixes: list[str] = []
+        for _ in range(2):
+            flow = _make_flow()
+            flow.async_step_categories = AsyncMock(return_value={"type": "form"})
+            with (
+                patch(
+                    "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                    return_value=_make_session_mock(),
+                ),
+                patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+            ):
+                instance = mock_cls.return_value
+                instance.authenticate = AsyncMock(return_value="userpass")
+                instance.fetch_alarms = AsyncMock(return_value=[])
+                instance._is_unifi_os = False
+                await flow.async_step_user(_VALID_INPUT)
+            suffixes.append(flow._credentials[CONF_WEBHOOK_ID_SUFFIX])
+        assert suffixes[0] != suffixes[1]

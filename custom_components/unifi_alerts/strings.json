@@ -106,13 +106,14 @@
     "step": {
       "credentials": {
         "title": "Update Controller Credentials",
-        "description": "Optionally update the controller URL or credentials. Leave all fields blank to skip this step and go straight to alert category settings.\n\nCurrent controller: {current_url}",
+        "description": "Optionally update the controller URL or credentials. Leave all fields blank to skip this step and go straight to alert category settings.\n\nCurrent controller: {current_url}\n\nTick **Regenerate webhook secret** if you suspect the current token has been exposed (e.g. pasted into logs or shared issues). New webhook URLs will be shown on the final step — copy them into UniFi Alarm Manager before clicking Submit, or webhook delivery will start failing immediately.",
         "data": {
           "controller_url": "New Controller URL (leave blank to keep current)",
           "username": "New Username (leave blank to keep current)",
           "password": "New Password (leave blank to keep current)",
           "api_key": "New API Key (leave blank to keep current)",
-          "verify_ssl": "Verify SSL certificate"
+          "verify_ssl": "Verify SSL certificate",
+          "regenerate_webhook_secret": "Regenerate webhook secret"
         }
       },
       "categories": {

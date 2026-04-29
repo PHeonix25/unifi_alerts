@@ -26,9 +26,11 @@ from .const import (
     CONF_IS_UNIFI_OS,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
+    CONF_REGENERATE_WEBHOOK_SECRET,
     CONF_SITE,
     CONF_USERNAME,
     CONF_VERIFY_SSL,
+    CONF_WEBHOOK_ID_SUFFIX,
     CONF_WEBHOOK_SECRET,
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
@@ -93,9 +95,14 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                     else:
                         self._controller_url = url
                         self._detected_auth_method = auth_method
+                        # CONF_WEBHOOK_ID_SUFFIX is generated per-entry so two
+                        # config entries can never collide on a webhook ID.
+                        # 8 hex chars = 32 bits of entropy, plenty to avoid
+                        # accidental collisions inside a single HA install.
                         self._credentials = {
                             **user_input,
                             CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32),
+                            CONF_WEBHOOK_ID_SUFFIX: secrets.token_hex(4),
                             CONF_IS_UNIFI_OS: client._is_unifi_os,
                         }
                         return await self.async_step_categories()
@@ -196,11 +203,13 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         enabled: list[str] = self._entry_data.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         secret: str = self._entry_data.get(CONF_WEBHOOK_SECRET, "")
+        suffix: str = self._entry_data.get(CONF_WEBHOOK_ID_SUFFIX, "")
         fields: dict = {}
         for cat in ALL_CATEGORIES:
             if cat in enabled:
                 url = (
-                    f"{async_generate_url(self.hass, webhook_id_for_category(cat))}?token={secret}"
+                    f"{async_generate_url(self.hass, webhook_id_for_category(cat, suffix))}"
+                    f"?token={secret}"
                 )
                 fields[vol.Optional(f"webhook_url_{cat}", default=url)] = str
         return self.async_show_form(
@@ -306,6 +315,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             new_username: str = (user_input.get(CONF_USERNAME) or "").strip()
             new_password: str = (user_input.get(CONF_PASSWORD) or "").strip()
             new_api_key: str = (user_input.get(CONF_API_KEY) or "").strip()
+            regenerate_secret: bool = bool(user_input.get(CONF_REGENERATE_WEBHOOK_SECRET, False))
             # verify_ssl always comes through as a bool (voluptuous default)
             new_verify_ssl: bool = user_input.get(
                 CONF_VERIFY_SSL,
@@ -314,8 +324,20 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
 
             credentials_changed = bool(new_url_raw or new_username or new_password or new_api_key)
 
-            if not credentials_changed:
+            if not credentials_changed and not regenerate_secret:
                 # Nothing changed — skip straight to categories
+                return await self.async_step_categories()
+
+            if regenerate_secret and not credentials_changed:
+                # Secret rotation only — no credentials to validate. Persist
+                # the new secret immediately and continue to categories so the
+                # finish step shows the updated webhook URLs.
+                updated_data = {
+                    **self._config_entry.data,
+                    CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32),
+                }
+                self.hass.config_entries.async_update_entry(self._config_entry, data=updated_data)
+                _LOGGER.info("Webhook secret regenerated for %s", self._config_entry.entry_id)
                 return await self.async_step_categories()
 
             # Determine the effective values to test
@@ -378,6 +400,12 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                             updated_data[CONF_PASSWORD] = new_password
                         if new_api_key:
                             updated_data[CONF_API_KEY] = new_api_key
+                        if regenerate_secret:
+                            updated_data[CONF_WEBHOOK_SECRET] = secrets.token_urlsafe(32)
+                            _LOGGER.info(
+                                "Webhook secret regenerated for %s",
+                                self._config_entry.entry_id,
+                            )
 
                         self.hass.config_entries.async_update_entry(
                             self._config_entry, data=updated_data
@@ -398,6 +426,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                 vol.Optional(CONF_PASSWORD): _password_selector,
                 vol.Optional(CONF_API_KEY): _api_key_selector,
                 vol.Optional(CONF_VERIFY_SSL, default=current_verify_ssl): bool,
+                vol.Optional(CONF_REGENERATE_WEBHOOK_SECRET, default=False): bool,
             }
         )
         return self.async_show_form(
@@ -468,11 +497,13 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
 
         enabled: list[str] = self._pending_options.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         secret: str = self._config_entry.data.get(CONF_WEBHOOK_SECRET, "")
+        suffix: str = self._config_entry.data.get(CONF_WEBHOOK_ID_SUFFIX, "")
         fields: dict = {}
         for cat in ALL_CATEGORIES:
             if cat in enabled:
                 url = (
-                    f"{async_generate_url(self.hass, webhook_id_for_category(cat))}?token={secret}"
+                    f"{async_generate_url(self.hass, webhook_id_for_category(cat, suffix))}"
+                    f"?token={secret}"
                 )
                 fields[vol.Optional(f"webhook_url_{cat}", default=url)] = str
         return self.async_show_form(

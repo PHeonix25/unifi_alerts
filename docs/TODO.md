@@ -63,6 +63,7 @@ Items from the post-v1.1 audit that were planned for v1.2.0 but carried forward.
 - **`open_count` stale on webhook path:** `push_alert()` updates `is_alerting` and `alert_count` but `open_count` stays at whatever the last poll returned (`coordinator.py:123-143`).
 - **`close()` swallows logout errors:** `unifi_client.py:142-143` (`except Exception: pass`). Log at WARNING with class name so operators see stuck sessions.
 - **Webhook decode errors silently dropped:** `webhook_handler.py:105-107` — `UnicodeDecodeError` / `JSONDecodeError` produces an empty payload with no log entry; log at WARNING.
+- **Silent JSON-parse failure during 400-error inspection:** `unifi_client.py:153-154` — `except Exception: pass` swallows any failure to parse the UniFi JSON error body, so the `api.err.InvalidObject` fallback is silently skipped if the body is malformed. Log at DEBUG (or WARNING) with the exception class name so future endpoint variations are diagnosable. Found in 2026-04-29 BEFORE-state audit.
 
 ### Security
 
@@ -74,6 +75,8 @@ Items from the post-v1.1 audit that were planned for v1.2.0 but carried forward.
 - **Config flow creates bare `aiohttp.ClientSession`:** bypasses HA's proxy config, connection pool, and SSL settings. Should use `async_get_clientsession(self.hass, verify_ssl=...)` (`config_flow.py:80,234,343`).
 - **Credential fragments in `__init__.py` exception messages:** `err` is passed into `ConfigEntryAuthFailed`/`ConfigEntryNotReady`, may expose URL fragments or auth details in logs (`__init__.py:53-57`).
 - **No webhook rate limiting / debounce:** a noisy category or misconfigured sender can flood the webhook endpoint with no cooldown, generating unbounded state updates and event fires (`coordinator.py:123`).
+- **Options-flow credential changes persist before the user submits the flow:** raised by Copilot review on PR #50. `UniFiAlertsOptionsFlow.async_step_credentials` calls `async_update_entry()` for both the credential-validation branch and (after PR #50) the rotate-only branch. If the user advances past credentials but then abandons the flow on categories/finish, the new values are already persisted and the entry-reload listener may have fired. Pre-existing pattern, not introduced by cluster A — but worth fixing. Refactor: stage credentials/secret in flow state (`self._pending_data`) and persist atomically inside `async_step_finish` alongside the options. Touches the credentials and rotation branches together.
+- **`verify_ssl` toggle alone does not persist in the options flow:** raised by Copilot review on PR #50. `credentials_changed` only checks URL/username/password/api_key — flipping the verify-SSL checkbox without changing any credential short-circuits to the categories step and the new `verify_ssl` value is never written to `entry.data`. Pre-existing, not introduced by cluster A. Fix: include `new_verify_ssl != self._config_entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)` in the `credentials_changed` predicate, or treat verify-SSL as its own change trigger. Best landed alongside the staging refactor above.
 
 ### Type safety / tech debt
 

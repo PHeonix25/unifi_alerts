@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -22,6 +23,7 @@ from .const import (
     DEFAULT_POLL_INTERVAL,
     DEFAULT_SITE,
     DOMAIN,
+    WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
 from .models import CategoryState, UniFiAlert
 from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
@@ -72,6 +74,12 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         # Tracks pending auto-clear tasks keyed by category
         self._clear_tasks: dict[str, asyncio.Task] = {}
+
+        # Per-(category, alert_key) monotonic timestamps of the last webhook
+        # push that was actually applied. Subsequent pushes for the same pair
+        # within WEBHOOK_DEDUP_WINDOW_SECONDS are dropped to prevent a noisy
+        # controller from generating unbounded state updates and event fires.
+        self._last_push_at: dict[tuple[str, str], float] = {}
 
     # ── DataUpdateCoordinator override ───────────────────────────────────
 
@@ -140,6 +148,11 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         """Called by the webhook handler when UniFi POSTs an alert.
 
         Updates category state immediately and notifies all subscribed entities.
+        Duplicate ``(category, alert.key)`` pairs received within
+        ``WEBHOOK_DEDUP_WINDOW_SECONDS`` are dropped — without this, a
+        misconfigured Alarm Manager or noisy category can flood the webhook
+        endpoint and cause unbounded ``alert_count`` increments and event
+        entity fires for the same underlying event.
         """
         if category not in self._category_states:
             _LOGGER.warning("push_alert called with unknown category: %s", category)
@@ -148,6 +161,27 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         state = self._category_states[category]
         if not state.enabled:
             return
+
+        dedup_key = (category, alert.key or "")
+        now = time.monotonic()
+        prev = self._last_push_at.get(dedup_key)
+        if prev is not None and (now - prev) < WEBHOOK_DEDUP_WINDOW_SECONDS:
+            _LOGGER.debug(
+                "Suppressing duplicate webhook push for %s/%s within %.1fs window",
+                category,
+                dedup_key[1],
+                WEBHOOK_DEDUP_WINDOW_SECONDS,
+            )
+            return
+        # Opportunistically drop expired entries before recording the new one.
+        # Bounds the dict size at "distinct (category, alert_key) pairs seen
+        # within the last WEBHOOK_DEDUP_WINDOW_SECONDS" — a misconfigured
+        # controller emitting high-cardinality keys cannot grow it without
+        # bound. Cost is O(n) per push, but n is naturally small (capped by
+        # the active windowed set).
+        cutoff = now - WEBHOOK_DEDUP_WINDOW_SECONDS
+        self._last_push_at = {k: t for k, t in self._last_push_at.items() if t >= cutoff}
+        self._last_push_at[dedup_key] = now
 
         state.apply_alert(alert)
         _LOGGER.debug("Alert pushed to category %s: %s", category, alert.message)
