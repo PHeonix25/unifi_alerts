@@ -101,10 +101,16 @@ class UniFiClient:
         if not self._authenticated:
             await self.authenticate()
 
-        # Different firmware versions expose different alarm endpoint paths.
-        # Try the bare /alarm path first (more universally supported), then
-        # fall back to /stat/alarm for firmware that only exposes that variant.
+        # Different firmware versions expose the alarm endpoint at different paths.
+        # Try the newest path first so modern firmware succeeds in one call; fall
+        # back to older variants for backwards compatibility. Order matters —
+        # update docs/UNIFI.md § "Alarm API endpoint" if you change this list.
+        #
+        #   /list/alarm  — newest (UniFi Network 9.x+)
+        #   /alarm       — long-standing universal path
+        #   /stat/alarm  — older intermediate variant; some firmware exposes only this
         alarm_paths = [
+            self._network_path(f"/api/s/{site}/list/alarm"),
             self._network_path(f"/api/s/{site}/alarm"),
             self._network_path(f"/api/s/{site}/stat/alarm"),
         ]

@@ -1,5 +1,13 @@
 # History
 
+## 2026-04-29 — Add `/list/alarm` to alarm endpoint probe chain
+
+UniFi Network 9.x changed the alarm endpoint path from `/stat/alarm` to `/list/alarm`. Modern firmware reporting `404` (or `400 api.err.InvalidObject`) on the previously-tried paths meant alarm polling silently fell through to error-out instead of finding the new path.
+
+- **`unifi_client.py` — added `/list/alarm` as the first probe path:** `fetch_alarms()` now walks the chain `[/list/alarm, /alarm, /stat/alarm]` newest-to-oldest. Modern firmware succeeds in one call; legacy firmware still works via fallback. The existing 404 / 400 `api.err.InvalidObject` handling treats any failure as "try the next path" and only surfaces an error to the user after every path is exhausted.
+- **`docs/UNIFI.md` — endpoint history table:** replaced the previous one-line note with an explicit three-row table (`/list/alarm` → newest, `/alarm` → long-standing, `/stat/alarm` → older intermediate). Includes a "if UniFi changes the endpoint again" pointer to the exact code + test files to update, so future maintainers don't have to rediscover the chain.
+- **Tests:** updated `TestFetchAlarms::test_tries_bare_alarm_path_first` → `test_tries_list_alarm_path_first` (asserts `/list/alarm` is the first URL fetched). Added `test_falls_back_through_full_path_chain` (404 on `/list/alarm` and `/alarm`, success on `/stat/alarm` — guards against future regressions where the chain order or contents are changed). Renamed the two existing fallback tests from `..._to_stat_alarm_...` → `..._to_next_path_...` since the chain is now three deep. 348 tests pass.
+
 ## 2026-04-29 — v1.3.0 post-install bug fixes: options flow loop, device registry, blank entities
 
 Three bugs confirmed on a production install of v1.3.0-pre2. All fixed in `claude/fix-config-flow-loop-kvZw7`. Bundled in three v1.2 ROADMAP polish items (touching the same files) to minimise churn.
