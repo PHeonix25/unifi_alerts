@@ -173,6 +173,14 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 WEBHOOK_DEDUP_WINDOW_SECONDS,
             )
             return
+        # Opportunistically drop expired entries before recording the new one.
+        # Bounds the dict size at "distinct (category, alert_key) pairs seen
+        # within the last WEBHOOK_DEDUP_WINDOW_SECONDS" — a misconfigured
+        # controller emitting high-cardinality keys cannot grow it without
+        # bound. Cost is O(n) per push, but n is naturally small (capped by
+        # the active windowed set).
+        cutoff = now - WEBHOOK_DEDUP_WINDOW_SECONDS
+        self._last_push_at = {k: t for k, t in self._last_push_at.items() if t >= cutoff}
         self._last_push_at[dedup_key] = now
 
         state.apply_alert(alert)

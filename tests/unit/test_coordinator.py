@@ -252,6 +252,45 @@ class TestPushDedup:
         coord.push_alert(CATEGORY_NETWORK_WAN, a2)
         assert coord.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 1
 
+    def test_last_push_at_dict_bounded_by_dedup_window(self):
+        """Regression: ``_last_push_at`` must not grow without bound.
+
+        A misconfigured controller emitting high-cardinality alert keys could
+        otherwise accumulate one entry per unique key forever. The dict is
+        opportunistically pruned to entries whose last-push timestamp is
+        within ``WEBHOOK_DEDUP_WINDOW_SECONDS`` of the most recent push, so
+        its size stays bounded regardless of the controller's lifetime
+        event-key cardinality.
+        """
+        from custom_components.unifi_alerts.const import WEBHOOK_DEDUP_WINDOW_SECONDS
+
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+
+        clock = [0.0]
+        with patch(
+            "custom_components.unifi_alerts.coordinator.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            # Burst of 50 distinct keys at t=0
+            for i in range(50):
+                coord.push_alert(
+                    CATEGORY_NETWORK_WAN,
+                    make_alert(CATEGORY_NETWORK_WAN, f"alert {i}", key=f"EVT_BURST_{i}"),
+                )
+            # All 50 are still within the window — dict holds them all
+            assert len(coord._last_push_at) == 50
+
+            # Jump past the window — the next push must prune the burst
+            clock[0] = WEBHOOK_DEDUP_WINDOW_SECONDS + 1.0
+            coord.push_alert(
+                CATEGORY_NETWORK_WAN,
+                make_alert(CATEGORY_NETWORK_WAN, "fresh", key="EVT_FRESH"),
+            )
+            # Only the fresh entry remains; the 50 stale ones were pruned.
+            assert len(coord._last_push_at) == 1
+            assert (CATEGORY_NETWORK_WAN, "EVT_FRESH") in coord._last_push_at
+
 
 class TestCancelClear:
     def _make_coordinator_with_task(self):
