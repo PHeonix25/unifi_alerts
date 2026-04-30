@@ -16,6 +16,8 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 # (name|color|description) — keep in lockstep with .github/release.yml
 LABELS=(
   "security|b60205|Security-related changes (vulnerabilities, hardening)"
+  "feat|a2eeef|Conventional Commits alias for enhancement (new feature or capability)"
+  "fix|d73a4a|Conventional Commits alias for bug (bug fix)"
   "tests|bfdadc|Test changes (additions, refactors, fixtures)"
   "ci|ededed|Continuous-integration / build / release-pipeline changes"
   "github-actions|000000|Changes to GitHub Actions workflows or pinned-action bumps (Dependabot)"

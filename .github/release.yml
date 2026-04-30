@@ -25,9 +25,11 @@ changelog:
     - title: 🐛 Bug Fixes
       labels:
         - "bug"
+        - "fix"
     - title: 🚀 Features
       labels:
         - "enhancement"
+        - "feat"
     - title: 📚 Documentation
       labels:
         - "documentation"
