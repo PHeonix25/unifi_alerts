@@ -2,7 +2,7 @@
 
 ## 2026-04-30 — Expose per-category state (incl. `last_cleared_at`) in diagnostics
 
-Closed the v1.4.0 high-value item *Expose `last_acknowledged_at` in diagnostics*. Previously `diagnostics.py` only emitted the rollup totals (`any_alerting`, `rollup_alert_count`, `rollup_open_count`) plus webhook URLs, which made it impossible for users debugging unexpected `open_count` values to see the per-category acknowledgement watermark.
+Closed the v1.4.0 high-value item *Expose `last_cleared_at` in diagnostics* (the TODO heading used the older name `last_acknowledged_at`, but the actual `CategoryState` attribute and the new diagnostics key are both `last_cleared_at`). Previously `diagnostics.py` only emitted the rollup totals (`any_alerting`, `rollup_alert_count`, `rollup_open_count`) plus webhook URLs, which made it impossible for users debugging unexpected `open_count` values to see the per-category acknowledgement watermark.
 
 ### Changes
 
