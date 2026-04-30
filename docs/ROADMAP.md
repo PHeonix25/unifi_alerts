@@ -209,26 +209,29 @@ The items below were identified in the post-v1.1.0 critical review, planned for 
 
 #### Reliability / correctness
 
-- [ ] **Webhook ID collision on multi-entry (CRITICAL)** — `webhook_id_for_category()` returns `unifi_alerts_{category}` without including `entry_id` (`const.py:183-184`). Two config entries (multi-controller households) will collide on webhook registration — the second entry silently overwrites the first's handlers. Fix: include `entry_id` (or a short hash) in the webhook ID, update `WebhookManager` and the config-flow URL display. Affects `const.py:183-184`, `webhook_handler.py:56`, `config_flow.py:200-205,462-465`.
+- [x] **Webhook ID collision on multi-entry (CRITICAL)** — fixed 2026-04-29 in cluster A (PR #50): `CONF_WEBHOOK_ID_SUFFIX` (8-char hex, generated per entry by config flow); `webhook_id_for_category(category, suffix="")` returns `unifi_alerts_{suffix}_{category}` when present and falls back to legacy `unifi_alerts_{category}` when absent so existing single-entry users don't have to re-paste URLs. Multi-entry isolation integration test (`tests/integration/test_multi_entry.py`) added as the red-green pair.
 - [ ] `fetch_alarms()` passes `ssl=self._config.get(CONF_VERIFY_SSL, False)` — if the key is somehow missing from `_config`, SSL verification silently turns OFF (`unifi_client.py:106`). Change the fallback to `DEFAULT_VERIFY_SSL` (True) so a missing key fails closed, not open.
 - [ ] **SSL fail-open in 4 additional call sites** — same `self._config.get(CONF_VERIFY_SSL, False)` pattern in `_detect_unifi_os()` (`:156`), `_verify_api_key()` (`:202`), `_login_userpass()` (`:238`), and `close()` (`:139`). All must be changed to `DEFAULT_VERIFY_SSL` alongside the fix above.
 - [ ] `_category_states` is rebuilt from scratch on every config-entry reload — `alert_count` and `last_alert` are discarded whenever the user tweaks an option (`coordinator.py:59-62`). Persist the last-seen state across reloads.
-- [ ] `WebhookManager.register_all()` registers webhooks inside a loop with no try/finally — a failure mid-loop leaves registered hooks untracked (`webhook_handler.py:47-73`).
+- [x] `WebhookManager.register_all()` partial-failure leak — fixed 2026-04-29 in cluster A (PR #50): each iteration wrapped in try/except; only successful registrations append to `_registered`; `tests/unit/test_webhook_handler.py::TestRegisterAllRollback` covers behaviour.
 - [ ] **`datetime.fromisoformat()` called on epoch-millisecond input** (`models.py:52-57`) — numeric timestamps silently fall through to `datetime.now(UTC)`, losing the real alarm time. Add an epoch-ms branch before the ISO fallback; log at WARNING when neither matches.
 - [ ] **`UniFiClient.close()` silently swallows logout errors** (`unifi_client.py:142-143`) — `except Exception: pass` leaves session tokens valid on the controller indefinitely. Log at WARNING with `type(err).__name__`.
-- [ ] **Webhook decode errors silently converted to empty payload** (`webhook_handler.py:105-107`) — `UnicodeDecodeError` / `JSONDecodeError` replaced with `{}` with nothing in logs. Log at WARNING with exception class name and first 80 bytes of raw body.
+- [x] **Webhook decode errors silently converted to empty payload** — fixed 2026-04-29 in cluster A: `UnicodeDecodeError` / `JSONDecodeError` / `TypeError` now log at WARNING with exception class name and first 80 bytes of raw body.
 - [ ] **Silent JSON-parse failure during 400-error inspection** (`unifi_client.py:153-154`) — `except Exception: pass` swallows any failure to parse the UniFi JSON error body. The `api.err.InvalidObject` fallback is silently skipped if the body is malformed. Log at DEBUG with exception class name. Surfaced by 2026-04-29 BEFORE-state audit.
 
 #### Security
 
-- [ ] Webhook secret cannot be rotated post-setup — add a "Regenerate webhook secret" action to the options flow (`config_flow.py:84`).
-- [ ] **Non-constant-time webhook token comparison** (`webhook_handler.py:89`) — replace `!=` with `hmac.compare_digest()`.
-- [ ] **Webhook URLs containing `?token=<secret>` logged at DEBUG** (`__init__.py:92-95`) — redact tokens before logging.
-- [ ] **Full webhook payload logged at DEBUG** (`webhook_handler.py:109`) — narrow to `{category, alert_key, severity, device_name}`.
+- [x] Webhook secret cannot be rotated post-setup — fixed 2026-04-29 in cluster A: "Regenerate webhook secret" checkbox in options-flow credentials step. Works alone or alongside credential changes; persists a fresh `token_urlsafe(32)`.
+- [x] **Non-constant-time webhook token comparison** — fixed 2026-04-29 in cluster A: `hmac.compare_digest`; regression test asserts the function is called.
+- [x] **Webhook URLs containing `?token=<secret>` logged at DEBUG** — fixed 2026-04-29 in cluster A: `_redact_webhook_token()` scrubs `?token=` to `?token=***` in `__init__.py`.
+- [x] **Full webhook payload logged at DEBUG** — fixed 2026-04-29 in cluster A: `_SAFE_DEBUG_FIELDS` allow-list narrows the DEBUG log to `{category, alert_key, key, severity, device_name}`.
 - [ ] **`allow_redirects=True` on unauthenticated probes** (`unifi_client.py:162,178`) — set `allow_redirects=False` or assert final-URL host matches configured host.
 - [ ] **Config flow creates bare `aiohttp.ClientSession`** (`config_flow.py:80,234,343`) — use `async_get_clientsession(self.hass, verify_ssl=...)`.
 - [ ] **Credential fragments may leak in `__init__.py` exception messages** (`__init__.py:53-57`) — log `type(err).__name__` only.
-- [ ] **No webhook rate limiting / debounce** — add a configurable per-category cooldown in `push_alert()` (`coordinator.py:123`).
+- [x] **No webhook rate limiting / debounce** — fixed 2026-04-29 in cluster A: per-(category, alert_key) 5s `WEBHOOK_DEDUP_WINDOW_SECONDS` window in `coordinator.push_alert()`. `TestPushDedup` covers same/distinct keys, distinct categories, window expiry, empty-key edge case.
+- [ ] **Document that secret rotation rotates the bearer token but reuses the webhook ID** (added by 2026-04-29 AFTER audit). Rotation changes the `?token=` query parameter but not the URL path; an attacker who captured the old token still hits a live endpoint, the token check rejects them. If true revocation (URL path change) is ever required, the suffix would also need to rotate. Add a paragraph to `SECURITY.md` and a `# WHY:` comment in `config_flow.py` near the rotation branch so the threat model is explicit.
+- [ ] **Options-flow credential changes persist before the user submits the flow** (raised by Copilot review on PR #50). `UniFiAlertsOptionsFlow.async_step_credentials` calls `async_update_entry()` for both the credential-validation branch and (after PR #50) the rotate-only branch. Abandoning the flow on a later step still leaves the change persisted. Refactor: stage credentials and secret in `self._pending_data` and persist atomically inside `async_step_finish`. Pre-existing on `dev`, not introduced by cluster A.
+- [ ] **`verify_ssl` toggle alone does not persist in the options flow** (raised by Copilot review on PR #50). `credentials_changed` only checks URL/username/password/api_key, so flipping the verify-SSL checkbox without other changes silently does nothing. Pre-existing on `dev`. Fix: include `verify_ssl` in the `credentials_changed` predicate, or treat it as its own change trigger. Best landed alongside the staging refactor above.
 
 #### Type safety / tech debt
 
@@ -239,17 +242,19 @@ The items below were identified in the post-v1.1.0 critical review, planned for 
 
 #### Testing
 
-- [ ] No integration-level test for two config entries active at once (multi-entry isolation).
+- [x] Multi-entry isolation integration test — added 2026-04-29 in cluster A: `tests/integration/test_multi_entry.py` exercises two real config entries with distinct suffixes; POSTing to entry A's URL only flips entry A's coordinator (red-green pair).
 - [ ] No test for webhook-arrives-mid-poll interleaving.
 - [ ] **No test for `from_api_alarm` with epoch-millisecond timestamp** (`models.py:54-57`).
-- [ ] **No test for alert deduplication / rate limiting** — add once debounce is implemented.
+- [x] Webhook deduplication / rate-limiting test — added 2026-04-29 in cluster A: `TestPushDedup` covers same/distinct keys, distinct categories, window expiry, empty-key edge case.
+- [ ] **`make lint` does not cover `tests/`** (added by 2026-04-29 AFTER audit). Six pre-existing `I001` / `F401` issues in `tests/unit/test_services.py` and `tests/unit/test_config_flow.py` (mid-function imports, unused imports) escape local validation. None were introduced by clusters A or D. Expand the `lint` Makefile target to run ruff against `tests/` and either fix the existing issues or `# noqa` them with a one-line justification.
+- [ ] **Optional: integration test for full options-flow → entry-update → reload → re-register cycle after secret rotation.** Unit-level rotation tests cover each step in isolation; an end-to-end test would be an extra guard. Lower priority since each step is already covered.
 
 #### Release process / repo hygiene
 
-- [ ] No `CHANGELOG.md` at repo root — add Keep-a-Changelog file, back-fill from v1.0.
-- [ ] Add Renovate or Dependabot config targeting `github-actions` so pinned SHAs are proposed as PRs.
-- [ ] No `SECURITY.md`, `CODEOWNERS`, or GitHub issue templates.
-- [ ] Replace `softprops/action-gh-release` with `gh release create` — pass `--generate-notes`, add `.github/release.yml` categories file, mark pre-releases with `--prerelease`. Eliminates the only third-party action in `release.yml`.
+- [x] No `CHANGELOG.md` at repo root — added 2026-04-29 in cluster D: Keep-a-Changelog file, back-filled v1.0.0 → v1.3.0; `[Unreleased]` section captures cluster A and D content.
+- [x] Pinned SHAs need a refresh mechanism — added 2026-04-29 in cluster D: `.github/dependabot.yml` for `github-actions` ecosystem (weekly Monday cadence; minor + patch grouped, major individual).
+- [x] No `SECURITY.md`, `CODEOWNERS`, or GitHub issue templates — added 2026-04-29 in cluster D: `SECURITY.md`, `CODEOWNERS`, `bug_report.yml`, `feature_request.yml`, `config.yml`.
+- [x] Replace `softprops/action-gh-release` with `gh release create` — fixed 2026-04-29 in cluster D: migrated to `gh release create --generate-notes`; `.github/release.yml` categories file groups merged PRs by label; `fetch-depth: 0` added to checkout for previous-tag boundary; pre-release detection logic preserved verbatim. Eliminates the only third-party action in the release pipeline.
 
 #### Documentation
 

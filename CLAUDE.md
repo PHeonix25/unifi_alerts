@@ -21,8 +21,8 @@ This integration covers **UniFi Network** only (System Logs / SIEM events from t
 | `docs/UNIFI.md` | Understand the UniFi API, auth methods, alarm payloads, and event key taxonomy |
 | `docs/TESTING.md` | Run, write, or extend tests |
 | `docs/DEVELOPING.md` | Set up a local dev environment, run tests, contribute changes |
-| `docs/TODO.md` | Find the prioritised backlog of next steps |
-| `docs/ROADMAP.md` | See which TODOs are planned for each release (v1.0, v1.1, v1.2, v2.0) |
+| `docs/TODO.md` | Find the prioritised backlog of next steps. **Outstanding work only** — completed items are deleted, never struck through. Historical record lives in `docs/HISTORY.md` and per-release status in `docs/ROADMAP.md`. |
+| `docs/ROADMAP.md` | See which TODOs are planned for each release (v1.0, v1.1, v1.2, v2.0). Uses `[x]` checkboxes to track per-release completion — items stay in the file with their checkbox state, unlike `docs/TODO.md`. |
 | `docs/HISTORY.md` | Read the chronological log of completed work (append a dated entry after each task) |
 | `CHANGELOG.md` | User-facing release summary in Keep-a-Changelog format. Update the `[Unreleased]` section as user-visible changes land. |
 | `SECURITY.md` | Vulnerability disclosure policy. If a task touches security-relevant components, check the in-/out-of-scope listing here before responding to a security report. |
@@ -180,7 +180,7 @@ Recommended rules:
 - **Move into the working directory at the start of every session** — avoids needing path prefixes on every command.
 - Always run `make check` before committing — never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
 - Always update `docs/HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
-- Always update `docs/TODO.md` by removing completed items and adding new ones as needed. This is the primary source of truth for what is pending work. Do not rely on memory or Git history alone.
+- Always update `docs/TODO.md` by **deleting** the line for any completed item — do NOT strike it through, leave a "fixed in cluster X" note, or otherwise keep it visible. `docs/TODO.md` is a list of outstanding work only; the historical record belongs in `docs/HISTORY.md`, and per-release completion status in `docs/ROADMAP.md` (which uses `[x]` checkboxes). Add new items as they surface. Do not rely on memory or Git history alone.
 - At the end of the day, make sure there are no commits outstanding, no changes locally that need to be pushed, and that the `auto-memory\dirty-files` file is empty (if it exists on disk). This ensures a clean slate for the next session.
 
 ## Resuming an interrupted session
