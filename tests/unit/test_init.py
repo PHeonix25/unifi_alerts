@@ -14,9 +14,6 @@ from custom_components.unifi_alerts.const import (
     CONF_ENABLED_CATEGORIES,
     CONF_POLL_INTERVAL,
     CONF_VERIFY_SSL,
-    DATA_COORDINATOR,
-    DATA_UNREGISTER_WEBHOOKS,
-    DATA_WEBHOOK_IDS,
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
@@ -98,10 +95,9 @@ class TestAsyncSetupEntry:
         ):
             await async_setup_entry(hass, entry)
 
-        entry_data = hass.data[DOMAIN][entry.entry_id]
-        assert entry_data[DATA_COORDINATOR] is mock_coordinator
-        assert DATA_WEBHOOK_IDS in entry_data
-        assert DATA_UNREGISTER_WEBHOOKS in entry_data
+        assert entry.runtime_data.coordinator is mock_coordinator
+        assert entry.runtime_data.webhook_urls is not None
+        assert entry.runtime_data.unregister_webhooks is not None
 
     @pytest.mark.asyncio
     async def test_auth_failure_raises_config_entry_not_ready(self):
@@ -250,12 +246,11 @@ class TestAsyncSetupEntry:
 
 class TestAsyncUnloadEntry:
     def _populate_hass(self, hass, entry, mock_coordinator, mock_client, mock_wm):
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-            DATA_COORDINATOR: mock_coordinator,
-            DATA_WEBHOOK_IDS: {},
-            DATA_UNREGISTER_WEBHOOKS: mock_wm.unregister_all,
-            "client": mock_client,
-        }
+        entry.runtime_data = MagicMock()
+        entry.runtime_data.coordinator = mock_coordinator
+        entry.runtime_data.unregister_webhooks = mock_wm.unregister_all
+        entry.runtime_data.client = mock_client
+        hass.config_entries.async_entries = MagicMock(return_value=[entry])
 
     @pytest.mark.asyncio
     async def test_successful_unload_returns_true(self):
