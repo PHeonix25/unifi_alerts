@@ -4,7 +4,7 @@ This file maps TODO items to planned releases. Items within each release are ord
 
 > **Branching model:** all development happens on `dev` (pre-release versions: `X.Y.Z-preN`). Stable releases are tagged on `main` after a PR merge. See `CLAUDE.md § Branching strategy and versioning` for the full workflow.
 
-> **Current status:** v1.0.0, v1.1.0, v1.2.0 released. v1.3.0 released (2026-04-29). Active development continues on `dev` targeting v1.4.0.
+> **Current status:** v1.0.0, v1.1.0, v1.2.0 released. v1.3.0 released (2026-04-29). Active development continues on `dev` at v1.4.0-pre2. Planned path to v2.0.0: v1.4.0 (UniFi OS only) → v1.5.0 (security hardening II) → v1.6.0 (reliability + completeness) → v1.7.0 (documentation + architecture) → v2.0.0 (HACS default).
 
 ---
 
@@ -197,11 +197,12 @@ Released 2026-04-29. Five pre-release checkpoints (`pre1`–`pre5`) on `dev`.
   - Logout path branch in `close()` — always use `/api/auth/logout`
   - `CONF_IS_UNIFI_OS` persistence in config flow — no longer needed; remove from `config_flow.py`, `const.py`, and stored `entry.data`
   - This removes ~30-40 lines and eliminates the root cause of the v1.2 API-key/detection mismatch bug
+- [ ] **Add `async_migrate_entry` for `CONF_IS_UNIFI_OS` removal** — bump `ConfigFlow.VERSION` from `1` to `2`; implement `async_migrate_entry` that strips `CONF_IS_UNIFI_OS` from `entry.data` for version-1 entries. Without this, existing installs carry a stale key; after the removal, any code that reads it would silently get `None`. Ships in the same PR as the code simplification.
 - [ ] **Update tests** — remove tests that only exist to cover the legacy path (detection returning False, path without `/proxy/network`, classic controller login ordering); update remaining tests to not set `_is_unifi_os` explicitly.
 
 ### Open-count watermark (PR #44)
 
-- [ ] **Per-category acknowledgement watermark for `open_count`** — `open_count` is currently a lifetime cumulative counter (3000+ observed on production installs). Pressing "Clear" should bound the count to "alarms since last cleared". Watermarks persisted via `homeassistant.helpers.storage.Store` keyed per `entry_id`, survive HA restarts. See PR #44 (`claude/open-count-watermark`) for full design and implementation.
+- [x] **Per-category acknowledgement watermark for `open_count`** — shipped 2026-04-29 (before v1.4.0-pre1). `coordinator.py` has `async_restore_watermarks()`, `_async_persist_watermarks()`, `async_clear_category()`, and `async_clear_all()`. The `_async_update_data()` polling path filters alarms newer than `last_cleared_at`. Watermarks stored via `Store` and survive HA restarts. **Bug noted during 2026-04-30 audit:** `_auto_clear()` does NOT call `_async_persist_watermarks()` — auto-clear-triggered watermarks are lost on restart. Fix tracked in v1.6.0 Reliability / correctness.
 
 ### Hardening carry-overs (from v1.2.0 audit)
 
@@ -210,12 +211,12 @@ The items below were identified in the post-v1.1.0 critical review, planned for 
 #### Reliability / correctness
 
 - [x] **Webhook ID collision on multi-entry (CRITICAL)** — fixed 2026-04-29 in cluster A (PR #50): `CONF_WEBHOOK_ID_SUFFIX` (8-char hex, generated per entry by config flow); `webhook_id_for_category(category, suffix="")` returns `unifi_alerts_{suffix}_{category}` when present and falls back to legacy `unifi_alerts_{category}` when absent so existing single-entry users don't have to re-paste URLs. Multi-entry isolation integration test (`tests/integration/test_multi_entry.py`) added as the red-green pair.
-- [ ] `fetch_alarms()` passes `ssl=self._config.get(CONF_VERIFY_SSL, False)` — if the key is somehow missing from `_config`, SSL verification silently turns OFF (`unifi_client.py:106`). Change the fallback to `DEFAULT_VERIFY_SSL` (True) so a missing key fails closed, not open.
-- [ ] **SSL fail-open in 4 additional call sites** — same `self._config.get(CONF_VERIFY_SSL, False)` pattern in `_detect_unifi_os()` (`:156`), `_verify_api_key()` (`:202`), `_login_userpass()` (`:238`), and `close()` (`:139`). All must be changed to `DEFAULT_VERIFY_SSL` alongside the fix above.
-- [ ] `_category_states` is rebuilt from scratch on every config-entry reload — `alert_count` and `last_alert` are discarded whenever the user tweaks an option (`coordinator.py:59-62`). Persist the last-seen state across reloads.
+- [ ] **SSL fail-open on missing key (5 call sites)** — `ssl=self._config.get(CONF_VERIFY_SSL, False)`. If the key is somehow absent, SSL verification silently turns OFF. Change all five fallbacks to `DEFAULT_VERIFY_SSL`. Affected: `_try_fetch_alarms` (`unifi_client.py:134`), `close()` (`:197`), `_detect_unifi_os()` (`:214`), `_verify_api_key()` (`:260`), `_login_userpass()` (`:296`).
+- [ ] `_category_states` is rebuilt from scratch on every config-entry reload — `alert_count` and `last_alert` are discarded whenever the user tweaks an option (`coordinator.py:70-73`). Persist the last-seen state across reloads (alongside the existing watermarks in the `Store`).
 - [x] `WebhookManager.register_all()` partial-failure leak — fixed 2026-04-29 in cluster A (PR #50): each iteration wrapped in try/except; only successful registrations append to `_registered`; `tests/unit/test_webhook_handler.py::TestRegisterAllRollback` covers behaviour.
 - [ ] **`datetime.fromisoformat()` called on epoch-millisecond input** (`models.py:52-57`) — numeric timestamps silently fall through to `datetime.now(UTC)`, losing the real alarm time. Add an epoch-ms branch before the ISO fallback; log at WARNING when neither matches.
-- [ ] **`UniFiClient.close()` silently swallows logout errors** (`unifi_client.py:142-143`) — `except Exception: pass` leaves session tokens valid on the controller indefinitely. Log at WARNING with `type(err).__name__`.
+- [ ] **`_auto_clear` does not persist the watermark** (`coordinator.py:298-304`) — `_auto_clear()` calls `state.clear()` but never awaits `_async_persist_watermarks()`. If HA restarts after a timer-triggered auto-clear, the watermark is lost and `open_count` jumps back to the lifetime total. Fix: add `await self._async_persist_watermarks()` after `state.clear()`. Also add `test_auto_clear_persists_watermark` to `test_coordinator.py`. Found 2026-04-30 audit.
+- [ ] **`UniFiClient.close()` silently swallows logout errors** (`unifi_client.py:200-201`) — `except Exception: pass` leaves session tokens valid on the controller indefinitely. Log at WARNING with `type(err).__name__`.
 - [x] **Webhook decode errors silently converted to empty payload** — fixed 2026-04-29 in cluster A: `UnicodeDecodeError` / `JSONDecodeError` / `TypeError` now log at WARNING with exception class name and first 80 bytes of raw body.
 - [ ] **Silent JSON-parse failure during 400-error inspection** (`unifi_client.py:153-154`) — `except Exception: pass` swallows any failure to parse the UniFi JSON error body. The `api.err.InvalidObject` fallback is silently skipped if the body is malformed. Log at DEBUG with exception class name. Surfaced by 2026-04-29 BEFORE-state audit.
 
@@ -225,9 +226,9 @@ The items below were identified in the post-v1.1.0 critical review, planned for 
 - [x] **Non-constant-time webhook token comparison** — fixed 2026-04-29 in cluster A: `hmac.compare_digest`; regression test asserts the function is called.
 - [x] **Webhook URLs containing `?token=<secret>` logged at DEBUG** — fixed 2026-04-29 in cluster A: `_redact_webhook_token()` scrubs `?token=` to `?token=***` in `__init__.py`.
 - [x] **Full webhook payload logged at DEBUG** — fixed 2026-04-29 in cluster A: `_SAFE_DEBUG_FIELDS` allow-list narrows the DEBUG log to `{category, alert_key, key, severity, device_name}`.
-- [ ] **`allow_redirects=True` on unauthenticated probes** (`unifi_client.py:162,178`) — set `allow_redirects=False` or assert final-URL host matches configured host.
-- [ ] **Config flow creates bare `aiohttp.ClientSession`** (`config_flow.py:80,234,343`) — use `async_get_clientsession(self.hass, verify_ssl=...)`.
-- [ ] **Credential fragments may leak in `__init__.py` exception messages** (`__init__.py:53-57`) — log `type(err).__name__` only.
+- [ ] **`allow_redirects=True` on unauthenticated detection probes** (`unifi_client.py:220,233`) — the `_detect_unifi_os()` probes follow redirects without validating the final host. A compromised DNS or on-path attacker could redirect the probe to an attacker-controlled host. Set `allow_redirects=False` and handle HTTP→HTTPS redirects explicitly, or assert `final_url.host == configured_host` before trusting the response.
+- [ ] **Config flow creates bare `aiohttp.ClientSession`** (`config_flow.py:82,243,366`) — use `async_get_clientsession(self.hass, verify_ssl=...)`.
+- [ ] **Credential fragments may leak in `__init__.py` exception messages** (`__init__.py:57,60`) — `ConfigEntryAuthFailed` and `ConfigEntryNotReady` include `str(err)`. If the exception contains URL fragments or auth details, they appear in HA logs. Log `type(err).__name__` only (same pattern as `unifi_client.py`).
 - [x] **No webhook rate limiting / debounce** — fixed 2026-04-29 in cluster A: per-(category, alert_key) 5s `WEBHOOK_DEDUP_WINDOW_SECONDS` window in `coordinator.push_alert()`. `TestPushDedup` covers same/distinct keys, distinct categories, window expiry, empty-key edge case.
 - [ ] **Document that secret rotation rotates the bearer token but reuses the webhook ID** (added by 2026-04-29 AFTER audit). Rotation changes the `?token=` query parameter but not the URL path; an attacker who captured the old token still hits a live endpoint, the token check rejects them. If true revocation (URL path change) is ever required, the suffix would also need to rotate. Add a paragraph to `SECURITY.md` and a `# WHY:` comment in `config_flow.py` near the rotation branch so the threat model is explicit.
 - [ ] **Options-flow credential changes persist before the user submits the flow** (raised by Copilot review on PR #50). `UniFiAlertsOptionsFlow.async_step_credentials` calls `async_update_entry()` for both the credential-validation branch and (after PR #50) the rotate-only branch. Abandoning the flow on a later step still leaves the change persisted. Refactor: stage credentials and secret in `self._pending_data` and persist atomically inside `async_step_finish`. Pre-existing on `dev`, not introduced by cluster A.
@@ -238,7 +239,8 @@ The items below were identified in the post-v1.1.0 critical review, planned for 
 - [ ] `pyproject.toml` has `strict = false` for mypy — migrate `UniFiClient.config: dict[str, Any]` to a `TypedDict` / frozen dataclass, then bump to `strict = true`.
 - [ ] Entity naming is ad-hoc — adopt `has_entity_name = True` + `_attr_translation_key` pattern so strings live in `strings.json`.
 - [ ] No sensor `device_class` on the open-count or rollup-count sensors (`sensor.py:96,128`).
-- [ ] **Config flow accesses private `client._is_unifi_os`** (`config_flow.py:99,253,372`) — expose as a public `@property`.
+- [ ] **Config flow accesses private `client._is_unifi_os`** (`config_flow.py:106,261,395`) — expose as a public `@property`.
+- [ ] **Button entities don't inherit from `CoordinatorEntity`** (`button.py`) — `UniFiClearCategoryButton` and `UniFiClearAllButton` extend `ButtonEntity` directly. They have no `available` property checking coordinator state, so they always appear available even when their category is disabled. Add `CoordinatorEntity[UniFiAlertsCoordinator]` as a mixin and an `available` property. Found 2026-04-30 audit.
 
 #### Testing
 
@@ -246,6 +248,7 @@ The items below were identified in the post-v1.1.0 critical review, planned for 
 - [ ] No test for webhook-arrives-mid-poll interleaving.
 - [ ] **No test for `from_api_alarm` with epoch-millisecond timestamp** (`models.py:54-57`).
 - [x] Webhook deduplication / rate-limiting test — added 2026-04-29 in cluster A: `TestPushDedup` covers same/distinct keys, distinct categories, window expiry, empty-key edge case.
+- [ ] **No test for `_auto_clear` watermark persistence** — add `test_auto_clear_persists_watermark` to `test_coordinator.py` verifying that `_store.async_save` is called when the auto-clear timer fires. Found 2026-04-30 audit.
 - [ ] **`make lint` does not cover `tests/`** (added by 2026-04-29 AFTER audit). Six pre-existing `I001` / `F401` issues in `tests/unit/test_services.py` and `tests/unit/test_config_flow.py` (mid-function imports, unused imports) escape local validation. None were introduced by clusters A or D. Expand the `lint` Makefile target to run ruff against `tests/` and either fix the existing issues or `# noqa` them with a one-line justification.
 - [ ] **Optional: integration test for full options-flow → entry-update → reload → re-register cycle after secret rotation.** Unit-level rotation tests cover each step in isolation; an end-to-end test would be an extra guard. Lower priority since each step is already covered.
 
@@ -269,12 +272,89 @@ The items below were identified in the post-v1.1.0 critical review, planned for 
 
 ---
 
+## v1.5.0 — Security hardening II (pre-HACS-default)
+
+Closes the remaining security gaps from the v1.4.0 hardening backlog that are not blocking for a v1.4.0 release but must be resolved before HACS-default submission. Themed: **eliminate authentication-data exposure paths** and **make the options flow transactionally safe**.
+
+### Authentication / credential safety
+
+- [ ] **Config flow bare `aiohttp.ClientSession` → `async_get_clientsession`** (`config_flow.py:82,243,366`) — three places (`async_step_user`, `async_step_reauth_confirm`, `async_step_credentials`) create a raw `aiohttp.ClientSession` that bypasses HA's proxy config, connection pool limits, and the user's SSL setting. Replace with `async_get_clientsession(self.hass, verify_ssl=user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL))`.
+- [ ] **Credential fragments in `__init__.py` exception messages** (`__init__.py:57,60`) — `ConfigEntryAuthFailed(f"...: {err}")` and `ConfigEntryNotReady(f"...: {err}")` include `str(err)`. If the exception contains URL fragments or auth details, they appear in HA logs and the repair UI. Use `type(err).__name__` only, matching the `unifi_client.py` pattern.
+- [ ] **`allow_redirects=True` on unauthenticated detection probes** (`unifi_client.py:220,233`) — the `_detect_unifi_os()` probes follow redirects without validating the final host. On a compromised LAN segment, DNS spoofing could redirect the probe to an attacker-controlled host. Set `allow_redirects=False` and handle HTTP→HTTPS redirects explicitly, or assert `final_url.host == configured_host` before trusting the response. Note: UCG-Ultra redirects HTTP→HTTPS; test both cases.
+
+### Options flow atomicity
+
+- [ ] **Options-flow staging refactor** (`config_flow.py`) — `async_step_credentials` calls `async_update_entry()` eagerly for both the validate-credentials branch and the rotate-only branch. If the user abandons the flow after credentials but before submitting, the new values are already persisted. Refactor: accumulate credential changes into `self._pending_data` (existing field) and persist atomically at the start of `async_step_finish`. This also naturally fixes the `verify_ssl` persistence gap below since the pending dict can carry the toggle value.
+- [ ] **`verify_ssl` toggle alone does not persist** (`config_flow.py:325`) — `credentials_changed` only checks URL/username/password/api_key. Flipping verify-SSL alone short-circuits to categories without saving. Include `verify_ssl` in the predicate, or handle it inside the new staging refactor above.
+
+### Documentation
+
+- [ ] **Document secret rotation threat model in `SECURITY.md`** — rotation changes the `?token=` query parameter but not the URL path (the webhook ID suffix is unchanged). An attacker who captured the old token can still POST to the endpoint; the token check rejects them. If URL revocation is ever required, the suffix would also need to rotate. Add a paragraph to `SECURITY.md` explaining this and a `# WHY:` comment near the rotation branch in `config_flow.py`.
+- [ ] **Close() logout errors** (`unifi_client.py:200-201`) — `except Exception: pass` leaves session tokens valid on the controller. Log at WARNING with `type(err).__name__`. Small but makes logout failures diagnosable.
+
+---
+
+## v1.6.0 — Reliability + completeness
+
+Closes correctness gaps and polishes testing/tooling. Themed: **ensure every state-changing path is correct and covered**.
+
+### Reliability / correctness
+
+- [ ] **`_auto_clear` watermark persistence** (`coordinator.py:298-304`) — add `await self._async_persist_watermarks()` after `state.clear()` so timer-triggered clears survive HA restarts.
+- [ ] **`open_count` stale on webhook path** (`coordinator.py:123-143`) — `push_alert()` does not update `open_count`. Consider optimistically incrementing it in `push_alert()` and letting the next poll correct the value.
+- [ ] **`_category_states` rebuild discards counters on reload** (`coordinator.py:70-73`) — `alert_count` and `last_alert` are lost on every config-entry reload (options change, HA restart). Persist them alongside the existing watermarks in the `Store`.
+- [ ] **Epoch-ms timestamp parsing** (`models.py:52-57`) — `datetime.fromisoformat(str(ts))` rejects numeric strings. Add an `int(ts) / 1000` epoch-ms branch before the ISO fallback; log at WARNING when neither matches.
+- [ ] **Silent JSON-parse failure during 400-error inspection** (`unifi_client.py:153-154`) — `except Exception: pass` silently skips the `api.err.InvalidObject` fallback. Log at DEBUG with the exception class name.
+
+### Testing / tooling
+
+- [ ] **`make lint` to cover `tests/`** — expand the Makefile `lint` target to run ruff against `tests/` and fix/noqa the 6 pre-existing `I001`/`F401` issues in `test_services.py` and `test_config_flow.py`.
+- [ ] **`test_auto_clear_persists_watermark`** in `test_coordinator.py` — mock `_store.async_save` and assert it is called when `_auto_clear` fires.
+- [ ] **`test_from_api_alarm_epoch_ms`** in `test_models.py` — verify that a numeric epoch-ms timestamp produces the correct UTC `datetime`.
+- [ ] **Interleaving test** in `test_coordinator.py` — assert that a webhook arriving while `_async_update_data()` is mid-await does not regress `is_alerting` (tests the guard at `coordinator.py:127`).
+
+### Tech debt
+
+- [ ] **Button entities `CoordinatorEntity` mixin** (`button.py`) — add `CoordinatorEntity[UniFiAlertsCoordinator]` as a mixin to both button classes and an `available` property checking `state.enabled`, consistent with the other platforms.
+- [ ] **Config flow `_is_unifi_os` public property** (`unifi_client.py`) — expose `_is_unifi_os` as a public `@property is_unifi_os` on `UniFiClient`; update the three config-flow access sites (`config_flow.py:106,261,395`).
+
+---
+
+## v1.7.0 — Documentation + architecture
+
+Closes all remaining documentation gaps and the largest architecture items. Themed: **make the integration production-ready for new users and contributors**.
+
+### Architecture
+
+- [ ] **`mypy strict = true`** — migrate `UniFiClient.config: dict[str, Any]` to a `TypedDict` or frozen dataclass; update all access sites; bump `pyproject.toml` to `strict = true`. Expected: catches latent type errors across coordinator, config flow, and entities.
+- [ ] **`has_entity_name = True` + `_attr_translation_key` migration** — all four platform files use `_attr_name = f"{CATEGORY_LABELS[category]} — ..."`. Move the display strings to `strings.json` under `entity.binary_sensor.*`, `entity.sensor.*`, etc. and use `_attr_translation_key`. Unlocks localisation and cleaner entity registry IDs.
+- [ ] **Split `test_config_flow.py` into a package** — 1405 lines with four logically independent classes. Convert to `tests/unit/config_flow/{__init__,conftest,test_setup,test_options,test_reauth}.py` as specified in `TODO.md`.
+- [ ] **No sensor `device_class`** (`sensor.py:96,128`) — determine whether a `device_class` or richer `state_class` fits the open-count / rollup-count sensors.
+
+### Documentation (8 items)
+
+- [ ] **Supported-firmware matrix** — small table in README/info.md: tested UDM-SE / UCG-Ultra / UCG-Max / Cloud Key Gen2+ models with firmware versions and any known quirks.
+- [ ] **Troubleshooting / FAQ section** — consolidate scattered notes: local-only webhooks, self-signed certs, "why is open_count so high?", API-key generation paths, Nabu Casa / cloud access fails.
+- [ ] **Uninstall instructions** — one-liner in README/info.md: **Settings → Devices & Services → UniFi Alerts → ⋮ → Delete**.
+- [ ] **`info.md` local-network warning** — add a bold "⚠ Local network only: webhooks are not reachable over Nabu Casa remote access" to the first paragraph.
+- [ ] **Setup flow webhook copy warning** — add a note in `strings.json` on the `finish` step: "Copy all URLs into UniFi Network → Settings → Notifications → Alarm Manager **before** clicking Submit."
+- [ ] **Privacy / data-retention section** in README — which payload fields are stored, that nothing leaves the local network, that auto-clear removes `is_alerting`/`last_alert` after the configured timeout.
+- [ ] **Automation edge case** — document in README that disabling a category in options makes its event entity unavailable, breaking dependent automations.
+- [ ] **`unique_id` format** in README — document the `{entry_id}_{category}_{sensor_type}` pattern; explicitly note that UI renames preserve `unique_id` so automations are safe.
+
+### QA
+
+- [ ] **Verify update-in-place** (carried from v1.1.0 QA) — test that a HACS file copy followed by **Settings → Integrations → UniFi Alerts → ⋮ → Reload** is sufficient; no HA restart required. If restart is required, investigate Python module caching and fix.
+- [ ] **Optional: integration test for full rotation cycle** — options-flow → credential update → entry-update → reload → webhook re-registration, end-to-end. Unit steps are already covered; this is an extra guard.
+
+---
+
 ## v2.0.0 — HACS default catalogue
 
 Prerequisites for submitting to https://github.com/hacs/default.
 
-- [ ] Replace placeholder `brand/icon.png` with a real 256×256 icon
-- [ ] At least 2 tagged releases with passing CI
+- [x] `brand/icon.png` is a real 256×256 RGBA PNG (confirmed 2026-04-30 audit)
+- [x] At least 2 tagged releases with passing CI
 - [x] Create `info.md` (HACS display page)
 - [ ] All v1.x issues resolved
 - [ ] Submit PR to `hacs/default`
