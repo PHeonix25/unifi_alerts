@@ -137,9 +137,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await runtime_data.client.close()
         # Unregister domain-level services only when the last entry is gone
         remaining = [
-            e
-            for e in hass.config_entries.async_entries(DOMAIN)
-            if e.entry_id != entry.entry_id
+            e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id
         ]
         if not remaining:
             async_unregister_services(hass)
