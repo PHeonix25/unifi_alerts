@@ -1,6 +1,37 @@
 # History
 
-## 2026-04-30 — Expose per-category state (incl. `last_cleared_at`) in diagnostics
+## 2026-04-30 — Comprehensive codebase audit: TODO and ROADMAP updated for v2.0.0 lead-up
+
+Full multi-perspective audit (senior architect, solution architect, security architect, quality architect) of the dev codebase at v1.4.0-pre2. Goal: confirm every remaining TODO item is still required, find any new gaps, and produce a granular, themed ROADMAP from v1.4.0 through v2.0.0.
+
+### Findings — stale items removed
+
+- **"No test for webhook dedup window"** was still in `docs/TODO.md` Testing section. `TestPushDedup` in `test_coordinator.py` was added in the 2026-04-29 cluster A session and covers same/distinct keys, distinct categories, window expiry, and the empty-key edge case. Item removed from TODO.md.
+
+### Findings — new items discovered
+
+- **`_auto_clear` does not persist the watermark** (`coordinator.py:298-304`): `_auto_clear()` calls `state.clear()` (which sets `last_cleared_at` in memory) but never awaits `_async_persist_watermarks()`. Timer-triggered auto-clears therefore lose their watermark across HA restarts — `open_count` jumps back to the lifetime total on the next poll. Fix: add `await self._async_persist_watermarks()` after `state.clear()`. Added to TODO.md and ROADMAP.md v1.6.0 with a companion test `test_auto_clear_persists_watermark`.
+- **Button entities missing `CoordinatorEntity` mixin** (`button.py`): `UniFiClearCategoryButton` and `UniFiClearAllButton` extend `ButtonEntity` directly. They have no `available` property checking coordinator state, so both buttons always appear available even when their category is disabled — inconsistent with every other platform file. Added to TODO.md and ROADMAP.md v1.6.0.
+- **`async_migrate_entry` needed for `CONF_IS_UNIFI_OS` removal**: the planned UniFi OS only code simplification strips `CONF_IS_UNIFI_OS` from the codebase, but existing entry.data records carry this key. Without `async_migrate_entry` (VERSION 1 → 2), old installs accumulate a stale key indefinitely. Added to TODO.md and ROADMAP.md v1.4.0 alongside the code simplification item.
+
+### Findings — ROADMAP corrections
+
+- **Open-count watermark**: `ROADMAP.md § v1.4.0` still showed `[ ]` for the watermark item despite it being fully implemented and shipped in the 2026-04-29 session. Marked `[x]` with a note about the `_auto_clear` persistence gap.
+- **SSL fail-open line numbers**: the two v1.2.0 / v1.4.0 entries describing 5 separate call sites were merged into one correct entry with current line numbers (`:134`, `:197`, `:214`, `:260`, `:296`).
+- **`allow_redirects` and config-flow line numbers** updated to match current `unifi_client.py:220,233` and `config_flow.py:82,243,366`.
+- **`__init__.py` exception message line numbers** corrected to `:57,60`.
+- **`config_flow.py` private `_is_unifi_os` access** line numbers corrected to `106,261,395`.
+- **`brand/icon.png`**: ROADMAP v2.0.0 still listed "Replace placeholder icon" — the file is a real 256×256 RGBA PNG. Marked `[x]`.
+
+### ROADMAP: new release sections
+
+Added three new intermediate release sections to chunk the backlog between v1.4.0 and v2.0.0:
+
+- **v1.5.0 — Security hardening II**: config-flow `ClientSession` → `async_get_clientsession`, credential-fragment logging fix, `allow_redirects` probe fix, options-flow staging refactor (atomic credential persistence + `verify_ssl` fix), `close()` logout error logging, document secret rotation threat model.
+- **v1.6.0 — Reliability + completeness**: `_auto_clear` watermark persistence, `open_count` stale on webhook, `_category_states` reload persistence, epoch-ms timestamp fix, silent JSON-parse logging, `make lint` expansion, `test_auto_clear_persists_watermark`, `test_from_api_alarm_epoch_ms`, interleaving test, button `CoordinatorEntity` mixin, private `_is_unifi_os` property.
+- **v1.7.0 — Documentation + architecture**: mypy strict, `has_entity_name` + `_attr_translation_key` migration, split test_config_flow.py, sensor device_class, plus all 8 documentation items (firmware matrix, troubleshooting/FAQ, uninstall, local-network warning, setup copy warning, privacy section, automation edge case, unique_id docs), and QA/verify-update-in-place.
+
+
 
 Closed the v1.4.0 high-value item *Expose `last_cleared_at` in diagnostics* (the TODO heading used the older name `last_acknowledged_at`, but the actual `CategoryState` attribute and the new diagnostics key are both `last_cleared_at`). Previously `diagnostics.py` only emitted the rollup totals (`any_alerting`, `rollup_alert_count`, `rollup_open_count`) plus webhook URLs, which made it impossible for users debugging unexpected `open_count` values to see the per-category acknowledgement watermark.
 
