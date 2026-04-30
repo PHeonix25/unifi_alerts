@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
@@ -18,8 +17,6 @@ from .const import (
     DATA_WEBHOOK_IDS,
     DOMAIN,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 _TO_REDACT: set[str] = {CONF_PASSWORD, CONF_API_KEY, CONF_USERNAME, CONF_WEBHOOK_SECRET}
 

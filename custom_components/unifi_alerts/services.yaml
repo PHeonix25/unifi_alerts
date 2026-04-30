@@ -32,7 +32,8 @@ clear_category:
         multi-controller households). Leave blank to clear across all entries.
       required: false
       selector:
-        text:
+        config_entry:
+          integration: unifi_alerts
 
 clear_all:
   name: Clear all
@@ -47,4 +48,5 @@ clear_all:
         multi-controller households). Leave blank to clear across all entries.
       required: false
       selector:
-        text:
+        config_entry:
+          integration: unifi_alerts
