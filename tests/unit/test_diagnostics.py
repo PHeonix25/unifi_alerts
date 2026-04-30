@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,6 +17,7 @@ from custom_components.unifi_alerts.const import (
     DOMAIN,
 )
 from custom_components.unifi_alerts.diagnostics import async_get_config_entry_diagnostics
+from custom_components.unifi_alerts.models import CategoryState
 
 _SAMPLE_WEBHOOK_URLS = {
     cat: f"http://homeassistant.local/api/webhook/unifi_alerts_{cat}" for cat in ALL_CATEGORIES
@@ -44,12 +46,18 @@ def _make_entry(entry_id: str = "test_entry", extra_data: dict | None = None) ->
 
 
 def _make_coordinator(
-    any_alerting: bool = False, rollup_alert_count: int = 0, rollup_open_count: int = 0
+    any_alerting: bool = False,
+    rollup_alert_count: int = 0,
+    rollup_open_count: int = 0,
+    category_states: dict[str, CategoryState] | None = None,
 ) -> MagicMock:
     coordinator = MagicMock()
     coordinator.any_alerting = any_alerting
     coordinator.rollup_alert_count = rollup_alert_count
     coordinator.rollup_open_count = rollup_open_count
+    coordinator.category_states = category_states if category_states is not None else {
+        cat: CategoryState(category=cat) for cat in ALL_CATEGORIES
+    }
     return coordinator
 
 
@@ -120,3 +128,45 @@ async def test_diagnostics_preserves_non_sensitive_config() -> None:
 
     assert result["config_entry"]["controller_url"] == "https://192.168.1.1"
     assert result["config_entry"]["username"] == "**REDACTED**"
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_exposes_per_category_state() -> None:
+    cleared_at = datetime(2026, 4, 30, 12, 0, 0, tzinfo=UTC)
+    cat = ALL_CATEGORIES[0]
+    states = {c: CategoryState(category=c) for c in ALL_CATEGORIES}
+    states[cat] = CategoryState(
+        category=cat,
+        enabled=True,
+        is_alerting=True,
+        alert_count=4,
+        open_count=2,
+        last_cleared_at=cleared_at,
+    )
+    coordinator = _make_coordinator(category_states=states)
+    entry = _make_entry()
+    hass = _make_hass(entry.entry_id, coordinator)
+
+    result = await async_get_config_entry_diagnostics(hass, entry)
+
+    categories = result["coordinator"]["categories"]
+    assert set(categories.keys()) == set(ALL_CATEGORIES)
+    assert categories[cat] == {
+        "enabled": True,
+        "is_alerting": True,
+        "open_count": 2,
+        "alert_count": 4,
+        "last_cleared_at": cleared_at.isoformat(),
+    }
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_per_category_last_cleared_at_none_when_unset() -> None:
+    coordinator = _make_coordinator()
+    entry = _make_entry()
+    hass = _make_hass(entry.entry_id, coordinator)
+
+    result = await async_get_config_entry_diagnostics(hass, entry)
+
+    for cat in ALL_CATEGORIES:
+        assert result["coordinator"]["categories"][cat]["last_cleared_at"] is None
