@@ -2,6 +2,11 @@
 # group merged PRs by category instead of dumping a flat list. Categories are
 # matched by PR labels; PRs with no matching label fall through to "Other".
 #
+# The labels referenced below MUST exist on the repository for grouping to
+# work. Run `scripts/setup-labels.sh` once per fork to create the non-default
+# labels (`security`, `tests`, `ci`, `github-actions`, `dependencies`). The
+# `bug`, `enhancement`, and `documentation` labels are GitHub defaults.
+#
 # Pair this file with `gh release create --generate-notes` in
 # `.github/workflows/release.yml` so each release surfaces a categorised
 # summary scoped to commits between the previous tag and the current one.
@@ -23,11 +28,9 @@ changelog:
     - title: 🚀 Features
       labels:
         - "enhancement"
-        - "feature"
     - title: 📚 Documentation
       labels:
         - "documentation"
-        - "docs"
     - title: 🧪 Tests
       labels:
         - "tests"
