@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
@@ -14,12 +13,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_USERNAME,
     CONF_WEBHOOK_SECRET,
-    DATA_COORDINATOR,
-    DATA_WEBHOOK_IDS,
-    DOMAIN,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 _TO_REDACT: set[str] = {CONF_PASSWORD, CONF_API_KEY, CONF_USERNAME, CONF_WEBHOOK_SECRET}
 
@@ -33,11 +27,12 @@ async def async_get_config_entry_diagnostics(
     Exposes webhook URLs (needed for UniFi Alarm Manager configuration)
     alongside redacted config and live coordinator state.
     """
-    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-    coordinator = entry_data.get(DATA_COORDINATOR)
+    runtime_data = getattr(entry, "runtime_data", None)
+    coordinator = runtime_data.coordinator if runtime_data is not None else None
     # Strip token query params so secrets are not exposed in shared diagnostics output
     webhook_urls: dict[str, str] = {
-        cat: url.split("?")[0] for cat, url in entry_data.get(DATA_WEBHOOK_IDS, {}).items()
+        cat: url.split("?")[0]
+        for cat, url in (runtime_data.webhook_urls if runtime_data is not None else {}).items()
     }
 
     coordinator_info: dict[str, Any]

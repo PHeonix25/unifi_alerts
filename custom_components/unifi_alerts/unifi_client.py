@@ -351,8 +351,4 @@ class UniFiClient:
                 "https://github.com/PHeonix25/unifi_alerts/issues",
                 key,
             )
-        # Fallback: check subsystem field
-        subsystem = alarm.get("subsystem", "").lower()
-        if subsystem in ("lan", "wlan"):
-            return None  # too broad — skip unless key matched
         return None

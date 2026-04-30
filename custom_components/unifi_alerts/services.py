@@ -8,7 +8,7 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 
-from .const import ALL_CATEGORIES, DATA_COORDINATOR, DOMAIN
+from .const import ALL_CATEGORIES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,20 +33,19 @@ CLEAR_ALL_SCHEMA = vol.Schema(
 
 
 def _get_coordinators(hass: HomeAssistant, entry_id: str | None):
-    """Yield coordinator(s) from hass.data, optionally filtered by entry_id."""
-    domain_data: dict = hass.data.get(DOMAIN, {})
+    """Yield coordinator(s) from loaded entries, optionally filtered by entry_id."""
     if entry_id is not None:
-        entry_data = domain_data.get(entry_id)
-        if entry_data is None:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN:
             _LOGGER.warning(
                 "clear service called with unknown entry_id %r — no coordinator found",
                 entry_id,
             )
             return
-        yield entry_data[DATA_COORDINATOR]
+        yield entry.runtime_data.coordinator
     else:
-        for entry_data in domain_data.values():
-            yield entry_data[DATA_COORDINATOR]
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            yield entry.runtime_data.coordinator
 
 
 async def _handle_clear_category(call: ServiceCall) -> None:

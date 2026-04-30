@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -27,7 +28,7 @@ MOCK_CONFIG = {
     CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
     CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
     CONF_CLEAR_TIMEOUT: DEFAULT_CLEAR_TIMEOUT,
-    "verify_ssl": False,
+    CONF_VERIFY_SSL: False,
 }
 
 
@@ -43,7 +44,7 @@ def mock_unifi_client() -> Generator[MagicMock, None, None]:
 
 
 @pytest.fixture
-def sample_webhook_payload() -> dict:
+def sample_webhook_payload() -> dict[str, Any]:
     return {
         "key": "EVT_GW_WANTransition",
         "message": "WAN port went offline",
@@ -54,7 +55,7 @@ def sample_webhook_payload() -> dict:
 
 
 @pytest.fixture
-def sample_alarm_record() -> dict:
+def sample_alarm_record() -> dict[str, Any]:
     return {
         "key": "EVT_IPS_ThreatDetected",
         "msg": "Threat detected from 1.2.3.4",
@@ -76,6 +77,7 @@ def make_hass() -> MagicMock:
     hass.config_entries.async_forward_entry_setups = AsyncMock()
     hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
     hass.config_entries.async_reload = AsyncMock()
+    hass.config_entries.async_entries = MagicMock(return_value=[])
     return hass
 
 

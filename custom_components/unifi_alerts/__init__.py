@@ -15,13 +15,11 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from .const import (
     CONF_CONTROLLER_URL,
     CONF_VERIFY_SSL,
-    DATA_COORDINATOR,
-    DATA_UNREGISTER_WEBHOOKS,
-    DATA_WEBHOOK_IDS,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
 )
 from .coordinator import UniFiAlertsCoordinator
+from .models import RuntimeData
 from .services import async_register_services, async_unregister_services
 from .unifi_client import InvalidAuthError, UniFiClient
 from .webhook_handler import WebhookManager
@@ -38,8 +36,6 @@ PLATFORMS: list[Platform] = [
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up UniFi Alerts from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
-
     verify_ssl: bool = entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
     if not verify_ssl:
         _LOGGER.warning(
@@ -95,12 +91,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     webhook_urls = webhook_manager.register_all()
 
-    hass.data[DOMAIN][entry.entry_id] = {
-        DATA_COORDINATOR: coordinator,
-        DATA_WEBHOOK_IDS: webhook_urls,
-        DATA_UNREGISTER_WEBHOOKS: webhook_manager.unregister_all,
-        "client": client,
-    }
+    entry.runtime_data = RuntimeData(
+        coordinator=coordinator,
+        webhook_urls=webhook_urls,
+        unregister_webhooks=webhook_manager.unregister_all,
+        client=client,
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -135,18 +131,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        entry_data = hass.data[DOMAIN].pop(entry.entry_id, {})
-        coordinator = entry_data.get(DATA_COORDINATOR)
-        if coordinator:
-            await coordinator.async_shutdown()
-        unregister = entry_data.get(DATA_UNREGISTER_WEBHOOKS)
-        if unregister:
-            unregister()
-        client = entry_data.get("client")
-        if client:
-            await client.close()
+        runtime_data: RuntimeData = entry.runtime_data
+        await runtime_data.coordinator.async_shutdown()
+        runtime_data.unregister_webhooks()
+        await runtime_data.client.close()
         # Unregister domain-level services only when the last entry is gone
-        if not hass.data.get(DOMAIN):
+        remaining = [
+            e
+            for e in hass.config_entries.async_entries(DOMAIN)
+            if e.entry_id != entry.entry_id
+        ]
+        if not remaining:
             async_unregister_services(hass)
     return unload_ok
 
