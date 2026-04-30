@@ -42,10 +42,22 @@ async def async_get_config_entry_diagnostics(
 
     coordinator_info: dict[str, Any]
     if coordinator is not None:
+        categories: dict[str, dict[str, Any]] = {}
+        for cat, state in coordinator.category_states.items():
+            categories[cat] = {
+                "enabled": state.enabled,
+                "is_alerting": state.is_alerting,
+                "open_count": state.open_count,
+                "alert_count": state.alert_count,
+                "last_cleared_at": (
+                    state.last_cleared_at.isoformat() if state.last_cleared_at is not None else None
+                ),
+            }
         coordinator_info = {
             "any_alerting": coordinator.any_alerting,
             "rollup_alert_count": coordinator.rollup_alert_count,
             "rollup_open_count": coordinator.rollup_open_count,
+            "categories": categories,
         }
     else:
         coordinator_info = {}

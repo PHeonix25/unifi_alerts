@@ -1,5 +1,24 @@
 # History
 
+## 2026-04-30 — Expose per-category state (incl. `last_cleared_at`) in diagnostics
+
+Closed the v1.4.0 high-value item *Expose `last_cleared_at` in diagnostics* (the TODO heading used the older name `last_acknowledged_at`, but the actual `CategoryState` attribute and the new diagnostics key are both `last_cleared_at`). Previously `diagnostics.py` only emitted the rollup totals (`any_alerting`, `rollup_alert_count`, `rollup_open_count`) plus webhook URLs, which made it impossible for users debugging unexpected `open_count` values to see the per-category acknowledgement watermark.
+
+### Changes
+
+- **`diagnostics.py`** — added a `categories` map under `coordinator` keyed by category name. Each entry now exposes `enabled`, `is_alerting`, `open_count`, `alert_count`, and `last_cleared_at` (ISO-formatted, or `null` when unset). Iterates `coordinator.category_states` (the existing public property on `UniFiAlertsCoordinator`) so no new coordinator API was required. The pre-existing `coordinator is None` short-circuit (used when diagnostics fires during a setup failure) is preserved verbatim — no risk of a `None.category_states` AttributeError.
+- **`tests/unit/test_diagnostics.py`** — `_make_coordinator` helper now accepts an optional `category_states` mapping and defaults to a populated dict of empty `CategoryState` objects so existing tests still see the new `categories` key without modification. Two new tests added (8 total in the file): `test_diagnostics_exposes_per_category_state` (populates one category with non-default values, including a real `datetime` watermark, and asserts the exact dict shape including the ISO-formatted timestamp) and `test_diagnostics_per_category_last_cleared_at_none_when_unset` (asserts `null`/`None` is emitted as `None` rather than crashing or omitting the key).
+
+### Why
+
+Direct response to the TODO item: surfaces the acknowledgement watermark and per-category counters that users need when `open_count` looks wrong. Pure diagnostic-only change — no behaviour, no schema-of-record changes, no new public API — so the failure modes are bounded to the diagnostics download itself.
+
+### Verification
+
+`make check` passes locally: ruff lint+format, mypy, HACS preflight, strings/translations drift, and the full pytest suite (8/8 in `test_diagnostics.py`).
+
+Removed the matching item from `docs/TODO.md § High-value improvements`.
+
 ## 2026-04-29 — Overnight v1.4.0 hardening pass (clusters A and D)
 
 Two PRs targeting the v1.4.0 hardening backlog from `docs/ROADMAP.md`. Both bracketed by full security/architecture/quality audits (BEFORE on clean `dev`, AFTER on the merged audit branch) using three parallel agents per pass.
