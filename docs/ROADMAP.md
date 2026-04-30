@@ -4,7 +4,7 @@ This file maps TODO items to planned releases. Items within each release are ord
 
 > **Branching model:** all development happens on `dev` (pre-release versions: `X.Y.Z-preN`). Stable releases are tagged on `main` after a PR merge. See `CLAUDE.md § Branching strategy and versioning` for the full workflow.
 
-> **Current status:** v1.0.0, v1.1.0, v1.2.0 released. v1.3.0 released (2026-04-29). Active development continues on `dev` at v1.4.0-pre2. Planned path to v2.0.0: v1.4.0 (UniFi OS only + watermark bug) → v1.5.0 (security hardening II) → v1.6.0 (reliability + completeness) → v1.7.0 (documentation + architecture) → v2.0.0 (HACS default).
+> **Current status:** v1.0.0, v1.1.0, v1.2.0 released. v1.3.0 released (2026-04-29). Active development continues on `dev` at v1.4.0-pre2. Planned path to v2.0.0: v1.4.0 (UniFi OS only) → v1.5.0 (security hardening II) → v1.6.0 (reliability + completeness) → v1.7.0 (documentation + architecture) → v2.0.0 (HACS default).
 
 ---
 
@@ -202,7 +202,7 @@ Released 2026-04-29. Five pre-release checkpoints (`pre1`–`pre5`) on `dev`.
 
 ### Open-count watermark (PR #44)
 
-- [x] **Per-category acknowledgement watermark for `open_count`** — shipped 2026-04-29 (before v1.4.0-pre1). `coordinator.py` has `async_restore_watermarks()`, `_async_persist_watermarks()`, `async_clear_category()`, and `async_clear_all()`. The `_async_update_data()` polling path filters alarms newer than `last_cleared_at`. Watermarks stored via `Store` and survive HA restarts. **Bug noted during 2026-04-30 audit:** `_auto_clear()` does NOT call `_async_persist_watermarks()` — auto-clear-triggered watermarks are lost on restart. Fix tracked below in Reliability / correctness.
+- [x] **Per-category acknowledgement watermark for `open_count`** — shipped 2026-04-29 (before v1.4.0-pre1). `coordinator.py` has `async_restore_watermarks()`, `_async_persist_watermarks()`, `async_clear_category()`, and `async_clear_all()`. The `_async_update_data()` polling path filters alarms newer than `last_cleared_at`. Watermarks stored via `Store` and survive HA restarts. **Bug noted during 2026-04-30 audit:** `_auto_clear()` does NOT call `_async_persist_watermarks()` — auto-clear-triggered watermarks are lost on restart. Fix tracked in v1.6.0 Reliability / correctness.
 
 ### Hardening carry-overs (from v1.2.0 audit)
 
