@@ -54,12 +54,15 @@ def make_call(hass: MagicMock, data: dict) -> MagicMock:
 
 def make_hass(entries: dict[str, MagicMock] | None = None) -> MagicMock:
     """Return a minimal hass mock with config_entries wired up."""
+    from homeassistant.config_entries import ConfigEntryState
+
     hass = MagicMock()
     entry_mocks: list[MagicMock] = []
     for entry_id, coordinator in (entries or {}).items():
         e = MagicMock()
         e.entry_id = entry_id
         e.domain = DOMAIN
+        e.state = ConfigEntryState.LOADED
         e.runtime_data = MagicMock()
         e.runtime_data.coordinator = coordinator
         entry_mocks.append(e)
@@ -358,3 +361,77 @@ class TestServicesWiredFromInit:
             await async_unload_entry(hass, entry1)
 
         mock_unregister.assert_not_called()
+
+
+# ── _get_coordinators guard for non-loaded entries ────────────────────────────
+
+
+class TestGetCoordinatorsGuard:
+    """Verify _get_coordinators skips / warns for entries that are not LOADED.
+
+    async_entries(DOMAIN) can return entries in SETUP_RETRY or SETUP_ERROR state
+    that never populated entry.runtime_data.  Accessing .runtime_data.coordinator
+    on such entries raises AttributeError.  The fix filters the iterate-all branch
+    to state == ConfigEntryState.LOADED and adds an explicit state check in the
+    single-entry branch.
+    """
+
+    @pytest.mark.asyncio
+    async def test_iterate_all_skips_setup_error_entry(self):
+        """An entry in SETUP_ERROR state must be silently skipped when iterating all entries."""
+        from homeassistant.config_entries import ConfigEntryState
+
+        coord_loaded = make_coordinator()
+        hass = MagicMock()
+
+        # Loaded entry — should be yielded
+        loaded_entry = MagicMock()
+        loaded_entry.entry_id = "entry-loaded"
+        loaded_entry.domain = DOMAIN
+        loaded_entry.state = ConfigEntryState.LOADED
+        loaded_entry.runtime_data = MagicMock()
+        loaded_entry.runtime_data.coordinator = coord_loaded
+
+        # Failed entry — must be skipped; runtime_data is missing entirely
+        failed_entry = MagicMock(spec=[])  # no attributes at all — accessing any raises
+        failed_entry.domain = DOMAIN
+        failed_entry.state = ConfigEntryState.SETUP_ERROR
+
+        hass.config_entries.async_entries = MagicMock(return_value=[loaded_entry, failed_entry])
+        hass.config_entries.async_get_entry = MagicMock(return_value=None)
+
+        call = make_call(hass, {})
+        await _handle_clear_all(call)
+
+        # Loaded coordinator must have been called; failed entry must not raise AttributeError
+        coord_loaded.async_clear_all.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_single_entry_setup_retry_logs_warning_and_does_not_raise(self):
+        """Calling clear_category with a specific entry_id that is in SETUP_RETRY state
+        must log a warning and return without raising AttributeError.
+        """
+        from homeassistant.config_entries import ConfigEntryState
+
+        hass = MagicMock()
+
+        # Entry in SETUP_RETRY — runtime_data is absent; accessing it should not happen
+        retry_entry = MagicMock(spec=["entry_id", "domain", "state"])
+        retry_entry.entry_id = "entry-retry"
+        retry_entry.domain = DOMAIN
+        retry_entry.state = ConfigEntryState.SETUP_RETRY
+
+        hass.config_entries.async_get_entry = MagicMock(return_value=retry_entry)
+        hass.config_entries.async_entries = MagicMock(return_value=[retry_entry])
+
+        call = make_call(
+            hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "entry-retry"}
+        )
+
+        with patch("custom_components.unifi_alerts.services._LOGGER") as mock_log:
+            # Must not raise — the guard should log and return early
+            await _handle_clear_category(call)
+
+        mock_log.warning.assert_called_once()
+        warning_msg = mock_log.warning.call_args[0][0]
+        assert "not loaded" in warning_msg

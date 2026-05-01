@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 
@@ -42,10 +43,18 @@ def _get_coordinators(hass: HomeAssistant, entry_id: str | None):
                 entry_id,
             )
             return
+        if entry.state != ConfigEntryState.LOADED:
+            _LOGGER.warning(
+                "clear service called on entry %r which is not loaded (state: %s)",
+                entry_id,
+                entry.state,
+            )
+            return
         yield entry.runtime_data.coordinator
     else:
         for entry in hass.config_entries.async_entries(DOMAIN):
-            yield entry.runtime_data.coordinator
+            if entry.state == ConfigEntryState.LOADED:
+                yield entry.runtime_data.coordinator
 
 
 async def _handle_clear_category(call: ServiceCall) -> None:
