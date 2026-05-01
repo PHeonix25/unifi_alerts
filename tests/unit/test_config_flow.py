@@ -277,7 +277,11 @@ async def test_options_categories_submit_routes_to_finish() -> None:
 @pytest.mark.asyncio
 async def test_options_finish_submit_creates_entry() -> None:
     """Submitting the finish step (empty user_input) must call async_create_entry with pending options."""
-    from custom_components.unifi_alerts.const import CONF_CLEAR_TIMEOUT, CONF_POLL_INTERVAL, CONF_SITE
+    from custom_components.unifi_alerts.const import (
+        CONF_CLEAR_TIMEOUT,
+        CONF_POLL_INTERVAL,
+        CONF_SITE,
+    )
 
     config_entry = MagicMock()
     config_entry.data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES, CONF_WEBHOOK_SECRET: "s"}
@@ -305,7 +309,11 @@ async def test_options_finish_submit_creates_entry() -> None:
 @pytest.mark.asyncio
 async def test_options_flow_full_cycle() -> None:
     """Full options flow: blank credentials → categories → finish → create_entry."""
-    from custom_components.unifi_alerts.const import CONF_CLEAR_TIMEOUT, CONF_POLL_INTERVAL, CONF_SITE
+    from custom_components.unifi_alerts.const import (
+        CONF_CLEAR_TIMEOUT,
+        CONF_POLL_INTERVAL,
+        CONF_SITE,
+    )
 
     config_entry = MagicMock()
     config_entry.data = {

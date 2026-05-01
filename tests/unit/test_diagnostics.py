@@ -12,9 +12,6 @@ from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
     CONF_API_KEY,
     CONF_PASSWORD,
-    DATA_COORDINATOR,
-    DATA_WEBHOOK_IDS,
-    DOMAIN,
 )
 from custom_components.unifi_alerts.diagnostics import async_get_config_entry_diagnostics
 from custom_components.unifi_alerts.models import CategoryState
@@ -24,24 +21,23 @@ _SAMPLE_WEBHOOK_URLS = {
 }
 
 
-def _make_hass(entry_id: str, coordinator: MagicMock) -> MagicMock:
-    hass = MagicMock()
-    hass.data = {
-        DOMAIN: {
-            entry_id: {
-                DATA_COORDINATOR: coordinator,
-                DATA_WEBHOOK_IDS: _SAMPLE_WEBHOOK_URLS,
-            }
-        }
-    }
-    return hass
-
-
 def _make_entry(entry_id: str = "test_entry", extra_data: dict | None = None) -> MagicMock:
     entry = MagicMock()
     entry.entry_id = entry_id
     entry.data = {**MOCK_CONFIG, **(extra_data or {})}
     entry.options = {}
+    return entry
+
+
+def _make_entry_with_runtime(
+    coordinator: MagicMock,
+    entry_id: str = "test_entry",
+    extra_data: dict | None = None,
+) -> MagicMock:
+    entry = _make_entry(entry_id=entry_id, extra_data=extra_data)
+    entry.runtime_data = MagicMock()
+    entry.runtime_data.coordinator = coordinator
+    entry.runtime_data.webhook_urls = _SAMPLE_WEBHOOK_URLS
     return entry
 
 
@@ -63,8 +59,8 @@ def _make_coordinator(
 
 @pytest.mark.asyncio
 async def test_diagnostics_redacts_password() -> None:
-    entry = _make_entry()
-    hass = _make_hass(entry.entry_id, _make_coordinator())
+    entry = _make_entry_with_runtime(_make_coordinator())
+    hass = MagicMock()
 
     result = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -73,8 +69,8 @@ async def test_diagnostics_redacts_password() -> None:
 
 @pytest.mark.asyncio
 async def test_diagnostics_redacts_api_key() -> None:
-    entry = _make_entry(extra_data={CONF_API_KEY: "super-secret-key"})
-    hass = _make_hass(entry.entry_id, _make_coordinator())
+    entry = _make_entry_with_runtime(_make_coordinator(), extra_data={CONF_API_KEY: "super-secret-key"})
+    hass = MagicMock()
 
     result = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -83,8 +79,8 @@ async def test_diagnostics_redacts_api_key() -> None:
 
 @pytest.mark.asyncio
 async def test_diagnostics_exposes_all_webhook_urls() -> None:
-    entry = _make_entry()
-    hass = _make_hass(entry.entry_id, _make_coordinator())
+    entry = _make_entry_with_runtime(_make_coordinator())
+    hass = MagicMock()
 
     result = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -96,8 +92,8 @@ async def test_diagnostics_exposes_all_webhook_urls() -> None:
 @pytest.mark.asyncio
 async def test_diagnostics_includes_coordinator_state() -> None:
     coordinator = _make_coordinator(any_alerting=True, rollup_alert_count=3, rollup_open_count=5)
-    entry = _make_entry()
-    hass = _make_hass(entry.entry_id, coordinator)
+    entry = _make_entry_with_runtime(coordinator)
+    hass = MagicMock()
 
     result = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -108,10 +104,11 @@ async def test_diagnostics_includes_coordinator_state() -> None:
 
 @pytest.mark.asyncio
 async def test_diagnostics_handles_missing_entry_data() -> None:
-    """Diagnostics should not raise if entry data is absent (e.g. during setup failure)."""
+    """Diagnostics should not raise if runtime_data is absent (e.g. during setup failure)."""
     entry = _make_entry()
+    # Ensure runtime_data is not set (simulates a failed setup)
+    del entry.runtime_data
     hass = MagicMock()
-    hass.data = {DOMAIN: {}}  # entry_id not present
 
     result = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -121,8 +118,8 @@ async def test_diagnostics_handles_missing_entry_data() -> None:
 
 @pytest.mark.asyncio
 async def test_diagnostics_preserves_non_sensitive_config() -> None:
-    entry = _make_entry()
-    hass = _make_hass(entry.entry_id, _make_coordinator())
+    entry = _make_entry_with_runtime(_make_coordinator())
+    hass = MagicMock()
 
     result = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -144,8 +141,8 @@ async def test_diagnostics_exposes_per_category_state() -> None:
         last_cleared_at=cleared_at,
     )
     coordinator = _make_coordinator(category_states=states)
-    entry = _make_entry()
-    hass = _make_hass(entry.entry_id, coordinator)
+    entry = _make_entry_with_runtime(coordinator)
+    hass = MagicMock()
 
     result = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -163,8 +160,8 @@ async def test_diagnostics_exposes_per_category_state() -> None:
 @pytest.mark.asyncio
 async def test_diagnostics_per_category_last_cleared_at_none_when_unset() -> None:
     coordinator = _make_coordinator()
-    entry = _make_entry()
-    hass = _make_hass(entry.entry_id, coordinator)
+    entry = _make_entry_with_runtime(coordinator)
+    hass = MagicMock()
 
     result = await async_get_config_entry_diagnostics(hass, entry)
 

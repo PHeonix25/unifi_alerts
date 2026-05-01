@@ -10,8 +10,6 @@ import voluptuous as vol
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
     CATEGORY_NETWORK_WAN,
-    CATEGORY_SECURITY_THREAT,
-    DATA_COORDINATOR,
     DOMAIN,
 )
 from custom_components.unifi_alerts.models import CategoryState
@@ -22,12 +20,11 @@ from custom_components.unifi_alerts.services import (
     CLEAR_CATEGORY_SCHEMA,
     SERVICE_CLEAR_ALL,
     SERVICE_CLEAR_CATEGORY,
-    async_register_services,
-    async_unregister_services,
     _handle_clear_all,
     _handle_clear_category,
+    async_register_services,
+    async_unregister_services,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -56,11 +53,20 @@ def make_call(hass: MagicMock, data: dict) -> MagicMock:
 
 
 def make_hass(entries: dict[str, MagicMock] | None = None) -> MagicMock:
-    """Return a minimal hass mock with hass.data wired up."""
+    """Return a minimal hass mock with config_entries wired up."""
     hass = MagicMock()
-    hass.data = {DOMAIN: {}}
+    entry_mocks: list[MagicMock] = []
     for entry_id, coordinator in (entries or {}).items():
-        hass.data[DOMAIN][entry_id] = {DATA_COORDINATOR: coordinator}
+        e = MagicMock()
+        e.entry_id = entry_id
+        e.domain = DOMAIN
+        e.runtime_data = MagicMock()
+        e.runtime_data.coordinator = coordinator
+        entry_mocks.append(e)
+    hass.config_entries.async_entries = MagicMock(return_value=entry_mocks)
+    hass.config_entries.async_get_entry = MagicMock(
+        side_effect=lambda eid: next((e for e in entry_mocks if e.entry_id == eid), None)
+    )
     return hass
 
 
@@ -307,19 +313,17 @@ class TestServicesWiredFromInit:
         from conftest import make_entry, make_hass
 
         from custom_components.unifi_alerts import async_unload_entry
-        from custom_components.unifi_alerts.const import DATA_COORDINATOR, DATA_UNREGISTER_WEBHOOKS, DATA_WEBHOOK_IDS
 
         hass = make_hass()
         entry = make_entry()
         mock_client, mock_coord, mock_wm = self._make_setup_patches()
 
-        # Populate as if setup completed
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-            DATA_COORDINATOR: mock_coord,
-            DATA_WEBHOOK_IDS: {},
-            DATA_UNREGISTER_WEBHOOKS: mock_wm.unregister_all,
-            "client": mock_client,
-        }
+        # Populate runtime_data as if setup completed; only this entry exists
+        entry.runtime_data = MagicMock()
+        entry.runtime_data.coordinator = mock_coord
+        entry.runtime_data.unregister_webhooks = mock_wm.unregister_all
+        entry.runtime_data.client = mock_client
+        hass.config_entries.async_entries = MagicMock(return_value=[entry])
 
         with patch(
             "custom_components.unifi_alerts.async_unregister_services"
@@ -333,22 +337,19 @@ class TestServicesWiredFromInit:
         from conftest import make_entry, make_hass
 
         from custom_components.unifi_alerts import async_unload_entry
-        from custom_components.unifi_alerts.const import DATA_COORDINATOR, DATA_UNREGISTER_WEBHOOKS, DATA_WEBHOOK_IDS
 
         hass = make_hass()
         entry1 = make_entry(entry_id="entry-1")
         entry2 = make_entry(entry_id="entry-2")
         mock_client, mock_coord, mock_wm = self._make_setup_patches()
 
-        # Two entries registered
-        hass.data.setdefault(DOMAIN, {})
-        for eid in (entry1.entry_id, entry2.entry_id):
-            hass.data[DOMAIN][eid] = {
-                DATA_COORDINATOR: mock_coord,
-                DATA_WEBHOOK_IDS: {},
-                DATA_UNREGISTER_WEBHOOKS: mock_wm.unregister_all,
-                "client": mock_client,
-            }
+        # Two entries registered; unloading entry1 but entry2 remains
+        for entry in (entry1, entry2):
+            entry.runtime_data = MagicMock()
+            entry.runtime_data.coordinator = mock_coord
+            entry.runtime_data.unregister_webhooks = mock_wm.unregister_all
+            entry.runtime_data.client = mock_client
+        hass.config_entries.async_entries = MagicMock(return_value=[entry1, entry2])
 
         with patch(
             "custom_components.unifi_alerts.async_unregister_services"

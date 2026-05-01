@@ -23,8 +23,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.unifi_alerts.const import (
     CATEGORY_NETWORK_WAN,
     CONF_WEBHOOK_ID_SUFFIX,
-    DATA_COORDINATOR,
-    DATA_WEBHOOK_IDS,
     DOMAIN,
     webhook_id_for_category,
 )
@@ -86,8 +84,8 @@ async def two_entries(hass, mock_unifi_client):
 async def test_two_entries_register_distinct_webhook_urls(hass, two_entries):
     """Each entry's stored webhook URLs must include its own suffix."""
     entry_a, entry_b = two_entries
-    urls_a: dict[str, str] = hass.data[DOMAIN][entry_a.entry_id][DATA_WEBHOOK_IDS]
-    urls_b: dict[str, str] = hass.data[DOMAIN][entry_b.entry_id][DATA_WEBHOOK_IDS]
+    urls_a: dict[str, str] = entry_a.runtime_data.webhook_urls
+    urls_b: dict[str, str] = entry_b.runtime_data.webhook_urls
 
     assert SUFFIX_A in urls_a[CATEGORY_NETWORK_WAN]
     assert SUFFIX_B in urls_b[CATEGORY_NETWORK_WAN]
@@ -103,8 +101,8 @@ async def test_post_to_entry_a_does_not_affect_entry_b(hass, two_entries, hass_c
     entry B (the second-registered entry's handler) regardless of intent.
     """
     entry_a, entry_b = two_entries
-    coord_a = hass.data[DOMAIN][entry_a.entry_id][DATA_COORDINATOR]
-    coord_b = hass.data[DOMAIN][entry_b.entry_id][DATA_COORDINATOR]
+    coord_a = entry_a.runtime_data.coordinator
+    coord_b = entry_b.runtime_data.coordinator
     assert not coord_a.get_category_state(CATEGORY_NETWORK_WAN).is_alerting
     assert not coord_b.get_category_state(CATEGORY_NETWORK_WAN).is_alerting
 
@@ -127,8 +125,8 @@ async def test_post_to_entry_a_does_not_affect_entry_b(hass, two_entries, hass_c
 async def test_post_to_entry_b_does_not_affect_entry_a(hass, two_entries, hass_client):
     """The reverse: a POST to entry B's URL must only update entry B."""
     entry_a, entry_b = two_entries
-    coord_a = hass.data[DOMAIN][entry_a.entry_id][DATA_COORDINATOR]
-    coord_b = hass.data[DOMAIN][entry_b.entry_id][DATA_COORDINATOR]
+    coord_a = entry_a.runtime_data.coordinator
+    coord_b = entry_b.runtime_data.coordinator
 
     webhook_id_b = webhook_id_for_category(CATEGORY_NETWORK_WAN, SUFFIX_B)
     client = await hass_client()

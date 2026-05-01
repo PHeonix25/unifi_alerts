@@ -196,9 +196,3 @@ def webhook_id_for_category(category: str, suffix: str = "") -> str:
     if suffix:
         return f"{WEBHOOK_ID_PREFIX}{suffix}_{category}"
     return f"{WEBHOOK_ID_PREFIX}{category}"
-
-
-# Runtime data keys (stored in hass.data[DOMAIN][entry_id])
-DATA_COORDINATOR = "coordinator"
-DATA_WEBHOOK_IDS = "webhook_ids"
-DATA_UNREGISTER_WEBHOOKS = "unregister_webhooks"
