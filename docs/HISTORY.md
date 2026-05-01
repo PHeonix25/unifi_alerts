@@ -8,6 +8,16 @@ All five `self._config.get(CONF_VERIFY_SSL, False)` calls changed to use `DEFAUL
 **Track C — `_get_coordinators` guard (`services.py`):**
 `async_entries(DOMAIN)` can return entries in `SETUP_RETRY` / `SETUP_ERROR` state that never populated `runtime_data`. Accessing `.runtime_data.coordinator` on such entries raised `AttributeError`. Fixed by filtering the iterate-all branch to `state == ConfigEntryState.LOADED` and adding an explicit state check in the single-entry branch. New `TestGetCoordinatorsGuard` class in `test_services.py` covers both cases.
 
+## 2026-05-01 — v1.4.0 UniFi OS only: docs, code simplification, entry migration
+
+**Decision:** officially support only UniFi OS controllers. Classic self-hosted Network Application on bare Linux/Windows is excluded.
+
+- `README.md` / `info.md`: added "⚠ Requires UniFi OS" prerequisite section listing tested console models (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+); explicitly states classic self-hosted is not supported.
+- `unifi_client.py`: removed `_detect_unifi_os()`, `_network_path()`, the `_is_unifi_os` attribute, and all detection-based branching in `authenticate()`, `close()`, and `_login_userpass()`. All paths now hardcode `/proxy/network` prefix and `/api/auth/login` / `/api/auth/logout` UniFi OS paths. Net removal: ~60 lines.
+- `const.py`: removed `CONF_IS_UNIFI_OS = "is_unifi_os"` constant.
+- `config_flow.py`: removed `CONF_IS_UNIFI_OS` storage from credentials dict (3 sites); bumped `ConfigFlow.VERSION` from 1 to 2; added `async_migrate_entry` that strips the stale key from existing entries.
+- Tests: removed `TestNetworkPath`, `TestDetectUnifiOs`, `TestIsUnifiOsPersistence`, legacy `_is_unifi_os=False` tests and `test_apikey_success_coerces_is_unifi_os_true`; added `test_fetch_alarms_uses_proxy_network_path`; updated `TestClose` to use `test_userpass_auth_posts_to_unifi_os_logout_path`; removed `test_conf_is_unifi_os_stored_in_credentials`; added `test_async_migrate_entry_strips_conf_is_unifi_os`.
+
 ## 2026-04-30 — Comprehensive codebase audit: TODO and ROADMAP updated for v2.0.0 lead-up
 
 Full multi-perspective audit (senior architect, solution architect, security architect, quality architect) of the dev codebase at v1.4.0-pre2. Goal: confirm every remaining TODO item is still required, find any new gaps, and produce a granular, themed ROADMAP from v1.4.0 through v2.0.0.

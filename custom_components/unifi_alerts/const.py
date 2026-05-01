@@ -20,7 +20,6 @@ CONF_WEBHOOK_SECRET = "webhook_secret"
 CONF_WEBHOOK_ID_SUFFIX = "webhook_id_suffix"
 CONF_REGENERATE_WEBHOOK_SECRET = "regenerate_webhook_secret"
 CONF_SITE = "site"
-CONF_IS_UNIFI_OS = "is_unifi_os"
 
 AUTH_METHOD_USERPASS = "userpass"
 AUTH_METHOD_APIKEY = "apikey"
