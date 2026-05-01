@@ -18,3 +18,4 @@ dist/
 
 # Claude Code auto-memory internal state
 .claude/auto-memory/
+.claude/worktrees/
