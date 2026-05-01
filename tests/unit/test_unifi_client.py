@@ -144,18 +144,6 @@ class TestClassify:
         assert UniFiClient._classify(alarm) is None
 
 
-class TestNetworkPath:
-    def test_non_unifi_os_path_unchanged(self):
-        client = make_client()
-        client._is_unifi_os = False
-        assert client._network_path("/api/s/default/alarm") == "/api/s/default/alarm"
-
-    def test_unifi_os_adds_proxy_prefix(self):
-        client = make_client()
-        client._is_unifi_os = True
-        assert client._network_path("/api/s/default/alarm") == "/proxy/network/api/s/default/alarm"
-
-
 class TestHeaders:
     def test_userpass_auth_no_api_key_header(self):
         client = make_client()
@@ -184,81 +172,6 @@ def _make_response(status: int, headers: dict | None = None):
     return _ctx
 
 
-class TestDetectUnifiOs:
-    """Tests for _detect_unifi_os."""
-
-    @pytest.mark.asyncio
-    async def test_returns_true_when_csrf_token_present(self):
-        """Should return True when the response (possibly after redirect) has x-csrf-token."""
-        client = make_client()
-        ctx = _make_response(200, headers={"x-csrf-token": "abc123"})
-        client._session.get = ctx
-        result = await client._detect_unifi_os()
-        assert result is True
-
-    @pytest.mark.asyncio
-    async def test_returns_false_when_csrf_token_absent_and_system_probe_fails(self):
-        """Should return False when x-csrf-token absent and /api/system probe returns non-200."""
-        client = make_client()
-
-        @asynccontextmanager
-        async def _ctx(*args, **kwargs):
-            resp = MagicMock()
-            resp.headers = {}
-            resp.status = 404  # neither / nor /api/system indicates UniFi OS
-            yield resp
-
-        client._session.get = _ctx
-        result = await client._detect_unifi_os()
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_returns_true_when_fallback_system_probe_200(self):
-        """Should return True when x-csrf-token absent but /api/system returns 200."""
-        client = make_client()
-
-        call_count = [0]
-
-        @asynccontextmanager
-        async def _ctx(*args, **kwargs):
-            call_count[0] += 1
-            resp = MagicMock()
-            resp.headers = {}
-            resp.status = 200  # / has no csrf token; /api/system returns 200 → UniFi OS
-            yield resp
-
-        client._session.get = _ctx
-        result = await client._detect_unifi_os()
-        assert result is True
-        assert call_count[0] == 2  # primary probe + fallback probe
-
-    @pytest.mark.asyncio
-    async def test_follows_redirects(self):
-        """allow_redirects=True: final response after redirect is inspected."""
-        client = make_client()
-        # Simulate: after following redirect the final response has the token
-        ctx = _make_response(200, headers={"x-csrf-token": "redirected-token"})
-        client._session.get = ctx
-        result = await client._detect_unifi_os()
-        assert result is True
-
-    @pytest.mark.asyncio
-    async def test_exception_returns_false(self):
-        """Network errors during detection should return False (graceful fallback)."""
-        import aiohttp
-
-        client = make_client()
-
-        @asynccontextmanager
-        async def _raise(*args, **kwargs):
-            raise aiohttp.ClientConnectionError("unreachable")
-            yield  # make it a generator
-
-        client._session.get = _raise
-        result = await client._detect_unifi_os()
-        assert result is False
-
-
 class TestLoginUserpass:
     """Tests for _login_userpass error handling."""
 
@@ -270,7 +183,6 @@ class TestLoginUserpass:
         NOT a credentials problem, so we must not show 'invalid credentials'.
         """
         client = make_client()
-        client._is_unifi_os = False
         ctx = _make_response(400)
         client._session.post = ctx
         with pytest.raises(CannotConnectError):
@@ -286,7 +198,6 @@ class TestLoginUserpass:
         import aiohttp
 
         client = make_client()
-        client._is_unifi_os = False
 
         @asynccontextmanager
         async def _raise(*args, **kwargs):
@@ -303,7 +214,6 @@ class TestLoginUserpass:
     async def test_http_401_raises_invalid_auth(self):
         """HTTP 401 should still raise InvalidAuthError (bad credentials)."""
         client = make_client()
-        client._is_unifi_os = False
         ctx = _make_response(401)
         client._session.post = ctx
         with pytest.raises(InvalidAuthError):
@@ -313,7 +223,6 @@ class TestLoginUserpass:
     async def test_http_403_raises_invalid_auth(self):
         """HTTP 403 should still raise InvalidAuthError (bad credentials)."""
         client = make_client()
-        client._is_unifi_os = False
         ctx = _make_response(403)
         client._session.post = ctx
         with pytest.raises(InvalidAuthError):
@@ -321,39 +230,22 @@ class TestLoginUserpass:
 
     @pytest.mark.asyncio
     async def test_invalid_auth_error_carries_login_url(self):
-        """InvalidAuthError raised after both paths fail must carry login_url attribute."""
+        """InvalidAuthError raised must carry login_url attribute pointing to /api/auth/login."""
         client = make_client()
-        client._is_unifi_os = False
         ctx = _make_response(401)
         client._session.post = ctx
         with pytest.raises(InvalidAuthError) as exc_info:
             await client._login_userpass()
-        # Alternate path (/api/auth/login) is the last tried for a non-OS client.
+        # UniFi OS path is the only path now.
         assert exc_info.value.login_url.endswith("/api/auth/login")
 
     @pytest.mark.asyncio
-    async def test_fallback_path_succeeds_on_ucg_ultra(self):
-        """When the primary path returns 401, the alternate path is tried.
-
-        Simulates a UCG-Ultra where _is_unifi_os=False (detection miss), so the
-        primary path is /api/login (returns 401) and the fallback /api/auth/login
-        succeeds (returns 200).
-        """
+    async def test_success_returns_without_error(self):
+        """HTTP 200 from the UniFi OS login path must succeed without raising."""
         client = make_client()
-        client._is_unifi_os = False
-
-        responses = iter([401, 200])
-
-        @asynccontextmanager
-        async def _varying_post(*args, **kwargs):
-            status = next(responses)
-            resp = MagicMock()
-            resp.status = status
-            resp.raise_for_status = MagicMock()
-            yield resp
-
-        client._session.post = _varying_post
-        # Should not raise — the fallback path succeeded
+        ctx = _make_response(200)
+        client._session.post = ctx
+        # Should not raise
         await client._login_userpass()
 
 
@@ -362,13 +254,8 @@ class TestVerifyApiKey:
 
     @pytest.mark.asyncio
     async def test_always_uses_proxy_network_prefix(self):
-        """_verify_api_key must always use /proxy/network regardless of OS detection result.
-
-        API keys are UniFi OS-only, so the /proxy/network prefix is always correct.
-        Trusting _detect_unifi_os here caused 404s on UCG-Ultra and reverse proxies.
-        """
+        """_verify_api_key must always use /proxy/network prefix."""
         client = make_client({"api_key": "my-key", "verify_ssl": False})
-        client._is_unifi_os = False  # simulate failed OS detection
 
         captured_url: list[str] = []
 
@@ -432,7 +319,6 @@ class TestFetchAlarms:
     async def test_returns_non_archived_alarms(self):
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = False
         body = {
             "meta": {"rc": "ok"},
             "data": [
@@ -450,7 +336,6 @@ class TestFetchAlarms:
     async def test_filters_out_archived_alarms(self):
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = False
         body = {"meta": {"rc": "ok"}, "data": [{"key": "EVT_GW_WANTransition", "archived": True}]}
         ctx, _ = _make_json_response(200, body)
         client._session.get = ctx
@@ -521,7 +406,6 @@ class TestFetchAlarms:
 
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = True
 
         @asynccontextmanager
         async def _ctx(*args, **kwargs):
@@ -558,7 +442,6 @@ class TestFetchAlarms:
         """
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = True
 
         captured_urls: list[str] = []
 
@@ -584,6 +467,33 @@ class TestFetchAlarms:
         assert len(captured_urls) == 1
 
     @pytest.mark.asyncio
+    async def test_fetch_alarms_uses_proxy_network_path(self):
+        """fetch_alarms must always use the /proxy/network prefix for all alarm paths."""
+        client = make_client()
+        client._authenticated = True
+
+        captured_urls: list[str] = []
+
+        @asynccontextmanager
+        async def _tracking_get(*args, **kwargs):
+            captured_urls.append(args[0] if args else "")
+            resp = MagicMock()
+            resp.status = 200
+            resp.headers = {}
+            resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
+            yield resp
+
+        client._session.get = _tracking_get
+        await client.fetch_alarms()
+
+        assert captured_urls, "Expected at least one GET call"
+        first_url = captured_urls[0]
+        assert "/proxy/network/api/s/default/" in first_url, (
+            f"fetch_alarms must use /proxy/network path; got: {first_url}"
+        )
+
+    @pytest.mark.asyncio
     async def test_falls_back_through_full_path_chain(self):
         """fetch_alarms must walk the full path chain when each preceding path is missing.
 
@@ -594,7 +504,6 @@ class TestFetchAlarms:
         """
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = True
 
         captured_urls: list[str] = []
 
@@ -634,7 +543,6 @@ class TestFetchAlarms:
         """
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = True
 
         call_count = [0]
 
@@ -669,7 +577,6 @@ class TestFetchAlarms:
         """
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = True
 
         call_count = [0]
         invalid_body = {"meta": {"rc": "error", "msg": "api.err.InvalidObject"}, "data": []}
@@ -701,7 +608,6 @@ class TestFetchAlarms:
         """When all alarm paths return 404, raise CannotConnectError with the tried paths."""
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = True
         ctx = _make_response(404)
         client._session.get = ctx
 
@@ -719,7 +625,6 @@ class TestFetchAlarms:
         """
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = True
         # Return 400 with a non-InvalidObject body so neither path is treated as "not found"
         bad_body = {"meta": {"rc": "error", "msg": "api.err.Invalid"}, "data": []}
 
@@ -751,7 +656,6 @@ class TestFetchAlarms:
         """
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = False
         body = {"meta": {"rc": "error", "msg": "api.err.InvalidObject"}, "data": []}
         ctx, _ = _make_json_response(200, body)
         client._session.get = ctx
@@ -788,7 +692,6 @@ class TestCategoriseAlarms:
     async def test_groups_alarms_by_category(self):
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = False
         body = {
             "meta": {"rc": "ok"},
             "data": [
@@ -813,7 +716,6 @@ class TestCategoriseAlarms:
     async def test_skips_unclassified_alarms(self):
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = False
         body = {
             "meta": {"rc": "ok"},
             "data": [
@@ -829,7 +731,6 @@ class TestCategoriseAlarms:
     async def test_empty_alarm_list_returns_empty_dict(self):
         client = make_client()
         client._authenticated = True
-        client._is_unifi_os = False
         ctx, _ = _make_json_response(200, {"meta": {"rc": "ok"}, "data": []})
         client._session.get = ctx
         result = await client.categorise_alarms()
@@ -842,8 +743,6 @@ class TestAuthenticate:
     @pytest.mark.asyncio
     async def test_apikey_method_used_when_configured(self):
         client = make_client({"api_key": "my-key", "auth_method": "apikey", "verify_ssl": False})
-        ctx_detect = _make_response(200, headers={})  # not UniFi OS
-        client._session.get = ctx_detect
 
         verify_calls = []
 
@@ -859,8 +758,6 @@ class TestAuthenticate:
     async def test_apikey_fallback_to_userpass_when_key_invalid(self):
         """If api_key present but method not explicitly set to apikey, fall back to userpass on InvalidAuthError."""
         client = make_client({"api_key": "bad-key", "verify_ssl": False})
-        ctx_detect = _make_response(200, headers={})
-        client._session.get = ctx_detect
 
         async def _bad_verify():
             raise InvalidAuthError("bad key")
@@ -880,8 +777,6 @@ class TestAuthenticate:
     async def test_explicit_apikey_method_does_not_fallback(self):
         """If auth_method=apikey is explicit, InvalidAuthError must propagate (no fallback)."""
         client = make_client({"api_key": "bad-key", "auth_method": "apikey", "verify_ssl": False})
-        ctx_detect = _make_response(200, headers={})
-        client._session.get = ctx_detect
 
         async def _bad_verify():
             raise InvalidAuthError("bad key")
@@ -889,82 +784,6 @@ class TestAuthenticate:
         client._verify_api_key = _bad_verify
         with pytest.raises(InvalidAuthError):
             await client.authenticate()
-
-    @pytest.mark.asyncio
-    async def test_apikey_success_coerces_is_unifi_os_true(self):
-        """Successful API-key auth must force _is_unifi_os=True.
-
-        API keys are UniFi OS-only by construction, so a successful verify proves
-        the controller is UniFi OS — even if _detect_unifi_os() returned a false
-        negative (e.g. UCG-Ultra with no x-csrf-token and /api/system not 200).
-        Without this coercion, later network calls like fetch_alarms() would
-        drop the /proxy/network prefix and 404 on the very controller that just
-        accepted the API key.
-        """
-        from custom_components.unifi_alerts.const import AUTH_METHOD_APIKEY
-
-        client = make_client(
-            {"api_key": "my-key", "auth_method": AUTH_METHOD_APIKEY, "verify_ssl": False}
-        )
-        client._is_unifi_os = False  # simulate detection false-negative
-
-        async def _detect_returns_false() -> bool:
-            return False
-
-        client._detect_unifi_os = _detect_returns_false  # type: ignore[method-assign]
-        client._verify_api_key = AsyncMock()  # verify succeeds
-
-        # Re-set to None so authenticate() runs detection (which returns False)
-        client._is_unifi_os = None
-        result = await client.authenticate()
-
-        assert result == AUTH_METHOD_APIKEY
-        assert client._is_unifi_os is True, (
-            "API-key success must override false-negative OS detection"
-        )
-
-    @pytest.mark.asyncio
-    async def test_fetch_alarms_after_apikey_auth_uses_proxy_path(self):
-        """End-to-end: detection false-negative → API-key auth → fetch_alarms hits /proxy/network.
-
-        Reproduces the reported 'Cannot reach alarm endpoint: ClientResponseError' bug:
-        detection says non-OS, API-key auth succeeds (hard-coded to /proxy/network), then
-        fetch_alarms must use /proxy/network too (not the bare /api/s/... path).
-        """
-        from custom_components.unifi_alerts.const import AUTH_METHOD_APIKEY
-
-        client = make_client(
-            {"api_key": "my-key", "auth_method": AUTH_METHOD_APIKEY, "verify_ssl": False}
-        )
-
-        async def _detect_returns_false() -> bool:
-            return False
-
-        client._detect_unifi_os = _detect_returns_false  # type: ignore[method-assign]
-        client._verify_api_key = AsyncMock()
-
-        captured_urls: list[str] = []
-
-        @asynccontextmanager
-        async def _tracking_get(*args, **kwargs):
-            captured_urls.append(args[0] if args else "")
-            resp = MagicMock()
-            resp.status = 200
-            resp.headers = {}
-            resp.raise_for_status = MagicMock()
-            resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
-            yield resp
-
-        client._session.get = _tracking_get
-
-        await client.authenticate()
-        await client.fetch_alarms()
-
-        assert captured_urls, "Expected at least one GET call to the alarm endpoint"
-        alarm_url = captured_urls[-1]
-        assert "/proxy/network/api/s/default/" in alarm_url and "/alarm" in alarm_url, (
-            f"After API-key auth, fetch_alarms must use /proxy/network path; got: {alarm_url}"
-        )
 
 
 class TestClose:
@@ -975,25 +794,14 @@ class TestClose:
     """
 
     @pytest.mark.asyncio
-    async def test_userpass_auth_posts_logout(self):
+    async def test_userpass_auth_posts_to_unifi_os_logout_path(self):
+        """close() must POST to /api/auth/logout (UniFi OS path only)."""
         client = make_client()
         client._auth_method = "userpass"
         client._authenticated = True
-        client._is_unifi_os = False
         client._session.post = AsyncMock()
         await client.close()
         client._session.post.assert_awaited_once()
-        url_called = client._session.post.call_args[0][0]
-        assert "/api/logout" in url_called
-
-    @pytest.mark.asyncio
-    async def test_unifi_os_userpass_uses_different_logout_path(self):
-        client = make_client()
-        client._auth_method = "userpass"
-        client._authenticated = True
-        client._is_unifi_os = True
-        client._session.post = AsyncMock()
-        await client.close()
         url_called = client._session.post.call_args[0][0]
         assert "/api/auth/logout" in url_called
 
@@ -1014,77 +822,6 @@ class TestClose:
         client._session.post = AsyncMock()
         await client.close()
         client._session.post.assert_not_awaited()
-
-
-class TestIsUnifiOsPersistence:
-    """Tests for the CONF_IS_UNIFI_OS persistence behaviour."""
-
-    def test_is_unifi_os_none_when_not_in_config(self):
-        """When CONF_IS_UNIFI_OS is absent from config, _is_unifi_os starts as None."""
-        client = make_client()
-        assert client._is_unifi_os is None
-
-    def test_is_unifi_os_loaded_from_config_true(self):
-        """When CONF_IS_UNIFI_OS=True is in config, _is_unifi_os is pre-set to True."""
-        from custom_components.unifi_alerts.const import CONF_IS_UNIFI_OS
-
-        client = make_client({**{"username": "admin", "password": "pw", "verify_ssl": False}, CONF_IS_UNIFI_OS: True})
-        assert client._is_unifi_os is True
-
-    def test_is_unifi_os_loaded_from_config_false(self):
-        """When CONF_IS_UNIFI_OS=False is in config, _is_unifi_os is pre-set to False."""
-        from custom_components.unifi_alerts.const import CONF_IS_UNIFI_OS
-
-        client = make_client({**{"username": "admin", "password": "pw", "verify_ssl": False}, CONF_IS_UNIFI_OS: False})
-        assert client._is_unifi_os is False
-
-    @pytest.mark.asyncio
-    async def test_skips_detection_when_is_unifi_os_in_config(self):
-        """authenticate() must not call _detect_unifi_os() when CONF_IS_UNIFI_OS is pre-set."""
-        from custom_components.unifi_alerts.const import AUTH_METHOD_APIKEY, CONF_IS_UNIFI_OS
-
-        config = {
-            "api_key": "test-key",
-            "auth_method": AUTH_METHOD_APIKEY,
-            "verify_ssl": False,
-            CONF_IS_UNIFI_OS: True,
-        }
-        client = make_client(config)
-        assert client._is_unifi_os is True
-
-        detection_calls: list[int] = []
-
-        async def _no_detect() -> bool:
-            detection_calls.append(1)
-            return False
-
-        client._detect_unifi_os = _no_detect  # type: ignore[method-assign]
-        client._verify_api_key = AsyncMock()
-        await client.authenticate()
-
-        assert detection_calls == [], "_detect_unifi_os must not be called when value is loaded from config"
-        assert client._is_unifi_os is True  # stored value preserved, not overwritten
-
-    @pytest.mark.asyncio
-    async def test_runs_detection_when_is_unifi_os_not_in_config(self):
-        """authenticate() must call _detect_unifi_os() when _is_unifi_os is None."""
-        from custom_components.unifi_alerts.const import AUTH_METHOD_APIKEY
-
-        client = make_client({"api_key": "test-key", "auth_method": AUTH_METHOD_APIKEY, "verify_ssl": False})
-        assert client._is_unifi_os is None
-
-        detection_calls: list[int] = []
-
-        async def _mock_detect() -> bool:
-            detection_calls.append(1)
-            return True
-
-        client._detect_unifi_os = _mock_detect  # type: ignore[method-assign]
-        client._verify_api_key = AsyncMock()
-        await client.authenticate()
-
-        assert len(detection_calls) == 1
-        assert client._is_unifi_os is True
 
 
 class TestSslFailOpen:
@@ -1108,7 +845,6 @@ class TestSslFailOpen:
         config = {"username": "admin", "password": "secret"}
         client = make_client(config)
         client._authenticated = True
-        client._is_unifi_os = True
 
         captured_ssl: list = []
 

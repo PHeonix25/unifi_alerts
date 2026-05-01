@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -12,7 +13,6 @@ from .const import (
     AUTH_METHOD_USERPASS,
     CONF_API_KEY,
     CONF_AUTH_METHOD,
-    CONF_IS_UNIFI_OS,
     CONF_PASSWORD,
     CONF_USERNAME,
     CONF_VERIFY_SSL,
@@ -47,9 +47,12 @@ class UniFiClient:
     """Minimal async client for fetching alarms from a UniFi controller.
 
     Supports:
-      - Username/password auth (session cookie) — all controller types
-      - API key auth (X-API-Key header) — UniFi OS only
+      - Username/password auth (session cookie)
+      - API key auth (X-API-Key header)
       - Auto-detection: tries API key first, falls back to user/pass
+
+    Requires UniFi OS (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+).
+    Classic self-hosted Network Application controllers are not supported.
     """
 
     def __init__(
@@ -61,17 +64,13 @@ class UniFiClient:
         self._session = session
         self._base = controller_url.rstrip("/")
         self._config = config
-        self._is_unifi_os: bool | None = config.get(CONF_IS_UNIFI_OS)
         self._auth_method: str | None = None
         self._authenticated: bool = False
 
     # ── Public interface ──────────────────────────────────────────────────
 
     async def authenticate(self) -> str:
-        """Detect controller type and authenticate. Returns the auth method used."""
-        if self._is_unifi_os is None:
-            self._is_unifi_os = await self._detect_unifi_os()
-
+        """Authenticate to the UniFi OS controller. Returns the auth method used."""
         method = self._config.get(CONF_AUTH_METHOD)
 
         if method == AUTH_METHOD_APIKEY or (method is None and self._config.get(CONF_API_KEY)):
@@ -79,10 +78,6 @@ class UniFiClient:
                 await self._verify_api_key()
                 self._auth_method = AUTH_METHOD_APIKEY
                 self._authenticated = True
-                # API keys are UniFi OS-only, so a successful verify proves the controller
-                # is UniFi OS — override any false-negative from _detect_unifi_os() so later
-                # calls (fetch_alarms, logout) use the correct /proxy/network path.
-                self._is_unifi_os = True
                 _LOGGER.debug("Authenticated via API key")
                 return AUTH_METHOD_APIKEY
             except InvalidAuthError:
@@ -111,9 +106,9 @@ class UniFiClient:
         #   /alarm       — long-standing universal path
         #   /stat/alarm  — older intermediate variant; some firmware exposes only this
         alarm_paths = [
-            self._network_path(f"/api/s/{site}/list/alarm"),
-            self._network_path(f"/api/s/{site}/alarm"),
-            self._network_path(f"/api/s/{site}/stat/alarm"),
+            f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/list/alarm",
+            f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/alarm",
+            f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/stat/alarm",
         ]
         for path in alarm_paths:
             result = await self._try_fetch_alarms(path, site)
@@ -124,9 +119,8 @@ class UniFiClient:
             f"Could not find the alarm endpoint for site '{site}'. Tried: {', '.join(alarm_paths)}"
         )
 
-    async def _try_fetch_alarms(self, path: str, site: str) -> list[dict] | None:
-        """Fetch alarms from one path. Returns None on 404 (caller tries next path)."""
-        url = f"{self._base}{path}"
+    async def _try_fetch_alarms(self, url: str, site: str) -> list[dict] | None:
+        """Fetch alarms from one URL. Returns None on 404 (caller tries next URL)."""
         _LOGGER.debug("Fetching alarms from %s", url)
         try:
             async with self._session.get(
@@ -139,7 +133,7 @@ class UniFiClient:
                     self._authenticated = False
                     raise InvalidAuthError("Session expired")
                 if resp.status == 404:
-                    _LOGGER.debug("Alarm path %s returned 404 — trying next path", path)
+                    _LOGGER.debug("Alarm URL %s returned 404 — trying next URL", url)
                     return None
                 if resp.status == 400:
                     # UniFi returns JSON even on 400 — parse the msg field.
@@ -155,8 +149,8 @@ class UniFiClient:
                         pass
                     if unifi_msg == "api.err.InvalidObject":
                         _LOGGER.debug(
-                            "Alarm path %s returned 400 api.err.InvalidObject — trying next path",
-                            path,
+                            "Alarm URL %s returned 400 api.err.InvalidObject — trying next URL",
+                            url,
                         )
                         return None
                     detail = f" ({unifi_msg})" if unifi_msg else ""
@@ -191,69 +185,19 @@ class UniFiClient:
 
     async def close(self) -> None:
         if self._auth_method == AUTH_METHOD_USERPASS and self._authenticated:
-            try:
-                logout_path = "/api/logout" if not self._is_unifi_os else "/api/auth/logout"
+            with contextlib.suppress(Exception):
                 await self._session.post(
-                    f"{self._base}{logout_path}",
+                    f"{self._base}/api/auth/logout",
                     ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                     timeout=aiohttp.ClientTimeout(total=5),
                 )
-            except Exception:  # noqa: BLE001
-                pass
 
     # ── Private helpers ───────────────────────────────────────────────────
-
-    async def _detect_unifi_os(self) -> bool:
-        """Return True if this is a UniFi OS console (UDM/UCG/etc.).
-
-        Two-stage detection:
-        1. Check for ``x-csrf-token`` in the ``/`` response (primary heuristic).
-           Follows redirects so HTTP→HTTPS redirects (e.g. UCG-Ultra) are handled.
-        2. If the token is absent, probe ``/api/system`` — a UniFi OS-only endpoint.
-           Returns 200 on OS consoles, 404 on classic controllers.
-        """
-        ssl = self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
-        timeout = aiohttp.ClientTimeout(total=5)
-        try:
-            async with self._session.get(
-                f"{self._base}/",
-                ssl=ssl,
-                allow_redirects=True,
-                timeout=timeout,
-            ) as resp:
-                if resp.headers.get("x-csrf-token") is not None:
-                    _LOGGER.debug(
-                        "UniFi OS detection: True via x-csrf-token (status %d)", resp.status
-                    )
-                    return True
-        except Exception:  # noqa: BLE001
-            return False
-
-        # x-csrf-token absent — try the /api/system fallback probe
-        try:
-            async with self._session.get(
-                f"{self._base}/api/system",
-                ssl=ssl,
-                allow_redirects=True,
-                timeout=timeout,
-            ) as probe:
-                is_os = probe.status == 200
-                _LOGGER.debug(
-                    "UniFi OS detection (fallback /api/system probe): %s (status %d)",
-                    is_os,
-                    probe.status,
-                )
-                return is_os
-        except Exception:  # noqa: BLE001
-            return False
 
     async def _verify_api_key(self) -> None:
         api_key = self._config.get(CONF_API_KEY, "")
         if not api_key:
             raise InvalidAuthError("No API key provided")
-        # API keys are UniFi OS-only, so always use the /proxy/network prefix regardless
-        # of what _detect_unifi_os() returned.  Trusting the detection result here caused
-        # 404 errors on UCG-Ultra and reverse-proxy setups where x-csrf-token is absent.
         endpoint = f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/s/default/self"
         async with self._session.get(
             endpoint,
@@ -274,16 +218,8 @@ class UniFiClient:
             resp.raise_for_status()
 
     async def _login_userpass(self) -> None:
-        """Attempt username/password login, trying both UniFi OS and classic paths.
-
-        UniFi OS detection via ``x-csrf-token`` can give a false negative for some
-        UCG-Ultra firmware versions.  We therefore always try both endpoint paths:
-        the detected-primary path first, then the alternate path as a fallback.
-        """
-        if self._is_unifi_os:
-            paths = [f"{self._base}/api/auth/login", f"{self._base}/api/login"]
-        else:
-            paths = [f"{self._base}/api/login", f"{self._base}/api/auth/login"]
+        """Attempt username/password login via the UniFi OS path."""
+        paths = [f"{self._base}/api/auth/login"]
 
         payload = {
             "username": self._config.get(CONF_USERNAME, ""),
@@ -311,27 +247,21 @@ class UniFiClient:
                         )
                     if resp.status in (401, 403):
                         _LOGGER.debug(
-                            "Authentication failed at %s (HTTP %d) — trying alternate path",
+                            "Authentication failed at %s (HTTP %d)",
                             login_url,
                             resp.status,
                         )
                         continue
                     resp.raise_for_status()
                     return  # success
-            # Both paths returned 401/403
+            # Path returned 401/403
             last_url = paths[-1]
-            _LOGGER.warning("Authentication failed at all login paths (last: %s)", last_url)
+            _LOGGER.warning("Authentication failed at login path (last: %s)", last_url)
             raise InvalidAuthError("Invalid username or password", login_url=last_url)
         except aiohttp.ClientResponseError as err:
             raise CannotConnectError(f"{type(err).__name__} {err.status}") from err
         except aiohttp.ClientError as err:
             raise CannotConnectError(type(err).__name__) from err
-
-    def _network_path(self, path: str) -> str:
-        """Prefix path with /proxy/network on UniFi OS controllers."""
-        if self._is_unifi_os:
-            return f"{UNIFI_OS_NETWORK_PREFIX}{path}"
-        return path
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Accept": "application/json"}

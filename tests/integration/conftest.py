@@ -123,6 +123,7 @@ async def entry(hass, mock_unifi_client):
         domain=DOMAIN,
         data=dict(BASE_CONFIG),
         entry_id=ENTRY_ID,
+        version=2,
     )
     config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(config_entry.entry_id)

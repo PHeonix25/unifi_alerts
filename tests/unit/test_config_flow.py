@@ -655,29 +655,38 @@ async def test_step_user_fetch_alarms_failure_shows_cannot_connect() -> None:
 
 
 @pytest.mark.asyncio
-async def test_conf_is_unifi_os_stored_in_credentials() -> None:
-    """CONF_IS_UNIFI_OS must be stored in _credentials after a successful step 1."""
-    from custom_components.unifi_alerts.const import CONF_IS_UNIFI_OS
+async def test_async_migrate_entry_strips_conf_is_unifi_os() -> None:
+    """async_migrate_entry must remove is_unifi_os from entry.data and bump version to 2."""
+    from custom_components.unifi_alerts import async_migrate_entry
 
-    flow = _make_flow()
-    flow.async_step_categories = AsyncMock(return_value={"type": "form", "step_id": "categories"})
+    entry = MagicMock()
+    entry.entry_id = "test-entry-migrate"
+    entry.version = 1
+    entry.data = {
+        CONF_CONTROLLER_URL: "https://192.168.1.1",
+        CONF_USERNAME: "admin",
+        CONF_PASSWORD: "secret",
+        CONF_VERIFY_SSL: True,
+        "is_unifi_os": True,  # stale key from v1
+    }
 
-    with (
-        patch(
-            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
-            return_value=_make_session_mock(),
-        ),
-        patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
-    ):
-        instance = mock_cls.return_value
-        instance.authenticate = AsyncMock(return_value="userpass")
-        instance.fetch_alarms = AsyncMock(return_value=[])
-        instance._is_unifi_os = True  # simulate a detected UniFi OS controller
+    # Simulate HA's async_update_entry: update version and data in-place
+    def _fake_update(entry, *, data=None, version=None, **kwargs):
+        if data is not None:
+            entry.data = data
+        if version is not None:
+            entry.version = version
 
-        await flow.async_step_user(_VALID_INPUT)
+    hass = MagicMock()
+    hass.config_entries.async_update_entry = MagicMock(side_effect=_fake_update)
 
-    assert CONF_IS_UNIFI_OS in flow._credentials
-    assert flow._credentials[CONF_IS_UNIFI_OS] is True
+    result = await async_migrate_entry(hass, entry)
+
+    assert result is True
+    assert entry.version == 2
+    assert "is_unifi_os" not in entry.data
+    # Remaining fields must be preserved
+    assert entry.data[CONF_CONTROLLER_URL] == "https://192.168.1.1"
 
 
 @pytest.mark.asyncio

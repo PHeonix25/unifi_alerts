@@ -4,22 +4,6 @@ Outstanding work only — items are removed when they ship. The historical recor
 
 Items are grouped by type. Work top-to-bottom within each group unless there's a dependency noted.
 
-## 🔵 v1.4.0 — UniFi OS only
-
-**Decision (2026-04-22):** officially support only UniFi OS controllers. Classic self-hosted controllers (Network Application on bare Linux/Windows) are excluded. See `ROADMAP.md § v1.4.0` for full rationale. (Was planned for v1.3.0; deferred to v1.4.0 to ship v1.3.0 bug fixes first.)
-
-### Document the prerequisite (do first — ships ahead of code change)
-
-**Add "Requires UniFi OS" to README.md and info.md** — opening paragraph + Prerequisites section; list tested models (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+); bold "⚠ Requires UniFi OS" callout in `info.md` first paragraph. This must land before the code change so any existing users on classic controllers get advance notice via the HACS update description.
-
-### Remove legacy self-hosted code paths (do after docs)
-
-**Strip `unifi_client.py` of non-UniFi-OS paths** — removes `_detect_unifi_os()`, the `_network_path()` method, login path ordering in `_login_userpass()`, logout branch in `close()`, and `CONF_IS_UNIFI_OS` persistence in config flow + `const.py`. Also remove/update tests that existed only to cover the legacy path. Expected reduction: ~30-40 lines. See `ROADMAP.md § v1.4.0` for the full list of touch points.
-
-**Add `async_migrate_entry` for `CONF_IS_UNIFI_OS` removal** — existing installs have `CONF_IS_UNIFI_OS: false` (or `true`) stored in `entry.data`. When the field is stripped from the codebase, bump `ConfigFlow.VERSION` from `1` to `2` and add `async_migrate_entry` that removes the key by constructing a new dict without it (`{k: v for k, v in entry.data.items() if k != "is_unifi_os"}`). Without this, old entries carry a stale key forever and the code change cannot safely assume the field is absent. Ships in the same PR as the code simplification above.
-
----
-
 ## 🟡 High-value improvements
 
 ### Verify update-in-place works without HA reboot

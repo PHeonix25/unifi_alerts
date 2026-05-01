@@ -23,7 +23,6 @@ from .const import (
     CONF_CLEAR_TIMEOUT,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
-    CONF_IS_UNIFI_OS,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
     CONF_REGENERATE_WEBHOOK_SECRET,
@@ -60,7 +59,7 @@ def _create_auth_failed_issue(hass: Any, entry: Any) -> None:
 class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the initial setup flow shown in Settings → Integrations."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         self._controller_url: str = ""
@@ -103,7 +102,6 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                             **user_input,
                             CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32),
                             CONF_WEBHOOK_ID_SUFFIX: secrets.token_hex(4),
-                            CONF_IS_UNIFI_OS: client._is_unifi_os,
                         }
                         return await self.async_step_categories()
 
@@ -258,7 +256,6 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                         **entry.data,
                         **user_input,
                         CONF_AUTH_METHOD: auth_method,
-                        CONF_IS_UNIFI_OS: client._is_unifi_os,
                     }
                     self.hass.config_entries.async_update_entry(entry, data=new_data)
                     # Clear the repair issue now that auth is restored
@@ -392,7 +389,6 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                             CONF_CONTROLLER_URL: effective_url,
                             CONF_VERIFY_SSL: new_verify_ssl,
                             CONF_AUTH_METHOD: auth_method,
-                            CONF_IS_UNIFI_OS: client._is_unifi_os,
                         }
                         if new_username:
                             updated_data[CONF_USERNAME] = new_username

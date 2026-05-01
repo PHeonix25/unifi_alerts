@@ -23,6 +23,11 @@ listed individually — only the consolidated `X.Y.Z` release that bundles them.
 - `WebhookManager.register_all()` now wraps each iteration in try/except so a single failed registration cannot abort the rest of the loop. (`webhook_handler.py`)
 - Webhook decode failures now log at WARNING with the exception class name and a 80-byte body preview, instead of falling through silently to `{}`. (`webhook_handler.py`)
 
+### Breaking changes
+
+- **UniFi OS consoles required.** Support for classic self-hosted Network Application (Linux/Windows bare-metal) is removed. The integration now uses the `/proxy/network` API path and `/api/auth/login` exclusively — paths only available on UniFi OS. Existing users on self-hosted controllers must migrate to a UniFi OS console (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+).
+- Config entry version bumped from 1 to 2. The `is_unifi_os` key is automatically stripped from existing entries during migration on first load — no user action needed.
+
 ### Repo hygiene
 
 - `CHANGELOG.md` (this file) added; back-filled from v1.0.0.
