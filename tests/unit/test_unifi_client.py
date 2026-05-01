@@ -1085,3 +1085,49 @@ class TestIsUnifiOsPersistence:
 
         assert len(detection_calls) == 1
         assert client._is_unifi_os is True
+
+
+class TestSslFailOpen:
+    """Verify that a missing CONF_VERIFY_SSL key falls back to DEFAULT_VERIFY_SSL (True).
+
+    The fix changed all five ssl=self._config.get(CONF_VERIFY_SSL, False) call sites to
+    use DEFAULT_VERIFY_SSL (True) as the fallback.  A missing key must now fail *closed*
+    (SSL ON) rather than silently disabling certificate verification.
+    """
+
+    @pytest.mark.asyncio
+    async def test_absent_verify_ssl_key_defaults_to_true_in_fetch_alarms(self):
+        """When CONF_VERIFY_SSL is absent from config, _try_fetch_alarms must pass ssl=True.
+
+        Constructs a config dict with no verify_ssl key and asserts that the ssl kwarg
+        forwarded to the mock session is DEFAULT_VERIFY_SSL (True), not False.
+        """
+        from custom_components.unifi_alerts.const import DEFAULT_VERIFY_SSL
+
+        # Config deliberately omits verify_ssl
+        config = {"username": "admin", "password": "secret"}
+        client = make_client(config)
+        client._authenticated = True
+        client._is_unifi_os = True
+
+        captured_ssl: list = []
+
+        @asynccontextmanager
+        async def _tracking_get(*args, **kwargs):
+            captured_ssl.append(kwargs.get("ssl"))
+            resp = MagicMock()
+            resp.status = 200
+            resp.headers = {}
+            resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
+            yield resp
+
+        client._session.get = _tracking_get
+        await client.fetch_alarms()
+
+        assert captured_ssl, "Expected at least one GET call"
+        assert captured_ssl[0] is DEFAULT_VERIFY_SSL, (
+            f"Expected ssl={DEFAULT_VERIFY_SSL!r} (DEFAULT_VERIFY_SSL) when key is absent, "
+            f"got {captured_ssl[0]!r}"
+        )
+        assert captured_ssl[0] is True, "DEFAULT_VERIFY_SSL must be True — fail closed"

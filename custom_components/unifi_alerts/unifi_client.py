@@ -16,6 +16,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_USERNAME,
     CONF_VERIFY_SSL,
+    DEFAULT_VERIFY_SSL,
     UNIFI_KEY_TO_CATEGORY,
 )
 from .models import UniFiAlert
@@ -131,7 +132,7 @@ class UniFiClient:
             async with self._session.get(
                 url,
                 headers=self._headers(),
-                ssl=self._config.get(CONF_VERIFY_SSL, False),
+                ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 if resp.status == 401:
@@ -194,7 +195,7 @@ class UniFiClient:
                 logout_path = "/api/logout" if not self._is_unifi_os else "/api/auth/logout"
                 await self._session.post(
                     f"{self._base}{logout_path}",
-                    ssl=self._config.get(CONF_VERIFY_SSL, False),
+                    ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                     timeout=aiohttp.ClientTimeout(total=5),
                 )
             except Exception:  # noqa: BLE001
@@ -211,7 +212,7 @@ class UniFiClient:
         2. If the token is absent, probe ``/api/system`` — a UniFi OS-only endpoint.
            Returns 200 on OS consoles, 404 on classic controllers.
         """
-        ssl = self._config.get(CONF_VERIFY_SSL, False)
+        ssl = self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
         timeout = aiohttp.ClientTimeout(total=5)
         try:
             async with self._session.get(
@@ -257,7 +258,7 @@ class UniFiClient:
         async with self._session.get(
             endpoint,
             headers={"X-API-Key": api_key, "Accept": "application/json"},
-            ssl=self._config.get(CONF_VERIFY_SSL, False),
+            ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
             timeout=aiohttp.ClientTimeout(total=8),
         ) as resp:
             if resp.status == 404:
@@ -293,7 +294,7 @@ class UniFiClient:
                 async with self._session.post(
                     login_url,
                     json=payload,
-                    ssl=self._config.get(CONF_VERIFY_SSL, False),
+                    ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                     timeout=aiohttp.ClientTimeout(total=10),
                 ) as resp:
                     if resp.status == 400:

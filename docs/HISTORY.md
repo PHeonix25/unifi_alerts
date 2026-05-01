@@ -1,5 +1,13 @@
 # History
 
+## 2026-05-01 — SSL fail-open fix + _get_coordinators guard
+
+**Track B — SSL fail-open (5 call sites in `unifi_client.py`):**
+All five `self._config.get(CONF_VERIFY_SSL, False)` calls changed to use `DEFAULT_VERIFY_SSL` as the fallback so a missing key fails closed (SSL ON) rather than silently disabling verification. `DEFAULT_VERIFY_SSL` added to the import. New `TestSslFailOpen` class in `test_unifi_client.py` covers the absent-key case.
+
+**Track C — `_get_coordinators` guard (`services.py`):**
+`async_entries(DOMAIN)` can return entries in `SETUP_RETRY` / `SETUP_ERROR` state that never populated `runtime_data`. Accessing `.runtime_data.coordinator` on such entries raised `AttributeError`. Fixed by filtering the iterate-all branch to `state == ConfigEntryState.LOADED` and adding an explicit state check in the single-entry branch. New `TestGetCoordinatorsGuard` class in `test_services.py` covers both cases.
+
 ## 2026-04-30 — Comprehensive codebase audit: TODO and ROADMAP updated for v2.0.0 lead-up
 
 Full multi-perspective audit (senior architect, solution architect, security architect, quality architect) of the dev codebase at v1.4.0-pre2. Goal: confirm every remaining TODO item is still required, find any new gaps, and produce a granular, themed ROADMAP from v1.4.0 through v2.0.0.
