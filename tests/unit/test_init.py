@@ -154,6 +154,107 @@ class TestAsyncSetupEntry:
             await async_setup_entry(hass, entry)
 
     @pytest.mark.asyncio
+    async def test_invalid_auth_message_omits_underlying_error_text(self):
+        """ConfigEntryAuthFailed must surface only the exception class name.
+
+        Including ``str(err)`` risks leaking URL fragments or auth details into the
+        HA repair UI / logs. The fix mirrors the pattern used in unifi_client.py.
+        """
+        from homeassistant.exceptions import ConfigEntryAuthFailed
+
+        from custom_components.unifi_alerts import async_setup_entry
+        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
+
+        secret_marker = "user:hunter2@controller.local/path?api_key=leakedkey"
+        hass = make_hass()
+        entry = make_entry()
+        mock_client, mock_coordinator, mock_wm = _patch_all(
+            authenticate_side_effect=InvalidAuthError(secret_marker)
+        )
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
+            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
+            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
+            pytest.raises(ConfigEntryAuthFailed) as excinfo,
+        ):
+            await async_setup_entry(hass, entry)
+
+        assert secret_marker not in str(excinfo.value)
+        assert "InvalidAuthError" in str(excinfo.value)
+
+    @pytest.mark.asyncio
+    async def test_connect_failure_message_omits_underlying_error_text(self):
+        """ConfigEntryNotReady on the auth path must not embed the inner error text."""
+        from homeassistant.exceptions import ConfigEntryNotReady
+
+        from custom_components.unifi_alerts import async_setup_entry
+
+        secret_marker = "https://admin:secretpass@10.0.0.1:8443"
+        hass = make_hass()
+        entry = make_entry()
+        mock_client, mock_coordinator, mock_wm = _patch_all(
+            authenticate_side_effect=ConnectionError(secret_marker)
+        )
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
+            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
+            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
+            pytest.raises(ConfigEntryNotReady) as excinfo,
+        ):
+            await async_setup_entry(hass, entry)
+
+        assert secret_marker not in str(excinfo.value)
+        assert "ConnectionError" in str(excinfo.value)
+
+    @pytest.mark.asyncio
+    async def test_first_refresh_failure_message_omits_underlying_error_text(self):
+        """ConfigEntryNotReady on the first-refresh path must not embed inner error text."""
+        from homeassistant.exceptions import ConfigEntryNotReady
+
+        from custom_components.unifi_alerts import async_setup_entry
+
+        secret_marker = "https://admin:secretpass@10.0.0.1/api/alarm?token=leak"
+        hass = make_hass()
+        entry = make_entry()
+        mock_client, mock_coordinator, mock_wm = _patch_all(
+            first_refresh_side_effect=RuntimeError(secret_marker)
+        )
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
+            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
+            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
+            pytest.raises(ConfigEntryNotReady) as excinfo,
+        ):
+            await async_setup_entry(hass, entry)
+
+        assert secret_marker not in str(excinfo.value)
+        assert "RuntimeError" in str(excinfo.value)
+
+    @pytest.mark.asyncio
     async def test_ssl_disabled_logs_warning(self):
         from custom_components.unifi_alerts import async_setup_entry
 
