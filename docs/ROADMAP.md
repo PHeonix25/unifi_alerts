@@ -4,7 +4,7 @@ This file maps TODO items to planned releases. Items within each release are ord
 
 > **Branching model:** all development happens on `dev` (pre-release versions: `X.Y.Z-preN`). Stable releases are tagged on `main` after a PR merge. See `CLAUDE.md § Branching strategy and versioning` for the full workflow.
 
-> **Current status:** v1.0.0, v1.1.0, v1.2.0 released. v1.3.0 released (2026-04-29). Active development continues on `dev` at v1.4.0-pre2. Planned path to v2.0.0: v1.4.0 (UniFi OS only) → v1.5.0 (security hardening II) → v1.6.0 (reliability + completeness) → v1.7.0 (documentation + architecture) → v2.0.0 (HACS default).
+> **Current status:** v1.0.0, v1.1.0, v1.2.0, v1.3.0, v1.4.0 released (2026-05-04). Active development continues on `dev` at v1.5.0-pre1. Planned path to v2.0.0: v1.5.0 (security hardening II) → v1.6.0 (reliability + completeness) → v1.7.0 (documentation + architecture) → v2.0.0 (HACS default).
 
 ---
 
@@ -185,20 +185,14 @@ Released 2026-04-29. Five pre-release checkpoints (`pre1`–`pre5`) on `dev`.
 
 #### Documentation (do first — ships ahead of code change)
 
-- [ ] **Add UniFi OS prerequisite to README** — opening paragraph + Prerequisites section; list tested console models (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+); state explicitly that classic Network Application (self-hosted) is not supported. (`README.md`)
-- [ ] **Add UniFi OS prerequisite to info.md** — same message, first paragraph, with a bold "⚠ Requires UniFi OS" callout. (`info.md`)
+- [x] **Add UniFi OS prerequisite to README** — shipped 2026-05-04 (PR #59): Prerequisites section added with tested console table; explicit "not supported" statement for classic self-hosted. (`README.md`)
+- [x] **Add UniFi OS prerequisite to info.md** — shipped 2026-05-04 (PR #59): "⚠ Requires UniFi OS" callout as first line. (`info.md`)
 
 #### Code simplification (do after docs)
 
-- [ ] **Remove legacy self-hosted code paths from `unifi_client.py`** — once docs land, remove:
-  - `_detect_unifi_os()` entirely — detection is only needed for the legacy/OS branch
-  - `_network_path()` — always prefix with `/proxy/network`; make it a constant or inline it
-  - Login path ordering in `_login_userpass()` — always try `/api/auth/login` first (UniFi OS path); remove the second fallback path
-  - Logout path branch in `close()` — always use `/api/auth/logout`
-  - `CONF_IS_UNIFI_OS` persistence in config flow — no longer needed; remove from `config_flow.py`, `const.py`, and stored `entry.data`
-  - This removes ~30-40 lines and eliminates the root cause of the v1.2 API-key/detection mismatch bug
-- [ ] **Add `async_migrate_entry` for `CONF_IS_UNIFI_OS` removal** — bump `ConfigFlow.VERSION` from `1` to `2`; implement `async_migrate_entry` that strips `CONF_IS_UNIFI_OS` from `entry.data` for version-1 entries. Without this, existing installs carry a stale key; after the removal, any code that reads it would silently get `None`. Ships in the same PR as the code simplification.
-- [ ] **Update tests** — remove tests that only exist to cover the legacy path (detection returning False, path without `/proxy/network`, classic controller login ordering); update remaining tests to not set `_is_unifi_os` explicitly.
+- [x] **Remove legacy self-hosted code paths from `unifi_client.py`** — shipped 2026-05-04 (PR #59): removed `_detect_unifi_os()`, `_network_path()`, `_is_unifi_os` attribute, and all detection-based branching (~60 lines). All paths now hardcode `/proxy/network` and `/api/auth/login` / `/api/auth/logout`.
+- [x] **Add `async_migrate_entry` for `CONF_IS_UNIFI_OS` removal** — shipped 2026-05-04 (PR #59): `ConfigFlow.VERSION` bumped 1→2; `async_migrate_entry` in `__init__.py` strips `is_unifi_os` from existing entries.
+- [x] **Update tests** — shipped 2026-05-04 (PR #59): removed `TestNetworkPath`, `TestDetectUnifiOs`, `TestIsUnifiOsPersistence`; added `test_fetch_alarms_uses_proxy_network_path` and `test_async_migrate_entry_strips_conf_is_unifi_os`.
 
 ### Open-count watermark (PR #44)
 
@@ -211,7 +205,7 @@ The items below were identified in the post-v1.1.0 critical review, planned for 
 #### Reliability / correctness
 
 - [x] **Webhook ID collision on multi-entry (CRITICAL)** — fixed 2026-04-29 in cluster A (PR #50): `CONF_WEBHOOK_ID_SUFFIX` (8-char hex, generated per entry by config flow); `webhook_id_for_category(category, suffix="")` returns `unifi_alerts_{suffix}_{category}` when present and falls back to legacy `unifi_alerts_{category}` when absent so existing single-entry users don't have to re-paste URLs. Multi-entry isolation integration test (`tests/integration/test_multi_entry.py`) added as the red-green pair.
-- [ ] **SSL fail-open on missing key (5 call sites)** — `ssl=self._config.get(CONF_VERIFY_SSL, False)`. If the key is somehow absent, SSL verification silently turns OFF. Change all five fallbacks to `DEFAULT_VERIFY_SSL`. Affected: `_try_fetch_alarms` (`unifi_client.py:134`), `close()` (`:197`), `_detect_unifi_os()` (`:214`), `_verify_api_key()` (`:260`), `_login_userpass()` (`:296`).
+- [x] **SSL fail-open on missing key (5 call sites)** — shipped 2026-05-04 (PR #58): all five `self._config.get(CONF_VERIFY_SSL, False)` calls changed to use `DEFAULT_VERIFY_SSL` as the fallback. `_detect_unifi_os()` call site is now moot (method removed in PR #59).
 - [ ] `_category_states` is rebuilt from scratch on every config-entry reload — `alert_count` and `last_alert` are discarded whenever the user tweaks an option (`coordinator.py:70-73`). Persist the last-seen state across reloads (alongside the existing watermarks in the `Store`).
 - [x] `WebhookManager.register_all()` partial-failure leak — fixed 2026-04-29 in cluster A (PR #50): each iteration wrapped in try/except; only successful registrations append to `_registered`; `tests/unit/test_webhook_handler.py::TestRegisterAllRollback` covers behaviour.
 - [ ] **`datetime.fromisoformat()` called on epoch-millisecond input** (`models.py:52-57`) — numeric timestamps silently fall through to `datetime.now(UTC)`, losing the real alarm time. Add an epoch-ms branch before the ISO fallback; log at WARNING when neither matches.
@@ -226,7 +220,7 @@ The items below were identified in the post-v1.1.0 critical review, planned for 
 - [x] **Non-constant-time webhook token comparison** — fixed 2026-04-29 in cluster A: `hmac.compare_digest`; regression test asserts the function is called.
 - [x] **Webhook URLs containing `?token=<secret>` logged at DEBUG** — fixed 2026-04-29 in cluster A: `_redact_webhook_token()` scrubs `?token=` to `?token=***` in `__init__.py`.
 - [x] **Full webhook payload logged at DEBUG** — fixed 2026-04-29 in cluster A: `_SAFE_DEBUG_FIELDS` allow-list narrows the DEBUG log to `{category, alert_key, key, severity, device_name}`.
-- [ ] **`allow_redirects=True` on unauthenticated detection probes** (`unifi_client.py:220,233`) — the `_detect_unifi_os()` probes follow redirects without validating the final host. A compromised DNS or on-path attacker could redirect the probe to an attacker-controlled host. Set `allow_redirects=False` and handle HTTP→HTTPS redirects explicitly, or assert `final_url.host == configured_host` before trusting the response.
+- [x] **`allow_redirects=True` on unauthenticated detection probes** — moot: `_detect_unifi_os()` removed entirely in PR #59 (UniFi OS only). No detection probes remain.
 - [ ] **Config flow creates bare `aiohttp.ClientSession`** (`config_flow.py:82,243,366`) — use `async_get_clientsession(self.hass, verify_ssl=...)`.
 - [ ] **Credential fragments may leak in `__init__.py` exception messages** (`__init__.py:57,60`) — `ConfigEntryAuthFailed` and `ConfigEntryNotReady` include `str(err)`. If the exception contains URL fragments or auth details, they appear in HA logs. Log `type(err).__name__` only (same pattern as `unifi_client.py`).
 - [x] **No webhook rate limiting / debounce** — fixed 2026-04-29 in cluster A: per-(category, alert_key) 5s `WEBHOOK_DEDUP_WINDOW_SECONDS` window in `coordinator.push_alert()`. `TestPushDedup` covers same/distinct keys, distinct categories, window expiry, empty-key edge case.
@@ -239,7 +233,7 @@ The items below were identified in the post-v1.1.0 critical review, planned for 
 - [ ] `pyproject.toml` has `strict = false` for mypy — migrate `UniFiClient.config: dict[str, Any]` to a `TypedDict` / frozen dataclass, then bump to `strict = true`.
 - [ ] Entity naming is ad-hoc — adopt `has_entity_name = True` + `_attr_translation_key` pattern so strings live in `strings.json`.
 - [ ] No sensor `device_class` on the open-count or rollup-count sensors (`sensor.py:96,128`).
-- [ ] **Config flow accesses private `client._is_unifi_os`** (`config_flow.py:106,261,395`) — expose as a public `@property`.
+- [x] **Config flow accesses private `client._is_unifi_os`** — moot: `_is_unifi_os` attribute removed entirely in PR #59 (UniFi OS only).
 - [ ] **Button entities don't inherit from `CoordinatorEntity`** (`button.py`) — `UniFiClearCategoryButton` and `UniFiClearAllButton` extend `ButtonEntity` directly. They have no `available` property checking coordinator state, so they always appear available even when their category is disabled. Add `CoordinatorEntity[UniFiAlertsCoordinator]` as a mixin and an `available` property. Found 2026-04-30 audit.
 
 #### Testing
