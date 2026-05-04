@@ -25,6 +25,7 @@ Closes correctness gaps and polishes testing.
 
 ### Reliability
 
+- [ ] **Polling re-asserts `is_alerting` for alarms older than the watermark** (`coordinator.py:127-134`): `_async_update_data()` filters by `last_cleared_at` when computing `open_count` but uses the unfiltered list when deciding whether to flip `is_alerting` and update `last_alert`. After Clear, `open_count` zeroes but the next poll re-asserts `is_alerting` from the same pre-watermark alarm — UI shows status=Problem with a stale message + Open Count=0. Field-confirmed via screenshots from a real install. Fix: apply the watermark filter to the `is_alerting` branch too. Pair with a regression test in `test_coordinator.py`.
 - [ ] **`_auto_clear` watermark persistence** (`coordinator.py:298-304`): `state.clear()` advances `last_cleared_at` in memory but `_async_persist_watermarks()` is never awaited. Fix + `test_auto_clear_persists_watermark`.
 - [ ] **`open_count` stale on webhook path** (`coordinator.py`): `push_alert()` does not update `open_count`. Optimistic increment + poll-time correction.
 - [ ] **`_category_states` rebuild discards counters on reload**: `alert_count` and `last_alert` are lost on every reload. Persist alongside watermarks in the `Store`.
