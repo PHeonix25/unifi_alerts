@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from typing import Any
 
@@ -185,12 +184,14 @@ class UniFiClient:
 
     async def close(self) -> None:
         if self._auth_method == AUTH_METHOD_USERPASS and self._authenticated:
-            with contextlib.suppress(Exception):
+            try:
                 await self._session.post(
                     f"{self._base}/api/auth/logout",
                     ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                     timeout=aiohttp.ClientTimeout(total=5),
                 )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("UniFi logout failed: %s", type(err).__name__)
 
     # ── Private helpers ───────────────────────────────────────────────────
 

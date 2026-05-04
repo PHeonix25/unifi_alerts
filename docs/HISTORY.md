@@ -1,5 +1,32 @@
 # History
 
+## 2026-05-04 — v1.5.0 Bundle 1: error-message sanitisation + logout failure logging + rotation threat model
+
+**Why:** Three v1.5.0 hardening items grouped as a single low-risk PR — all share the "log/expose only `type(err).__name__`, never `str(err)`" pattern that was already established in `unifi_client.py` for v1.1.0. None were behavioural changes; all close credential / response-body exposure paths.
+
+**What:**
+
+1. **`__init__.py` exception sanitisation** — three `ConfigEntryAuthFailed` / `ConfigEntryNotReady` messages and two paired `_LOGGER.error` calls were embedding `str(err)`. The HA repair UI and HA logs render these directly to the user, so a `ConnectionError("https://admin:hunter2@10.0.0.1")` would have surfaced credentials in plain text. All five sites now use `type(err).__name__`.
+2. **`UniFiClient.close()` logout error logging** — replaced `with contextlib.suppress(Exception):` with try/except + `_LOGGER.warning("UniFi logout failed: %s", type(err).__name__)`. Failed logouts are now diagnosable; the original "best-effort, never raise" behaviour is preserved. The unused `contextlib` import was dropped.
+3. **`SECURITY.md` rotation threat model + `# WHY:` comment in `config_flow.py`** — documented that secret rotation changes the `?token=` parameter but not the URL path. The constant-time check still rejects the old token; URL-path revocation requires deleting and re-adding the entry. Comment placed adjacent to the rotation branch in the options-flow credentials step so future readers understand the partial-revocation contract.
+
+**How:**
+
+- **`__init__.py:60-69, 95-97`** — five sites updated; `from err` chaining preserved so the original exception remains accessible to advanced log inspectors.
+- **`unifi_client.py:186-194`** — try/except around the logout POST; `import contextlib` dropped (only consumer was the suppress).
+- **`SECURITY.md`** — new "Webhook secret rotation" section between "What's in scope" and "What's out of scope".
+- **`config_flow.py:399-404`** — `# WHY:` comment block added immediately before the `secrets.token_urlsafe(32)` rotation call referencing the new SECURITY.md section.
+
+**Tests added:**
+
+- `tests/unit/test_init.py::TestAsyncSetupEntry::test_invalid_auth_message_omits_underlying_error_text` — raises `InvalidAuthError` with a credential-bearing message; asserts the marker is absent and the class name is present in the resulting `ConfigEntryAuthFailed` string.
+- `…test_connect_failure_message_omits_underlying_error_text` — same shape on the connect path.
+- `…test_first_refresh_failure_message_omits_underlying_error_text` — same shape on the first-refresh path.
+- `tests/unit/test_unifi_client.py::TestClose::test_logout_failure_logs_warning_with_class_name_only` — uses `caplog`; asserts the WARNING log contains the class name only.
+- `…test_logout_failure_does_not_propagate` — guards the "best-effort" contract.
+
+Full suite: `367 passed`.
+
 ## 2026-05-04 — v1.5.0 Bundle 2: config-flow `async_get_clientsession` migration
 
 **Why:** Three call sites in `config_flow.py` (`async_step_user`, `async_step_reauth_confirm`, `async_step_credentials`) were creating bare `aiohttp.ClientSession()` instances inside `async with` blocks to validate user-entered credentials against the controller. This bypassed three things HA expects integrations to honour: the system-wide proxy configuration, the shared connection pool, and the user's `verify_ssl` setting (which is a per-session attribute on HA's clientsession). The fix is the canonical `async_get_clientsession(hass, verify_ssl=...)`.

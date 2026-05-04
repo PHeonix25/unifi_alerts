@@ -48,6 +48,19 @@ Security-relevant components of this integration include:
 - CI / release workflows (`.github/workflows/`): supply-chain integrity (action
   pinning, release packaging).
 
+## Webhook secret rotation
+
+The options flow can regenerate the per-entry webhook bearer secret. Rotation
+replaces the `?token=<value>` query parameter; the webhook URL path (which
+embeds an 8-character entry suffix) is **not** rotated. An attacker who
+captured the old token can still POST to the same endpoint, but the
+constant-time token check (`hmac.compare_digest`) rejects the request.
+
+If true URL-path revocation is ever required (e.g. the suffix itself is
+believed compromised), the only recovery is to delete and re-add the config
+entry. Rotation alone is sufficient for the common "I think my token leaked"
+case; it is not sufficient for "the URL has been published publicly".
+
 ## What's out of scope
 
 - Vulnerabilities in upstream Home Assistant Core or in third-party HA
