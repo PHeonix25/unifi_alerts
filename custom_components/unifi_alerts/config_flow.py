@@ -397,6 +397,11 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                         if new_api_key:
                             updated_data[CONF_API_KEY] = new_api_key
                         if regenerate_secret:
+                            # WHY: Rotation replaces the `?token=...` bearer but reuses the
+                            # webhook ID suffix (URL path). An attacker with the old token still
+                            # hits a live endpoint; the token check rejects them. URL-path
+                            # revocation requires deleting and re-adding the entry. See
+                            # SECURITY.md § "Webhook secret rotation".
                             updated_data[CONF_WEBHOOK_SECRET] = secrets.token_urlsafe(32)
                             _LOGGER.info(
                                 "Webhook secret regenerated for %s",

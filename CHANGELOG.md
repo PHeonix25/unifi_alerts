@@ -10,6 +10,12 @@ listed individually — only the consolidated `X.Y.Z` release that bundles them.
 
 ## [Unreleased]
 
+### Security
+
+- Sanitised three `ConfigEntryAuthFailed` / `ConfigEntryNotReady` messages in `__init__.py` so the inner exception's `str()` no longer leaks into HA logs or the repair UI. Each path now surfaces only `type(err).__name__`, matching the existing pattern in `unifi_client.py`. (`__init__.py`)
+- `UniFiClient.close()` previously swallowed logout failures with `contextlib.suppress(Exception)`, leaving session tokens valid on the controller with no diagnostic. Failed logouts now log at WARNING with the exception class name only — diagnosable without surfacing controller response bodies. (`unifi_client.py`)
+- `SECURITY.md` documents the webhook-secret rotation threat model: rotation replaces the bearer token but reuses the URL path; an attacker holding the old token still hits a live endpoint but is rejected by the constant-time token check. (`SECURITY.md`, `config_flow.py`)
+
 ## [1.4.0] — 2026-05-04
 
 ### Security

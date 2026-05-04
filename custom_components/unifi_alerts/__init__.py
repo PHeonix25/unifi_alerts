@@ -58,11 +58,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await client.authenticate()
     except InvalidAuthError as err:
-        _LOGGER.error("Authentication failed for UniFi controller: %s", err)
-        raise ConfigEntryAuthFailed(f"Invalid credentials for UniFi controller: {err}") from err
+        _LOGGER.error("Authentication failed for UniFi controller: %s", type(err).__name__)
+        raise ConfigEntryAuthFailed(
+            f"Invalid credentials for UniFi controller: {type(err).__name__}"
+        ) from err
     except Exception as err:  # noqa: BLE001
-        _LOGGER.error("Failed to authenticate to UniFi controller: %s", err)
-        raise ConfigEntryNotReady(f"Could not connect to UniFi controller: {err}") from err
+        _LOGGER.error("Failed to authenticate to UniFi controller: %s", type(err).__name__)
+        raise ConfigEntryNotReady(
+            f"Could not connect to UniFi controller: {type(err).__name__}"
+        ) from err
 
     # Proactively register the hub device so it appears in HA's Services section
     # immediately after setup — before any entity is registered.
@@ -89,7 +93,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await coordinator.async_config_entry_first_refresh()
     except Exception as err:  # noqa: BLE001
-        raise ConfigEntryNotReady(f"Initial data fetch failed: {err}") from err
+        raise ConfigEntryNotReady(f"Initial data fetch failed: {type(err).__name__}") from err
 
     # Register webhooks and capture the generated URLs for display
     webhook_manager = WebhookManager(
