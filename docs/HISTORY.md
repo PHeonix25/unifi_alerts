@@ -48,6 +48,13 @@ Full suite: `367 passed`.
 
 Full suite: `362 passed`. (Net: −1 obsolete test, +1 regression test on top of the 362 base on `dev`.)
 
+**Follow-up after PR #68 review (PHeonix25):**
+
+- Dropped `"aiohttp>=3.9.0"` from `manifest.json` `requirements`. `aiohttp` is a Home Assistant core dependency and is always provided by the runtime; listing it in a custom-integration manifest is redundant and can mislead future readers into thinking we need a specific minimum. Direct `aiohttp` imports in `unifi_client.py` (for `ClientTimeout`, `ClientError`, `ClientResponseError`, and the `ClientSession` type annotation) and `webhook_handler.py` (`aiohttp.web.Request` / `Response`) continue to work — those types are provided by HA's bundled `aiohttp`.
+- Rewrote the `## aiohttp session lifecycle` section of `docs/HOMEASSISTANT.md` so future contributors get the right pattern up-front: `async_get_clientsession(hass, verify_ssl=...)` in all situations, including short-lived config-flow validation calls. Removed the previous "DO: own it explicitly" example that recommended bare `aiohttp.ClientSession()` — it was the exact pattern Bundle 2 just removed. Removed the now-stale "config flow `async_step_user` currently does the wrong thing" pointer. Added a new `## Direct aiohttp use` paragraph explaining that importing `aiohttp` for types/exceptions is fine but bare session creation is not.
+
+`make check` re-run after these follow-ups: `367 passed`.
+
 ## 2026-05-04 — v1.4.0 release: squash-merge trap diagnosed and fixed; branch rulesets configured
 
 **Release process investigation:**
