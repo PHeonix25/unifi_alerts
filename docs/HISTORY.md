@@ -1,5 +1,21 @@
 # History
 
+## 2026-05-04 — v1.4.0 release: squash-merge trap diagnosed and fixed; branch rulesets configured
+
+**Release process investigation:**
+Diagnosed why `dev → main` PR (#63) showed merge conflicts despite dev having the correct content. Root cause: v1.3.0 was squash-merged into main (PR #46) creating commit `389841a` whose only parent is `28cacd1` (v1.2.0). The subsequent sync attempt (PR #47) accidentally merged `28cacd1` again instead of `389841a` — identical tree content so CI passed, but the parent pointer was wrong and the merge base never advanced. Result: `git merge-base main dev` remained at `28cacd1` for the entire v1.4.0 cycle, producing a conflict on every file both branches had touched since v1.2.0.
+
+**Fix:** Created `claude/sync-main-to-dev-1.4.0` branch (PR #64) which merged `389841a` as a proper second parent into dev's ancestry. All conflicts resolved by taking dev's content. After merging, `git merge-base main dev` returned `389841a` and PR #63 merged cleanly as a merge commit.
+
+**Post-release sync:** PR #65 combined the mandatory main→dev sync (merging `820dd41`, the v1.4.0 release commit, as second parent) with the v1.5.0-pre1 version bump. `git merge-base main dev` now returns `820dd41` — the next release will be a clean fast-forward.
+
+**Documentation:** `CLAUDE.md` release workflow updated with explicit "CRITICAL — use merge commit, never squash" warning, step 3b for the mandatory post-release sync, and a note explaining why the v1.3.0 sync failed. `docs/DEVELOPING.md` gained a full "Release process" section documenting all three PRs and the common mistake.
+
+**Branch rulesets:** Configured two GitHub Rulesets (replacing legacy branch protection rules) to enforce the strategy mechanically:
+- `dev` ruleset: squash-only (`allowed_merge_methods: ["squash"]`) + `required_linear_history` + status checks
+- `main` ruleset: merge-commit-only (`allowed_merge_methods: ["merge"]`) + status checks
+This makes it impossible to accidentally squash dev→main from the GitHub UI.
+
 ## 2026-05-01 — SSL fail-open fix + _get_coordinators guard
 
 **Track B — SSL fail-open (5 call sites in `unifi_client.py`):**
