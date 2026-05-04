@@ -75,22 +75,26 @@ When adding a new platform: add it to `PLATFORMS`, create `{platform}.py`, imple
 
 ## aiohttp session lifecycle
 
+**Always use `async_get_clientsession(hass, verify_ssl=...)`. Never create a bare `aiohttp.ClientSession()`** — not in `__init__.py`, not in `config_flow.py`, not anywhere. HA owns the session lifecycle, configures the proxy / connection pool, and routes the user's `verify_ssl` setting through to it.
+
 Two helpers exist; they have different ownership semantics:
 
 | Helper | Ownership | Close it? |
 |---|---|---|
-| `async_get_clientsession(hass)` | HA-owned shared session | **Never** |
+| `async_get_clientsession(hass, verify_ssl=...)` | HA-owned shared session (one cached per `verify_ssl` value) | **Never** |
 | `async_create_clientsession(hass)` | HA-owned dedicated session | **Never** — HA registers a cleanup handler that closes it on shutdown |
 
 Calling `await session.close()` on either will trigger a deprecation warning from `homeassistant.helpers.frame` and is treated as a bug by HA. The session will be closed automatically when the integration is unloaded or HA shuts down.
 
-If you need a truly short-lived session with explicit lifecycle control (e.g. a one-off auth check in a config flow), create a raw `aiohttp.ClientSession()` yourself and use it as an async context manager:
-
 ```python
-# DO: own it explicitly
+# DO: HA-managed, no try/finally needed
+session = async_get_clientsession(hass, verify_ssl=verify_ssl)
+client = UniFiClient(session, url, user_input)
+auth_method = await client.authenticate()
+
+# DON'T: bare ClientSession bypasses HA's proxy + pool + verify_ssl wiring
 async with aiohttp.ClientSession() as session:
-    client = UniFiClient(session, url, user_input)
-    auth_method = await client.authenticate()
+    ...
 
 # DON'T: close an HA-managed session
 session = async_create_clientsession(hass)
@@ -100,7 +104,11 @@ finally:
     await session.close()  # triggers HA warning
 ```
 
-The config flow `async_step_user` currently does the wrong thing — see `TODO.md`.
+This applies to short-lived config-flow validation calls too — `async_get_clientsession` returns a cached session keyed by `verify_ssl`, so repeated calls during setup cost nothing.
+
+## Direct `aiohttp` use
+
+`aiohttp` is a Home Assistant core dependency and is always available. **Do not list `aiohttp` in `manifest.json` `requirements`** — hassfest treats core packages in custom-integration requirements as redundant. Importing `aiohttp` (e.g. for `aiohttp.ClientTimeout`, `aiohttp.ClientError`, `aiohttp.ClientResponseError`, or the `aiohttp.web.Request`/`Response` types in a webhook handler) is fine; that's working with the types, not creating sessions.
 
 ## Config flow patterns
 
