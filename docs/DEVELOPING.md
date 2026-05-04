@@ -106,3 +106,42 @@ All four jobs must pass before merging to `main`.
 - Keep PRs focused — one logical change per PR.
 - Every PR that adds functionality must include tests.
 - Update `HISTORY.md` with a dated entry describing the change.
+
+## Release process
+
+Stable releases require **three** PRs, in order. Skipping or mis-ordering them causes merge-base drift that turns the next release into a conflict storm.
+
+### PR 1 — version bump + CHANGELOG (feature/* → dev)
+
+1. Bump `manifest.json` version from `X.Y.Z-preN` to `X.Y.Z`.
+2. In `CHANGELOG.md`: rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD`, insert a fresh empty `[Unreleased]` above it, and add a `[X.Y.Z]: …/releases/tag/vX.Y.Z` compare link at the bottom.
+3. Open a PR targeting `dev`. Merge it normally (squash is fine for feature→dev).
+
+### PR 2 — dev → main (the release PR)
+
+> **MUST be merged as "Create a merge commit". Never squash.**
+
+GitHub's "Squash and merge" collapses all dev commits into a single new commit whose only parent is the previous `main` tip. This severs `dev`'s ancestry from `main`: the merge base never advances, and the next release will conflict on every file both branches touched since the previous release.
+
+After this PR merges, push the version tag:
+
+```bash
+git checkout main && git pull origin main
+git tag vX.Y.Z && git push origin vX.Y.Z
+```
+
+### PR 3 — main → dev (sync merge, mandatory)
+
+Immediately after PR 2 merges, bring the new squash commit into `dev`'s ancestry:
+
+```bash
+git checkout dev && git pull origin dev
+git checkout -b claude/sync-main-to-dev-X.Y.Z
+git merge origin/main          # merge the new squash commit as a second parent
+# resolve any trivial conflicts (version number: take dev's X.(Y+1).0-pre1)
+git push -u origin claude/sync-main-to-dev-X.Y.Z
+```
+
+Open a PR targeting `dev`. **Merge as "Create a merge commit"** — not squash. The resulting commit will have `origin/main`'s tip as its second parent, making `git merge-base dev main` point at the new `vX.Y.Z` squash commit rather than the previous release.
+
+> **Common mistake (v1.3.0 / PR #47):** merging `origin/main` while `main` still points at the *previous* stable tag instead of the new squash commit. The tree content looks correct so CI passes, but the parent pointer is wrong and the merge base does not advance. Always run `git fetch origin main && git log --oneline origin/main -1` to confirm `main` is at the new release commit before running `git merge origin/main`.
