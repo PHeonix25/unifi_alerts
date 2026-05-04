@@ -1,5 +1,201 @@
 # History
 
+## 2026-05-01 — SSL fail-open fix + _get_coordinators guard
+
+**Track B — SSL fail-open (5 call sites in `unifi_client.py`):**
+All five `self._config.get(CONF_VERIFY_SSL, False)` calls changed to use `DEFAULT_VERIFY_SSL` as the fallback so a missing key fails closed (SSL ON) rather than silently disabling verification. `DEFAULT_VERIFY_SSL` added to the import. New `TestSslFailOpen` class in `test_unifi_client.py` covers the absent-key case.
+
+**Track C — `_get_coordinators` guard (`services.py`):**
+`async_entries(DOMAIN)` can return entries in `SETUP_RETRY` / `SETUP_ERROR` state that never populated `runtime_data`. Accessing `.runtime_data.coordinator` on such entries raised `AttributeError`. Fixed by filtering the iterate-all branch to `state == ConfigEntryState.LOADED` and adding an explicit state check in the single-entry branch. New `TestGetCoordinatorsGuard` class in `test_services.py` covers both cases.
+
+## 2026-05-01 — v1.4.0 UniFi OS only: docs, code simplification, entry migration
+
+**Decision:** officially support only UniFi OS controllers. Classic self-hosted Network Application on bare Linux/Windows is excluded.
+
+- `README.md` / `info.md`: added "⚠ Requires UniFi OS" prerequisite section listing tested console models (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+); explicitly states classic self-hosted is not supported.
+- `unifi_client.py`: removed `_detect_unifi_os()`, `_network_path()`, the `_is_unifi_os` attribute, and all detection-based branching in `authenticate()`, `close()`, and `_login_userpass()`. All paths now hardcode `/proxy/network` prefix and `/api/auth/login` / `/api/auth/logout` UniFi OS paths. Net removal: ~60 lines.
+- `const.py`: removed `CONF_IS_UNIFI_OS = "is_unifi_os"` constant.
+- `config_flow.py`: removed `CONF_IS_UNIFI_OS` storage from credentials dict (3 sites); bumped `ConfigFlow.VERSION` from 1 to 2; added `async_migrate_entry` that strips the stale key from existing entries.
+- Tests: removed `TestNetworkPath`, `TestDetectUnifiOs`, `TestIsUnifiOsPersistence`, legacy `_is_unifi_os=False` tests and `test_apikey_success_coerces_is_unifi_os_true`; added `test_fetch_alarms_uses_proxy_network_path`; updated `TestClose` to use `test_userpass_auth_posts_to_unifi_os_logout_path`; removed `test_conf_is_unifi_os_stored_in_credentials`; added `test_async_migrate_entry_strips_conf_is_unifi_os`.
+
+## 2026-04-30 — Comprehensive codebase audit: TODO and ROADMAP updated for v2.0.0 lead-up
+
+Full multi-perspective audit (senior architect, solution architect, security architect, quality architect) of the dev codebase at v1.4.0-pre2. Goal: confirm every remaining TODO item is still required, find any new gaps, and produce a granular, themed ROADMAP from v1.4.0 through v2.0.0.
+
+### Findings — stale items removed
+
+- **"No test for webhook dedup window"** was still in `docs/TODO.md` Testing section. `TestPushDedup` in `test_coordinator.py` was added in the 2026-04-29 cluster A session and covers same/distinct keys, distinct categories, window expiry, and the empty-key edge case. Item removed from TODO.md.
+
+### Findings — new items discovered
+
+- **`_auto_clear` does not persist the watermark** (`coordinator.py:298-304`): `_auto_clear()` calls `state.clear()` (which sets `last_cleared_at` in memory) but never awaits `_async_persist_watermarks()`. Timer-triggered auto-clears therefore lose their watermark across HA restarts — `open_count` jumps back to the lifetime total on the next poll. Fix: add `await self._async_persist_watermarks()` after `state.clear()`. Added to TODO.md and ROADMAP.md v1.6.0 with a companion test `test_auto_clear_persists_watermark`.
+- **Button entities missing `CoordinatorEntity` mixin** (`button.py`): `UniFiClearCategoryButton` and `UniFiClearAllButton` extend `ButtonEntity` directly. They have no `available` property checking coordinator state, so both buttons always appear available even when their category is disabled — inconsistent with every other platform file. Added to TODO.md and ROADMAP.md v1.6.0.
+- **`async_migrate_entry` needed for `CONF_IS_UNIFI_OS` removal**: the planned UniFi OS only code simplification strips `CONF_IS_UNIFI_OS` from the codebase, but existing entry.data records carry this key. Without `async_migrate_entry` (VERSION 1 → 2), old installs accumulate a stale key indefinitely. Added to TODO.md and ROADMAP.md v1.4.0 alongside the code simplification item.
+
+### Findings — ROADMAP corrections
+
+- **Open-count watermark**: `ROADMAP.md § v1.4.0` still showed `[ ]` for the watermark item despite it being fully implemented and shipped in the 2026-04-29 session. Marked `[x]` with a note about the `_auto_clear` persistence gap.
+- **SSL fail-open line numbers**: the two v1.2.0 / v1.4.0 entries describing 5 separate call sites were merged into one correct entry with current line numbers (`:134`, `:197`, `:214`, `:260`, `:296`).
+- **`allow_redirects` and config-flow line numbers** updated to match current `unifi_client.py:220,233` and `config_flow.py:82,243,366`.
+- **`__init__.py` exception message line numbers** corrected to `:57,60`.
+- **`config_flow.py` private `_is_unifi_os` access** line numbers corrected to `106,261,395`.
+- **`brand/icon.png`**: ROADMAP v2.0.0 still listed "Replace placeholder icon" — the file is a real 256×256 RGBA PNG. Marked `[x]`.
+
+### ROADMAP: new release sections
+
+Added three new intermediate release sections to chunk the backlog between v1.4.0 and v2.0.0:
+
+- **v1.5.0 — Security hardening II**: config-flow `ClientSession` → `async_get_clientsession`, credential-fragment logging fix, `allow_redirects` probe fix, options-flow staging refactor (atomic credential persistence + `verify_ssl` fix), `close()` logout error logging, document secret rotation threat model.
+- **v1.6.0 — Reliability + completeness**: `_auto_clear` watermark persistence, `open_count` stale on webhook, `_category_states` reload persistence, epoch-ms timestamp fix, silent JSON-parse logging, `make lint` expansion, `test_auto_clear_persists_watermark`, `test_from_api_alarm_epoch_ms`, interleaving test, button `CoordinatorEntity` mixin, private `_is_unifi_os` property.
+- **v1.7.0 — Documentation + architecture**: mypy strict, `has_entity_name` + `_attr_translation_key` migration, split test_config_flow.py, sensor device_class, plus all 8 documentation items (firmware matrix, troubleshooting/FAQ, uninstall, local-network warning, setup copy warning, privacy section, automation edge case, unique_id docs), and QA/verify-update-in-place.
+
+
+
+Closed the v1.4.0 high-value item *Expose `last_cleared_at` in diagnostics* (the TODO heading used the older name `last_acknowledged_at`, but the actual `CategoryState` attribute and the new diagnostics key are both `last_cleared_at`). Previously `diagnostics.py` only emitted the rollup totals (`any_alerting`, `rollup_alert_count`, `rollup_open_count`) plus webhook URLs, which made it impossible for users debugging unexpected `open_count` values to see the per-category acknowledgement watermark.
+
+### Changes
+
+- **`diagnostics.py`** — added a `categories` map under `coordinator` keyed by category name. Each entry now exposes `enabled`, `is_alerting`, `open_count`, `alert_count`, and `last_cleared_at` (ISO-formatted, or `null` when unset). Iterates `coordinator.category_states` (the existing public property on `UniFiAlertsCoordinator`) so no new coordinator API was required. The pre-existing `coordinator is None` short-circuit (used when diagnostics fires during a setup failure) is preserved verbatim — no risk of a `None.category_states` AttributeError.
+- **`tests/unit/test_diagnostics.py`** — `_make_coordinator` helper now accepts an optional `category_states` mapping and defaults to a populated dict of empty `CategoryState` objects so existing tests still see the new `categories` key without modification. Two new tests added (8 total in the file): `test_diagnostics_exposes_per_category_state` (populates one category with non-default values, including a real `datetime` watermark, and asserts the exact dict shape including the ISO-formatted timestamp) and `test_diagnostics_per_category_last_cleared_at_none_when_unset` (asserts `null`/`None` is emitted as `None` rather than crashing or omitting the key).
+
+### Why
+
+Direct response to the TODO item: surfaces the acknowledgement watermark and per-category counters that users need when `open_count` looks wrong. Pure diagnostic-only change — no behaviour, no schema-of-record changes, no new public API — so the failure modes are bounded to the diagnostics download itself.
+
+### Verification
+
+`make check` passes locally: ruff lint+format, mypy, HACS preflight, strings/translations drift, and the full pytest suite (8/8 in `test_diagnostics.py`).
+
+Removed the matching item from `docs/TODO.md § High-value improvements`.
+
+## 2026-04-29 — Overnight v1.4.0 hardening pass (clusters A and D)
+
+Two PRs targeting the v1.4.0 hardening backlog from `docs/ROADMAP.md`. Both bracketed by full security/architecture/quality audits (BEFORE on clean `dev`, AFTER on the merged audit branch) using three parallel agents per pass.
+
+### BEFORE-state audit findings (added to TODO/ROADMAP before any code changed)
+
+The BEFORE audit identified one new item not previously tracked: `unifi_client.py:153-154` `except Exception: pass` silently drops any failure to parse the UniFi 400-error JSON body, masking the `api.err.InvalidObject` fallback if the body shape changes. Logged in TODO.md and ROADMAP.md § v1.4.0 as a separate cluster (not part of A or D). Everything else surfaced by the audits was already tracked in `docs/ROADMAP.md § v1.4.0`.
+
+### Cluster A — webhook security hardening (PR #50, merged into `claude/webhook-security-hardening`)
+
+Closes the v1.4.0 webhook-security backlog in one focused PR. Each item cross-cuts `const`, `webhook_handler`, `coordinator`, `config_flow`, and `__init__` and the tests share fixtures, so landing them together produced a single coherent security pass with red-green tests.
+
+- **Multi-entry webhook ID collision (CRITICAL):** new `CONF_WEBHOOK_ID_SUFFIX` (`secrets.token_hex(4)`, 32 bits) generated per entry by the config flow. `webhook_id_for_category(category, suffix="")` embeds the suffix when present and falls back to the legacy unprefixed format when absent — existing single-entry users keep their already-pasted Alarm Manager URLs; multi-entry collisions become impossible. (`const.py`, `webhook_handler.py`, `config_flow.py`)
+- **Timing-safe token comparison:** `hmac.compare_digest` replaces `!=` for webhook bearer-token validation. (`webhook_handler.py`)
+- **DEBUG token redaction:** new `_redact_webhook_token()` scrubs `?token=<secret>` to `?token=***` in the setup log. (`__init__.py`)
+- **DEBUG payload narrowing:** webhook payload DEBUG log now restricted to a `_SAFE_DEBUG_FIELDS` allow-list (`{key, alert_key, severity, device_name, category}`). (`webhook_handler.py`)
+- **Per-(category, alert_key) 5s rate limit / debounce:** `coordinator.push_alert()` checks `_last_push_at` against `WEBHOOK_DEDUP_WINDOW_SECONDS = 5.0`. (`coordinator.py`)
+- **Webhook secret rotation:** new "Regenerate webhook secret" checkbox on the options-flow credentials step. Works alone (no other input) or alongside credential changes; persists a fresh `token_urlsafe(32)` and re-shows the URLs on the finish step. (`config_flow.py`, `strings.json`, `translations/en.json`)
+- **`register_all()` rollback:** each iteration is wrapped in `try/except` so a single `async_register` failure no longer aborts the loop. `self._registered` only gets appended after a successful registration. (`webhook_handler.py`)
+- **Webhook decode logging:** `UnicodeDecodeError`, `JSONDecodeError`, and `TypeError` now log at WARNING with the exception class name and a 80-byte body preview, instead of falling through silently to `{}`. (`webhook_handler.py`)
+
+**Tests (+26 tests, 344 → 370 total).** New classes: `TestMultiEntryWebhookIdIsolation`, `TestHmacTokenComparison`, `TestDecodeErrorLogging`, `TestDebugPayloadNarrowing`, `TestRegisterAllRollback` (all in `test_webhook_handler.py`); `TestPushDedup` (in `test_coordinator.py`); `TestWebhookSecretRotation`, `TestWebhookIdSuffix` (in `test_config_flow.py`); `TestRedactWebhookToken` (in `test_init.py`); plus new file `tests/integration/test_multi_entry.py` with the multi-entry red-green pair (two real config entries set up side-by-side, posting to entry A's URL only flips entry A's coordinator and vice versa — would have failed before the suffix fix landed). One follow-up commit added `test_finish_step_displays_new_url_after_rotation` after the AFTER audit raised a hypothetical concern about secret-rotation showing the OLD token in the finish step; verified against HA source (`config_entries.py:2229` `_setter(entry, "data", ...)`) that `async_update_entry` mutates `entry.data` synchronously, so the concern was a false positive — the test makes that invariant explicit so it can't silently regress.
+
+### Cluster D — repo hygiene + release pipeline (PR #51, merged into `claude/repo-hygiene-and-release`)
+
+No source-code changes. Closes the v1.4.0 repo-hygiene backlog with `.github/` policy files and a release-workflow migration off the third-party `softprops/action-gh-release`.
+
+- **`CHANGELOG.md`** added in Keep-a-Changelog format, back-filled from v1.0.0 through v1.3.0. Pre-release entries (`X.Y.Z-preN`) collapsed into the consolidated stable entry; `docs/HISTORY.md` remains the dated narrative source-of-truth.
+- **`SECURITY.md`** added with vulnerability disclosure guidance (private GitHub advisory + fallback path for users without a GitHub account, in-/out-of-scope listing, disclosure timing).
+- **`CODEOWNERS`** added (everything → `@PHeonix25`, with more specific paths for `custom_components/`, `tests/`, `.github/workflows/`, `docs/`, and policy files).
+- **GitHub issue templates** added: `bug_report.yml`, `feature_request.yml`, `config.yml` (disables blank issues; surfaces the private security-advisory link and Discussions for usage questions). The existing `unclassified_event_key.yml` is unchanged.
+- **`.github/dependabot.yml`** configured for the `github-actions` ecosystem only (Python deps in `requirements-dev.txt` need manual review tied to HA core compatibility). Weekly Monday cadence, Brisbane timezone; minor + patch grouped, major bumps individual. Keeps the 40-char SHA pins enforced by `CLAUDE.md` from going stale.
+- **`.github/release.yml`** added so `--generate-notes` groups merged PRs by label (Security, Bug Fixes, Features, Documentation, Tests, CI / Release, Other).
+- **`release.yml` workflow migrated** from `softprops/action-gh-release@v3` to `gh release create --generate-notes`. The GH CLI is pre-installed on `ubuntu-latest` runners so no extra setup step is needed. `fetch-depth: 0` added to `actions/checkout` so the previous-tag boundary can be computed for the auto-generated notes. Pre-release detection logic (the v1.3.0 `grep --` terminator fix) is preserved verbatim. **Eliminates the only third-party action in the release pipeline.**
+- **`CLAUDE.md` updated to lock in the new invariants** (added late in the PR-#51 cycle so future sessions can't accidentally regress cluster D): the Repository-layout block now lists `.github/dependabot.yml`, `.github/release.yml` (with a callout that it's a different file from `.github/workflows/release.yml`), `.github/ISSUE_TEMPLATE/*`, and the new repo-root `CHANGELOG.md` / `SECURITY.md` / `CODEOWNERS`; the existing `release.yml` workflow entry is rewritten to document the `gh release create --generate-notes` migration and the load-bearing `--` in the pre-release `grep`. The Reference-documents table gains rows for `CHANGELOG.md` and `SECURITY.md`. Three new Non-negotiable constraints: (a) the release pipeline uses `gh release create --generate-notes` only — never re-introduce `softprops/action-gh-release`; `fetch-depth: 0` on `actions/checkout` is required; (b) `CHANGELOG.md` must accumulate user-visible changes under `[Unreleased]` and be finalised on stable-release PRs by renaming to `[X.Y.Z] — YYYY-MM-DD` (pre-release `-preN` bumps don't touch the file); (c) PRs must carry a label recognised by `.github/release.yml` (`security` / `bug` / `enhancement` / `documentation` / `tests` / `ci` / `dependencies`) so `--generate-notes` categorises them correctly. The existing SHA-pin constraint gets a Dependabot reference. The Release-workflow section gains the CHANGELOG finalisation step.
+
+### AFTER-state audit findings
+
+Three parallel agents audited the merged state. Headline: cluster A is solid, cluster D is low-risk and improves maintainability, no NEW security regressions introduced by either PR.
+
+The two MEDIUM findings raised by the security and architecture agents both turned out to be false positives:
+
+- **Secret-rotation finish-step "shows old token"** — verified against HA source that `async_update_entry` mutates `entry.data` in place via `object.__setattr__`. Locked in by a new regression test (`test_finish_step_displays_new_url_after_rotation`).
+- **Dedup key collision in multi-entry with empty alert keys** — auditor missed that each entry has its own coordinator instance with its own `_last_push_at` dict, so cross-entry collision is impossible. Within a single entry, two webhook posts that both lack a `key` field do dedup (intentional flood prevention).
+
+Genuinely actionable items added to TODO/ROADMAP as new v1.4.0 backlog items:
+
+- **Document that secret rotation rotates the bearer token but reuses the webhook ID.** The HA webhook endpoint URL (the path component) does not change on rotation; only the `?token=` query parameter does. An attacker who captured the old token can still POST to the webhook endpoint, but the token check rejects them. If true revocation is ever required (e.g., to stop traffic from a compromised network sender), the suffix and webhook ID would also need to rotate. Add a note to SECURITY.md and a comment in `config_flow.py`.
+- **Expand `make lint` to cover `tests/`.** The Makefile's `lint` target only runs ruff against `custom_components/`, so 6 pre-existing `I001` / `F401` issues in `tests/unit/test_services.py` and `tests/unit/test_config_flow.py` (mid-function imports, unused imports) escaped local validation. None were introduced by clusters A or D — they're pre-existing on `dev` — but the Makefile gap is the right thing to close. Cluster A's commit ran ruff on `tests/` voluntarily and surfaced these as separate cleanup work.
+- **Optional: brittle test indexing in `TestDebugPayloadNarrowing`** (low priority) — accesses `mock_logger.debug.call_args[0][2]` to retrieve the logged payload dict. Still passes; could be made more declarative.
+- **Optional: integration test for full reload flow after rotation** (low priority) — the existing `tests/integration/test_multi_entry.py` exercises the suffix isolation directly but not the full options-flow → entry-update → reload → re-register cycle. Cluster A's existing tests cover each step in isolation; an end-to-end test would be an extra guard.
+
+### Copilot review pass on PR #50
+
+After the AFTER-audit, GitHub's Copilot reviewer ran a pass on PR #50 and surfaced four threads. One was a real bug fixed in cluster A's branch (commit [`a011a36`](https://github.com/PHeonix25/unifi_alerts/commit/a011a36)); the other three were pre-existing patterns deferred to a focused follow-up PR.
+
+**Fixed in cluster A:**
+
+- **`_last_push_at` unbounded growth** — the dedup-tracking dict in `coordinator.push_alert()` was insert-only, so a misconfigured controller emitting high-cardinality alert keys could grow it without bound over the lifetime of the process. `push_alert()` now opportunistically drops entries older than `WEBHOOK_DEDUP_WINDOW_SECONDS` right before recording each new push. Bound becomes "distinct (category, alert_key) pairs received within the window" rather than the controller's lifetime vocabulary. Cost is O(n) per push but n is naturally small. Test count 370 → 371 with `test_last_push_at_dict_bounded_by_dedup_window` (50-key burst at t=0, jump past window, push one more, assert only the fresh entry remains).
+
+**Deferred to a follow-up PR (filed in TODO and ROADMAP under v1.4.0 § Security):**
+
+- **Options-flow credential changes persist before the user submits the flow** — pre-existing pattern for credential updates on `dev`; cluster A inherited it for the rotate-only branch to stay consistent. Proper fix is a coordinated refactor that stages credentials AND secret in `self._pending_data` and persists atomically inside `async_step_finish` — touches the existing credentials path too, so it wants its own PR with its own tests.
+- **Same root cause at the credential-validation branch** — same response, same TODO.
+- **`verify_ssl` toggle alone does not persist** — `credentials_changed` predicate ignores `verify_ssl`. Pre-existing on `dev`, lands naturally alongside the staging refactor.
+
+### Coverage of the v1.4.0 hardening backlog (this overnight session)
+
+**Closed by cluster A:**
+- ✓ Webhook ID collision on multi-entry (CRITICAL)
+- ✓ Non-constant-time webhook token comparison (timing attack)
+- ✓ Webhook URLs containing `?token=` logged at DEBUG
+- ✓ Full webhook payload logged at DEBUG
+- ✓ No webhook rate limiting / debounce
+- ✓ Webhook secret cannot be rotated post-setup
+- ✓ `WebhookManager.register_all()` partial-failure leak
+- ✓ Webhook decode errors silently dropped
+
+**Closed by cluster D:**
+- ✓ No `CHANGELOG.md`
+- ✓ No `SECURITY.md`, `CODEOWNERS`, GitHub issue templates
+- ✓ Pinned SHAs need a refresh mechanism (Dependabot for `github-actions`)
+- ✓ Release notes auto-generated from all commits, not scoped to release window (migrated to `gh release create --generate-notes` + `.github/release.yml` categories)
+- ✓ `CLAUDE.md` invariants for the above (Repository layout / Reference documents / Non-negotiable constraints / Release workflow updated so future sessions don't accidentally regress)
+
+**Still open (separate clusters, unchanged this session):**
+SSL fail-open across 5 call sites; `_category_states` reload persistence; epoch-ms timestamp parsing; `open_count` stale on webhook path; `close()` swallows logout errors; `allow_redirects=True` on probes; config-flow bare `aiohttp.ClientSession`; credential fragments in `__init__.py` exception messages; `mypy strict = false`; entity naming `has_entity_name` migration; sensor `device_class`; private-attr access `client._is_unifi_os`; UniFi-OS-only documentation and code path removal; the post-audit additions above; everything in the documentation and tests sub-sections of the v1.4.0 backlog.
+
+---
+
+## 2026-04-29 — Option C: per-category acknowledgement watermark for open_count
+
+Confirmed via live testing that the UniFi Network controller offers no documented way to archive/dismiss alarms — `POST /cmd/evtmgt {"cmd":"archive-all-alarms"}` returns `api.err.NotFound` on current firmware, and there is no dismiss UI. Without intervention, `open_count` is a lifetime cumulative counter that only grows (a production install showed 3000+ immediately on setup).
+
+Implemented Option C: a per-category acknowledgement watermark stored in `last_cleared_at` (`CategoryState`). Pressing any Clear button advances the watermark to "now". Polling counts only alarms newer than the watermark, so `open_count` reflects "alerts since last cleared" rather than a lifetime total. Watermarks are persisted via `homeassistant.helpers.storage.Store` (keyed by entry_id) so they survive HA restarts.
+
+**`coordinator.py`:**
+- `__init__` takes a new `entry_id: str = ""` parameter; creates a `Store` instance at `{DOMAIN}_watermarks_{entry_id}`.
+- `async_restore_watermarks()` — loads persisted ISO-8601 timestamps from the store on startup and applies them to `_category_states[cat].last_cleared_at`. Call this before `async_config_entry_first_refresh()`.
+- `_async_persist_watermarks()` (private) — saves all non-None `last_cleared_at` values to the store. Called by every clear operation.
+- `async_clear_category(category)` — the sole clear entry point for a single category: cancels auto-clear task, calls `state.clear()` (advances watermark), persists, notifies entities.
+- `async_clear_all()` — clears all enabled categories (regardless of `is_alerting`), persists once, notifies once.
+- `_async_update_data()` — `open_count` is now `len([a for a in alerts if a.received_at > state.last_cleared_at])` when a watermark is set, or `len(alerts)` when not (first boot / never cleared).
+
+**`__init__.py`:** passes `entry.entry_id` to coordinator constructor; awaits `coordinator.async_restore_watermarks()` before `async_config_entry_first_refresh()`.
+
+**`button.py`:** `async_press()` on both button classes reduced to a single `await coordinator.async_clear_category()` / `await coordinator.async_clear_all()` call — all logic delegated to coordinator.
+
+**`services.py`:** `_handle_clear_category` and `_handle_clear_all` reduced to delegation calls — no more manual cancel/clear/notify scattered across the handler. The `is_alerting` guard was removed from the service layer (coordinator handles unconditional watermark advancement, which is the correct behavior for "acknowledge everything").
+
+**`docs/UNIFI.md` alert lifecycle section:** corrected false statements about archiving (the `archive-all-alarms` endpoint is 404; there is no UI dismiss option). Added design note explaining the watermark approach.
+
+**`docs/ARCHITECTURE.md`:** updated `CategoryState` and coordinator descriptions to cover watermarks and storage.
+
+**Tests (344 total, all passing):**
+- `TestWatermarks` in `test_coordinator.py` (9 new tests): `async_restore_watermarks` loads/skips-invalid/handles-empty; `async_clear_category` sets watermark + cancels task + persists + notifies; `async_clear_all` sets watermark on all enabled categories; `open_count` filtered by watermark; `open_count` unfiltered when no watermark.
+- `test_entities.py` button tests: replaced 8 behavioural tests (which tested coordinator behaviour, not button behaviour) with 2 delegation tests verifying `async_clear_category` / `async_clear_all` are awaited. Added `AsyncMock` for both to `make_coordinator`.
+- `test_services.py` service handler tests: replaced 12 behavioural tests with 6 delegation tests verifying the handler routes to the correct coordinator method and applies entry_id filtering. Added `AsyncMock` for both to `make_coordinator`.
+- `test_init.py` / `test_services.py` (wired-from-init): added `async_restore_watermarks = AsyncMock()` to coordinator mocks.
+
+--- 
+
+## 2026-04-29 — Start v1.4.0-pre1 cycle
+
+Bumped `manifest.json` from `1.3.0` to `1.4.0-pre1` to open the next development cycle. See `docs/TODO.md` and `docs/ROADMAP.md § v1.4.0` for the planned work: UniFi OS only simplification, open-count watermark (PR #44), and the hardening backlog carried over from the v1.2.0 audit.
+
+---
+
 ## 2026-04-29 — Release v1.3.0
 
 Bumped `manifest.json` from `1.3.0-pre5` to `1.3.0` and merged dev to main via PR. Updated ROADMAP.md and TODO.md: v1.3.0 marked complete; "UniFi OS only" and hardening backlog items moved to v1.4.0.

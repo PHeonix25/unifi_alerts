@@ -15,13 +15,11 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from .const import (
     CONF_CONTROLLER_URL,
     CONF_VERIFY_SSL,
-    DATA_COORDINATOR,
-    DATA_UNREGISTER_WEBHOOKS,
-    DATA_WEBHOOK_IDS,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
 )
 from .coordinator import UniFiAlertsCoordinator
+from .models import RuntimeData
 from .services import async_register_services, async_unregister_services
 from .unifi_client import InvalidAuthError, UniFiClient
 from .webhook_handler import WebhookManager
@@ -36,10 +34,17 @@ PLATFORMS: list[Platform] = [
 ]
 
 
+async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    """Migrate old config entry versions to current."""
+    if config_entry.version == 1:
+        new_data = {k: v for k, v in config_entry.data.items() if k != "is_unifi_os"}
+        hass.config_entries.async_update_entry(config_entry, data=new_data, version=2)
+        _LOGGER.info("Migrated config entry %s from version 1 to 2", config_entry.entry_id)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up UniFi Alerts from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
-
     verify_ssl: bool = entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
     if not verify_ssl:
         _LOGGER.warning(
@@ -72,7 +77,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         configuration_url=entry.data.get(CONF_CONTROLLER_URL),
     )
 
-    coordinator = UniFiAlertsCoordinator(hass, client, dict(entry.data) | dict(entry.options))
+    coordinator = UniFiAlertsCoordinator(
+        hass, client, dict(entry.data) | dict(entry.options), entry.entry_id
+    )
+
+    # Restore persisted acknowledgement watermarks before first poll so that
+    # open_count is filtered correctly from the very first data fetch.
+    await coordinator.async_restore_watermarks()
 
     # Perform an initial poll so entities have data before first render
     try:
@@ -89,12 +100,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     webhook_urls = webhook_manager.register_all()
 
-    hass.data[DOMAIN][entry.entry_id] = {
-        DATA_COORDINATOR: coordinator,
-        DATA_WEBHOOK_IDS: webhook_urls,
-        DATA_UNREGISTER_WEBHOOKS: webhook_manager.unregister_all,
-        "client": client,
-    }
+    entry.runtime_data = RuntimeData(
+        coordinator=coordinator,
+        webhook_urls=webhook_urls,
+        unregister_webhooks=webhook_manager.unregister_all,
+        client=client,
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -105,29 +116,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     _LOGGER.info("UniFi Alerts set up. Registered %d webhook(s).", len(webhook_urls))
-    _LOGGER.debug(
-        "UniFi Alerts webhook URLs: %s",
-        ", ".join(f"{cat}={url}" for cat, url in webhook_urls.items()),
-    )
+    if _LOGGER.isEnabledFor(logging.DEBUG):
+        # Redact ?token=<secret> before logging — DEBUG logs commonly end up
+        # in GitHub issues, and the token is the only thing protecting the
+        # webhook endpoint from local-network forgery.
+        _LOGGER.debug(
+            "UniFi Alerts webhook URLs: %s",
+            ", ".join(f"{cat}={_redact_webhook_token(url)}" for cat, url in webhook_urls.items()),
+        )
     return True
+
+
+def _redact_webhook_token(url: str) -> str:
+    """Strip ``?token=<secret>`` from a webhook URL for safe DEBUG logging."""
+    token_marker = "?token="
+    idx = url.find(token_marker)
+    if idx == -1:
+        return url
+    return f"{url[:idx]}?token=***"
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        entry_data = hass.data[DOMAIN].pop(entry.entry_id, {})
-        coordinator = entry_data.get(DATA_COORDINATOR)
-        if coordinator:
-            await coordinator.async_shutdown()
-        unregister = entry_data.get(DATA_UNREGISTER_WEBHOOKS)
-        if unregister:
-            unregister()
-        client = entry_data.get("client")
-        if client:
-            await client.close()
+        runtime_data: RuntimeData = entry.runtime_data
+        await runtime_data.coordinator.async_shutdown()
+        runtime_data.unregister_webhooks()
+        await runtime_data.client.close()
         # Unregister domain-level services only when the last entry is gone
-        if not hass.data.get(DOMAIN):
+        remaining = [
+            e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id
+        ]
+        if not remaining:
             async_unregister_services(hass)
     return unload_ok
 

@@ -1,0 +1,34 @@
+# Dependabot keeps the pinned commit-SHA references in `.github/workflows/`
+# fresh. CLAUDE.md mandates pinning every `uses:` to a 40-char SHA; without
+# automated PRs those pins go stale and we miss security fixes in the actions
+# we depend on.
+#
+# This file does NOT cover Python dependencies — `requirements-dev.txt` is the
+# only Python pin file and lives under tighter human review (HACS validator
+# and HA core compatibility). Add a `pip` ecosystem block here only if that
+# changes.
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Australia/Brisbane"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    # Group all action bumps into a single PR per week so the maintainer is
+    # not flooded; minor + patch only. Major bumps still file individually
+    # because they may carry breaking changes.
+    groups:
+      github-actions:
+        update-types:
+          - "minor"
+          - "patch"

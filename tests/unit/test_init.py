@@ -14,9 +14,6 @@ from custom_components.unifi_alerts.const import (
     CONF_ENABLED_CATEGORIES,
     CONF_POLL_INTERVAL,
     CONF_VERIFY_SSL,
-    DATA_COORDINATOR,
-    DATA_UNREGISTER_WEBHOOKS,
-    DATA_WEBHOOK_IDS,
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
@@ -31,6 +28,7 @@ def _patch_all(authenticate_side_effect=None, first_refresh_side_effect=None):
     mock_coordinator.async_config_entry_first_refresh = AsyncMock(
         side_effect=first_refresh_side_effect
     )
+    mock_coordinator.async_restore_watermarks = AsyncMock()
     mock_coordinator.async_shutdown = AsyncMock()
     mock_coordinator.push_alert = MagicMock()
 
@@ -97,10 +95,9 @@ class TestAsyncSetupEntry:
         ):
             await async_setup_entry(hass, entry)
 
-        entry_data = hass.data[DOMAIN][entry.entry_id]
-        assert entry_data[DATA_COORDINATOR] is mock_coordinator
-        assert DATA_WEBHOOK_IDS in entry_data
-        assert DATA_UNREGISTER_WEBHOOKS in entry_data
+        assert entry.runtime_data.coordinator is mock_coordinator
+        assert entry.runtime_data.webhook_urls is not None
+        assert entry.runtime_data.unregister_webhooks is not None
 
     @pytest.mark.asyncio
     async def test_auth_failure_raises_config_entry_not_ready(self):
@@ -249,12 +246,11 @@ class TestAsyncSetupEntry:
 
 class TestAsyncUnloadEntry:
     def _populate_hass(self, hass, entry, mock_coordinator, mock_client, mock_wm):
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-            DATA_COORDINATOR: mock_coordinator,
-            DATA_WEBHOOK_IDS: {},
-            DATA_UNREGISTER_WEBHOOKS: mock_wm.unregister_all,
-            "client": mock_client,
-        }
+        entry.runtime_data = MagicMock()
+        entry.runtime_data.coordinator = mock_coordinator
+        entry.runtime_data.unregister_webhooks = mock_wm.unregister_all
+        entry.runtime_data.client = mock_client
+        hass.config_entries.async_entries = MagicMock(return_value=[entry])
 
     @pytest.mark.asyncio
     async def test_successful_unload_returns_true(self):
@@ -426,3 +422,29 @@ class TestAsyncUpdateListener:
         entry = make_entry()
         await _async_update_listener(hass, entry)
         hass.config_entries.async_reload.assert_awaited_once_with(entry.entry_id)
+
+
+class TestRedactWebhookToken:
+    """`?token=<secret>` must be stripped from URLs before they hit DEBUG logs."""
+
+    def test_redacts_token_query_param(self):
+        from custom_components.unifi_alerts import _redact_webhook_token
+
+        url = "http://homeassistant.local:8123/api/webhook/unifi_alerts_x?token=supersecret123"
+        redacted = _redact_webhook_token(url)
+        assert "supersecret123" not in redacted
+        assert redacted.endswith("?token=***")
+
+    def test_passthrough_when_no_token_present(self):
+        from custom_components.unifi_alerts import _redact_webhook_token
+
+        url = "http://homeassistant.local:8123/api/webhook/unifi_alerts_x"
+        assert _redact_webhook_token(url) == url
+
+    def test_redacted_when_token_anywhere_after_question_mark(self):
+        """Even if the token is the only query param, redaction stops at end-of-string."""
+        from custom_components.unifi_alerts import _redact_webhook_token
+
+        url = "http://h/api/webhook/x?token=abc"
+        redacted = _redact_webhook_token(url)
+        assert "abc" not in redacted

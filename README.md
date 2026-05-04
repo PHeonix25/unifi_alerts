@@ -7,6 +7,25 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 
 ---
 
+## Prerequisites
+
+**Requires UniFi OS.** This integration works exclusively with UniFi OS consoles. Classic Network Application (self-hosted on bare Linux/Windows) is **not** supported.
+
+Tested consoles:
+
+| Console | Notes |
+|---|---|
+| UDM (UniFi Dream Machine) | All firmware versions with Network Application |
+| UDM-Pro | All firmware versions with Network Application |
+| UDM-SE | All firmware versions with Network Application |
+| UCG-Ultra | All firmware versions with Network Application |
+| UCG-Max | All firmware versions with Network Application |
+| Cloud Key Gen2+ | Running UniFi OS with Network Application |
+
+The integration uses the `/proxy/network` API path exclusively, which is only available on UniFi OS. API keys (the recommended auth method) are also a UniFi OS-only feature.
+
+---
+
 ## Features
 
 - **Per-category binary sensors** — ON when an alert is active, OFF when clear

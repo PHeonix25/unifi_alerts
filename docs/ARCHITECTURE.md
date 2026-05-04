@@ -38,7 +38,7 @@ UniFi Controller
 Pure data — no HA dependencies. Two dataclasses:
 
 - **`UniFiAlert`** — immutable snapshot of a single alert event. Built from either a webhook payload (`from_webhook_payload`) or a polled alarm record (`from_api_alarm`). Both constructors normalise field names across the inconsistent UniFi API surface.
-- **`CategoryState`** — mutable runtime state for one category. Owned exclusively by the coordinator. Tracks `is_alerting`, `last_alert`, `alert_count` (webhook-incremented), `open_count` (poll-set), and `last_cleared_at`.
+- **`CategoryState`** — mutable runtime state for one category. Owned exclusively by the coordinator. Tracks `is_alerting`, `last_alert`, `alert_count` (webhook-incremented), `open_count` (poll-set), and `last_cleared_at`. The `last_cleared_at` field doubles as the **acknowledgement watermark**: `open_count` only counts polled alarms newer than this timestamp, so pressing Clear bounds the counter to "since last acknowledged" rather than a lifetime total.
 
 ### `const.py`
 Single source of truth for:
@@ -65,6 +65,7 @@ The integration's single source of truth at runtime. Key design decisions:
 - **Auto-clear** — each `push_alert()` cancels any existing `asyncio.Task` for that category and schedules a new one. This means repeated alerts from the same category reset the clear timer rather than stacking.
 - **`async_set_updated_data()`** is called on webhook push to bypass the polling interval and notify entities immediately.
 - **Polling does not clear `is_alerting`** — only the auto-clear timeout or a button press does. This prevents a polling race where a momentarily empty alarm list falsely clears an active alert.
+- **Acknowledgement watermarks** — `last_cleared_at` on each `CategoryState` acts as a per-category watermark. Polling counts only alarms newer than the watermark (`open_count` = alarms since last Clear). Watermarks are persisted via `homeassistant.helpers.storage.Store` (keyed per entry) so they survive HA restarts. `async_clear_category()` and `async_clear_all()` are the sole entry points for clearing — they cancel auto-clear tasks, call `state.clear()` (which advances the watermark), persist to storage, and notify entities. Buttons and services delegate to these methods rather than mutating state directly.
 
 ### `webhook_handler.py`
 Registers one HA webhook per enabled category using `homeassistant.components.webhook`. Webhooks are:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from conftest import make_entry
@@ -74,6 +74,8 @@ def make_coordinator(states: dict[str, CategoryState] | None = None):
     coord.rollup_last_alert = max(alerts, key=lambda a: a.received_at) if alerts else None
 
     coord.cancel_clear = MagicMock()
+    coord.async_clear_category = AsyncMock()
+    coord.async_clear_all = AsyncMock()
     return coord
 
 
@@ -445,32 +447,11 @@ class TestUniFiClearCategoryButton:
         return UniFiClearCategoryButton(coord, entry, CATEGORY_NETWORK_WAN)
 
     @pytest.mark.asyncio
-    async def test_press_cancels_pending_clear_task(self):
+    async def test_press_delegates_to_coordinator(self):
         state = make_state(is_alerting=True)
         entity = self._make(state)
         await entity.async_press()
-        entity._coordinator.cancel_clear.assert_called_once_with(CATEGORY_NETWORK_WAN)
-
-    @pytest.mark.asyncio
-    async def test_press_clears_state(self):
-        state = make_state(is_alerting=True)
-        entity = self._make(state)
-        await entity.async_press()
-        assert state.is_alerting is False
-
-    @pytest.mark.asyncio
-    async def test_press_notifies_coordinator(self):
-        state = make_state(is_alerting=True)
-        entity = self._make(state)
-        await entity.async_press()
-        entity._coordinator.async_set_updated_data.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_press_noop_when_no_state(self):
-        entity = self._make(None)
-        # Should not raise
-        await entity.async_press()
-        entity._coordinator.cancel_clear.assert_called_once_with(CATEGORY_NETWORK_WAN)
+        entity._coordinator.async_clear_category.assert_awaited_once_with(CATEGORY_NETWORK_WAN)
 
     def test_unique_id_format(self):
         state = make_state()
@@ -487,42 +468,12 @@ class TestUniFiClearAllButton:
         return UniFiClearAllButton(coord, entry)
 
     @pytest.mark.asyncio
-    async def test_press_clears_all_alerting_categories(self):
-        wan_state = make_state(category=CATEGORY_NETWORK_WAN, is_alerting=True)
-        threat_state = make_state(category=CATEGORY_SECURITY_THREAT, is_alerting=True)
-        states = {
-            CATEGORY_NETWORK_WAN: wan_state,
-            CATEGORY_SECURITY_THREAT: threat_state,
-        }
-        entity = self._make(states)
-        await entity.async_press()
-        assert wan_state.is_alerting is False
-        assert threat_state.is_alerting is False
-
-    @pytest.mark.asyncio
-    async def test_press_skips_non_alerting_categories(self):
-        wan_state = make_state(category=CATEGORY_NETWORK_WAN, is_alerting=False)
-        states = {CATEGORY_NETWORK_WAN: wan_state}
-        entity = self._make(states)
-        await entity.async_press()
-        # cancel_clear should NOT have been called (nothing was alerting)
-        entity._coordinator.cancel_clear.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_press_cancels_clear_tasks_for_alerting_categories(self):
+    async def test_press_delegates_to_coordinator(self):
         wan_state = make_state(category=CATEGORY_NETWORK_WAN, is_alerting=True)
         states = {CATEGORY_NETWORK_WAN: wan_state}
         entity = self._make(states)
         await entity.async_press()
-        entity._coordinator.cancel_clear.assert_called_once_with(CATEGORY_NETWORK_WAN)
-
-    @pytest.mark.asyncio
-    async def test_press_notifies_coordinator_once(self):
-        wan_state = make_state(category=CATEGORY_NETWORK_WAN, is_alerting=True)
-        states = {CATEGORY_NETWORK_WAN: wan_state}
-        entity = self._make(states)
-        await entity.async_press()
-        entity._coordinator.async_set_updated_data.assert_called_once()
+        entity._coordinator.async_clear_all.assert_awaited_once()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

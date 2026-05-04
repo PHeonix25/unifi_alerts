@@ -4,13 +4,14 @@ Reference for Home Assistant-specific patterns used in this integration. Consult
 
 ## Minimum supported version
 
-**Home Assistant 2024.1** (requires Python 3.12). The `ConfigFlowResult` return type annotation and `Platform` enum usage require this version or newer.
+**Home Assistant 2024.5** (requires Python 3.12). `ConfigEntry.runtime_data` (introduced in HA 2024.2), `ConfigFlowResult` return type annotation, and `Platform` enum usage require this version or newer.
 
 ## Config entries
 
 This integration uses config entries exclusively — no `configuration.yaml` support.
 
 - `async_setup_entry` in `__init__.py` is the entry point for all setup.
+- Runtime state (coordinator, webhook URLs, unregister callable, HTTP client) is stored on `entry.runtime_data` as a `RuntimeData` dataclass (see `models.py`). Do **not** use `hass.data` for per-entry state.
 - `async_unload_entry` must cleanly reverse everything `async_setup_entry` does: unload platforms, unregister webhooks, close the HTTP client.
 - Options changes trigger `_async_update_listener`, which calls `async_reload` — this tears down and re-sets-up the entry cleanly. No partial reload logic needed.
 - Config entry `VERSION = 1` in `config_flow.py`. If the data schema changes in a breaking way, increment this and add a migration step `async_migrate_entry`.

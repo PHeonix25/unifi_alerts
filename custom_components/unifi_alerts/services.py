@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 
-from .const import ALL_CATEGORIES, DATA_COORDINATOR, DOMAIN
+from .const import ALL_CATEGORIES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,20 +34,27 @@ CLEAR_ALL_SCHEMA = vol.Schema(
 
 
 def _get_coordinators(hass: HomeAssistant, entry_id: str | None):
-    """Yield coordinator(s) from hass.data, optionally filtered by entry_id."""
-    domain_data: dict = hass.data.get(DOMAIN, {})
+    """Yield coordinator(s) from loaded entries, optionally filtered by entry_id."""
     if entry_id is not None:
-        entry_data = domain_data.get(entry_id)
-        if entry_data is None:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN:
             _LOGGER.warning(
                 "clear service called with unknown entry_id %r — no coordinator found",
                 entry_id,
             )
             return
-        yield entry_data[DATA_COORDINATOR]
+        if entry.state != ConfigEntryState.LOADED:
+            _LOGGER.warning(
+                "clear service called on entry %r which is not loaded (state: %s)",
+                entry_id,
+                entry.state,
+            )
+            return
+        yield entry.runtime_data.coordinator
     else:
-        for entry_data in domain_data.values():
-            yield entry_data[DATA_COORDINATOR]
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            if entry.state == ConfigEntryState.LOADED:
+                yield entry.runtime_data.coordinator
 
 
 async def _handle_clear_category(call: ServiceCall) -> None:
@@ -56,12 +64,8 @@ async def _handle_clear_category(call: ServiceCall) -> None:
     entry_id: str | None = call.data.get(ATTR_ENTRY_ID)
 
     for coordinator in _get_coordinators(hass, entry_id):
-        coordinator.cancel_clear(category)
-        state = coordinator.get_category_state(category)
-        if state and state.is_alerting:
-            state.clear()
-            coordinator.async_set_updated_data(coordinator.category_states)
-            _LOGGER.debug("Service clear_category: cleared category %s", category)
+        await coordinator.async_clear_category(category)
+        _LOGGER.debug("Service clear_category: cleared category %s", category)
 
 
 async def _handle_clear_all(call: ServiceCall) -> None:
@@ -70,15 +74,8 @@ async def _handle_clear_all(call: ServiceCall) -> None:
     entry_id: str | None = call.data.get(ATTR_ENTRY_ID)
 
     for coordinator in _get_coordinators(hass, entry_id):
-        cleared_any = False
-        for category, state in coordinator.category_states.items():
-            if state.is_alerting:
-                coordinator.cancel_clear(category)
-                state.clear()
-                cleared_any = True
-        if cleared_any:
-            coordinator.async_set_updated_data(coordinator.category_states)
-            _LOGGER.debug("Service clear_all: cleared all alerting categories")
+        await coordinator.async_clear_all()
+        _LOGGER.debug("Service clear_all: cleared all categories")
 
 
 def async_register_services(hass: HomeAssistant) -> None:

@@ -1,0 +1,103 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly in the UniFi Alerts integration
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please fill in as much detail as you can — bugs without a clear reproduction or environment information are difficult to act on.
+
+        **Security issues:** do NOT use this form. Open a private advisory at <https://github.com/PHeonix25/unifi_alerts/security/advisories/new> instead. See `SECURITY.md`.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A clear, concise description of the bug.
+      placeholder: "After updating to v1.3.0, my network_wan binary sensor never flips back to off…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      placeholder: "I expected the binary sensor to flip back to off after the auto-clear timeout."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. The more specific, the faster this gets fixed.
+      placeholder: |
+        1. Configure with a UDM-Pro on firmware 4.0.x
+        2. Trigger a WAN transition by unplugging the WAN cable
+        3. Plug the cable back in and wait 30 minutes
+        4. Observe the network_wan binary sensor still showing "on"
+    validations:
+      required: true
+
+  - type: input
+    id: integration_version
+    attributes:
+      label: UniFi Alerts version
+      description: From `manifest.json` (or the HACS update screen)
+      placeholder: "1.3.0"
+    validations:
+      required: true
+
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      description: From Settings → About
+      placeholder: "2025.10.4"
+    validations:
+      required: true
+
+  - type: input
+    id: controller
+    attributes:
+      label: Controller model and firmware
+      description: e.g. "UDM-Pro firmware 4.0.21" or "UCG-Ultra firmware 3.2.7"
+      placeholder: "UDM-Pro firmware 4.0.21"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: auth_method
+    attributes:
+      label: Authentication method
+      options:
+        - "API key"
+        - "Username/password"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: |
+        Enable DEBUG logging for `custom_components.unifi_alerts` and paste the relevant lines here. **Redact any `?token=...` values before pasting** — those are the bearer tokens for your webhooks.
+
+        ```yaml
+        logger:
+          default: warning
+          logs:
+            custom_components.unifi_alerts: debug
+        ```
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Anything else worth mentioning — recent UniFi firmware updates, multi-entry setups, network topology quirks.
+    validations:
+      required: false

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import voluptuous as vol
@@ -10,8 +10,6 @@ import voluptuous as vol
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
     CATEGORY_NETWORK_WAN,
-    CATEGORY_SECURITY_THREAT,
-    DATA_COORDINATOR,
     DOMAIN,
 )
 from custom_components.unifi_alerts.models import CategoryState
@@ -22,12 +20,11 @@ from custom_components.unifi_alerts.services import (
     CLEAR_CATEGORY_SCHEMA,
     SERVICE_CLEAR_ALL,
     SERVICE_CLEAR_CATEGORY,
-    async_register_services,
-    async_unregister_services,
     _handle_clear_all,
     _handle_clear_category,
+    async_register_services,
+    async_unregister_services,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -43,6 +40,8 @@ def make_coordinator(states: dict[str, CategoryState] | None = None) -> MagicMoc
     coord.get_category_state = lambda cat: _states.get(cat)
     coord.cancel_clear = MagicMock()
     coord.async_set_updated_data = MagicMock()
+    coord.async_clear_category = AsyncMock()
+    coord.async_clear_all = AsyncMock()
     return coord
 
 
@@ -54,11 +53,23 @@ def make_call(hass: MagicMock, data: dict) -> MagicMock:
 
 
 def make_hass(entries: dict[str, MagicMock] | None = None) -> MagicMock:
-    """Return a minimal hass mock with hass.data wired up."""
+    """Return a minimal hass mock with config_entries wired up."""
+    from homeassistant.config_entries import ConfigEntryState
+
     hass = MagicMock()
-    hass.data = {DOMAIN: {}}
+    entry_mocks: list[MagicMock] = []
     for entry_id, coordinator in (entries or {}).items():
-        hass.data[DOMAIN][entry_id] = {DATA_COORDINATOR: coordinator}
+        e = MagicMock()
+        e.entry_id = entry_id
+        e.domain = DOMAIN
+        e.state = ConfigEntryState.LOADED
+        e.runtime_data = MagicMock()
+        e.runtime_data.coordinator = coordinator
+        entry_mocks.append(e)
+    hass.config_entries.async_entries = MagicMock(return_value=entry_mocks)
+    hass.config_entries.async_get_entry = MagicMock(
+        side_effect=lambda eid: next((e for e in entry_mocks if e.entry_id == eid), None)
+    )
     return hass
 
 
@@ -105,57 +116,20 @@ class TestClearAllSchema:
 
 class TestHandleClearCategory:
     @pytest.mark.asyncio
-    async def test_clears_alerting_category(self):
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coordinator = make_coordinator({CATEGORY_NETWORK_WAN: wan_state})
+    async def test_delegates_to_coordinator(self):
+        coordinator = make_coordinator()
         hass = make_hass({"entry-abc": coordinator})
         call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN})
 
         await _handle_clear_category(call)
 
-        assert wan_state.is_alerting is False
-
-    @pytest.mark.asyncio
-    async def test_cancels_pending_clear_task(self):
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coordinator = make_coordinator({CATEGORY_NETWORK_WAN: wan_state})
-        hass = make_hass({"entry-abc": coordinator})
-        call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN})
-
-        await _handle_clear_category(call)
-
-        coordinator.cancel_clear.assert_called_once_with(CATEGORY_NETWORK_WAN)
-
-    @pytest.mark.asyncio
-    async def test_calls_async_set_updated_data(self):
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coordinator = make_coordinator({CATEGORY_NETWORK_WAN: wan_state})
-        hass = make_hass({"entry-abc": coordinator})
-        call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN})
-
-        await _handle_clear_category(call)
-
-        coordinator.async_set_updated_data.assert_called_once_with(coordinator.category_states)
-
-    @pytest.mark.asyncio
-    async def test_non_alerting_category_does_not_notify(self):
-        """If the category is not alerting, no update should be dispatched."""
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=False)
-        coordinator = make_coordinator({CATEGORY_NETWORK_WAN: wan_state})
-        hass = make_hass({"entry-abc": coordinator})
-        call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN})
-
-        await _handle_clear_category(call)
-
-        coordinator.async_set_updated_data.assert_not_called()
+        coordinator.async_clear_category.assert_awaited_once_with(CATEGORY_NETWORK_WAN)
 
     @pytest.mark.asyncio
     async def test_entry_id_filter_targets_only_matching_entry(self):
         """entry_id kwarg must restrict clearing to only the specified entry."""
-        state_a = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        state_b = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coord_a = make_coordinator({CATEGORY_NETWORK_WAN: state_a})
-        coord_b = make_coordinator({CATEGORY_NETWORK_WAN: state_b})
+        coord_a = make_coordinator()
+        coord_b = make_coordinator()
         hass = make_hass({"entry-a": coord_a, "entry-b": coord_b})
         call = make_call(
             hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "entry-a"}
@@ -163,13 +137,12 @@ class TestHandleClearCategory:
 
         await _handle_clear_category(call)
 
-        assert state_a.is_alerting is False
-        assert state_b.is_alerting is True  # not touched
+        coord_a.async_clear_category.assert_awaited_once_with(CATEGORY_NETWORK_WAN)
+        coord_b.async_clear_category.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_unknown_entry_id_logs_warning_and_does_nothing(self):
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coordinator = make_coordinator({CATEGORY_NETWORK_WAN: wan_state})
+        coordinator = make_coordinator()
         hass = make_hass({"entry-abc": coordinator})
         call = make_call(
             hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "no-such-entry"}
@@ -179,22 +152,20 @@ class TestHandleClearCategory:
             await _handle_clear_category(call)
 
         mock_log.warning.assert_called_once()
-        assert wan_state.is_alerting is True  # unchanged
+        coordinator.async_clear_category.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_affects_all_entries_when_entry_id_omitted(self):
-        """Without entry_id, every coordinator's state should be cleared."""
-        state_a = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        state_b = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coord_a = make_coordinator({CATEGORY_NETWORK_WAN: state_a})
-        coord_b = make_coordinator({CATEGORY_NETWORK_WAN: state_b})
+        """Without entry_id, every coordinator should receive the clear call."""
+        coord_a = make_coordinator()
+        coord_b = make_coordinator()
         hass = make_hass({"entry-a": coord_a, "entry-b": coord_b})
         call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN})
 
         await _handle_clear_category(call)
 
-        assert state_a.is_alerting is False
-        assert state_b.is_alerting is False
+        coord_a.async_clear_category.assert_awaited_once_with(CATEGORY_NETWORK_WAN)
+        coord_b.async_clear_category.assert_awaited_once_with(CATEGORY_NETWORK_WAN)
 
 
 # ── _handle_clear_all ─────────────────────────────────────────────────────────
@@ -202,88 +173,38 @@ class TestHandleClearCategory:
 
 class TestHandleClearAll:
     @pytest.mark.asyncio
-    async def test_clears_all_alerting_categories(self):
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        threat_state = make_state(CATEGORY_SECURITY_THREAT, is_alerting=True)
-        coordinator = make_coordinator(
-            {CATEGORY_NETWORK_WAN: wan_state, CATEGORY_SECURITY_THREAT: threat_state}
-        )
+    async def test_delegates_to_coordinator(self):
+        coordinator = make_coordinator()
         hass = make_hass({"entry-abc": coordinator})
         call = make_call(hass, {})
 
         await _handle_clear_all(call)
 
-        assert wan_state.is_alerting is False
-        assert threat_state.is_alerting is False
-
-    @pytest.mark.asyncio
-    async def test_skips_non_alerting_categories(self):
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        quiet_state = make_state(CATEGORY_SECURITY_THREAT, is_alerting=False)
-        coordinator = make_coordinator(
-            {CATEGORY_NETWORK_WAN: wan_state, CATEGORY_SECURITY_THREAT: quiet_state}
-        )
-        hass = make_hass({"entry-abc": coordinator})
-        call = make_call(hass, {})
-
-        await _handle_clear_all(call)
-
-        # Only WAN was alerting — cancel_clear should be called once for it
-        coordinator.cancel_clear.assert_called_once_with(CATEGORY_NETWORK_WAN)
-
-    @pytest.mark.asyncio
-    async def test_calls_async_set_updated_data_once_per_coordinator(self):
-        """Even with multiple alerting categories, only one listener dispatch per coordinator."""
-        wan_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        threat_state = make_state(CATEGORY_SECURITY_THREAT, is_alerting=True)
-        coordinator = make_coordinator(
-            {CATEGORY_NETWORK_WAN: wan_state, CATEGORY_SECURITY_THREAT: threat_state}
-        )
-        hass = make_hass({"entry-abc": coordinator})
-        call = make_call(hass, {})
-
-        await _handle_clear_all(call)
-
-        coordinator.async_set_updated_data.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_no_dispatch_when_nothing_alerting(self):
-        quiet_state = make_state(CATEGORY_NETWORK_WAN, is_alerting=False)
-        coordinator = make_coordinator({CATEGORY_NETWORK_WAN: quiet_state})
-        hass = make_hass({"entry-abc": coordinator})
-        call = make_call(hass, {})
-
-        await _handle_clear_all(call)
-
-        coordinator.async_set_updated_data.assert_not_called()
+        coordinator.async_clear_all.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_entry_id_filter_targets_only_matching_entry(self):
-        state_a = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        state_b = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        coord_a = make_coordinator({CATEGORY_NETWORK_WAN: state_a})
-        coord_b = make_coordinator({CATEGORY_NETWORK_WAN: state_b})
+        coord_a = make_coordinator()
+        coord_b = make_coordinator()
         hass = make_hass({"entry-a": coord_a, "entry-b": coord_b})
         call = make_call(hass, {ATTR_ENTRY_ID: "entry-a"})
 
         await _handle_clear_all(call)
 
-        assert state_a.is_alerting is False
-        assert state_b.is_alerting is True  # not touched
+        coord_a.async_clear_all.assert_awaited_once()
+        coord_b.async_clear_all.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_affects_all_entries_when_entry_id_omitted(self):
-        state_a = make_state(CATEGORY_NETWORK_WAN, is_alerting=True)
-        state_b = make_state(CATEGORY_SECURITY_THREAT, is_alerting=True)
-        coord_a = make_coordinator({CATEGORY_NETWORK_WAN: state_a})
-        coord_b = make_coordinator({CATEGORY_SECURITY_THREAT: state_b})
+        coord_a = make_coordinator()
+        coord_b = make_coordinator()
         hass = make_hass({"entry-a": coord_a, "entry-b": coord_b})
         call = make_call(hass, {})
 
         await _handle_clear_all(call)
 
-        assert state_a.is_alerting is False
-        assert state_b.is_alerting is False
+        coord_a.async_clear_all.assert_awaited_once()
+        coord_b.async_clear_all.assert_awaited_once()
 
 
 # ── async_register_services / async_unregister_services ──────────────────────
@@ -347,6 +268,7 @@ class TestServicesWiredFromInit:
         from unittest.mock import AsyncMock
 
         mock_coordinator.async_config_entry_first_refresh = AsyncMock()
+        mock_coordinator.async_restore_watermarks = AsyncMock()
         mock_coordinator.async_shutdown = AsyncMock()
         mock_coordinator.push_alert = MagicMock()
 
@@ -394,19 +316,17 @@ class TestServicesWiredFromInit:
         from conftest import make_entry, make_hass
 
         from custom_components.unifi_alerts import async_unload_entry
-        from custom_components.unifi_alerts.const import DATA_COORDINATOR, DATA_UNREGISTER_WEBHOOKS, DATA_WEBHOOK_IDS
 
         hass = make_hass()
         entry = make_entry()
         mock_client, mock_coord, mock_wm = self._make_setup_patches()
 
-        # Populate as if setup completed
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-            DATA_COORDINATOR: mock_coord,
-            DATA_WEBHOOK_IDS: {},
-            DATA_UNREGISTER_WEBHOOKS: mock_wm.unregister_all,
-            "client": mock_client,
-        }
+        # Populate runtime_data as if setup completed; only this entry exists
+        entry.runtime_data = MagicMock()
+        entry.runtime_data.coordinator = mock_coord
+        entry.runtime_data.unregister_webhooks = mock_wm.unregister_all
+        entry.runtime_data.client = mock_client
+        hass.config_entries.async_entries = MagicMock(return_value=[entry])
 
         with patch(
             "custom_components.unifi_alerts.async_unregister_services"
@@ -420,22 +340,19 @@ class TestServicesWiredFromInit:
         from conftest import make_entry, make_hass
 
         from custom_components.unifi_alerts import async_unload_entry
-        from custom_components.unifi_alerts.const import DATA_COORDINATOR, DATA_UNREGISTER_WEBHOOKS, DATA_WEBHOOK_IDS
 
         hass = make_hass()
         entry1 = make_entry(entry_id="entry-1")
         entry2 = make_entry(entry_id="entry-2")
         mock_client, mock_coord, mock_wm = self._make_setup_patches()
 
-        # Two entries registered
-        hass.data.setdefault(DOMAIN, {})
-        for eid in (entry1.entry_id, entry2.entry_id):
-            hass.data[DOMAIN][eid] = {
-                DATA_COORDINATOR: mock_coord,
-                DATA_WEBHOOK_IDS: {},
-                DATA_UNREGISTER_WEBHOOKS: mock_wm.unregister_all,
-                "client": mock_client,
-            }
+        # Two entries registered; unloading entry1 but entry2 remains
+        for entry in (entry1, entry2):
+            entry.runtime_data = MagicMock()
+            entry.runtime_data.coordinator = mock_coord
+            entry.runtime_data.unregister_webhooks = mock_wm.unregister_all
+            entry.runtime_data.client = mock_client
+        hass.config_entries.async_entries = MagicMock(return_value=[entry1, entry2])
 
         with patch(
             "custom_components.unifi_alerts.async_unregister_services"
@@ -444,3 +361,77 @@ class TestServicesWiredFromInit:
             await async_unload_entry(hass, entry1)
 
         mock_unregister.assert_not_called()
+
+
+# ── _get_coordinators guard for non-loaded entries ────────────────────────────
+
+
+class TestGetCoordinatorsGuard:
+    """Verify _get_coordinators skips / warns for entries that are not LOADED.
+
+    async_entries(DOMAIN) can return entries in SETUP_RETRY or SETUP_ERROR state
+    that never populated entry.runtime_data.  Accessing .runtime_data.coordinator
+    on such entries raises AttributeError.  The fix filters the iterate-all branch
+    to state == ConfigEntryState.LOADED and adds an explicit state check in the
+    single-entry branch.
+    """
+
+    @pytest.mark.asyncio
+    async def test_iterate_all_skips_setup_error_entry(self):
+        """An entry in SETUP_ERROR state must be silently skipped when iterating all entries."""
+        from homeassistant.config_entries import ConfigEntryState
+
+        coord_loaded = make_coordinator()
+        hass = MagicMock()
+
+        # Loaded entry — should be yielded
+        loaded_entry = MagicMock()
+        loaded_entry.entry_id = "entry-loaded"
+        loaded_entry.domain = DOMAIN
+        loaded_entry.state = ConfigEntryState.LOADED
+        loaded_entry.runtime_data = MagicMock()
+        loaded_entry.runtime_data.coordinator = coord_loaded
+
+        # Failed entry — must be skipped; runtime_data is missing entirely
+        failed_entry = MagicMock(spec=[])  # no attributes at all — accessing any raises
+        failed_entry.domain = DOMAIN
+        failed_entry.state = ConfigEntryState.SETUP_ERROR
+
+        hass.config_entries.async_entries = MagicMock(return_value=[loaded_entry, failed_entry])
+        hass.config_entries.async_get_entry = MagicMock(return_value=None)
+
+        call = make_call(hass, {})
+        await _handle_clear_all(call)
+
+        # Loaded coordinator must have been called; failed entry must not raise AttributeError
+        coord_loaded.async_clear_all.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_single_entry_setup_retry_logs_warning_and_does_not_raise(self):
+        """Calling clear_category with a specific entry_id that is in SETUP_RETRY state
+        must log a warning and return without raising AttributeError.
+        """
+        from homeassistant.config_entries import ConfigEntryState
+
+        hass = MagicMock()
+
+        # Entry in SETUP_RETRY — runtime_data is absent; accessing it should not happen
+        retry_entry = MagicMock(spec=["entry_id", "domain", "state"])
+        retry_entry.entry_id = "entry-retry"
+        retry_entry.domain = DOMAIN
+        retry_entry.state = ConfigEntryState.SETUP_RETRY
+
+        hass.config_entries.async_get_entry = MagicMock(return_value=retry_entry)
+        hass.config_entries.async_entries = MagicMock(return_value=[retry_entry])
+
+        call = make_call(
+            hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "entry-retry"}
+        )
+
+        with patch("custom_components.unifi_alerts.services._LOGGER") as mock_log:
+            # Must not raise — the guard should log and return early
+            await _handle_clear_category(call)
+
+        mock_log.warning.assert_called_once()
+        warning_msg = mock_log.warning.call_args[0][0]
+        assert "not loaded" in warning_msg

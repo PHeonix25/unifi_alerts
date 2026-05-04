@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .coordinator import UniFiAlertsCoordinator
+    from .unifi_client import UniFiClient
 
 
 @dataclass
@@ -88,3 +94,13 @@ class CategoryState:
     def clear(self) -> None:
         self.is_alerting = False
         self.last_cleared_at = datetime.now(UTC)
+
+
+@dataclass
+class RuntimeData:
+    """Data stored on the config entry as ``entry.runtime_data``."""
+
+    coordinator: UniFiAlertsCoordinator
+    webhook_urls: dict[str, str]
+    unregister_webhooks: Callable[[], None]
+    client: UniFiClient

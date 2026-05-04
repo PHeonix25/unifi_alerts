@@ -1,5 +1,7 @@
 # UniFi Alerts for Home Assistant
 
+⚠ **Requires UniFi OS** (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+). Classic self-hosted Network Application is not supported.
+
 Aggregates **UniFi Network controller alerts** into Home Assistant sensors, binary sensors, event entities, and buttons. Alerts arrive in real time via UniFi Alarm Manager webhooks and are supplemented by periodic REST polling for open-count data and resilience against missed pushes.
 
 ---

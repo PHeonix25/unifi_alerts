@@ -23,7 +23,6 @@ from custom_components.unifi_alerts.const import (
     CONF_SITE,
     CONF_VERIFY_SSL,
     CONF_WEBHOOK_SECRET,
-    DATA_COORDINATOR,
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
@@ -124,6 +123,7 @@ async def entry(hass, mock_unifi_client):
         domain=DOMAIN,
         data=dict(BASE_CONFIG),
         entry_id=ENTRY_ID,
+        version=2,
     )
     config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(config_entry.entry_id)
@@ -142,8 +142,8 @@ async def entry(hass, mock_unifi_client):
 
 
 def get_coordinator(hass, config_entry):
-    """Return the live coordinator from hass.data."""
-    return hass.data[DOMAIN][config_entry.entry_id][DATA_COORDINATOR]
+    """Return the live coordinator from the entry's runtime_data."""
+    return config_entry.runtime_data.coordinator
 
 
 def entity_id_for(hass, platform: str, unique_id: str) -> str | None:

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timedelta
+import time
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -21,17 +23,23 @@ from .const import (
     DEFAULT_POLL_INTERVAL,
     DEFAULT_SITE,
     DOMAIN,
+    WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
 from .models import CategoryState, UniFiAlert
 from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
 
+_STORAGE_VERSION = 1
+
 
 class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     """Manages polling state and receives webhook-pushed alerts.
 
     - Polling: refreshes open_count per category every poll_interval seconds.
+      open_count is filtered to alarms newer than last_cleared_at (the
+      acknowledgement watermark) so the count reflects "since last cleared"
+      rather than a lifetime total.
     - Webhooks: call push_alert() directly; this updates is_alerting immediately
       and schedules an auto-clear after clear_timeout minutes.
     - Entities subscribe to coordinator updates via the standard HA pattern.
@@ -42,6 +50,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         hass: HomeAssistant,
         client: UniFiClient,
         config: dict[str, Any],
+        entry_id: str = "",
     ) -> None:
         poll_interval = config.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
         super().__init__(
@@ -55,6 +64,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._clear_timeout_minutes: int = config.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT)
         self._enabled_categories: list[str] = config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         self._site: str = config.get(CONF_SITE, DEFAULT_SITE)
+        self._store: Store = Store(hass, _STORAGE_VERSION, f"{DOMAIN}_watermarks_{entry_id}")
 
         # Category state is long-lived; do NOT reset between coordinator refreshes
         self._category_states: dict[str, CategoryState] = {
@@ -64,6 +74,12 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         # Tracks pending auto-clear tasks keyed by category
         self._clear_tasks: dict[str, asyncio.Task] = {}
+
+        # Per-(category, alert_key) monotonic timestamps of the last webhook
+        # push that was actually applied. Subsequent pushes for the same pair
+        # within WEBHOOK_DEDUP_WINDOW_SECONDS are dropped to prevent a noisy
+        # controller from generating unbounded state updates and event fires.
+        self._last_push_at: dict[tuple[str, str], float] = {}
 
     # ── DataUpdateCoordinator override ───────────────────────────────────
 
@@ -97,7 +113,15 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 state = self._category_states[cat]
                 if not state.enabled:
                     continue
-                state.open_count = len(alerts)
+                # Filter to alarms newer than the acknowledgement watermark so
+                # open_count reflects "since last cleared" not a lifetime total.
+                watermark = state.last_cleared_at
+                counted = (
+                    [a for a in alerts if a.received_at > watermark]
+                    if watermark is not None
+                    else alerts
+                )
+                state.open_count = len(counted)
                 # If polling finds open alerts and we're not already alerting,
                 # treat the most recent one as the active alert
                 if alerts and not state.is_alerting:
@@ -124,6 +148,11 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         """Called by the webhook handler when UniFi POSTs an alert.
 
         Updates category state immediately and notifies all subscribed entities.
+        Duplicate ``(category, alert.key)`` pairs received within
+        ``WEBHOOK_DEDUP_WINDOW_SECONDS`` are dropped — without this, a
+        misconfigured Alarm Manager or noisy category can flood the webhook
+        endpoint and cause unbounded ``alert_count`` increments and event
+        entity fires for the same underlying event.
         """
         if category not in self._category_states:
             _LOGGER.warning("push_alert called with unknown category: %s", category)
@@ -132,6 +161,27 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         state = self._category_states[category]
         if not state.enabled:
             return
+
+        dedup_key = (category, alert.key or "")
+        now = time.monotonic()
+        prev = self._last_push_at.get(dedup_key)
+        if prev is not None and (now - prev) < WEBHOOK_DEDUP_WINDOW_SECONDS:
+            _LOGGER.debug(
+                "Suppressing duplicate webhook push for %s/%s within %.1fs window",
+                category,
+                dedup_key[1],
+                WEBHOOK_DEDUP_WINDOW_SECONDS,
+            )
+            return
+        # Opportunistically drop expired entries before recording the new one.
+        # Bounds the dict size at "distinct (category, alert_key) pairs seen
+        # within the last WEBHOOK_DEDUP_WINDOW_SECONDS" — a misconfigured
+        # controller emitting high-cardinality keys cannot grow it without
+        # bound. Cost is O(n) per push, but n is naturally small (capped by
+        # the active windowed set).
+        cutoff = now - WEBHOOK_DEDUP_WINDOW_SECONDS
+        self._last_push_at = {k: t for k, t in self._last_push_at.items() if t >= cutoff}
+        self._last_push_at[dedup_key] = now
 
         state.apply_alert(alert)
         _LOGGER.debug("Alert pushed to category %s: %s", category, alert.message)
@@ -171,6 +221,55 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         if not alerts:
             return None
         return max(alerts, key=lambda a: a.received_at)
+
+    # ── Watermark persistence ─────────────────────────────────────────────
+
+    async def async_restore_watermarks(self) -> None:
+        """Load persisted acknowledgement watermarks from storage on startup."""
+        data: dict | None = await self._store.async_load()
+        if not data:
+            return
+        for cat, ts_str in data.items():
+            state = self._category_states.get(cat)
+            if state is None:
+                continue
+            try:
+                state.last_cleared_at = datetime.fromisoformat(ts_str)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, ts_str)
+
+    async def _async_persist_watermarks(self) -> None:
+        """Persist current acknowledgement watermarks to storage."""
+        data = {
+            cat: state.last_cleared_at.isoformat()
+            for cat, state in self._category_states.items()
+            if state.last_cleared_at is not None
+        }
+        await self._store.async_save(data)
+
+    # ── Clear entry points (called by buttons and services) ───────────────
+
+    async def async_clear_category(self, category: str) -> None:
+        """Clear a single category: set watermark, cancel auto-clear, notify."""
+        state = self._category_states.get(category)
+        if state is None:
+            return
+        self.cancel_clear(category)
+        state.clear()
+        await self._async_persist_watermarks()
+        self.async_set_updated_data(self._category_states)
+        _LOGGER.debug("Cleared category %s; watermark set to %s", category, state.last_cleared_at)
+
+    async def async_clear_all(self) -> None:
+        """Clear all enabled categories: set watermarks, cancel all auto-clears, notify once."""
+        for category, state in self._category_states.items():
+            if not state.enabled:
+                continue
+            self.cancel_clear(category)
+            state.clear()
+        await self._async_persist_watermarks()
+        self.async_set_updated_data(self._category_states)
+        _LOGGER.debug("Cleared all categories")
 
     # ── Auto-clear ───────────────────────────────────────────────────────
 

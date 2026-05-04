@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest an enhancement or new capability for the UniFi Alerts integration
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a feature. Before filing, please skim `docs/TODO.md` and `docs/ROADMAP.md` to see whether the idea is already tracked.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case in concrete terms. "X is annoying" is harder to act on than "When I have N controllers configured, I cannot tell which webhook URL belongs to which one."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed solution
+      description: How would you like the integration to behave? UI sketches, config schema changes, or example automations are all welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you've thought about and why you discarded them.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Screenshots, links to related HA features, references to similar integrations, etc.
+    validations:
+      required: false

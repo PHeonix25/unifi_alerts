@@ -14,7 +14,6 @@ from .const import (
     ALL_CATEGORIES,
     CATEGORY_LABELS,
     CONF_CONTROLLER_URL,
-    DATA_COORDINATOR,
     DOMAIN,
 )
 from .coordinator import UniFiAlertsCoordinator
@@ -25,7 +24,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator: UniFiAlertsCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    coordinator: UniFiAlertsCoordinator = entry.runtime_data.coordinator
 
     entities: list[ButtonEntity] = [
         UniFiClearCategoryButton(coordinator, entry, category)
@@ -56,11 +55,7 @@ class UniFiClearCategoryButton(ButtonEntity):
         self._attr_device_info = _device_info(entry)
 
     async def async_press(self) -> None:
-        self._coordinator.cancel_clear(self._category)
-        state = self._coordinator.get_category_state(self._category)
-        if state:
-            state.clear()
-            self._coordinator.async_set_updated_data(self._coordinator.category_states)
+        await self._coordinator.async_clear_category(self._category)
 
 
 class UniFiClearAllButton(ButtonEntity):
@@ -81,11 +76,7 @@ class UniFiClearAllButton(ButtonEntity):
         self._attr_device_info = _device_info(entry)
 
     async def async_press(self) -> None:
-        for category, state in self._coordinator.category_states.items():
-            if state.is_alerting:
-                self._coordinator.cancel_clear(category)
-                state.clear()
-        self._coordinator.async_set_updated_data(self._coordinator.category_states)
+        await self._coordinator.async_clear_all()
 
 
 def _device_info(entry: ConfigEntry) -> DeviceInfo:

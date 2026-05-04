@@ -17,7 +17,6 @@ from .const import (
     CATEGORY_ICONS_OK,
     CATEGORY_LABELS,
     CONF_CONTROLLER_URL,
-    DATA_COORDINATOR,
     DOMAIN,
 )
 from .coordinator import UniFiAlertsCoordinator
@@ -29,7 +28,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator: UniFiAlertsCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    coordinator: UniFiAlertsCoordinator = entry.runtime_data.coordinator
 
     entities: list[SensorEntity] = []
     for category in ALL_CATEGORIES:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -41,8 +41,11 @@ def make_coordinator(hass=None, enabled=None):
     return UniFiAlertsCoordinator(hass, client, config)
 
 
-def make_alert(category: str, message: str = "test alert") -> UniFiAlert:
-    return UniFiAlert.from_webhook_payload(category, {"message": message})
+def make_alert(category: str, message: str = "test alert", key: str = "") -> UniFiAlert:
+    payload = {"message": message}
+    if key:
+        payload["key"] = key
+    return UniFiAlert.from_webhook_payload(category, payload)
 
 
 class TestCoordinatorInit:
@@ -72,8 +75,13 @@ class TestPushAlert:
     def test_push_increments_count(self):
         coord = make_coordinator()
         coord.async_set_updated_data = MagicMock()
+        # Distinct keys so the per-(category, alert_key) dedup window does not
+        # collapse them — three different events should produce three counts.
         for i in range(3):
-            coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN, f"alert {i}"))
+            coord.push_alert(
+                CATEGORY_NETWORK_WAN,
+                make_alert(CATEGORY_NETWORK_WAN, f"alert {i}", key=f"EVT_TEST_{i}"),
+            )
         assert coord.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 3
 
     def test_push_to_disabled_category_ignored(self):
@@ -168,6 +176,120 @@ class TestShutdown:
         assert len(coord._clear_tasks) == 1
         await coord.async_shutdown()
         assert len(coord._clear_tasks) == 0
+
+
+class TestPushDedup:
+    """Per-(category, alert_key) cooldown suppresses webhook flood.
+
+    Without this, a misconfigured Alarm Manager or noisy category can flood
+    the webhook endpoint, generating an alert_count increment + event entity
+    fire for every POST. The dedup window collapses repeats while still
+    allowing distinct events through.
+    """
+
+    def test_duplicate_within_window_is_suppressed(self):
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+        a1 = make_alert(CATEGORY_NETWORK_WAN, "first", key="EVT_GW_WANTransition")
+        a2 = make_alert(CATEGORY_NETWORK_WAN, "second-but-same-key", key="EVT_GW_WANTransition")
+        coord.push_alert(CATEGORY_NETWORK_WAN, a1)
+        coord.push_alert(CATEGORY_NETWORK_WAN, a2)
+        # Only the first push counted; the second was suppressed
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.alert_count == 1
+        # async_set_updated_data was only called once (no spurious notify)
+        assert coord.async_set_updated_data.call_count == 1
+
+    def test_distinct_keys_are_not_suppressed(self):
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+        a1 = make_alert(CATEGORY_NETWORK_WAN, "first", key="EVT_GW_WANTransition")
+        a2 = make_alert(CATEGORY_NETWORK_WAN, "different", key="EVT_GW_Failover")
+        coord.push_alert(CATEGORY_NETWORK_WAN, a1)
+        coord.push_alert(CATEGORY_NETWORK_WAN, a2)
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.alert_count == 2
+
+    def test_same_key_in_different_category_is_not_suppressed(self):
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+        a1 = make_alert(CATEGORY_NETWORK_WAN, "wan", key="EVT_X")
+        a2 = make_alert(CATEGORY_SECURITY_THREAT, "threat", key="EVT_X")
+        coord.push_alert(CATEGORY_NETWORK_WAN, a1)
+        coord.push_alert(CATEGORY_SECURITY_THREAT, a2)
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 1
+        assert coord.get_category_state(CATEGORY_SECURITY_THREAT).alert_count == 1
+
+    def test_dup_after_window_elapsed_is_accepted(self):
+        """When the cooldown has passed, the same (category, key) is allowed."""
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+        a1 = make_alert(CATEGORY_NETWORK_WAN, "first", key="EVT_GW_WANTransition")
+        a2 = make_alert(CATEGORY_NETWORK_WAN, "second", key="EVT_GW_WANTransition")
+
+        # Patch time.monotonic to advance past the dedup window between pushes
+        from custom_components.unifi_alerts.const import WEBHOOK_DEDUP_WINDOW_SECONDS
+
+        clock = [0.0]
+        with patch(
+            "custom_components.unifi_alerts.coordinator.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            coord.push_alert(CATEGORY_NETWORK_WAN, a1)
+            clock[0] = WEBHOOK_DEDUP_WINDOW_SECONDS + 0.01
+            coord.push_alert(CATEGORY_NETWORK_WAN, a2)
+
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 2
+
+    def test_empty_key_still_dedups(self):
+        """Alerts with no `key` field still dedup on the empty-string token —
+        prevents a misconfigured controller (which omits `key`) from flooding."""
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+        a1 = make_alert(CATEGORY_NETWORK_WAN, "first")  # key=""
+        a2 = make_alert(CATEGORY_NETWORK_WAN, "second")  # key=""
+        coord.push_alert(CATEGORY_NETWORK_WAN, a1)
+        coord.push_alert(CATEGORY_NETWORK_WAN, a2)
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 1
+
+    def test_last_push_at_dict_bounded_by_dedup_window(self):
+        """Regression: ``_last_push_at`` must not grow without bound.
+
+        A misconfigured controller emitting high-cardinality alert keys could
+        otherwise accumulate one entry per unique key forever. The dict is
+        opportunistically pruned to entries whose last-push timestamp is
+        within ``WEBHOOK_DEDUP_WINDOW_SECONDS`` of the most recent push, so
+        its size stays bounded regardless of the controller's lifetime
+        event-key cardinality.
+        """
+        from custom_components.unifi_alerts.const import WEBHOOK_DEDUP_WINDOW_SECONDS
+
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+
+        clock = [0.0]
+        with patch(
+            "custom_components.unifi_alerts.coordinator.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            # Burst of 50 distinct keys at t=0
+            for i in range(50):
+                coord.push_alert(
+                    CATEGORY_NETWORK_WAN,
+                    make_alert(CATEGORY_NETWORK_WAN, f"alert {i}", key=f"EVT_BURST_{i}"),
+                )
+            # All 50 are still within the window — dict holds them all
+            assert len(coord._last_push_at) == 50
+
+            # Jump past the window — the next push must prune the burst
+            clock[0] = WEBHOOK_DEDUP_WINDOW_SECONDS + 1.0
+            coord.push_alert(
+                CATEGORY_NETWORK_WAN,
+                make_alert(CATEGORY_NETWORK_WAN, "fresh", key="EVT_FRESH"),
+            )
+            # Only the fresh entry remains; the 50 stale ones were pruned.
+            assert len(coord._last_push_at) == 1
+            assert (CATEGORY_NETWORK_WAN, "EVT_FRESH") in coord._last_push_at
 
 
 class TestCancelClear:
@@ -540,6 +662,158 @@ class TestAutoClear:
             await coord._auto_clear(CATEGORY_NETWORK_WAN, 0)
 
         coord.async_set_updated_data.assert_not_called()
+
+
+class TestWatermarks:
+    """Tests for the acknowledgement watermark feature (Option C)."""
+
+    def _make_coord_with_mock_store(self):
+        """Coordinator with a Store mock so async_load/async_save are controllable."""
+        coord = make_coordinator()
+        coord._store = MagicMock()
+        coord._store.async_load = AsyncMock(return_value=None)
+        coord._store.async_save = AsyncMock()
+        return coord
+
+    @pytest.mark.asyncio
+    async def test_restore_watermarks_sets_last_cleared_at(self):
+        coord = self._make_coord_with_mock_store()
+        ts = "2024-06-01T10:00:00+00:00"
+        coord._store.async_load.return_value = {CATEGORY_NETWORK_WAN: ts}
+
+        await coord.async_restore_watermarks()
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.last_cleared_at is not None
+        assert state.last_cleared_at.isoformat() == ts
+
+    @pytest.mark.asyncio
+    async def test_restore_watermarks_skips_invalid_timestamps(self):
+        coord = self._make_coord_with_mock_store()
+        coord._store.async_load.return_value = {CATEGORY_NETWORK_WAN: "not-a-date"}
+
+        await coord.async_restore_watermarks()  # must not raise
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.last_cleared_at is None
+
+    @pytest.mark.asyncio
+    async def test_restore_watermarks_handles_empty_store(self):
+        coord = self._make_coord_with_mock_store()
+        coord._store.async_load.return_value = None
+
+        await coord.async_restore_watermarks()  # must not raise
+
+        for cat in ALL_CATEGORIES:
+            assert coord.get_category_state(cat).last_cleared_at is None
+
+    @pytest.mark.asyncio
+    async def test_async_clear_category_sets_watermark_and_notifies(self):
+        coord = self._make_coord_with_mock_store()
+        coord.async_set_updated_data = MagicMock()
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        state.is_alerting = True
+
+        await coord.async_clear_category(CATEGORY_NETWORK_WAN)
+
+        assert state.is_alerting is False
+        assert state.last_cleared_at is not None
+        coord._store.async_save.assert_awaited_once()
+        coord.async_set_updated_data.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_clear_category_cancels_auto_clear_task(self):
+        hass = MagicMock()
+        task_mock = MagicMock()
+        task_mock.done.return_value = False
+
+        def _create_task(coro, **kw):
+            coro.close()
+            return task_mock
+
+        hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
+        coord = make_coordinator(hass=hass)
+        coord._store = MagicMock()
+        coord._store.async_load = AsyncMock(return_value=None)
+        coord._store.async_save = AsyncMock()
+        coord.async_set_updated_data = MagicMock()
+
+        coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
+        await coord.async_clear_category(CATEGORY_NETWORK_WAN)
+
+        task_mock.cancel.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_async_clear_all_sets_watermark_on_all_enabled(self):
+        coord = self._make_coord_with_mock_store()
+        coord.async_set_updated_data = MagicMock()
+
+        await coord.async_clear_all()
+
+        for cat in ALL_CATEGORIES:
+            state = coord.get_category_state(cat)
+            assert state.last_cleared_at is not None
+        coord._store.async_save.assert_awaited_once()
+        coord.async_set_updated_data.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_open_count_filtered_by_watermark(self):
+        """Alarms older than watermark must not contribute to open_count."""
+        hass = MagicMock()
+        hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
+        hass.async_create_background_task = hass.async_create_task
+        client = MagicMock()
+
+        watermark = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
+        old_alarm = MagicMock()
+        old_alarm.received_at = datetime(2024, 6, 1, 11, 0, 0, tzinfo=UTC)  # before watermark
+        new_alarm = MagicMock()
+        new_alarm.received_at = datetime(2024, 6, 1, 13, 0, 0, tzinfo=UTC)  # after watermark
+
+        client.categorise_alarms = AsyncMock(
+            return_value={CATEGORY_NETWORK_WAN: [old_alarm, new_alarm]}
+        )
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        coord.async_set_updated_data = MagicMock()
+        coord.get_category_state(CATEGORY_NETWORK_WAN).last_cleared_at = watermark
+
+        await coord._async_update_data()
+
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).open_count == 1
+
+    @pytest.mark.asyncio
+    async def test_open_count_unfiltered_when_no_watermark(self):
+        """Without a watermark, all unarchived alarms are counted."""
+        hass = MagicMock()
+        hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
+        hass.async_create_background_task = hass.async_create_task
+        client = MagicMock()
+
+        alarms = [MagicMock() for _ in range(5)]
+        for i, a in enumerate(alarms):
+            a.received_at = datetime(2024, 6, 1, i, 0, 0, tzinfo=UTC)
+
+        client.categorise_alarms = AsyncMock(
+            return_value={CATEGORY_NETWORK_WAN: alarms}
+        )
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        coord.async_set_updated_data = MagicMock()
+        # No watermark set — last_cleared_at is None
+
+        await coord._async_update_data()
+
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).open_count == 5
 
 
 class TestSiteConfig:
