@@ -6,12 +6,12 @@ import logging
 import secrets
 from typing import Any
 
-import aiohttp
 import voluptuous as vol
 from homeassistant.components.webhook import async_generate_url
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 from yarl import URL
 
@@ -78,32 +78,35 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(url)
                 self._abort_if_unique_id_configured()
-                async with aiohttp.ClientSession() as session:
-                    client = UniFiClient(session, url, user_input)
-                    try:
-                        auth_method = await client.authenticate()
-                        await client.fetch_alarms()  # validate alarm endpoint reachable
-                    except InvalidAuthError:
-                        errors["base"] = "invalid_auth"
-                    except CannotConnectError as err:
-                        _LOGGER.error("Cannot reach alarm endpoint: %s", err)
-                        errors["base"] = "cannot_connect"
-                    except Exception:  # noqa: BLE001
-                        _LOGGER.exception("Unexpected error during auth")
-                        errors["base"] = "unknown"
-                    else:
-                        self._controller_url = url
-                        self._detected_auth_method = auth_method
-                        # CONF_WEBHOOK_ID_SUFFIX is generated per-entry so two
-                        # config entries can never collide on a webhook ID.
-                        # 8 hex chars = 32 bits of entropy, plenty to avoid
-                        # accidental collisions inside a single HA install.
-                        self._credentials = {
-                            **user_input,
-                            CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32),
-                            CONF_WEBHOOK_ID_SUFFIX: secrets.token_hex(4),
-                        }
-                        return await self.async_step_categories()
+                session = async_get_clientsession(
+                    self.hass,
+                    verify_ssl=user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+                )
+                client = UniFiClient(session, url, user_input)
+                try:
+                    auth_method = await client.authenticate()
+                    await client.fetch_alarms()  # validate alarm endpoint reachable
+                except InvalidAuthError:
+                    errors["base"] = "invalid_auth"
+                except CannotConnectError as err:
+                    _LOGGER.error("Cannot reach alarm endpoint: %s", err)
+                    errors["base"] = "cannot_connect"
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("Unexpected error during auth")
+                    errors["base"] = "unknown"
+                else:
+                    self._controller_url = url
+                    self._detected_auth_method = auth_method
+                    # CONF_WEBHOOK_ID_SUFFIX is generated per-entry so two
+                    # config entries can never collide on a webhook ID.
+                    # 8 hex chars = 32 bits of entropy, plenty to avoid
+                    # accidental collisions inside a single HA install.
+                    self._credentials = {
+                        **user_input,
+                        CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32),
+                        CONF_WEBHOOK_ID_SUFFIX: secrets.token_hex(4),
+                    }
+                    return await self.async_step_categories()
 
         _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
@@ -238,30 +241,33 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None and self._reauth_entry is not None:
             entry = self._reauth_entry
             url: str = entry.data.get(CONF_CONTROLLER_URL, "")
-            async with aiohttp.ClientSession() as session:
-                client = UniFiClient(session, url, user_input)
-                try:
-                    auth_method = await client.authenticate()
-                except InvalidAuthError:
-                    errors["base"] = "invalid_auth"
-                except CannotConnectError as err:
-                    _LOGGER.error("Cannot reach controller during reauth: %s", err)
-                    errors["base"] = "cannot_connect"
-                except Exception:  # noqa: BLE001
-                    _LOGGER.exception("Unexpected error during reauth")
-                    errors["base"] = "unknown"
-                else:
-                    # Merge updated credentials into the entry
-                    new_data = {
-                        **entry.data,
-                        **user_input,
-                        CONF_AUTH_METHOD: auth_method,
-                    }
-                    self.hass.config_entries.async_update_entry(entry, data=new_data)
-                    # Clear the repair issue now that auth is restored
-                    ir.async_delete_issue(self.hass, DOMAIN, f"auth_failed_{entry.entry_id}")
-                    await self.hass.config_entries.async_reload(entry.entry_id)
-                    return self.async_abort(reason="reauth_successful")
+            session = async_get_clientsession(
+                self.hass,
+                verify_ssl=entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+            )
+            client = UniFiClient(session, url, user_input)
+            try:
+                auth_method = await client.authenticate()
+            except InvalidAuthError:
+                errors["base"] = "invalid_auth"
+            except CannotConnectError as err:
+                _LOGGER.error("Cannot reach controller during reauth: %s", err)
+                errors["base"] = "cannot_connect"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error during reauth")
+                errors["base"] = "unknown"
+            else:
+                # Merge updated credentials into the entry
+                new_data = {
+                    **entry.data,
+                    **user_input,
+                    CONF_AUTH_METHOD: auth_method,
+                }
+                self.hass.config_entries.async_update_entry(entry, data=new_data)
+                # Clear the repair issue now that auth is restored
+                ir.async_delete_issue(self.hass, DOMAIN, f"auth_failed_{entry.entry_id}")
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
 
         _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
@@ -360,54 +366,54 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                 if new_api_key:
                     test_data[CONF_API_KEY] = new_api_key
 
-                async with aiohttp.ClientSession() as session:
-                    client = UniFiClient(session, effective_url, test_data)
-                    try:
-                        auth_method = await client.authenticate()
-                        await client.fetch_alarms()
-                    except InvalidAuthError:
-                        errors["base"] = "invalid_auth"
-                    except CannotConnectError as err:
-                        _LOGGER.error("Cannot reach controller during options update: %s", err)
-                        errors["base"] = "cannot_connect"
-                    except Exception:  # noqa: BLE001
-                        _LOGGER.exception("Unexpected error during options credentials update")
-                        errors["base"] = "unknown"
-                    else:
-                        # Check whether the new URL would collide with another entry
-                        if effective_url != self._config_entry.data[CONF_CONTROLLER_URL]:
-                            for entry in self.hass.config_entries.async_entries(DOMAIN):
-                                if (
-                                    entry.entry_id != self._config_entry.entry_id
-                                    and entry.data.get(CONF_CONTROLLER_URL) == effective_url
-                                ):
-                                    return self.async_abort(reason="already_configured")
+                session = async_get_clientsession(self.hass, verify_ssl=new_verify_ssl)
+                client = UniFiClient(session, effective_url, test_data)
+                try:
+                    auth_method = await client.authenticate()
+                    await client.fetch_alarms()
+                except InvalidAuthError:
+                    errors["base"] = "invalid_auth"
+                except CannotConnectError as err:
+                    _LOGGER.error("Cannot reach controller during options update: %s", err)
+                    errors["base"] = "cannot_connect"
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("Unexpected error during options credentials update")
+                    errors["base"] = "unknown"
+                else:
+                    # Check whether the new URL would collide with another entry
+                    if effective_url != self._config_entry.data[CONF_CONTROLLER_URL]:
+                        for entry in self.hass.config_entries.async_entries(DOMAIN):
+                            if (
+                                entry.entry_id != self._config_entry.entry_id
+                                and entry.data.get(CONF_CONTROLLER_URL) == effective_url
+                            ):
+                                return self.async_abort(reason="already_configured")
 
-                        # Persist the updated credentials into entry.data
-                        updated_data = {
-                            **self._config_entry.data,
-                            CONF_CONTROLLER_URL: effective_url,
-                            CONF_VERIFY_SSL: new_verify_ssl,
-                            CONF_AUTH_METHOD: auth_method,
-                        }
-                        if new_username:
-                            updated_data[CONF_USERNAME] = new_username
-                        if new_password:
-                            updated_data[CONF_PASSWORD] = new_password
-                        if new_api_key:
-                            updated_data[CONF_API_KEY] = new_api_key
-                        if regenerate_secret:
-                            updated_data[CONF_WEBHOOK_SECRET] = secrets.token_urlsafe(32)
-                            _LOGGER.info(
-                                "Webhook secret regenerated for %s",
-                                self._config_entry.entry_id,
-                            )
-
-                        self.hass.config_entries.async_update_entry(
-                            self._config_entry, data=updated_data
+                    # Persist the updated credentials into entry.data
+                    updated_data = {
+                        **self._config_entry.data,
+                        CONF_CONTROLLER_URL: effective_url,
+                        CONF_VERIFY_SSL: new_verify_ssl,
+                        CONF_AUTH_METHOD: auth_method,
+                    }
+                    if new_username:
+                        updated_data[CONF_USERNAME] = new_username
+                    if new_password:
+                        updated_data[CONF_PASSWORD] = new_password
+                    if new_api_key:
+                        updated_data[CONF_API_KEY] = new_api_key
+                    if regenerate_secret:
+                        updated_data[CONF_WEBHOOK_SECRET] = secrets.token_urlsafe(32)
+                        _LOGGER.info(
+                            "Webhook secret regenerated for %s",
+                            self._config_entry.entry_id,
                         )
-                        # Proceed to categories; reload will happen after the full options save
-                        return await self.async_step_categories()
+
+                    self.hass.config_entries.async_update_entry(
+                        self._config_entry, data=updated_data
+                    )
+                    # Proceed to categories; reload will happen after the full options save
+                    return await self.async_step_categories()
 
         # Build the credentials form — all fields optional with current values as hints
         _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))

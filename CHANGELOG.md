@@ -10,6 +10,10 @@ listed individually — only the consolidated `X.Y.Z` release that bundles them.
 
 ## [Unreleased]
 
+### Security
+
+- Config flow now uses HA's shared `async_get_clientsession()` in `async_step_user`, `async_step_reauth_confirm`, and `async_step_credentials` instead of creating bare `aiohttp.ClientSession()` instances. Honours HA's proxy configuration, connection pool, and the user's `verify_ssl` setting on every credential-test request. (`config_flow.py`)
+
 ## [1.4.0] — 2026-05-04
 
 ### Security

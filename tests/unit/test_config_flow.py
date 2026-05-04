@@ -33,12 +33,14 @@ def _make_flow() -> UniFiAlertsConfigFlow:
     return flow
 
 
-def _make_session_mock() -> AsyncMock:
-    """Return a mock that behaves as an async context manager (aiohttp.ClientSession)."""
-    mock_session = AsyncMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=False)
-    return mock_session
+def _make_session_mock() -> MagicMock:
+    """Return a mock representing the HA-managed aiohttp session.
+
+    `async_get_clientsession()` returns a long-lived session; the config flow
+    no longer wraps it in an `async with`. UniFiClient is patched in these
+    tests, so the session value is opaque — any MagicMock works.
+    """
+    return MagicMock()
 
 
 _VALID_INPUT = {
@@ -68,7 +70,7 @@ async def test_unique_id_set_to_normalised_url() -> None:
 
     with (
         patch(
-            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+            "custom_components.unifi_alerts.config_flow.async_get_clientsession",
             return_value=_make_session_mock(),
         ),
         patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -132,7 +134,7 @@ async def test_no_duplicate_proceeds_to_categories() -> None:
 
     with (
         patch(
-            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+            "custom_components.unifi_alerts.config_flow.async_get_clientsession",
             return_value=_make_session_mock(),
         ),
         patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -432,7 +434,7 @@ async def test_user_step_error_preserves_submitted_values() -> None:
 
     with (
         patch(
-            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+            "custom_components.unifi_alerts.config_flow.async_get_clientsession",
             return_value=_make_session_mock(),
         ),
         patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -458,27 +460,30 @@ async def test_user_step_error_preserves_submitted_values() -> None:
 
 
 @pytest.mark.asyncio
-async def test_config_flow_session_closed_on_auth_error() -> None:
-    """The aiohttp ClientSession context manager must exit (clean up) even on auth error."""
-    from custom_components.unifi_alerts.unifi_client import InvalidAuthError
+async def test_user_step_uses_ha_clientsession_with_user_verify_ssl() -> None:
+    """async_step_user must use HA's shared clientsession with the user's verify_ssl value.
 
+    Bare `aiohttp.ClientSession()` bypasses HA's proxy config, connection pool, and
+    the user's SSL setting. The fix is to call `async_get_clientsession(hass, verify_ssl=...)`
+    so HA returns the appropriately-configured shared session.
+    """
     flow = _make_flow()
-    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "user"})
-    mock_session = _make_session_mock()
+    flow.async_step_categories = AsyncMock(return_value={"type": "form"})
 
     with (
         patch(
-            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
-            return_value=mock_session,
-        ),
+            "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+            return_value=MagicMock(),
+        ) as mock_get_session,
         patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
     ):
         instance = mock_cls.return_value
-        instance.authenticate = AsyncMock(side_effect=InvalidAuthError("bad creds"))
+        instance.authenticate = AsyncMock(return_value="userpass")
+        instance.fetch_alarms = AsyncMock(return_value=[])
 
-        await flow.async_step_user(_VALID_INPUT)
+        await flow.async_step_user({**_VALID_INPUT, CONF_VERIFY_SSL: False})
 
-    mock_session.__aexit__.assert_awaited_once()
+    mock_get_session.assert_called_once_with(flow.hass, verify_ssl=False)
 
 
 @pytest.mark.asyncio
@@ -636,7 +641,7 @@ async def test_step_user_fetch_alarms_failure_shows_cannot_connect() -> None:
 
     with (
         patch(
-            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+            "custom_components.unifi_alerts.config_flow.async_get_clientsession",
             return_value=_make_session_mock(),
         ),
         patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -815,7 +820,7 @@ class TestReauthFlow:
 
         with (
             patch(
-                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
                 return_value=_make_session_mock(),
             ),
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -846,7 +851,7 @@ class TestReauthFlow:
 
         with (
             patch(
-                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
                 return_value=_make_session_mock(),
             ),
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -870,7 +875,7 @@ class TestReauthFlow:
 
         with (
             patch(
-                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
                 return_value=_make_session_mock(),
             ),
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -896,7 +901,7 @@ class TestReauthFlow:
 
         with (
             patch(
-                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
                 return_value=_make_session_mock(),
             ),
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -997,7 +1002,7 @@ class TestOptionsFlowCredentials:
 
         with (
             patch(
-                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
                 return_value=_make_session_mock(),
             ),
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -1038,7 +1043,7 @@ class TestOptionsFlowCredentials:
 
         with (
             patch(
-                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
                 return_value=_make_session_mock(),
             ),
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -1071,7 +1076,7 @@ class TestOptionsFlowCredentials:
         }
 
         with patch(
-            "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+            "custom_components.unifi_alerts.config_flow.async_get_clientsession",
             return_value=_make_session_mock(),
         ) as mock_session_cls:
             result = await flow.async_step_credentials(bad_url_input)
@@ -1105,7 +1110,7 @@ class TestOptionsFlowCredentials:
 
         with (
             patch(
-                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
                 return_value=_make_session_mock(),
             ),
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -1140,7 +1145,7 @@ class TestOptionsFlowCredentials:
 
         with (
             patch(
-                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
                 return_value=_make_session_mock(),
             ),
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -1242,7 +1247,7 @@ class TestWebhookSecretRotation:
 
         with (
             patch(
-                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
                 return_value=_make_session_mock(),
             ),
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -1378,7 +1383,7 @@ class TestWebhookIdSuffix:
 
         with (
             patch(
-                "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
                 return_value=_make_session_mock(),
             ),
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
@@ -1408,7 +1413,7 @@ class TestWebhookIdSuffix:
             flow.async_step_categories = AsyncMock(return_value={"type": "form"})
             with (
                 patch(
-                    "custom_components.unifi_alerts.config_flow.aiohttp.ClientSession",
+                    "custom_components.unifi_alerts.config_flow.async_get_clientsession",
                     return_value=_make_session_mock(),
                 ),
                 patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,

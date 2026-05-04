@@ -1,5 +1,26 @@
 # History
 
+## 2026-05-04 — v1.5.0 Bundle 2: config-flow `async_get_clientsession` migration
+
+**Why:** Three call sites in `config_flow.py` (`async_step_user`, `async_step_reauth_confirm`, `async_step_credentials`) were creating bare `aiohttp.ClientSession()` instances inside `async with` blocks to validate user-entered credentials against the controller. This bypassed three things HA expects integrations to honour: the system-wide proxy configuration, the shared connection pool, and the user's `verify_ssl` setting (which is a per-session attribute on HA's clientsession). The fix is the canonical `async_get_clientsession(hass, verify_ssl=...)`.
+
+**What:**
+
+- **`config_flow.py:81` (`async_step_user`)** — initial setup. The user's freshly-entered `verify_ssl` (from the form schema, defaulting to `DEFAULT_VERIFY_SSL=True`) is passed straight into `async_get_clientsession`.
+- **`config_flow.py:244` (`async_step_reauth_confirm`)** — reauth flow. The existing entry's `verify_ssl` is used (reauth doesn't change it).
+- **`config_flow.py:369` (`async_step_credentials`)** — options flow credentials step. The newly-computed `new_verify_ssl` (which already merges the user's toggle with the existing entry's value) is used.
+- `import aiohttp` removed; `from homeassistant.helpers.aiohttp_client import async_get_clientsession` added.
+- The `async with` wrappers are gone — HA owns the session lifecycle, the integration must not close it.
+
+**Tests:**
+
+- 19 existing tests had `patch("custom_components.unifi_alerts.config_flow.aiohttp.ClientSession", ...)` — replaced via `replace_all` with `patch("...config_flow.async_get_clientsession", ...)`.
+- `_make_session_mock()` simplified: it used to return an `AsyncMock` with `__aenter__/__aexit__` to fake the context-manager protocol. Now returns a plain `MagicMock()` since the new code doesn't enter a context manager.
+- `test_config_flow_session_closed_on_auth_error` deleted — it asserted that `__aexit__` was awaited on the bare `aiohttp.ClientSession`, which is no longer the lifecycle pattern.
+- New regression test `test_user_step_uses_ha_clientsession_with_user_verify_ssl` asserts `async_get_clientsession` is called with the user's `verify_ssl` value (`False` in the test) so the SSL setting actually flows through.
+
+Full suite: `362 passed`. (Net: −1 obsolete test, +1 regression test on top of the 362 base on `dev`.)
+
 ## 2026-05-04 — v1.4.0 release: squash-merge trap diagnosed and fixed; branch rulesets configured
 
 **Release process investigation:**
