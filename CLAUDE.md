@@ -72,6 +72,7 @@ tests/
   pre-push                        # local gate: HACS preflight > translation drift > ruff > mypy > pytest; install with: git config core.hooksPath .githooks
 scripts/
   validate_hacs.py                # pure-Python HACS manifest pre-flight; checks required fields, iot_class, dependencies (no HA core built-ins); run locally or in CI
+  validate_docs.py                # pure-Python docs prose linter; bans em-dash, unicode arrows, and 'bundle/cluster/track/session N' framing; enforces HISTORY.md '## YYYY-MM-DD' h2 format. Wired into make validate, pre-push hook, and CI hacs-preflight job.
   setup-labels.sh                 # one-shot script that creates the non-default labels referenced in `.github/release.yml` (`security`, `feat`, `fix`, `tests`, `ci`, `github-actions`, `dependencies`). Run once per fork via `./scripts/setup-labels.sh`. Idempotent - existing labels skipped. The `bug`, `enhancement`, and `documentation` labels are GitHub defaults; the rest do not exist on a fresh fork and the categories file is inert without them. `feat` and `fix` are Conventional-Commits aliases for `enhancement` and `bug` respectively - either label works for those categories.
 Makefile                          # convenience targets: setup, lint, typecheck, validate, test, check (default = all)
 requirements-dev.txt              # single source of truth for all dev dependencies; used by make setup and both CI jobs
@@ -140,7 +141,7 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
        │         ├─► tag v1.1.0  ──► GitHub stable release  (automated)
        │         └─► PR main > dev  [sync merge - keep 389841a in dev ancestry]
        │
-       └── bump manifest to 1.2.0-pre1 (via claude/* PR > dev)  ← start next cycle
+       └── bump manifest to 1.2.0-pre1 (via claude/* PR > dev)  (start next cycle)
 ```
 
 1. **Development:** work on `dev`. Version in manifest stays at `X.Y.Z-preN`.

@@ -18,6 +18,7 @@ typecheck:
 
 validate:
 	python3 scripts/validate_hacs.py
+	python3 scripts/validate_docs.py
 
 check: lint typecheck validate test
 

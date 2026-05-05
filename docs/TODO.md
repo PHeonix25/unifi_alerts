@@ -10,6 +10,7 @@ Outstanding work only. Items are removed when they ship; completion lives in `do
 ## 🟢 Nice-to-have
 
 - **HACS default catalogue submission**: open the PR to <https://github.com/hacs/default> once all v1.x items below are closed.
+- **Tier 2 docs linter (markdownlint)**: layer `markdownlint-cli2` on top of `scripts/validate_docs.py` to catch structural issues (heading-level skips, mixed list markers, bare URLs, trailing whitespace) that a regex linter cannot. Adds a Node dependency; commit a `.markdownlint.json` config tuned for this repo. Run it from CI's `lint` job and the pre-push hook alongside the existing prose check.
 
 ## Reliability / correctness
 

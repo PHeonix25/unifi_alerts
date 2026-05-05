@@ -14,8 +14,8 @@ Instead, open a [private vulnerability report on GitHub](https://github.com/PHeo
 This route gives the maintainer a private channel to triage, draft a fix, and
 coordinate disclosure timing.
 
-If you cannot use GitHub's private advisories — for example, you do not have a
-GitHub account — open a regular GitHub issue titled `Security: please contact me
+If you cannot use GitHub's private advisories - for example, you do not have a
+GitHub account - open a regular GitHub issue titled `Security: please contact me
 privately` containing **only** a way to reach you (e.g. an email handle), and
 the maintainer will respond out-of-band. Do not include any technical details
 about the vulnerability in the public issue.
