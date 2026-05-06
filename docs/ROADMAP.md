@@ -19,9 +19,9 @@ Closes the remaining auth/credential exposure paths, makes the options flow tran
 
 ### Reliability (pulled forward from v1.6.0; field-confirmed)
 
-- [ ] **Polling re-asserts `is_alerting` for alarms older than the watermark** (`coordinator.py:127-134`): `_async_update_data()` applies the `last_cleared_at` watermark when computing `open_count` but uses the unfiltered alarm list when deciding whether to flip `is_alerting`. After auto-clear, the next poll (within 60 s) re-discovers a pre-watermark alarm and re-asserts `is_alerting=True` with a different alarm's message, while `open_count` stays at 0. Field-confirmed via production screenshots: auto-clear fired at 21:25:52, polling re-asserted Problem at 21:26:55 with a different alarm. Fix: apply the watermark filter to the `is_alerting` branch too. Pair with a regression test in `test_coordinator.py`.
-- [ ] **`_auto_clear` watermark persistence** (`coordinator.py:298-304`): `state.clear()` advances `last_cleared_at` in memory but `_async_persist_watermarks()` is never awaited. An HA restart immediately after auto-clear loses the watermark, causing `open_count` to jump back up. Fix + `test_auto_clear_persists_watermark`.
-- [ ] **`open_count` lags on webhook path** (`coordinator.py`): `push_alert()` never updates `open_count`; only polling does. Result: for up to one poll interval (default 60 s) after a webhook, the binary sensor shows Problem while Open Count shows 0. Field-confirmed: `alert_count=14`, `open_count=0`. Root causes: (1) `push_alert()` never increments `open_count`; (2) `/list/alarm` caps at ~3000 records oldest-first, so on busy controllers (more than ~33 alarms/day) today's alarms are absent from the polled response entirely and poll reconciliation never fires - confirmed by finding today's IPS events via `system-log/all` but not in `/list/alarm`. Disproven: (a) UniFi auto-archive theory; (b) IPS events at `/stat/ips/event` (returns `api.err.NotFound`). This fix covers root cause 1 (the short-term path); root cause 2 is addressed by the v2 polling strategy switch in v1.6.0. Fix: optimistic increment in `push_alert()` when `alert.received_at > state.last_cleared_at`, with poll-time correction (clamp down if poll comes back lower). Pair with a regression test in `test_coordinator.py`.
+- [x] **Polling re-asserts `is_alerting` for alarms older than the watermark** ([#72]): `_async_update_data()` now uses the watermark-filtered list when deciding whether to flip `is_alerting`, so a stale pre-Clear alarm cannot re-assert Problem after auto-clear.
+- [x] **`_auto_clear` watermark persistence** ([#72]): `_auto_clear()` now awaits `_async_persist_watermarks()` after `state.clear()`. Companion test `test_auto_clear_persists_watermark` added.
+- [x] **`open_count` lags on webhook path** ([#72]): `push_alert()` now optimistically increments `open_count` when `alert.received_at > state.last_cleared_at`. Polling reconciles to the authoritative value on the next refresh. Root cause 2 (busy controllers, /list/alarm 3000-record cap) remains addressed by the v2 polling strategy switch in v1.6.0.
 
 ---
 
@@ -89,3 +89,5 @@ Prerequisites for submitting to <https://github.com/hacs/default>.
 
 - Extract `_device_info()` duplication into a shared `entity_base.py` mixin (only if maintenance burden grows).
 - Configurable site per category (power-user feature).
+
+[#72]: https://github.com/PHeonix25/unifi_alerts/pull/72
