@@ -99,6 +99,8 @@ Default site name is `default`. Multi-site is configurable via `CONF_SITE` per e
 
 The integration filters to `archived: false` records only. The `archived` field exists in API responses but **there is no documented write API to archive/dismiss individual alarms and no UI option**. The community-discovered `POST /cmd/evtmgt {"cmd":"archive-all-alarms"}` endpoint returns `api.err.NotFound` on current firmware. In practice, controller-side `open_count` only grows.
 
+**IPS / IDS / threat events are included in `/list/alarm` on UniFi Network 9.x.** Confirmed by direct probing of a UCG-Ultra: alarms with `"key":"EVT_IPS_IpsAlert"` appear in the standard alarm list with full payload (`signature`, `srcip`, `dest_port`, `inner_alert_*`, `ubnt_category`, etc.). The separate `/proxy/network/api/s/{site}/stat/ips/event` endpoint (referenced in the older unpoller Go library) returns `api.err.NotFound` on Network 9.x; do not waste time polling it. Query parameters `?archived=true|false` and `?limit=N` are silently ignored on this firmware; filter and slice in Python after fetching.
+
 #### Error responses
 
 The controller returns HTTP 200 even for application-level errors. The `meta.rc` field distinguishes success from failure:
