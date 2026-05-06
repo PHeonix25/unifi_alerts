@@ -2,32 +2,35 @@
 
 What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `main` as `X.Y.Z`. Completed work is removed from this file; the historical record lives in `docs/HISTORY.md`, and the user-visible release summary lives in `CHANGELOG.md`.
 
-> **Status (2026-05-04):** v1.4.0 released. Active development on `dev` at `1.5.0-pre1`. Path to v2.0.0: v1.5.0 (security hardening II), v1.6.0 (reliability + completeness), v1.7.0 (documentation + architecture), v2.0.0 (HACS default).
+> **Status (2026-05-04):** v1.4.0 released. Active development on `dev` at `1.5.0-pre1`. Path to v2.0.0: v1.5.0 (security hardening II + field-confirmed reliability fixes), v1.6.0 (reliability + completeness), v1.7.0 (documentation + architecture), v2.0.0 (HACS default).
 
 > **Branching model:** see `CLAUDE.md § Branching strategy and versioning`.
 
 ---
 
-## v1.5.0: Security hardening II
+## v1.5.0: Security hardening II + field-confirmed reliability fixes
 
-Closes the remaining auth/credential exposure paths and makes the options flow transactionally safe.
+Closes the remaining auth/credential exposure paths, makes the options flow transactionally safe, and lands the two reliability bugs confirmed in field testing.
 
 ### Options-flow atomicity
 
 - [ ] **Stage credential changes** (`config_flow.py`): `async_step_credentials` calls `async_update_entry()` eagerly. Abandoning the flow after credentials but before finish leaves the change persisted. Stage into `self._pending_data`, persist atomically in `async_step_finish`.
 - [ ] **`verify_ssl` toggle alone must persist**: `credentials_changed` ignores the SSL flag. Roll into the staging refactor above.
 
+### Reliability (pulled forward from v1.6.0; field-confirmed)
+
+- [ ] **Polling re-asserts `is_alerting` for alarms older than the watermark** (`coordinator.py:127-134`): `_async_update_data()` applies the `last_cleared_at` watermark when computing `open_count` but uses the unfiltered alarm list when deciding whether to flip `is_alerting`. After auto-clear, the next poll (within 60 s) re-discovers a pre-watermark alarm and re-asserts `is_alerting=True` with a different alarm's message, while `open_count` stays at 0. Field-confirmed via production screenshots: auto-clear fired at 21:25:52, polling re-asserted Problem at 21:26:55 with a different alarm. Fix: apply the watermark filter to the `is_alerting` branch too. Pair with a regression test in `test_coordinator.py`.
+- [ ] **`_auto_clear` watermark persistence** (`coordinator.py:298-304`): `state.clear()` advances `last_cleared_at` in memory but `_async_persist_watermarks()` is never awaited. An HA restart immediately after auto-clear loses the watermark, causing `open_count` to jump back up. Fix + `test_auto_clear_persists_watermark`.
+- [ ] **`open_count` lags on webhook path; IPS events may not appear in polling endpoint** (`coordinator.py`, `unifi_client.py`): `push_alert()` never updates `open_count`; only polling does. Separately, IPS/threat events may live at `/stat/ips/event` rather than `/list/alarm` on some firmware versions (unpoller library defines them as separate endpoints), meaning polling may never find them at all for the `security_threat` category. Field-confirmed: `alert_count=11`, `open_count=0` after 45+ minutes. Fix part 1: optimistic increment in `push_alert()` when `alert.received_at > state.last_cleared_at`. Fix part 2: investigate and document whether `/stat/ips/event` must be polled separately for the `security_threat` count sensor to work at all.
+
 ---
 
 ## v1.6.0: Reliability + completeness
 
-Closes correctness gaps and polishes testing.
+Closes remaining correctness gaps and polishes testing. The watermark re-assertion, auto-clear persistence, and open_count webhook-path bugs were pulled forward into v1.5.0.
 
 ### Reliability
 
-- [ ] **Polling re-asserts `is_alerting` for alarms older than the watermark** (`coordinator.py:127-134`): `_async_update_data()` filters by `last_cleared_at` when computing `open_count` but uses the unfiltered list when deciding whether to flip `is_alerting` and update `last_alert`. After Clear, `open_count` zeroes but the next poll re-asserts `is_alerting` from the same pre-watermark alarm; UI shows status=Problem with a stale message + Open Count=0. Field-confirmed via screenshots from a real install. Fix: apply the watermark filter to the `is_alerting` branch too. Pair with a regression test in `test_coordinator.py`.
-- [ ] **`_auto_clear` watermark persistence** (`coordinator.py:298-304`): `state.clear()` advances `last_cleared_at` in memory but `_async_persist_watermarks()` is never awaited. Fix + `test_auto_clear_persists_watermark`.
-- [ ] **`open_count` never lifts above 0 on the webhook path** (`coordinator.py`): `push_alert()` does not update `open_count`. UniFi auto-archives IPS/threat alarms faster than polling catches them, so the count sensor sits at 0 indefinitely while `alert_count` climbs. Field-confirmed: `alert_count=11`, `open_count=0`. Optimistic increment in `push_alert()` + poll-time correction.
 - [ ] **`_category_states` rebuild discards counters on reload**: `alert_count` and `last_alert` are lost on every reload. Persist alongside watermarks in the `Store`.
 - [ ] **Epoch-ms timestamp parsing** (`models.py:54-63`): numeric strings silently fall back to `now(UTC)`. Add an epoch-ms branch + `test_from_api_alarm_epoch_ms`.
 - [ ] **Silent JSON-parse failure during 400-error inspection** (`unifi_client.py`): `except Exception: pass` masks malformed UniFi error bodies. Log at DEBUG with the exception class name.
