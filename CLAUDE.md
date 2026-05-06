@@ -190,7 +190,7 @@ Recommended rules:
 - **After a PR merges, delete the local branch and switch back to `dev`** - run `git checkout dev && git pull origin dev && git branch -D <merged-branch>`. This forces the next task to branch off a clean `dev` instead of accidentally building on a stale, already-merged branch.
 - **Move into the working directory at the start of every session** - avoids needing path prefixes on every command.
 - Always run `make check` before committing - never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
-- Always update `docs/HISTORY.md` after each merged PR. Format: under the date heading (newest first), add a single bullet `- **category**: short description ([#PR]). Short why.` Categories: `feat`, `fix`, `security`, `docs`, `ci`, `chore`, `tests`, `release`. Add a `[#PR]` reference link at the bottom. No WHO, no multi-paragraph stories, no "bundle/cluster/session" framing.
+- Always update `docs/HISTORY.md` as part of every PR - including the PR that contains the HISTORY update itself. Write the entry in the same branch before merging; do not leave it for a follow-up PR. Format: under the date heading (newest first), add a single bullet `- **category**: short description ([#PR]). Short why.` Categories: `feat`, `fix`, `security`, `docs`, `ci`, `chore`, `tests`, `release`. Add a `[#PR]` reference link at the bottom. No WHO, no multi-paragraph stories, no "bundle/cluster/session" framing.
 - Always update `docs/TODO.md` by **deleting** the line for any completed item; never strike-through, never annotate "fixed in PR X". `docs/TODO.md` is outstanding work only. The historical record belongs in `docs/HISTORY.md`. The per-release plan lives in `docs/ROADMAP.md`; once a release ships, drop its section from ROADMAP entirely. Add new items as they surface. Do not rely on memory or Git history alone.
 - At the end of the day, make sure there are no commits outstanding, no changes locally that need to be pushed, and that the `auto-memory\dirty-files` file is empty (if it exists on disk). This ensures a clean slate for the next session.
 
@@ -201,10 +201,11 @@ Interruptions (timeouts, hibernation, re-login) are common. When a new conversat
 1. **Read `docs/HISTORY.md`** - the last entry describes what was most recently completed.
 2. **Run `git status` and `git diff HEAD`** - uncommitted changes show exactly what was in-flight.
 3. **Read `docs/TODO.md`** - the top remaining item is what was probably being worked on.
-4. **Check the venv** - on Linux/Mac: `ls .venv/bin/pytest`; on Windows PowerShell: `Test-Path .venv\Scripts\pytest.exe`. If missing, recreate it:
+4. **Check for missing HISTORY entries** - run `git log origin/dev --oneline --merges -10` and compare merge commits against the latest entries in `docs/HISTORY.md`. If any merged PR is absent, write its entry before starting new work. This is the most common gap left by an interrupted session.
+5. **Check the venv** - on Linux/Mac: `ls .venv/bin/pytest`; on Windows PowerShell: `Test-Path .venv\Scripts\pytest.exe`. If missing, recreate it:
    - **Linux/Mac:** `make setup` (or manually: `python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt --quiet`)
    - **Windows:** `py -3.12 -m venv .venv && .venv\Scripts\pip install -r requirements-dev.txt --quiet`
-5. **Resume from where the diff left off** - do not re-do already-applied changes. Pick up at the next pending step (usually: run tests, fix lint, commit).
+6. **Resume from where the diff left off** - do not re-do already-applied changes. Pick up at the next pending step (usually: run tests, fix lint, commit).
 
 ## Before making changes
 
