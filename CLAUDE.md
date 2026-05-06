@@ -201,10 +201,11 @@ Interruptions (timeouts, hibernation, re-login) are common. When a new conversat
 1. **Read `docs/HISTORY.md`** - the last entry describes what was most recently completed.
 2. **Run `git status` and `git diff HEAD`** - uncommitted changes show exactly what was in-flight.
 3. **Read `docs/TODO.md`** - the top remaining item is what was probably being worked on.
-4. **Check the venv** - on Linux/Mac: `ls .venv/bin/pytest`; on Windows PowerShell: `Test-Path .venv\Scripts\pytest.exe`. If missing, recreate it:
+4. **Check for missing HISTORY entries** - run `git log origin/dev --oneline --merges -10` and compare merge commits against the latest entries in `docs/HISTORY.md`. If any merged PR is absent, write its entry before starting new work. This is the most common gap left by an interrupted session.
+5. **Check the venv** - on Linux/Mac: `ls .venv/bin/pytest`; on Windows PowerShell: `Test-Path .venv\Scripts\pytest.exe`. If missing, recreate it:
    - **Linux/Mac:** `make setup` (or manually: `python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt --quiet`)
    - **Windows:** `py -3.12 -m venv .venv && .venv\Scripts\pip install -r requirements-dev.txt --quiet`
-5. **Resume from where the diff left off** - do not re-do already-applied changes. Pick up at the next pending step (usually: run tests, fix lint, commit).
+6. **Resume from where the diff left off** - do not re-do already-applied changes. Pick up at the next pending step (usually: run tests, fix lint, commit).
 
 ## Before making changes
 
