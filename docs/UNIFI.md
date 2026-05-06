@@ -51,7 +51,7 @@ GET /proxy/network/api/s/default/self
 X-API-Key: your-key-here
 ```
 
-> **Newer API (v2) note:** UniFi Network Application 8.x introduced a REST API under `/proxy/network/v2/api/` (e.g. `GET /proxy/network/v2/api/site` lists all sites). The alarm endpoint is still at the classic `/proxy/network/api/s/{site}/alarm` (or `/list/alarm` / `/stat/alarm` depending on firmware) as of writing.
+> **Newer API (v2) note:** UniFi Network Application 8.x introduced a REST API under `/proxy/network/v2/api/`. `GET /proxy/network/v2/api/site` lists sites. The alarm endpoint is still at the classic `/proxy/network/api/s/{site}/alarm` (or `/list/alarm` / `/stat/alarm` depending on firmware). Note: `GET /proxy/network/v2/api/site/{site}/alarm` returns HTTP 404; the v2 alarm data lives at `POST /proxy/network/v2/api/site/{site}/system-log/all` (see "v2 system-log API" below).
 
 ### Auto-detect logic (in `UniFiClient.authenticate()`)
 
@@ -99,6 +99,10 @@ Default site name is `default`. Multi-site is configurable via `CONF_SITE` per e
 
 The integration filters to `archived: false` records only. The `archived` field exists in API responses but **there is no documented write API to archive/dismiss individual alarms and no UI option**. The community-discovered `POST /cmd/evtmgt {"cmd":"archive-all-alarms"}` endpoint returns `api.err.NotFound` on current firmware. In practice, controller-side `open_count` only grows.
 
+**IPS / IDS / threat events are included in `/list/alarm` on UniFi Network 9.x and 10.x.** Confirmed by direct probing of a UCG-Ultra running Network 10.3.58: alarms with `"key":"EVT_IPS_IpsAlert"` appear in the standard alarm list with full payload (`signature`, `srcip`, `dest_port`, `inner_alert_*`, `ubnt_category`, etc.). The separate `/proxy/network/api/s/{site}/stat/ips/event` endpoint (referenced in the older unpoller Go library) returns `api.err.NotFound` on Network 10.x; do not waste time polling it. Query parameters `?archived=true|false`, `?limit=N`, `?sort=-datetime`, and `?_sort=-datetime` are all silently ignored on this firmware; filter and slice in Python after fetching.
+
+> **Critical limitation: 3000-record cap.** `/list/alarm` returns a hard maximum of approximately 3000 records, sorted oldest-first. There is no server-side pagination or sort control. On high-volume controllers (more than ~33 IPS/threat events per day), the entire 3000-record window predates the current date and recent alarms are not present in the polled response. Field observation on a UCG-Ultra with ~120 threat events/day: `/list/alarm` covered approximately the oldest 25 days of the 90-day retention window only; alarms from the following ~65 days were absent. Today's events were confirmed present only via the v2 `system-log/all` endpoint (see below). This is why `open_count` shows 0 on busy controllers even when `alert_count` is non-zero. See `docs/research/alert-endpoints.md` for the full investigation record.
+
 #### Error responses
 
 The controller returns HTTP 200 even for application-level errors. The `meta.rc` field distinguishes success from failure:
@@ -126,6 +130,105 @@ The controller returns HTTP 200 even for application-level errors. The `meta.rc`
 | `site_name` | Low | Not always present |
 | `severity` | Low | Not always present; values undocumented |
 | `subsystem` | Low | Broad categories like `lan`, `wan`, `wlan` |
+
+## v2 system-log API (Network 9.x+)
+
+> **This is the correct modern polling path for UniFi OS consoles.** The legacy
+> `/list/alarm` endpoint has a hard 3000-record cap sorted oldest-first; on busy
+> controllers it returns no recent alarms at all. The v2 system-log API supports
+> timestamp-range filtering and real pagination. The integration must migrate to
+> this path for `open_count` to be reliable on high-volume installations.
+
+### Probe for v2 availability
+
+`POST /proxy/network/v2/api/site/{site}/system-log/count` with body `{}`.
+
+If the response is a JSON object (not HTTP 404), the v2 path is available.
+Fall back to legacy `/list/alarm` when it is not. Older controllers and the
+Classic Network Application do not have this endpoint.
+
+### Fetch recent events
+
+`POST /proxy/network/v2/api/site/{site}/system-log/all`
+
+```json
+{
+  "timestampFrom": 1778025600000,
+  "timestampTo":   1778112000000,
+  "categories": ["SECURITY", "INTERNET_AND_WAN", "UNIFI_DEVICES", "POWER"],
+  "pageNumber": 0,
+  "pageSize": 100
+}
+```
+
+- `timestampFrom` / `timestampTo`: Unix epoch **milliseconds** (not seconds,
+  not ISO 8601).
+- `categories`: filter by one or more enum values (see table below). Incorrect
+  names cause HTTP 400; use the exact strings.
+- `pageNumber`: zero-based page index.
+- `pageSize`: capped at 100 per page (observed limit).
+
+Response envelope:
+
+```json
+{
+  "data": [...],
+  "page_number": 0,
+  "total_element_count": 74,
+  "total_page_count": 8
+}
+```
+
+### Category enum values
+
+| Enum value | Description | Integrates to |
+|---|---|---|
+| `SECURITY` | IPS/IDS, threat detection, firewall blocks | `cat_security_threat`, `cat_security_firewall` |
+| `INTERNET_AND_WAN` | WAN failover, latency | `cat_network_wan` |
+| `UNIFI_DEVICES` | AP/switch/gateway offline/online | `cat_network_device` |
+| `CLIENT_DEVICES` | Client connect/disconnect/roam | `cat_network_client` |
+| `POWER` | PoE / power loss | `cat_power` |
+| `AUDIT` | Admin-action events | (no current category) |
+| `SOFTWARE_UPDATES` | Firmware updates | (no current category) |
+| `VPN` | VPN tunnel events | (no current category) |
+
+### Event record schema
+
+Fields differ substantially from the legacy `/list/alarm` format:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | MongoDB ObjectId |
+| `category` | string | Explicit enum value (e.g. `"SECURITY"`) |
+| `event` | string | Event sub-type (e.g. `"THREAT_BLOCKED"`) |
+| `key` | string | Specific event key (e.g. `"THREAT_BLOCKED_KNOWN_DESTINATION_CLIENT"`); no `EVT_` prefix |
+| `message_raw` | string | Template string with `{PARAM}` placeholders |
+| `parameters` | object | Named substitution values for `message_raw` |
+| `severity` | string | `"LOW"`, `"MEDIUM"`, `"HIGH"`, `"VERY_HIGH"` |
+| `status` | string | `"NEW"` = open/unacknowledged (equivalent to `archived: false` in legacy) |
+| `timestamp` | integer | Unix epoch **milliseconds** (not an ISO string) |
+| `subcategory` | string | e.g. `"SECURITY_INTRUSION_PREVENTION"` |
+| `type` | string | `"GENERAL"` or `"AUDIT"` |
+
+The `message_raw` + `parameters` pattern requires a new payload parser.
+`UniFiAlert.from_api_alarm()` cannot be reused without modification. A
+dedicated `UniFiAlert.from_system_log_event()` constructor is required (tracked
+under Reliability in `docs/ROADMAP.md`).
+
+### Key format difference
+
+Legacy `/list/alarm` uses `EVT_{system}_{event}` keys (e.g. `EVT_IPS_IpsAlert`)
+mapped via `UNIFI_KEY_TO_CATEGORY`. The v2 API uses a flat descriptive format
+with no common prefix (e.g. `THREAT_BLOCKED_KNOWN_DESTINATION_CLIENT`). The
+two formats cannot share a single prefix-match table; a separate v2 key map is
+required.
+
+### `/system-log/critical` note
+
+`POST /proxy/network/v2/api/site/{site}/system-log/critical` was tested and
+returned an empty `data` array on a UCG-Ultra with several thousand SECURITY
+events available. Use `/system-log/all` with explicit `categories` filtering
+instead.
 
 ## Webhook payloads
 
@@ -205,4 +308,5 @@ Guidelines:
 
 - **SSL certificates**: UniFi OS consoles ship with self-signed certificates by default. `verify_ssl` defaults to `True` (secure). Users with self-signed certs must disable verification via the config flow.
 - **Site names**: some controllers use `default`; others use the site ID (a hex string). `CONF_SITE` per entry covers this. Per-category site selection is not implemented.
-- **Timestamp format**: the `datetime` field is usually ISO 8601 but some controllers emit epoch milliseconds. `UniFiAlert.from_api_alarm()` falls back to `datetime.now(UTC)` when neither parses; epoch-ms parsing is on the v1.6.0 backlog (see `docs/TODO.md`).
+- **Timestamp format**: the `datetime` field in legacy alarm records is usually ISO 8601 but some controllers emit epoch milliseconds. `UniFiAlert.from_api_alarm()` falls back to `datetime.now(UTC)` when neither parses; epoch-ms parsing is on the v1.6.0 backlog (see `docs/TODO.md`). The v2 `system-log` API always uses epoch milliseconds in the `timestamp` field.
+- **`/list/alarm` 3000-record cap**: the legacy alarm endpoint returns at most ~3000 records sorted oldest-first. No query parameter overrides this. On controllers generating more than ~33 alarms per day, recent events are not present in the polled response and `open_count` will always read 0 via the legacy path. The v2 `system-log/all` endpoint (see above) is the correct fix; it supports timestamp-range filtering and pagination. Field-confirmed on Network 10.3.58. Full investigation in `docs/research/alert-endpoints.md`.

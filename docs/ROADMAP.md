@@ -2,34 +2,39 @@
 
 What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `main` as `X.Y.Z`. Completed work is removed from this file; the historical record lives in `docs/HISTORY.md`, and the user-visible release summary lives in `CHANGELOG.md`.
 
-> **Status (2026-05-04):** v1.4.0 released. Active development on `dev` at `1.5.0-pre1`. Path to v2.0.0: v1.5.0 (security hardening II), v1.6.0 (reliability + completeness), v1.7.0 (documentation + architecture), v2.0.0 (HACS default).
+> **Status (2026-05-04):** v1.4.0 released. Active development on `dev` at `1.5.0-pre1`. Path to v2.0.0: v1.5.0 (security hardening II + field-confirmed reliability fixes), v1.6.0 (reliability + completeness), v1.7.0 (documentation + architecture), v2.0.0 (HACS default).
 
 > **Branching model:** see `CLAUDE.md § Branching strategy and versioning`.
 
 ---
 
-## v1.5.0: Security hardening II
+## v1.5.0: Security hardening II + field-confirmed reliability fixes
 
-Closes the remaining auth/credential exposure paths and makes the options flow transactionally safe.
+Closes the remaining auth/credential exposure paths, makes the options flow transactionally safe, and lands the two reliability bugs confirmed in field testing.
 
 ### Options-flow atomicity
 
 - [ ] **Stage credential changes** (`config_flow.py`): `async_step_credentials` calls `async_update_entry()` eagerly. Abandoning the flow after credentials but before finish leaves the change persisted. Stage into `self._pending_data`, persist atomically in `async_step_finish`.
 - [ ] **`verify_ssl` toggle alone must persist**: `credentials_changed` ignores the SSL flag. Roll into the staging refactor above.
 
+### Reliability (pulled forward from v1.6.0; field-confirmed)
+
+- [ ] **Polling re-asserts `is_alerting` for alarms older than the watermark** (`coordinator.py:127-134`): `_async_update_data()` applies the `last_cleared_at` watermark when computing `open_count` but uses the unfiltered alarm list when deciding whether to flip `is_alerting`. After auto-clear, the next poll (within 60 s) re-discovers a pre-watermark alarm and re-asserts `is_alerting=True` with a different alarm's message, while `open_count` stays at 0. Field-confirmed via production screenshots: auto-clear fired at 21:25:52, polling re-asserted Problem at 21:26:55 with a different alarm. Fix: apply the watermark filter to the `is_alerting` branch too. Pair with a regression test in `test_coordinator.py`.
+- [ ] **`_auto_clear` watermark persistence** (`coordinator.py:298-304`): `state.clear()` advances `last_cleared_at` in memory but `_async_persist_watermarks()` is never awaited. An HA restart immediately after auto-clear loses the watermark, causing `open_count` to jump back up. Fix + `test_auto_clear_persists_watermark`.
+- [ ] **`open_count` lags on webhook path** (`coordinator.py`): `push_alert()` never updates `open_count`; only polling does. Result: for up to one poll interval (default 60 s) after a webhook, the binary sensor shows Problem while Open Count shows 0. Field-confirmed: `alert_count=14`, `open_count=0`. Root causes: (1) `push_alert()` never increments `open_count`; (2) `/list/alarm` caps at ~3000 records oldest-first, so on busy controllers (more than ~33 alarms/day) today's alarms are absent from the polled response entirely and poll reconciliation never fires - confirmed by finding today's IPS events via `system-log/all` but not in `/list/alarm`. Disproven: (a) UniFi auto-archive theory; (b) IPS events at `/stat/ips/event` (returns `api.err.NotFound`). This fix covers root cause 1 (the short-term path); root cause 2 is addressed by the v2 polling strategy switch in v1.6.0. Fix: optimistic increment in `push_alert()` when `alert.received_at > state.last_cleared_at`, with poll-time correction (clamp down if poll comes back lower). Pair with a regression test in `test_coordinator.py`.
+
 ---
 
 ## v1.6.0: Reliability + completeness
 
-Closes correctness gaps and polishes testing.
+Closes remaining correctness gaps and polishes testing. The watermark re-assertion, auto-clear persistence, and open_count webhook-path bugs were pulled forward into v1.5.0.
 
 ### Reliability
 
-- [ ] **`_auto_clear` watermark persistence** (`coordinator.py:298-304`): `state.clear()` advances `last_cleared_at` in memory but `_async_persist_watermarks()` is never awaited. Fix + `test_auto_clear_persists_watermark`.
-- [ ] **`open_count` stale on webhook path** (`coordinator.py`): `push_alert()` does not update `open_count`. Optimistic increment + poll-time correction.
 - [ ] **`_category_states` rebuild discards counters on reload**: `alert_count` and `last_alert` are lost on every reload. Persist alongside watermarks in the `Store`.
-- [ ] **Epoch-ms timestamp parsing** (`models.py:54-63`): numeric strings silently fall back to `now(UTC)`. Add an epoch-ms branch + `test_from_api_alarm_epoch_ms`.
+- [ ] **Epoch-ms timestamp parsing** (`models.py:54-63`): numeric strings silently fall back to `now(UTC)`. Add an epoch-ms branch + `test_from_api_alarm_epoch_ms`. Note: the v2 `system-log` API always returns epoch-ms in its `timestamp` field, so this fix is a prerequisite for the v2 polling strategy below.
 - [ ] **Silent JSON-parse failure during 400-error inspection** (`unifi_client.py`): `except Exception: pass` masks malformed UniFi error bodies. Log at DEBUG with the exception class name.
+- [ ] **Switch polling to v2 system-log API** (`unifi_client.py`): `/list/alarm` caps at ~3000 records oldest-first; on controllers with more than ~33 alarms/day, recent alarms are never in the polled response and `open_count` is always 0 via polling. The v2 `POST /proxy/network/v2/api/site/{site}/system-log/all` endpoint accepts `timestampFrom`/`timestampTo` (epoch ms) and `pageNumber`/`pageSize`; field-confirmed on Network 10.3.58. Implementation: probe `/system-log/count` on startup; if available, poll `system-log/all` with `timestampFrom = last_cleared_at or (now - 24h)` and page through results; fall back to legacy `/list/alarm` for older controllers. Requires `UniFiAlert.from_system_log_event()` (v2 schema uses `message_raw` + `parameters` templates, epoch-ms `timestamp`, `status: "NEW"`, and a new key format with no `EVT_` prefix) and a separate v2 key-to-category map. See `docs/UNIFI.md § v2 system-log API` and `docs/research/alert-endpoints.md`.
 
 ### Testing / tooling
 
