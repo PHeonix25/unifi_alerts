@@ -24,6 +24,8 @@ jobs:
           python-version: "3.12"
       - name: Run HACS manifest checks
         run: python scripts/validate_hacs.py
+      - name: Run docs prose checks
+        run: python scripts/validate_docs.py
 
   hacs:
     name: Validate with HACS Action

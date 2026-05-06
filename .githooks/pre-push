@@ -12,6 +12,9 @@ fi
 echo "pre-push: running HACS manifest checks..."
 python3 scripts/validate_hacs.py
 
+echo "pre-push: running docs prose checks..."
+python3 scripts/validate_docs.py
+
 echo "pre-push: checking strings.json / translations/en.json are in sync..."
 diff custom_components/unifi_alerts/strings.json \
      custom_components/unifi_alerts/translations/en.json > /dev/null || {

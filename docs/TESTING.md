@@ -10,14 +10,14 @@ make setup
 # python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 ```
 
-`requirements-dev.txt` is the single source of truth for dev dependencies — it is also used by both CI jobs, so local and CI environments are identical.
+`requirements-dev.txt` is the single source of truth for dev dependencies - it is also used by both CI jobs, so local and CI environments are identical.
 
 ---
 
 ## Running checks
 
 ```bash
-make check      # default target — runs everything below in sequence
+make check      # default target - runs everything below in sequence
 make lint       # ruff lint + format check
 make typecheck  # mypy
 make validate   # HACS manifest pre-flight (scripts/validate_hacs.py)
@@ -66,7 +66,7 @@ diff custom_components/unifi_alerts/strings.json \
 git config core.hooksPath .githooks
 ```
 
-If the hook blocks your push, fix the reported issue — do not use `git push --no-verify` to bypass it.
+If the hook blocks your push, fix the reported issue - do not use `git push --no-verify` to bypass it.
 
 ---
 
@@ -76,7 +76,7 @@ Tests are split into two peer subdirectories:
 
 ```
 tests/
-  unit/                    # plain-mock unit tests — no real HA instance
+  unit/                    # plain-mock unit tests - no real HA instance
     conftest.py            # MOCK_CONFIG, make_hass(), make_entry(), shared fixtures
     test_coordinator.py
     test_config_flow.py
@@ -117,10 +117,10 @@ Key conventions:
 |---|---|
 | `test_models.py` | `UniFiAlert` construction from webhook and API payloads, field fallback, 255-char truncation; `CategoryState` init, apply_alert, clear |
 | `test_coordinator.py` | Init; `push_alert`; rollup properties; `cancel_clear`; `async_shutdown`; polling path (no count increment, already-alerting guard); polling error paths (`InvalidAuthError` re-auth, `UpdateFailed`); `rollup_open_count`; `_auto_clear` state transition |
-| `test_unifi_client.py` | `_classify`, `_network_path`, `_headers`, `_detect_unifi_os`, `_login_userpass`; `fetch_alarms` (success, archived filter, 401, ClientError, auto-auth); `categorise_alarms` (grouping, skip unknown, empty); `authenticate` (API key, fallback, no-fallback); `close` (userpass/OS logout, API key skip, unauthenticated skip) |
+| `test_unifi_client.py` | `_classify`, `_headers`, `_login_userpass`; `fetch_alarms` (probe-chain fallback, archived filter, 401, ClientError, SSL fail-closed); `categorise_alarms` (grouping, skip unknown, empty); `authenticate` (API key, fallback, no-fallback); `close` (UniFi OS logout, API key skip, unauthenticated skip, logout error logging); migration path from version 1 (`is_unifi_os` stripped) |
 | `test_config_flow.py` | All config-flow steps; duplicate URL guard; options flow defaults; webhook URL fields; error value preservation |
 | `test_diagnostics.py` | Redaction of sensitive fields; webhook URL exposure; coordinator state; missing-data handling |
-| `test_webhook_handler.py` | `register_all` (category filter, token URL, _registered list); `unregister_all` (cleanup, exception suppression); `_make_handler` (valid token, missing token → 401, wrong token → 401, no secret, malformed JSON fallback, payload field mapping) |
+| `test_webhook_handler.py` | `register_all` (category filter, token URL, _registered list); `unregister_all` (cleanup, exception suppression); `_make_handler` (valid token, missing token > 401, wrong token > 401, no secret, malformed JSON fallback, payload field mapping) |
 | `test_init.py` | `async_setup_entry` (happy path, auth failure, first-refresh failure, SSL warning, platform forwarding); `async_unload_entry` (teardown order, failed-unload guard); `_async_update_listener` |
 | `test_entities.py` | All entity property methods across binary_sensor, sensor, event, button; event-entity increment guard; button press / clear-all logic |
 
@@ -128,7 +128,7 @@ Key conventions:
 
 ## Integration tests
 
-Integration tests in `tests/integration/` use a real `HomeAssistant` instance provided by the `hass` fixture from `pytest_homeassistant_custom_component`. All `UniFiClient` HTTP calls are still mocked — the tests verify HA lifecycle behaviour without hitting a real controller.
+Integration tests in `tests/integration/` use a real `HomeAssistant` instance provided by the `hass` fixture from `pytest_homeassistant_custom_component`. All `UniFiClient` HTTP calls are still mocked - the tests verify HA lifecycle behaviour without hitting a real controller.
 
 Mark all integration tests with `@pytest.mark.integration`.
 
@@ -154,8 +154,8 @@ Mark all integration tests with `@pytest.mark.integration`.
 | File | Scenarios |
 |---|---|
 | `test_lifecycle.py` | Entity creation for all categories; rollup sensor; count sensors; clear buttons; options flow disabling a category makes its sensor unavailable |
-| `test_auto_clear.py` | Push alert → sensor ON; auto-clear fires → sensor OFF; rollup also resets; push without clear keeps sensor ON |
-| `test_webhook.py` | Valid POST + correct token → sensor ON; missing token → 401; wrong token → 401; GET → no dispatch; no-secret config → POST accepted without token |
+| `test_auto_clear.py` | Push alert > sensor ON; auto-clear fires > sensor OFF; rollup also resets; push without clear keeps sensor ON |
+| `test_webhook.py` | Valid POST + correct token > sensor ON; missing token > 401; wrong token > 401; GET > no dispatch; no-secret config > POST accepted without token |
 
 ---
 

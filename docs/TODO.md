@@ -1,100 +1,60 @@
-# TODO.md
+# TODO
 
-Outstanding work only — items are removed when they ship. The historical record of completed work lives in `docs/HISTORY.md`; per-release status is tracked in `docs/ROADMAP.md`.
+Outstanding work only. Items are removed when they ship; completion lives in `docs/HISTORY.md`, and the per-release plan lives in `docs/ROADMAP.md`.
 
-Items are grouped by type. Work top-to-bottom within each group unless there's a dependency noted.
+## 🟡 High-value
 
-## 🟡 High-value improvements
-
-### Verify update-in-place works without HA reboot
-
-**Problem:** Unknown whether updating the integration (e.g. via HACS or copying files) requires a full Home Assistant restart, or whether reloading the config entry is sufficient. A reboot requirement would be a significant friction point for self-hosted users pushing frequent updates.
-**Fix:** Test the update-in-place flow manually:
-
-1. Install the integration and confirm it is working.
-2. Update the integration files (e.g. simulate a HACS update by copying a newer version).
-3. Reload the config entry via **Settings → Integrations → UniFi Alerts → ⋮ → Reload**.
-4. Confirm all entities recover and no HA restart is required.
-If a restart is required, investigate why (e.g. Python module caching, import-time side effects, platform registration) and fix so a config entry reload is sufficient. Document the expected update flow in `README.md`.
-
-### Update all documentation and examples
-
-**Update docs and README examples to reflect application changes** — remove references to self-hosted controllers, update screenshots if needed, adjust troubleshooting tips. This is mostly copyediting but should be done carefully to avoid leaving any legacy-controller references. Additionally, make sure that all examples line up with the code, for example: Home Assistants sensor names in the card & automation examples should match the new `unique_id` format, and the config flow screenshots should reflect any UI changes.
-
----
+- **Verify update-in-place**: confirm a HACS file copy + config-entry reload (Settings > Integrations > UniFi Alerts > ⋮ > Reload) is enough on a real HA install. A forced restart would be a friction point. Document the expected flow in `README.md`.
+- **README + info.md examples sweep**: confirm sensor names in the dashboard / automation YAML match the current `unique_id` format and that no copy still references self-hosted controllers.
 
 ## 🟢 Nice-to-have
 
-### HACS default repository submission
+- **HACS default catalogue submission**: open the PR to <https://github.com/hacs/default> once all v1.x items below are closed.
+- **Tier 2 docs linter (markdownlint)**: layer `markdownlint-cli2` on top of `scripts/validate_docs.py` to catch structural issues (heading-level skips, mixed list markers, bare URLs, trailing whitespace) that a regex linter cannot. Adds a Node dependency; commit a `.markdownlint.json` config tuned for this repo. Run it from CI's `lint` job and the pre-push hook alongside the existing prose check.
 
-After the integration is stable and passes `hassfest`, submit a PR to <https://github.com/hacs/default> to be listed in the default HACS catalogue. Requirements: 2+ releases, passing CI, `hacs.json`, `info.md`, HA brand icon. Remaining work: PR submission to hacs/default.
+## Reliability / correctness
 
----
+- **`_auto_clear` does not persist watermarks** (`coordinator.py:298-304`): `state.clear()` advances `last_cleared_at` in memory but `_async_persist_watermarks()` is never awaited, so an HA restart after a timer-triggered clear loses the watermark and `open_count` jumps back to the lifetime total.
+- **Epoch-ms timestamps dropped** (`models.py:54-63`): `datetime.fromisoformat(str(ts))` rejects numeric strings, so polled alerts using epoch-ms `datetime`/`timestamp` fields silently fall back to `now(UTC)`. Add an epoch-ms branch before the ISO fallback.
+- **`open_count` stale on webhook path** (`coordinator.py`): `push_alert()` updates `is_alerting` and `alert_count` but `open_count` only refreshes on the next poll. Consider an optimistic increment with poll-time correction.
+- **`_category_states` rebuilt on reload** (`coordinator.py`): `alert_count` and `last_alert` are discarded on every options change. Persist them alongside watermarks in the existing `Store`.
+- **Silent JSON-parse failure during 400-error inspection** (`unifi_client.py`): `except Exception: pass` swallows malformed UniFi error bodies, hiding the `api.err.InvalidObject` fallback. Log at DEBUG with the exception class name.
 
-## 🔥 v1.4.0 — Hardening backlog (critical-review carry-overs)
+## Security
 
-Items from the post-v1.1 audit that were planned for v1.2.0 but carried forward. Now targeting v1.4.0. Full detail (with file:line anchors and suggested fixes) is in `ROADMAP.md § v1.4.0`. Grouped by impact:
+- **Options-flow credential changes persist before the user submits the flow** (`config_flow.py`): `async_step_credentials` calls `async_update_entry()` eagerly. Abandoning the flow after credentials but before finish leaves the change persisted. Stage into `self._pending_data` and persist atomically in `async_step_finish`.
+- **`verify_ssl` toggle alone does not persist** (`config_flow.py`): `credentials_changed` ignores the SSL flag. Flipping the checkbox without other changes is a no-op. Best landed alongside the staging refactor above.
 
-### Reliability / correctness
+## Type safety / tech debt
 
-- **Epoch-ms timestamps silently dropped:** `from_api_alarm()` calls `datetime.fromisoformat()` on numeric timestamps, fails, falls back to `now(UTC)` — real alarm time lost (`models.py:52-57`). Add an epoch-ms branch before the ISO fallback; log at WARNING when neither matches.
-- **`open_count` stale on webhook path:** `push_alert()` updates `is_alerting` and `alert_count` but `open_count` stays at whatever the last poll returned (`coordinator.py:123-143`). Consider incrementing `open_count` optimistically in `push_alert()` and letting the next poll correct it.
-- **`_auto_clear` does not persist the watermark** (`coordinator.py:298-304`, the full `_auto_clear` method): `_auto_clear()` calls `state.clear()` which sets `last_cleared_at` in memory, but never awaits `_async_persist_watermarks()`. If HA restarts after a timer-triggered auto-clear, the watermark is lost and `open_count` jumps back to the lifetime total on the next poll. Fix: add `await self._async_persist_watermarks()` after `state.clear()` on line 302. Also add `test_auto_clear_persists_watermark` to `test_coordinator.py` to verify `_store.async_save` is called.
-- **Silent JSON-parse failure during 400-error inspection:** `unifi_client.py:153-154` — `except Exception: pass` swallows any failure to parse the UniFi JSON error body, so the `api.err.InvalidObject` fallback is silently skipped if the body is malformed. Log at DEBUG (or WARNING) with the exception class name so future endpoint variations are diagnosable. Found in 2026-04-29 BEFORE-state audit.
-- **`_category_states` rebuilt from scratch on every config-entry reload** (`coordinator.py:70-73`): `alert_count` and `last_alert` are discarded whenever the user tweaks an option or the entry reloads. Consider persisting the last-seen state (e.g. alongside the watermarks in the existing `Store`) so webhook-derived counters survive a reconfigure.
+- **`mypy strict = false`**: migrate `UniFiClient.config: dict[str, Any]` to a `TypedDict` or frozen dataclass, then bump `pyproject.toml` to `strict = true`.
+- **No sensor `device_class`** (`sensor.py`): open-count and rollup-count sensors have no class. None of HA's built-ins map cleanly; consider richer `state_class` instead.
+- **Buttons don't inherit `CoordinatorEntity`** (`button.py`): `UniFiClearCategoryButton` and `UniFiClearAllButton` extend `ButtonEntity` directly, so they always appear available even when their category is disabled. Add the mixin and an `available` property.
 
-### Security
+## Testing
 
-- **`allow_redirects=True` on unauthenticated detection probes** (`unifi_client.py:220,233`): the `_detect_unifi_os()` probes follow redirects without validating the final host. A compromised DNS or on-path attacker could redirect the probe to an attacker-controlled host that returns a convincing response. Set `allow_redirects=False` and handle HTTP→HTTPS redirects explicitly, or assert `final_url.host == configured_host` before trusting the response.
-- **Options-flow credential changes persist before the user submits the flow:** raised by Copilot review on PR #50. `UniFiAlertsOptionsFlow.async_step_credentials` calls `async_update_entry()` for both the credential-validation branch and (after PR #50) the rotate-only branch. If the user advances past credentials but then abandons the flow on categories/finish, the new values are already persisted and the entry-reload listener may have fired. Pre-existing pattern, not introduced by cluster A — but worth fixing. Refactor: stage credentials/secret in flow state (`self._pending_data`) and persist atomically inside `async_step_finish` alongside the options. Touches the credentials and rotation branches together.
-- **`verify_ssl` toggle alone does not persist in the options flow:** raised by Copilot review on PR #50. `credentials_changed` only checks URL/username/password/api_key — flipping the verify-SSL checkbox without changing any credential short-circuits to the categories step and the new `verify_ssl` value is never written to `entry.data`. Pre-existing, not introduced by cluster A. Fix: include `new_verify_ssl != self._config_entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)` in the `credentials_changed` predicate, or treat verify-SSL as its own change trigger. Best landed alongside the staging refactor above.
+- **`test_auto_clear_persists_watermark`**: assert `_store.async_save` is called when `_auto_clear` fires (red-green pair for the bug above).
+- **`test_from_api_alarm_epoch_ms`**: assert a numeric epoch-ms timestamp produces the correct UTC datetime.
+- **Webhook-mid-poll interleaving test** (`test_coordinator.py`): assert a webhook arriving while `_async_update_data()` is awaited does not regress `is_alerting`.
+- **`make lint` to cover `tests/`**: extend the Makefile target and resolve the six pre-existing `I001`/`F401` issues in `test_services.py` and `test_config_flow.py`.
+- **Optional: integration test for full rotation cycle**: options-flow > entry-update > reload > re-register, end-to-end. Each step is unit-tested already.
 
-### Type safety / tech debt
+## Documentation
 
-- **`mypy strict = false`:** migrate `UniFiClient.config: dict[str, Any]` to a TypedDict / frozen dataclass, then bump `pyproject.toml` to `strict = true`.
-- **No sensor `device_class`:** consider what fits on the open-count / rollup-count sensors (`sensor.py:96,128`).
-- **Config flow accesses private `client._is_unifi_os`:** expose as a public `@property` on `UniFiClient` (`config_flow.py:106,261,395`).
-- **Button entities don't inherit from `CoordinatorEntity`** (`button.py`): `UniFiClearCategoryButton` and `UniFiClearAllButton` extend `ButtonEntity` directly. They have no `available` property reflecting coordinator state, so they always appear available even when their category is disabled. Fix: add `CoordinatorEntity[UniFiAlertsCoordinator]` as a mixin and an `available` property consistent with the other platform files.
+- **Supported-firmware matrix** in README/info.md: table of tested UDM-SE / UCG-Ultra / UCG-Max / Cloud Key Gen2+ models with firmware versions.
+- **Troubleshooting / FAQ section**: consolidate scattered notes (local-only webhooks, self-signed certs, "why is `open_count` so high?", API-key generation paths, cloud-access failures).
+- **Uninstall instructions**: one-liner: Settings > Devices & Services > UniFi Alerts > ⋮ > Delete.
+- **`info.md` local-network warning**: bold "⚠ Local network only: webhooks are not reachable over Nabu Casa remote access" in the first paragraph.
+- **Setup-flow webhook copy warning**: `strings.json` note on the finish step: "Copy all URLs into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit."
+- **Privacy / data-retention section** in README: which payload fields are stored, that nothing leaves the local network, that auto-clear removes `is_alerting`/`last_alert` after the configured timeout.
+- **Automation edge case** in README: disabling a category in options makes its event entity unavailable, breaking dependent automations.
+- **`unique_id` format** in README: document `{entry_id}_{category}_{sensor_type}` and that UI renames preserve the unique_id so automations are safe.
 
-### Testing
+## Architecture
 
-- **No interleaving test:** assert that a webhook arriving mid-poll doesn't regress `is_alerting` (guard at `coordinator.py:92` should prevent it, but is untested).
-- **No test for epoch-ms timestamp parsing:** add `test_from_api_alarm_epoch_ms` to `test_models.py`.
-- **`make lint` does not cover `tests/`:** the Makefile's `lint` target only runs ruff against `custom_components/`. AFTER audit (2026-04-29) found 6 pre-existing `I001` / `F401` issues in `tests/unit/test_services.py` and `tests/unit/test_config_flow.py` (mid-function imports, unused imports) that escaped local validation. None were introduced by clusters A or D. Expand the lint target to include `tests/` and either fix or `# noqa` the existing issues.
-- **No test for `_auto_clear` watermark persistence:** add `test_auto_clear_persists_watermark` to `test_coordinator.py` verifying that `_store.async_save` is called when the auto-clear timer fires (covers the `_auto_clear` bug above).
-- **Optional follow-up:** integration test for the full options-flow → entry-update → reload → re-register cycle after secret rotation. The unit-level rotation tests cover each step in isolation; an end-to-end test would be an extra guard. Lower priority since each step is already covered.
+- **Entity naming via `_attr_translation_key`**: all four platform files hard-code `_attr_name = f"{CATEGORY_LABELS[cat]} ..."`. Migrate to `has_entity_name = True` + `_attr_translation_key` so strings live in `strings.json`. Unlocks localisation.
+- **Split `tests/unit/test_config_flow.py` into a package**: ~1405 lines with four logically independent classes; rebase chains across classes produce interleaved conflicts. Convert to `tests/unit/config_flow/{__init__,conftest,test_setup,test_options,test_reauth}.py`.
 
-### Documentation
+## Known issues
 
-- **No supported-firmware matrix:** small table of tested UDM-SE / UCG / UX / CloudKey Gen2 models with any known quirks.
-- **No troubleshooting / FAQ section:** consolidate scattered notes (local_only webhooks, self-signed certs, UniFi OS vs legacy, API-key paths).
-- **No uninstall instructions** in README / info.md.
-- **`info.md` missing upfront local-network warning** — remote-access / Nabu Casa users hit silent failure.
-- **Setup flow doesn't warn "copy URLs before Submit"** — the URLs screen is the final step; users close the dialog without copying.
-- **No privacy / data-retention section** in README explaining which UniFi payload fields are stored in HA state.
-- **Automation README example** doesn't document that disabling a category in options makes its event entity unavailable, breaking dependent automations.
-- **`unique_id` format is undocumented** — users wiring into long-lived automations don't know if UI renames are safe.
-
-### Split `tests/unit/test_config_flow.py` into a package
-
-**Problem:** `test_config_flow.py` is ~1405 lines with four logically independent test classes (`TestConfigFlowSteps`, `TestOptionsFlowSteps`, `TestOptionsFlowCredentials`, `TestReauthFlow`). The file is hard to load into context in full, and rebase chains that touch multiple classes (as with PR #19 + PR #20) produce interleaved merge conflicts that are tedious to reconstruct.
-**Fix:** Convert to a package:
-
-```plain
-tests/unit/config_flow/
-  __init__.py
-  conftest.py           # shared fixtures + _make_options_flow / _make_reauth_flow helpers
-  test_setup.py         # TestConfigFlowSteps (credentials → categories → done)
-  test_options.py       # TestOptionsFlowSteps + TestOptionsFlowCredentials
-  test_reauth.py        # TestReauthFlow
-```
-
-Move `_make_options_flow`, `_make_reauth_flow`, and any shared `MOCK_*` constants into the new `conftest.py`. Do not split the other test files — they are all under 500 lines and healthy.
-
----
-
-## 🐛 Known issues / technical debt
-
-### `_device_info` duplication
-
-The `_device_info()` helper function is duplicated identically across `binary_sensor.py`, `sensor.py`, `event.py`, and `button.py`. Intentional for platform isolation but could be extracted to a shared `entity_base.py` mixin if it becomes a maintenance burden.
+- **`_device_info()` duplication**: duplicated identically across `binary_sensor.py`, `sensor.py`, `event.py`, `button.py`. Intentional for platform isolation; extract to a shared `entity_base.py` only if it becomes a maintenance burden.
