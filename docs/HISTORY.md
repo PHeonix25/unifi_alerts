@@ -4,6 +4,7 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 
 ## 2026-05-06
 
+- **fix**: three coordinator reliability bugs ([#72]). Polling now applies the watermark filter to the `is_alerting` branch (was only filtering `open_count`), so a stale pre-Clear alarm cannot re-flip the binary sensor to Problem after auto-clear. `_auto_clear` now persists the advanced watermark, so an HA restart immediately after a timer-triggered clear no longer resets `open_count` to the lifetime total. `push_alert` increments `open_count` optimistically so the count sensor moves with the binary sensor instead of lagging by up to one poll interval; polling reconciles on the next refresh. +7 regression tests in `test_coordinator.py`.
 - **docs**: backfill HISTORY entries for #69 and #70; add HISTORY audit step to "Resuming an interrupted session" in CLAUDE.md; tighten HISTORY rule to require self-entry in every PR ([#71]). Closes the gap where sessions ending mid-closeout left merged PRs unrecorded.
 - **docs**: rewrite TODO/ROADMAP/CHANGELOG/HISTORY; refresh ARCHITECTURE, HOMEASSISTANT, UNIFI, TESTING, DEVELOPING to match current dev state; add `scripts/validate_docs.py` prose linter wired into `make validate`, pre-push hook, and CI ([#69]). Single source of truth for docs conventions; linter prevents em-dash and banned-framing regressions.
 - **docs**: record v2 system-log API findings and 3000-record cap on `/list/alarm` ([#70]). Confirms why `open_count` reads 0 on busy controllers and locks in the v2 polling strategy as the v1.6.0 fix.
@@ -165,6 +166,7 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 [#69]: https://github.com/PHeonix25/unifi_alerts/pull/69
 [#71]: https://github.com/PHeonix25/unifi_alerts/pull/71
 [#70]: https://github.com/PHeonix25/unifi_alerts/pull/70
+[#72]: https://github.com/PHeonix25/unifi_alerts/pull/72
 
 [0d951b3]: https://github.com/PHeonix25/unifi_alerts/commit/0d951b3
 [0f17afb]: https://github.com/PHeonix25/unifi_alerts/commit/0f17afb

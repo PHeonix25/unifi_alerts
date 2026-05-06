@@ -635,6 +635,8 @@ class TestAutoClear:
         hass.async_create_task = _create_task
         hass.async_create_background_task = _create_task
         coord = make_coordinator(hass=hass)
+        coord._store = MagicMock()
+        coord._store.async_save = AsyncMock()
         coord.async_set_updated_data = MagicMock()
 
         alert = make_alert(CATEGORY_NETWORK_WAN)
@@ -662,6 +664,34 @@ class TestAutoClear:
             await coord._auto_clear(CATEGORY_NETWORK_WAN, 0)
 
         coord.async_set_updated_data.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_auto_clear_persists_watermark(self):
+        """Auto-clear must persist the advanced watermark to storage.
+
+        Regression: previously _auto_clear() called state.clear() (which
+        advances last_cleared_at in memory) but never awaited
+        _async_persist_watermarks(). An HA restart immediately after a
+        timer-triggered clear would lose the watermark and open_count
+        would jump back to the lifetime total on the next poll.
+        """
+        coord = make_coordinator()
+        coord._store = MagicMock()
+        coord._store.async_load = AsyncMock(return_value=None)
+        coord._store.async_save = AsyncMock()
+        coord.async_set_updated_data = MagicMock()
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        state.apply_alert(make_alert(CATEGORY_NETWORK_WAN))
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await coord._auto_clear(CATEGORY_NETWORK_WAN, 0)
+
+        coord._store.async_save.assert_awaited_once()
+        # The persisted payload should include the freshly advanced watermark
+        # for this category.
+        saved = coord._store.async_save.await_args.args[0]
+        assert CATEGORY_NETWORK_WAN in saved
 
 
 class TestWatermarks:
@@ -864,3 +894,180 @@ class TestSiteConfig:
         await coord._async_update_data()
 
         client.categorise_alarms.assert_awaited_once_with("default")
+
+
+class TestPollingWatermarkSuppressesIsAlerting:
+    """Polling must apply the watermark filter when re-asserting is_alerting.
+
+    Field-confirmed regression: after async_clear_category (or auto-clear)
+    advanced last_cleared_at, the next poll re-discovered a pre-watermark
+    alarm and re-asserted is_alerting=True with a stale message. The UI
+    showed status=Problem + Open Count=0 simultaneously because open_count
+    used the watermark filter but the is_alerting branch did not.
+    """
+
+    @pytest.mark.asyncio
+    async def test_polling_does_not_reassert_for_pre_watermark_alarm(self):
+        hass = MagicMock()
+        hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
+        hass.async_create_background_task = hass.async_create_task
+
+        watermark = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
+        stale_alarm = UniFiAlert(
+            category=CATEGORY_NETWORK_WAN,
+            message="stale pre-watermark alarm",
+            received_at=datetime(2024, 6, 1, 11, 0, 0, tzinfo=UTC),
+        )
+
+        client = MagicMock()
+        client.categorise_alarms = AsyncMock(
+            return_value={CATEGORY_NETWORK_WAN: [stale_alarm]}
+        )
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        coord.async_set_updated_data = MagicMock()
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        state.last_cleared_at = watermark
+
+        await coord._async_update_data()
+
+        assert state.is_alerting is False
+        assert state.last_alert is None
+        assert state.open_count == 0
+
+    @pytest.mark.asyncio
+    async def test_polling_picks_post_watermark_alarm_for_most_recent(self):
+        """Mixed pre+post-watermark batch must use the post-watermark alarm."""
+        hass = MagicMock()
+        hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
+        hass.async_create_background_task = hass.async_create_task
+
+        watermark = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
+        stale = UniFiAlert(
+            category=CATEGORY_NETWORK_WAN,
+            message="stale",
+            received_at=datetime(2024, 6, 1, 11, 0, 0, tzinfo=UTC),
+        )
+        fresh = UniFiAlert(
+            category=CATEGORY_NETWORK_WAN,
+            message="fresh",
+            received_at=datetime(2024, 6, 1, 13, 0, 0, tzinfo=UTC),
+        )
+
+        client = MagicMock()
+        client.categorise_alarms = AsyncMock(
+            return_value={CATEGORY_NETWORK_WAN: [stale, fresh]}
+        )
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        coord.async_set_updated_data = MagicMock()
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        state.last_cleared_at = watermark
+
+        await coord._async_update_data()
+
+        assert state.is_alerting is True
+        assert state.last_alert is fresh
+        assert state.open_count == 1
+
+
+class TestPushAlertOptimisticOpenCount:
+    """push_alert must increment open_count optimistically.
+
+    Field-confirmed: webhook fires update is_alerting and alert_count, but
+    open_count only refreshed on the next REST poll (default 60 s). For up
+    to one poll interval the binary sensor showed Problem while Open Count
+    showed 0. push_alert now bumps open_count immediately and polling
+    reconciles to the authoritative value on the next refresh.
+    """
+
+    def test_push_increments_open_count_when_no_watermark(self):
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.open_count == 0
+
+        coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
+
+        assert state.open_count == 1
+
+    def test_push_increments_open_count_when_alert_after_watermark(self):
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        # Watermark set in the past — webhook arriving "now" is after it
+        state.last_cleared_at = datetime(2020, 1, 1, tzinfo=UTC)
+
+        coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
+
+        assert state.open_count == 1
+
+    def test_push_does_not_increment_open_count_for_pre_watermark_alert(self):
+        """A push for an alert older than the watermark must not bump open_count."""
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        state.last_cleared_at = datetime(2030, 1, 1, tzinfo=UTC)  # future
+
+        # Webhook payloads use datetime.now(UTC), which is before 2030
+        coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
+
+        # apply_alert still ran (alert_count bumped), but open_count was
+        # suppressed because the alert is older than the watermark.
+        assert state.alert_count == 1
+        assert state.open_count == 0
+
+    def test_dedup_window_also_suppresses_open_count_increment(self):
+        """Duplicate (category, key) within the dedup window must not double-count."""
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+        a1 = make_alert(CATEGORY_NETWORK_WAN, "first", key="EVT_GW_WANTransition")
+        a2 = make_alert(CATEGORY_NETWORK_WAN, "second-same-key", key="EVT_GW_WANTransition")
+
+        coord.push_alert(CATEGORY_NETWORK_WAN, a1)
+        coord.push_alert(CATEGORY_NETWORK_WAN, a2)
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.open_count == 1
+
+    @pytest.mark.asyncio
+    async def test_polling_clamps_optimistic_open_count_back_down(self):
+        """If polling comes back lower than the optimistic count, polling wins.
+
+        Covers the documented v1.5.0 reconciliation behaviour: push_alert is
+        optimistic; the next poll is authoritative for low-volume controllers
+        whose alarms are still in the /list/alarm response.
+        """
+        hass = MagicMock()
+        hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
+        hass.async_create_background_task = hass.async_create_task
+
+        client = MagicMock()
+        # Polling returns nothing for the WAN category — alarm has cleared
+        # on the controller side already.
+        client.categorise_alarms = AsyncMock(return_value={})
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        coord.async_set_updated_data = MagicMock()
+
+        coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).open_count == 1
+
+        await coord._async_update_data()
+
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).open_count == 0

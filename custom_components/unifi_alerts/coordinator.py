@@ -123,9 +123,12 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 )
                 state.open_count = len(counted)
                 # If polling finds open alerts and we're not already alerting,
-                # treat the most recent one as the active alert
-                if alerts and not state.is_alerting:
-                    most_recent = max(alerts, key=lambda a: a.received_at)
+                # treat the most recent one as the active alert. Use the
+                # watermark-filtered list so a stale pre-Clear alarm cannot
+                # re-assert is_alerting after auto-clear (UI would otherwise
+                # show Problem + Open Count=0 simultaneously).
+                if counted and not state.is_alerting:
+                    most_recent = max(counted, key=lambda a: a.received_at)
                     # Use direct assignment instead of apply_alert() so that
                     # poll-detected alerts do not increment alert_count.  Only
                     # webhook-pushed alerts (real new events) should do that.
@@ -184,6 +187,13 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._last_push_at[dedup_key] = now
 
         state.apply_alert(alert)
+        # Optimistic open_count increment so the count sensor moves with the
+        # binary sensor instead of lagging by up to one poll interval. Only
+        # count alerts received after the watermark — anything older was
+        # already acknowledged. Polling reconciles to the authoritative value
+        # on the next refresh (clamps down if this push has since cleared).
+        if state.last_cleared_at is None or alert.received_at > state.last_cleared_at:
+            state.open_count += 1
         _LOGGER.debug("Alert pushed to category %s: %s", category, alert.message)
 
         # Cancel any existing clear timer and start a fresh one
@@ -300,6 +310,10 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         state = self._category_states.get(category)
         if state and state.is_alerting:
             state.clear()
+            # Persist the watermark advanced by clear() so an HA restart
+            # immediately after auto-clear does not lose it (which would
+            # cause open_count to jump back to the lifetime total).
+            await self._async_persist_watermarks()
             _LOGGER.debug("Auto-cleared category %s after timeout", category)
             self.async_set_updated_data(self._category_states)
 
