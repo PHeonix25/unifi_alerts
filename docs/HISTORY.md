@@ -4,6 +4,7 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 
 ## 2026-05-06
 
+- **docs**: backfill HISTORY entries for #69 and #70; add HISTORY audit step to "Resuming an interrupted session" in CLAUDE.md; tighten HISTORY rule to require self-entry in every PR ([#71]). Closes the gap where sessions ending mid-closeout left merged PRs unrecorded.
 - **docs**: rewrite TODO/ROADMAP/CHANGELOG/HISTORY; refresh ARCHITECTURE, HOMEASSISTANT, UNIFI, TESTING, DEVELOPING to match current dev state; add `scripts/validate_docs.py` prose linter wired into `make validate`, pre-push hook, and CI ([#69]). Single source of truth for docs conventions; linter prevents em-dash and banned-framing regressions.
 - **docs**: record v2 system-log API findings and 3000-record cap on `/list/alarm` ([#70]). Confirms why `open_count` reads 0 on busy controllers and locks in the v2 polling strategy as the v1.6.0 fix.
 
@@ -162,6 +163,7 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 [#67]: https://github.com/PHeonix25/unifi_alerts/pull/67
 [#68]: https://github.com/PHeonix25/unifi_alerts/pull/68
 [#69]: https://github.com/PHeonix25/unifi_alerts/pull/69
+[#71]: https://github.com/PHeonix25/unifi_alerts/pull/71
 [#70]: https://github.com/PHeonix25/unifi_alerts/pull/70
 
 [0d951b3]: https://github.com/PHeonix25/unifi_alerts/commit/0d951b3

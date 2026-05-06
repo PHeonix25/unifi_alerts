@@ -94,7 +94,7 @@ HA requires `strings.json` and `translations/en.json` to match exactly. Edit bot
 - Keep PRs focused: one logical change per PR.
 - Every PR that adds functionality must include tests.
 - Apply a label recognised by `.github/release.yml` (`security`, `feat`/`enhancement`, `fix`/`bug`, `documentation`, `tests`, `ci`, `dependencies`) so auto-generated release notes group the PR correctly.
-- Update `docs/HISTORY.md` with a dated bullet under the date heading per `CLAUDE.md`'s format rule.
+- Update `docs/HISTORY.md` with a dated bullet under the date heading per `CLAUDE.md`'s format rule. **Every PR gets an entry - including the PR that contains the HISTORY update itself.** Write the entry in the same branch so the record is complete the moment the PR merges.
 - For user-visible changes, add a bullet under `[Unreleased]` in `CHANGELOG.md`.
 
 ## Release process
