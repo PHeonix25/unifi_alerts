@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -55,12 +56,22 @@ class UniFiAlert:
     def from_api_alarm(cls, category: str, alarm: dict) -> UniFiAlert:
         """Build an alert from a polled UniFi controller alarm record."""
         message = alarm.get("msg") or alarm.get("message") or alarm.get("key") or "Unknown alert"
-        # UniFi stores timestamps as epoch milliseconds in some fields
+        # UniFi returns timestamps as epoch milliseconds (v2 system-log always; legacy
+        # /list/alarm sometimes) or ISO strings. fromisoformat rejects numeric strings,
+        # so try the numeric branch first.
         ts = alarm.get("datetime") or alarm.get("timestamp")
-        try:
-            received_at = datetime.fromisoformat(str(ts)) if ts else datetime.now(UTC)
-        except (ValueError, TypeError):
-            received_at = datetime.now(UTC)
+        received_at = datetime.now(UTC)
+        if ts is not None:
+            try:
+                epoch_ms = int(ts)
+            except (ValueError, TypeError):
+                epoch_ms = None
+            if epoch_ms is not None:
+                with suppress(OverflowError, OSError, ValueError):
+                    received_at = datetime.fromtimestamp(epoch_ms / 1000, tz=UTC)
+            else:
+                with suppress(ValueError, TypeError):
+                    received_at = datetime.fromisoformat(str(ts))
 
         return cls(
             category=category,

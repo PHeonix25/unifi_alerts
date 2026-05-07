@@ -14,10 +14,8 @@ Outstanding work only. Items are removed when they ship; completion lives in `do
 
 ## Reliability / correctness
 
-- **Epoch-ms timestamps dropped** (`models.py:54-63`): `datetime.fromisoformat(str(ts))` rejects numeric strings, so polled alerts using epoch-ms `datetime`/`timestamp` fields silently fall back to `now(UTC)`. Add an epoch-ms branch before the ISO fallback.
 - **Polling strategy must switch to v2 system-log API for busy controllers** (`unifi_client.py`): `/list/alarm` caps at ~3000 records oldest-first. The v2 `POST /proxy/network/v2/api/site/{site}/system-log/all` endpoint supports `timestampFrom`/`timestampTo` (epoch ms) and `pageNumber`/`pageSize` pagination; field-confirmed working on Network 10.3.58. Implementation: probe `/system-log/count` on startup; if available, use `system-log/all` with `timestampFrom = last_cleared_at or (now - 24h)` for polling; fall back to legacy `/list/alarm` for older controllers. Requires a new `UniFiAlert.from_system_log_event()` parser (the v2 schema uses `message_raw` + `parameters` templates, epoch-ms `timestamp`, `status: "NEW"`, and a new key format with no `EVT_` prefix) and a separate v2 key-to-category map. See `docs/research/alert-endpoints.md` and `docs/UNIFI.md § v2 system-log API`.
 - **`_category_states` rebuilt on reload** (`coordinator.py`): `alert_count` and `last_alert` are discarded on every options change. Persist them alongside watermarks in the existing `Store`.
-- **Silent JSON-parse failure during 400-error inspection** (`unifi_client.py`): `except Exception: pass` swallows malformed UniFi error bodies, hiding the `api.err.InvalidObject` fallback. Log at DEBUG with the exception class name.
 
 ## Type safety / tech debt
 
@@ -27,7 +25,6 @@ Outstanding work only. Items are removed when they ship; completion lives in `do
 
 ## Testing
 
-- **`test_from_api_alarm_epoch_ms`**: assert a numeric epoch-ms timestamp produces the correct UTC datetime.
 - **Webhook-mid-poll interleaving test** (`test_coordinator.py`): assert a webhook arriving while `_async_update_data()` is awaited does not regress `is_alerting`.
 - **`make lint` to cover `tests/`**: extend the Makefile target and resolve the six pre-existing `I001`/`F401` issues in `test_services.py` and `test_config_flow.py`.
 - **Optional: integration test for full rotation cycle**: options-flow > entry-update > reload > re-register, end-to-end. Each step is unit-tested already.
