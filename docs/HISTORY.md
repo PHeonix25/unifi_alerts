@@ -2,6 +2,18 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-05-07
+
+- **chore**: align HISTORY cadence with release tags; entries are now written once per tag (pre-release or stable) by the version-bump PR rather than on every PR ([#73]). Removes the duplication between HISTORY (per-PR) and CHANGELOG `[Unreleased]` (per-PR) and eliminates the standalone backfill PRs that interrupted sessions left behind.
+- **chore**: doc-only fast path; new `make doc-check` target runs `validate_docs.py` and translation drift only (no venv required), and CLAUDE.md gains a "Doc-only PRs" subsection that skips `make setup`, plan-mode, and Explore agents for prose-only edits ([#73]). CI still runs the full suite as the safety net.
+- **chore**: pre-push hook now delegates to `make check`; previously re-implemented every step inline, which drifted from the Makefile (e.g. `make doc-check` was missing) ([#73]).
+- **docs**: per-file repo annotations extracted from CLAUDE.md to new `docs/REPO_LAYOUT.md`; CLAUDE.md keeps a one-line pointer ([#73]). Smaller always-loaded context per session, same detail when needed.
+- **build**: `make help` is the new default goal; `make setup-lint` installs only ruff and mypy via `requirements-lint.txt` for lint-only or typecheck-only PRs ([#73]). Avoids the ~200-package full install (Home Assistant + test deps) when only the linters are needed.
+- **ci**: new `pr-labeler.yml` workflow auto-applies release-notes labels from Conventional Commit title prefixes (`feat`, `fix`, `docs`, `test(s)`, `ci`, `security`); manual labels always win ([#73]). Closes the gap that produced flat v1.4.0-pre2 release notes when `mcp__github__create_pull_request` (which does not accept labels) was used without a follow-up `issue_write`.
+- **build**: new `scripts/bump_version.py` automates the release-prep workflow (`--pre`, `--stable`, `--next-cycle`); checks out a fresh `dev`, creates `claude/bump-<new-version>`, updates `manifest.json`, rewrites `CHANGELOG.md` on stable promotions, and prints the merge list since the previous tag ([#73]). Pure stdlib; CLAUDE.md release-workflow steps now point at the script.
+- **build**: Makefile and tooling are now cross-platform; `ifeq ($(OS),Windows_NT)` selects `.venv/Scripts` vs `.venv/bin`, `py -3.12` vs `python3.12`, and `.exe` suffixes; new `scripts/check_translations.py` replaces the `diff > /dev/null` shell incantation in `make doc-check` and CI; `.githooks/pre-push` accepts either Unix or Windows venv layout ([#73]).
+- **fix**: tests now run on Windows; HA core's test conftest calls `disable_socket(allow_unix_socket=True)`, which on Windows breaks `ProactorEventLoop.__init__` (uses `socket.socketpair()` for the self-pipe) and `aiodns` (requires `SelectorEventLoop`). New `tests/conftest.py` neutralises `pytest_socket.disable_socket` on Windows and rebinds `asyncio.WindowsProactorEventLoopPolicy._loop_factory` to `SelectorEventLoop` so HA's per-test policy inherits the Selector factory ([#74]). No-op on Linux/macOS.
+
 ## 2026-05-06
 
 - **fix**: three coordinator reliability bugs ([#72]). Polling now applies the watermark filter to the `is_alerting` branch (was only filtering `open_count`), so a stale pre-Clear alarm cannot re-flip the binary sensor to Problem after auto-clear. `_auto_clear` now persists the advanced watermark, so an HA restart immediately after a timer-triggered clear no longer resets `open_count` to the lifetime total. `push_alert` increments `open_count` optimistically so the count sensor moves with the binary sensor instead of lagging by up to one poll interval; polling reconciles on the next refresh. +7 regression tests in `test_coordinator.py`.
@@ -167,6 +179,8 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 [#71]: https://github.com/PHeonix25/unifi_alerts/pull/71
 [#70]: https://github.com/PHeonix25/unifi_alerts/pull/70
 [#72]: https://github.com/PHeonix25/unifi_alerts/pull/72
+[#73]: https://github.com/PHeonix25/unifi_alerts/pull/73
+[#74]: https://github.com/PHeonix25/unifi_alerts/pull/74
 
 [0d951b3]: https://github.com/PHeonix25/unifi_alerts/commit/0d951b3
 [0f17afb]: https://github.com/PHeonix25/unifi_alerts/commit/0f17afb
