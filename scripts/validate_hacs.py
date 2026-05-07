@@ -75,7 +75,14 @@ HA_CORE_INTEGRATIONS: frozenset[str] = frozenset(
     }
 )
 
-MANIFEST_REQUIRED = {"domain", "name", "codeowners", "documentation", "iot_class", "version"}
+MANIFEST_REQUIRED = {
+    "domain",
+    "name",
+    "codeowners",
+    "documentation",
+    "iot_class",
+    "version",
+}
 VALID_IOT_CLASSES = {
     "assumed_state",
     "calculated",
@@ -86,10 +93,25 @@ VALID_IOT_CLASSES = {
 }
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
 
-HACS_VALID_KEYS = {"name", "content_in_root", "zip_release", "filename", "render_readme", "homeassistant"}
+HACS_VALID_KEYS = {
+    "name",
+    "content_in_root",
+    "zip_release",
+    "filename",
+    "render_readme",
+    "homeassistant",
+}
 
 
 def validate_manifest(root: Path) -> list[str]:
+    """Validate manifest.json for required fields and valid values.
+    
+    Args:
+        root: Root path of the project.
+    
+    Returns:
+        List of validation error messages, empty if all checks pass.
+    """
     errors: list[str] = []
     path = root / "custom_components" / "unifi_alerts" / "manifest.json"
     try:
@@ -120,6 +142,14 @@ def validate_manifest(root: Path) -> list[str]:
 
 
 def validate_hacs_json(root: Path) -> list[str]:
+    """Validate hacs.json for required fields and valid keys.
+    
+    Args:
+        root: Root path of the project.
+    
+    Returns:
+        List of validation error messages, empty if all checks pass.
+    """
     errors: list[str] = []
     path = root / "hacs.json"
     try:
@@ -141,16 +171,21 @@ def validate_hacs_json(root: Path) -> list[str]:
 
 
 def main() -> int:
+    """Validate HACS integration files.
+    
+    Returns:
+        Exit code 0 if all validations pass, 1 if any fail.
+    """
     root = Path(__file__).parent.parent
     errors = validate_manifest(root) + validate_hacs_json(root)
 
     if errors:
-        print("HACS validation FAILED:")
+        print("❌ HACS validation FAILED:")
         for err in errors:
             print(f"  FAIL  {err}")
         return 1
 
-    print("HACS validation passed.")
+    print("✅ HACS validation passed.")
     return 0
 
 
