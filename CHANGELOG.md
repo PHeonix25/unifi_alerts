@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-07
+
 ### Fixed
 
 - Options-flow credential changes are now staged and persisted atomically only when the user submits the finish step. Previously, `async_step_credentials` called `async_update_entry` eagerly, so closing the dialog at the categories step left a new password (or rotated webhook secret) persisted against the user's intent. The `verify_ssl` toggle now also persists when flipped on its own; previously it was filtered out of the change-detection check and silently ignored.
@@ -117,7 +119,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.5.0
 [1.4.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.4.0
 [1.3.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.3.0
 [1.2.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.2.0
