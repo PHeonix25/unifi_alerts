@@ -4,6 +4,7 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 
 ## 2026-05-07
 
+- **fix**: options flow now stages credential changes and persists them atomically in the finish step; abandoning the dialog after the credentials step no longer leaves a new password (or rotated webhook secret) committed against the user's intent. The `verify_ssl` toggle is included in change detection so flipping the checkbox alone is no longer a silent no-op ([#76]). Closes the v1.5.0 options-flow atomicity defects.
 - **chore**: align HISTORY cadence with release tags; entries are now written once per tag (pre-release or stable) by the version-bump PR rather than on every PR ([#73]). Removes the duplication between HISTORY (per-PR) and CHANGELOG `[Unreleased]` (per-PR) and eliminates the standalone backfill PRs that interrupted sessions left behind.
 - **chore**: doc-only fast path; new `make doc-check` target runs `validate_docs.py` and translation drift only (no venv required), and CLAUDE.md gains a "Doc-only PRs" subsection that skips `make setup`, plan-mode, and Explore agents for prose-only edits ([#73]). CI still runs the full suite as the safety net.
 - **chore**: pre-push hook now delegates to `make check`; previously re-implemented every step inline, which drifted from the Makefile (e.g. `make doc-check` was missing) ([#73]).
@@ -181,6 +182,7 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 [#72]: https://github.com/PHeonix25/unifi_alerts/pull/72
 [#73]: https://github.com/PHeonix25/unifi_alerts/pull/73
 [#74]: https://github.com/PHeonix25/unifi_alerts/pull/74
+[#76]: https://github.com/PHeonix25/unifi_alerts/pull/76
 
 [0d951b3]: https://github.com/PHeonix25/unifi_alerts/commit/0d951b3
 [0f17afb]: https://github.com/PHeonix25/unifi_alerts/commit/0f17afb
