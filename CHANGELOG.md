@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- `make check` now passes on Windows. A new top-level `tests/conftest.py` applies two Windows-only workarounds: it forces `SelectorEventLoop` for `aiodns` (both via `set_event_loop_policy(WindowsSelectorEventLoopPolicy())` and by rebinding `WindowsProactorEventLoopPolicy._loop_factory` so HA's per-test `HassEventLoopPolicy` produces Selector loops via inheritance), and it neutralises `pytest_socket.disable_socket` so asyncio's `socket.socketpair()` self-pipe survives. HA core's earlier `socket_allow_hosts(["127.0.0.1"])` filter still applies, so external network egress remains blocked. No-op on Linux/macOS.
 - Polling no longer re-asserts `is_alerting` for alarms older than the acknowledgement watermark. Previously the binary sensor flipped back to Problem with a stale message after a Clear, while Open Count stayed at 0.
 - `_auto_clear` now persists the advanced watermark to storage. An HA restart immediately after a timer-triggered clear no longer resets `open_count` to the lifetime total.
 - Webhook pushes now optimistically increment `open_count` so the count sensor moves with the binary sensor instead of lagging by up to one poll interval. Polling reconciles to the authoritative value on the next refresh.
