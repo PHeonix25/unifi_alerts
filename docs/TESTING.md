@@ -70,6 +70,15 @@ If the hook blocks your push, fix the reported issue - do not use `git push --no
 
 ---
 
+## Windows
+
+`make check` works on Windows out of the box, but two Windows-specific things to know:
+
+- `tests/conftest.py` re-allows loopback sockets (`127.0.0.1`, `::1`) on Windows only. This is needed because asyncio's default `ProactorEventLoop` calls `socket.socketpair()` for its internal self-pipe, and `pytest-homeassistant-custom-component` disables all sockets by default. Without the workaround every async test fails with `pytest_socket.SocketBlockedError` plus a follow-up `'ProactorEventLoop' object has no attribute '_ssock'` from the half-initialised loop's `__del__`. The fixture is a no-op on Linux/macOS.
+- The Makefile uses `.venv/Scripts/<tool>.exe` paths on Windows. If `make check` reports "command not found", confirm `.venv` was built with `py -3.12 -m venv .venv` rather than a different interpreter.
+
+---
+
 ## Test directory structure
 
 Tests are split into two peer subdirectories:
