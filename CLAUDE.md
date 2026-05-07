@@ -219,6 +219,17 @@ Interruptions (timeouts, hibernation, re-login) are common. When a new conversat
 3. Individual targets: `make lint`, `make typecheck`, `make validate`, `make test`.
 4. All commands use the `.venv` in the repo root - never the system Python.
 
+## Doc-only PRs (lighter path)
+
+If a PR only touches `*.md`, `docs/**`, `CHANGELOG.md`, `CLAUDE.md`, `README.md`, or `SECURITY.md`, skip the full `make check` cycle:
+
+1. Run `make doc-check`. This runs `scripts/validate_docs.py` (prose linter, HISTORY h2 format) plus the `strings.json` / `translations/en.json` drift check. No venv required for either step.
+2. `python3 scripts/validate_docs.py` works standalone if you do not even want to use `make`. It is pure stdlib.
+3. Skip `make setup` for a doc-only branch on a fresh clone. The full setup installs Home Assistant and ~200 packages just to give you `pytest`/`ruff`/`mypy`, none of which inspect docs.
+4. CI still runs the full suite on push. Treat that as the safety net rather than a local gate.
+
+For Claude specifically: do not invoke plan-mode or Explore agents for prose-only edits. `grep -n` to locate the section, `Read` with `offset`/`limit` to load just the lines being changed, then `Edit`. Reading whole files "to be safe" is the most common token waste; `Edit` already errors if the file changed underneath you.
+
 ## Pre-push hook (install once per clone)
 
 A git hook at `.githooks/pre-push` runs all of the above automatically before every `git push`. Activate it once after cloning:

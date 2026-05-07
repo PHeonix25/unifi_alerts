@@ -1,4 +1,4 @@
-.PHONY: setup test lint typecheck validate check
+.PHONY: setup test lint typecheck validate doc-check check
 
 VENV := .venv/bin
 
@@ -19,6 +19,12 @@ typecheck:
 validate:
 	python3 scripts/validate_hacs.py
 	python3 scripts/validate_docs.py
+
+doc-check:
+	python3 scripts/validate_docs.py
+	@diff custom_components/unifi_alerts/strings.json \
+	      custom_components/unifi_alerts/translations/en.json > /dev/null \
+	      || (echo "strings.json and translations/en.json have drifted" && exit 1)
 
 check: lint typecheck validate test
 
