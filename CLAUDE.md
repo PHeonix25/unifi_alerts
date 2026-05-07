@@ -91,14 +91,16 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
        └── bump manifest to 1.2.0-pre1 (via claude/* PR > dev)  (start next cycle)
 ```
 
+**Use `scripts/bump_version.py` for steps 2, 3, and 4 below.** It computes the next version per these rules, checks out a fresh `dev`, creates the `claude/bump-<new-version>` branch, updates `manifest.json` (and `CHANGELOG.md` for stable promotions), stages the change, and prints the `git log <prev-tag>..HEAD --merges` list ready to summarise into `docs/HISTORY.md`. Modes: `--pre`, `--stable`, `--next-cycle`.
+
 1. **Development:** work on `dev`. Version in manifest stays at `X.Y.Z-preN`.
-2. **Pre-release checkpoint:** bump the `N` in manifest (e.g. `pre1 > pre2`) on a short-lived `claude/*` branch, open a PR targeting `dev`, merge it, then provide the user with the tag command (Claude cannot push tags). **In the same PR, write the HISTORY block** for this tag: enumerate every PR merged since the previous tag with `git log <prev-tag>..HEAD --merges --oneline` and add a single `## YYYY-MM-DD` block to `docs/HISTORY.md` (newest first) summarising them. **Drop completed items** from `docs/ROADMAP.md` for the section this tag advances. `CHANGELOG.md` is NOT touched on pre-release bumps. After the PR merges, the user runs:
+2. **Pre-release checkpoint:** run `python3 scripts/bump_version.py --pre` to bump the `N` in manifest (e.g. `pre1 > pre2`) on a short-lived `claude/bump-*` branch, then open a PR targeting `dev`, merge it, and provide the user with the tag command (Claude cannot push tags). **In the same PR, write the HISTORY block** for this tag: the script prints the merge list since the previous tag; summarise it into a single `## YYYY-MM-DD` block in `docs/HISTORY.md` (newest first). **Drop completed items** from `docs/ROADMAP.md` for the section this tag advances. `CHANGELOG.md` is NOT touched on pre-release bumps. After the PR merges, the user runs:
    ```bash
    git checkout dev && git pull origin dev
    git tag vX.Y.Z-preN && git push origin vX.Y.Z-preN
    ```
    GitHub Actions creates a pre-release automatically.
-3. **Stable release:** bump manifest from `X.Y.Z-preN` to `X.Y.Z` on a `claude/*` branch, open PR targeting `dev`. **In the same PR, write the HISTORY block** covering every PR merged since the previous tag (the most recent pre-release), and **finalise `CHANGELOG.md`:** rename the `[Unreleased]` heading to `[X.Y.Z] - YYYY-MM-DD`, insert a fresh empty `[Unreleased]` above it, and add a `[X.Y.Z]: …/releases/tag/vX.Y.Z` link at the bottom. `dev` CI now accepts stable versions, so this passes. Merge to `dev`, then open a PR from `dev` > `main`. After that merges, provide the user with the tag command:
+3. **Stable release:** run `python3 scripts/bump_version.py --stable` to bump manifest from `X.Y.Z-preN` to `X.Y.Z` and rewrite `CHANGELOG.md` (rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, insert a fresh `[Unreleased]` above it, add the `[X.Y.Z]: .../releases/tag/vX.Y.Z` link reference). Open PR targeting `dev`. **In the same PR, write the HISTORY block** covering every PR merged since the previous tag (the most recent pre-release). `dev` CI now accepts stable versions, so this passes. Merge to `dev`, then open a PR from `dev` > `main`. After that merges, provide the user with the tag command:
    ```bash
    git checkout main && git pull origin main
    git tag vX.Y.Z && git push origin vX.Y.Z
@@ -111,7 +113,7 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
 
    > **Why this step must target the new squash commit:** In the past (v1.3.0, PR #47) a sync merge was attempted but accidentally merged the *previous* stable tag (`v1.2.0`) rather than the new squash commit (`v1.3.0`). The tree content was identical so CI passed, but the parent pointer was wrong - the merge base never advanced. Always verify the second parent of the merge commit is the tip of `origin/main` *after* the release, not before.
 
-4. **Start next cycle:** bump manifest to `X.(Y+1).0-pre1` on a `claude/*` branch, open PR targeting `dev`, merge. Development continues forward. Notable changes between releases accumulate under `CHANGELOG.md` `[Unreleased]` as their PRs land - don't batch them at release time.
+4. **Start next cycle:** run `python3 scripts/bump_version.py --next-cycle` to bump manifest to `X.(Y+1).0-pre1` on a `claude/bump-*` branch, open PR targeting `dev`, merge. Development continues forward. Notable changes between releases accumulate under `CHANGELOG.md` `[Unreleased]` as their PRs land - don't batch them at release time.
 
 > **Tag convention reminder:** Claude cannot push tags directly. Whenever the user says "update the tag", "cut a release", "tag the branch", or similar - open a version-bump PR to `dev` (or `main` for stable), wait for merge, then give the user the exact `git tag` + `git push origin <tag>` commands to run locally.
 
@@ -125,7 +127,7 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
 
 Recommended rules:
 - **`main`:** require PR, require status checks (`CI / *`, `Version Check / *`), no direct push, no force-push.
-- **`dev`:** require PR, require status checks (`CI / *`, `Version Check / *`), no direct push, no force-push. Version bumps go via a short-lived `chore/bump-*` branch PR.
+- **`dev`:** require PR, require status checks (`CI / *`, `Version Check / *`), no direct push, no force-push. Version bumps go via a short-lived `claude/bump-*` branch PR (created by `scripts/bump_version.py`).
 
 ## Working style
 
@@ -133,7 +135,7 @@ Recommended rules:
 - **Always pull `dev` before starting work** - run `git pull origin dev` at the start of every session to avoid diverging from origin. Never start implementing changes on a stale branch. Pull `main` only when checking stable state.
 - **Work on `dev`, not `main`** - `main` is only updated via PRs from `dev`. Never commit directly to `main`.
 - **Feature and claude/* branches must be created from `dev`** - run `git checkout dev && git pull origin dev && git checkout -b <branch>`. Never branch off `main`. PRs from feature branches must target `dev`, not `main`.
-- **Always start fresh from `dev` for new work.** At the very start of a new task, even if a branch is already specified by the system instructions, run `git checkout dev && git pull origin dev` first, then create or recreate the working branch from that fresh `dev` tip. Never inherit whatever branch the previous session left checked out - it may be a stale `chore/bump-*` or other already-merged branch, and committing on top of it produces a branch that contains commits already in `dev`.
+- **Always start fresh from `dev` for new work.** At the very start of a new task, even if a branch is already specified by the system instructions, run `git checkout dev && git pull origin dev` first, then create or recreate the working branch from that fresh `dev` tip. Never inherit whatever branch the previous session left checked out - it may be a stale `claude/bump-*` or other already-merged branch, and committing on top of it produces a branch that contains commits already in `dev`.
 - **After a PR merges, delete the local branch and switch back to `dev`** - run `git checkout dev && git pull origin dev && git branch -D <merged-branch>`. This forces the next task to branch off a clean `dev` instead of accidentally building on a stale, already-merged branch.
 - **Move into the working directory at the start of every session** - avoids needing path prefixes on every command.
 - Always run `make check` before committing - never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
