@@ -2,26 +2,9 @@
 
 What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `main` as `X.Y.Z`. Completed work is removed from this file; the historical record lives in `docs/HISTORY.md`, and the user-visible release summary lives in `CHANGELOG.md`.
 
-> **Status (2026-05-07):** v1.4.0 released; v1.5.0 feature-complete on `dev` at `1.5.0-pre3` and pending field testing. Path to v2.0.0: v1.5.0 (security hardening II + field-confirmed reliability fixes), v1.6.0 (reliability + completeness), v1.7.0 (documentation + architecture), v2.0.0 (HACS default).
+> **Status (2026-05-07):** v1.5.0 released; active development on `dev` will start the v1.6.0 cycle. Path to v2.0.0: v1.6.0 (reliability + completeness), v1.7.0 (documentation + architecture), v2.0.0 (HACS default).
 
 > **Branching model:** see `CLAUDE.md § Branching strategy and versioning`.
-
----
-
-## v1.5.0: Security hardening II + field-confirmed reliability fixes
-
-Closes the remaining auth/credential exposure paths, makes the options flow transactionally safe, and lands the two reliability bugs confirmed in field testing.
-
-### Options-flow atomicity
-
-- [x] **Stage credential changes** (`config_flow.py`): `async_step_credentials` no longer calls `async_update_entry()` eagerly; new credentials, rotated webhook secrets, and `verify_ssl` flips are staged in `self._pending_data` and persisted atomically by `async_step_finish`.
-- [x] **`verify_ssl` toggle alone now persists**: change detection no longer filters out the SSL flag, so flipping the checkbox without any credential change is staged and committed.
-
-### Reliability (pulled forward from v1.6.0; field-confirmed)
-
-- [x] **Polling re-asserts `is_alerting` for alarms older than the watermark** ([#72]): `_async_update_data()` now uses the watermark-filtered list when deciding whether to flip `is_alerting`, so a stale pre-Clear alarm cannot re-assert Problem after auto-clear.
-- [x] **`_auto_clear` watermark persistence** ([#72]): `_auto_clear()` now awaits `_async_persist_watermarks()` after `state.clear()`. Companion test `test_auto_clear_persists_watermark` added.
-- [x] **`open_count` lags on webhook path** ([#72]): `push_alert()` now optimistically increments `open_count` when `alert.received_at > state.last_cleared_at`. Polling reconciles to the authoritative value on the next refresh. Root cause 2 (busy controllers, /list/alarm 3000-record cap) remains addressed by the v2 polling strategy switch in v1.6.0.
 
 ---
 
@@ -89,5 +72,3 @@ Prerequisites for submitting to <https://github.com/hacs/default>.
 
 - Extract `_device_info()` duplication into a shared `entity_base.py` mixin (only if maintenance burden grows).
 - Configurable site per category (power-user feature).
-
-[#72]: https://github.com/PHeonix25/unifi_alerts/pull/72
