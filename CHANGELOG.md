@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- `make check` now passes on Windows. A new top-level `tests/conftest.py` re-allows loopback sockets on Windows only so asyncio's `ProactorEventLoop` can build its self-pipe; `pytest-socket` (via `pytest-homeassistant-custom-component`) was previously blocking it and every async test failed with `SocketBlockedError` plus a follow-up `_ssock` `AttributeError`.
+- `make check` now passes on Windows. A new top-level `tests/conftest.py` neutralises `pytest_socket.disable_socket` on Windows only, leaving HA core's earlier `socket_allow_hosts(["127.0.0.1"])` filter in place. Without this, every async test failed with `SocketBlockedError` (asyncio's `ProactorEventLoop` self-pipe needs loopback `socketpair()`) plus a follow-up `'ProactorEventLoop' object has no attribute '_ssock'` from the half-initialised loop's `__del__`.
 - Polling no longer re-asserts `is_alerting` for alarms older than the acknowledgement watermark. Previously the binary sensor flipped back to Problem with a stale message after a Clear, while Open Count stayed at 0.
 - `_auto_clear` now persists the advanced watermark to storage. An HA restart immediately after a timer-triggered clear no longer resets `open_count` to the lifetime total.
 - Webhook pushes now optimistically increment `open_count` so the count sensor moves with the binary sensor instead of lagging by up to one poll interval. Polling reconciles to the authoritative value on the next refresh.
