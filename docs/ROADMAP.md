@@ -2,7 +2,7 @@
 
 What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `main` as `X.Y.Z`. Completed work is removed from this file; the historical record lives in `docs/HISTORY.md`, and the user-visible release summary lives in `CHANGELOG.md`.
 
-> **Status (2026-05-04):** v1.4.0 released. Active development on `dev` at `1.5.0-pre1`. Path to v2.0.0: v1.5.0 (security hardening II + field-confirmed reliability fixes), v1.6.0 (reliability + completeness), v1.7.0 (documentation + architecture), v2.0.0 (HACS default).
+> **Status (2026-05-07):** v1.4.0 released; v1.5.0 feature-complete on `dev` at `1.5.0-pre3` and pending field testing. Path to v2.0.0: v1.5.0 (security hardening II + field-confirmed reliability fixes), v1.6.0 (reliability + completeness), v1.7.0 (documentation + architecture), v2.0.0 (HACS default).
 
 > **Branching model:** see `CLAUDE.md § Branching strategy and versioning`.
 
