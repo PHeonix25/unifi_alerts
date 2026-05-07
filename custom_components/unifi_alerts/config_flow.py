@@ -296,6 +296,10 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
         self._pending_options: dict[str, Any] = {}
+        # Staged updates to `entry.data` (credentials, verify_ssl, rotated webhook
+        # secret). Held until the user submits the finish step, then persisted
+        # atomically so abandoning the flow mid-way leaves nothing behind.
+        self._pending_data: dict[str, Any] = {}
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Router: always start with the credentials step."""
@@ -319,28 +323,34 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             new_password: str = (user_input.get(CONF_PASSWORD) or "").strip()
             new_api_key: str = (user_input.get(CONF_API_KEY) or "").strip()
             regenerate_secret: bool = bool(user_input.get(CONF_REGENERATE_WEBHOOK_SECRET, False))
-            # verify_ssl always comes through as a bool (voluptuous default)
-            new_verify_ssl: bool = user_input.get(
-                CONF_VERIFY_SSL,
-                self._config_entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+            current_verify_ssl: bool = self._config_entry.data.get(
+                CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL
             )
+            # verify_ssl always comes through as a bool (voluptuous default)
+            new_verify_ssl: bool = user_input.get(CONF_VERIFY_SSL, current_verify_ssl)
+            verify_ssl_changed = new_verify_ssl != current_verify_ssl
 
             credentials_changed = bool(new_url_raw or new_username or new_password or new_api_key)
 
-            if not credentials_changed and not regenerate_secret:
+            if not credentials_changed and not regenerate_secret and not verify_ssl_changed:
                 # Nothing changed — skip straight to categories
                 return await self.async_step_categories()
 
-            if regenerate_secret and not credentials_changed:
-                # Secret rotation only — no credentials to validate. Persist
-                # the new secret immediately and continue to categories so the
-                # finish step shows the updated webhook URLs.
-                updated_data = {
-                    **self._config_entry.data,
-                    CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32),
-                }
-                self.hass.config_entries.async_update_entry(self._config_entry, data=updated_data)
-                _LOGGER.info("Webhook secret regenerated for %s", self._config_entry.entry_id)
+            if not credentials_changed:
+                # Verify-SSL flip and/or secret rotation only — no credentials to
+                # validate against the controller. Stage the change; the finish
+                # step will persist atomically when the user submits.
+                pending = dict(self._config_entry.data)
+                if verify_ssl_changed:
+                    pending[CONF_VERIFY_SSL] = new_verify_ssl
+                if regenerate_secret:
+                    # WHY: Rotation replaces the `?token=...` bearer but reuses
+                    # the webhook ID suffix. An attacker with the old token
+                    # still hits a live endpoint; the token check rejects them.
+                    # URL-path revocation requires deleting and re-adding the
+                    # entry. See SECURITY.md § "Webhook secret rotation".
+                    pending[CONF_WEBHOOK_SECRET] = secrets.token_urlsafe(32)
+                self._pending_data = pending
                 return await self.async_step_categories()
 
             # Determine the effective values to test
@@ -389,42 +399,31 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                             ):
                                 return self.async_abort(reason="already_configured")
 
-                    # Persist the updated credentials into entry.data
-                    updated_data = {
+                    # Stage the updated entry.data — actual persistence happens
+                    # in the finish step, so abandoning the flow leaves nothing
+                    # behind. async_update_entry is intentionally NOT called here.
+                    pending = {
                         **self._config_entry.data,
                         CONF_CONTROLLER_URL: effective_url,
                         CONF_VERIFY_SSL: new_verify_ssl,
                         CONF_AUTH_METHOD: auth_method,
                     }
                     if new_username:
-                        updated_data[CONF_USERNAME] = new_username
+                        pending[CONF_USERNAME] = new_username
                     if new_password:
-                        updated_data[CONF_PASSWORD] = new_password
+                        pending[CONF_PASSWORD] = new_password
                     if new_api_key:
-                        updated_data[CONF_API_KEY] = new_api_key
+                        pending[CONF_API_KEY] = new_api_key
                     if regenerate_secret:
-                        # WHY: Rotation replaces the `?token=...` bearer but reuses the
-                        # webhook ID suffix (URL path). An attacker with the old token still
-                        # hits a live endpoint; the token check rejects them. URL-path
-                        # revocation requires deleting and re-adding the entry. See
-                        # SECURITY.md § "Webhook secret rotation".
-                        updated_data[CONF_WEBHOOK_SECRET] = secrets.token_urlsafe(32)
-                        _LOGGER.info(
-                            "Webhook secret regenerated for %s",
-                            self._config_entry.entry_id,
-                        )
-
-                    self.hass.config_entries.async_update_entry(
-                        self._config_entry, data=updated_data
-                    )
-                    # Proceed to categories; reload will happen after the full options save
+                        pending[CONF_WEBHOOK_SECRET] = secrets.token_urlsafe(32)
+                    self._pending_data = pending
                     return await self.async_step_categories()
 
         # Build the credentials form — all fields optional with current values as hints
         _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         current_url: str = self._config_entry.data.get(CONF_CONTROLLER_URL, "")
-        current_verify_ssl: bool = self._config_entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+        current_verify_ssl = self._config_entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
 
         schema = vol.Schema(
             {
@@ -500,10 +499,22 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
     async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Display webhook URLs, then save options on submit."""
         if user_input is not None:
+            # Persist any staged entry.data updates atomically before writing
+            # the options entry. If the user abandoned the flow before reaching
+            # this step, _pending_data is empty and entry.data is untouched.
+            if self._pending_data:
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry, data=self._pending_data
+                )
             return self.async_create_entry(title="", data=self._pending_options)
 
         enabled: list[str] = self._pending_options.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
-        secret: str = self._config_entry.data.get(CONF_WEBHOOK_SECRET, "")
+        # Display URLs using the staged secret (if rotation is queued) so the
+        # finish step shows what the entry WILL contain after submission.
+        secret: str = self._pending_data.get(
+            CONF_WEBHOOK_SECRET,
+            self._config_entry.data.get(CONF_WEBHOOK_SECRET, ""),
+        )
         suffix: str = self._config_entry.data.get(CONF_WEBHOOK_ID_SUFFIX, "")
         fields: dict = {}
         for cat in ALL_CATEGORIES:
