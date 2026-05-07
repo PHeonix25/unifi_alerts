@@ -10,57 +10,44 @@
 ```bash
 git clone https://github.com/PHeonix25/unifi_alerts
 cd unifi_alerts
-
-# Create and activate a virtual environment
-python -m venv .venv
-source .venv/bin/activate       # Linux/macOS
-.\.venv\Scripts\Activate.ps1    # Windows (PowerShell)
-
-# Install test and lint dependencies
-pip install pytest pytest-asyncio pytest-homeassistant-custom-component aiohttp ruff mypy
+git config core.hooksPath .githooks   # enable the pre-push gate
+make setup                             # python3.12 -m venv .venv + pip install -r requirements-dev.txt
 ```
 
-## Running tests
+`requirements-dev.txt` is the single source of truth for dev dependencies; both CI jobs install from the same file.
+
+## Running checks
 
 ```bash
-# Run all tests
-pytest tests/ -v
-
-# Run a single file
-pytest tests/test_coordinator.py -v
-
-# Run with coverage
-pytest tests/ --cov=custom_components/unifi_alerts --cov-report=term-missing
+make check       # default; runs lint + typecheck + HACS preflight + translation drift + pytest
+make lint        # ruff lint + format check
+make typecheck   # mypy
+make validate    # scripts/validate_hacs.py (HACS manifest pre-flight)
+make test        # pytest
 ```
 
-All tests must pass before committing. See `TESTING.md` for what is and isn't covered.
+All `make` targets use `.venv` in the repo root; never the system Python.
 
-## Linting and type checking
+If you prefer raw commands:
 
 ```bash
-# Lint (errors only)
-ruff check custom_components/
-
-# Format check
-ruff format --check custom_components/
-
-# Auto-fix formatting
-ruff format custom_components/
-
-# Type check
-mypy custom_components/unifi_alerts --ignore-missing-imports
+.venv/bin/pytest tests/ -v                                  # all tests (unit + integration)
+.venv/bin/pytest tests/unit/test_coordinator.py -v          # one file
+.venv/bin/pytest tests/integration/ -v -m integration       # integration only
+.venv/bin/pytest tests/ --cov=custom_components/unifi_alerts --cov-report=term-missing
 ```
 
-CI runs all of these on every push via `.github/workflows/ci.yml`. Fix any failures before opening a PR.
+CI runs the same checks on every push via `.github/workflows/ci.yml`. The pre-push hook at `.githooks/pre-push` runs them locally first; do not bypass with `--no-verify`.
 
 ## Project structure
 
-See `ARCHITECTURE.md` for a full module breakdown and data-flow diagram. The short version:
+See `docs/ARCHITECTURE.md` for the full module breakdown. Short version:
 
 ```
 custom_components/unifi_alerts/   # integration source
-tests/                            # unit tests (plain mocks, no real HTTP)
-.github/workflows/                # CI (hassfest, HACS validate, ruff, mypy, pytest)
+tests/unit/                       # unit tests (plain mocks, no real HTTP)
+tests/integration/                # full HA lifecycle tests using the hass fixture
+.github/workflows/                # CI (hassfest, HACS validate, ruff, mypy, pytest, version-check, release)
 ```
 
 ## Adding a new alert category
@@ -69,23 +56,23 @@ tests/                            # unit tests (plain mocks, no real HTTP)
 2. Append it to `ALL_CATEGORIES`.
 3. Add entries to `CATEGORY_LABELS`, `CATEGORY_ICONS`, and `CATEGORY_ICONS_OK`.
 4. Map any known UniFi event keys to it in `UNIFI_KEY_TO_CATEGORY`.
-5. Add parametrised test cases to `tests/test_unifi_client.py::TestClassify::test_known_keys`.
+5. Add parametrised test cases to `tests/unit/test_unifi_client.py::TestClassify::test_known_keys`.
 
 ## Adding new UniFi event keys
 
-When a user reports an unrecognised alert key, add it to `UNIFI_KEY_TO_CATEGORY` in `const.py` and add a corresponding entry to `tests/test_unifi_client.py::TestClassify::test_known_keys`. See `UNIFI.md` for the key taxonomy.
+When a user reports an unrecognised alert key, add it to `UNIFI_KEY_TO_CATEGORY` in `const.py` and add a corresponding entry to `tests/unit/test_unifi_client.py::TestClassify::test_known_keys`. See `docs/UNIFI.md` for the key taxonomy.
 
 ## Keeping strings.json and translations/en.json in sync
 
-HA requires `strings.json` and `translations/en.json` to match exactly. Edit both files together — they are intentionally kept as copies of each other. A future CI check will catch drift (see TODO).
+HA requires `strings.json` and `translations/en.json` to match exactly. Edit both files together; the CI `lint` job and the pre-push hook diff the two files and fail on drift.
 
 ## Testing manually in Home Assistant
 
 1. Copy `custom_components/unifi_alerts/` into your HA `config/custom_components/` directory.
 2. Restart HA.
-3. Go to **Settings → Devices & Services → Add Integration** and search for "UniFi Alerts".
+3. Go to **Settings > Devices & Services > Add Integration** and search for "UniFi Alerts".
 4. Complete the config flow (controller URL, credentials, categories).
-5. After setup, navigate to **Settings → Devices & Services → UniFi Alerts → Download diagnostics** to find your webhook URLs.
+5. After setup, navigate to **Settings > Devices & Services > UniFi Alerts > Download diagnostics** to find your webhook URLs.
 6. Paste each webhook URL into UniFi Alarm Manager (one per category).
 7. Trigger a test alert from the UniFi controller and confirm the binary sensor flips on.
 
@@ -93,31 +80,34 @@ HA requires `strings.json` and `translations/en.json` to match exactly. Edit bot
 
 | Job | What it does |
 |---|---|
-| `validate` | Runs HA's `hassfest` action — validates manifest, quality scale, translations |
+| `validate` | Runs HA's `hassfest` action; validates manifest, quality scale, translations |
+| `hacs-preflight` | Runs `scripts/validate_hacs.py` (pure-Python pre-flight) before the slower HACS action |
 | `hacs` | Validates `hacs.json` and repository structure for HACS listing |
-| `lint` | `ruff` + `mypy` on Python 3.12 |
-| `test` | `pytest` on Python 3.12 |
+| `lint` | `ruff check` + `ruff format --check` + `mypy` + `strings.json`/`translations/en.json` drift diff |
+| `test` | `pytest` against `tests/unit/` and `tests/integration/` |
 
-All four jobs must pass before merging to `main`.
+`version-check.yml` enforces the version format per branch (`X.Y.Z` on `main`, `X.Y.Z-preN` on `dev`). `release.yml` triggers on tags and publishes via `gh release create --generate-notes`. All checks must pass before merging.
 
 ## Branching and PRs
 
-- Work on a feature branch (`feat/...`) or fix branch (`fix/...`).
-- Keep PRs focused — one logical change per PR.
+- Work on a `feature/...`, `fix/...`, or `claude/...` branch off `dev`.
+- Keep PRs focused: one logical change per PR.
 - Every PR that adds functionality must include tests.
-- Update `HISTORY.md` with a dated entry describing the change.
+- Apply a label recognised by `.github/release.yml` (`security`, `feat`/`enhancement`, `fix`/`bug`, `documentation`, `tests`, `ci`, `dependencies`) so auto-generated release notes group the PR correctly.
+- Update `docs/HISTORY.md` with a dated bullet under the date heading per `CLAUDE.md`'s format rule. **Every PR gets an entry - including the PR that contains the HISTORY update itself.** Write the entry in the same branch so the record is complete the moment the PR merges.
+- For user-visible changes, add a bullet under `[Unreleased]` in `CHANGELOG.md`.
 
 ## Release process
 
 Stable releases require **three** PRs, in order. Skipping or mis-ordering them causes merge-base drift that turns the next release into a conflict storm.
 
-### PR 1 — version bump + CHANGELOG (feature/* → dev)
+### PR 1 - version bump + CHANGELOG (feature/* > dev)
 
 1. Bump `manifest.json` version from `X.Y.Z-preN` to `X.Y.Z`.
-2. In `CHANGELOG.md`: rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD`, insert a fresh empty `[Unreleased]` above it, and add a `[X.Y.Z]: …/releases/tag/vX.Y.Z` compare link at the bottom.
-3. Open a PR targeting `dev`. Merge it normally (squash is fine for feature→dev).
+2. In `CHANGELOG.md`: rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, insert a fresh empty `[Unreleased]` above it, and add a `[X.Y.Z]: …/releases/tag/vX.Y.Z` compare link at the bottom.
+3. Open a PR targeting `dev`. Merge it normally (squash is fine for feature>dev).
 
-### PR 2 — dev → main (the release PR)
+### PR 2 - dev > main (the release PR)
 
 > **MUST be merged as "Create a merge commit". Never squash.**
 
@@ -130,7 +120,7 @@ git checkout main && git pull origin main
 git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-### PR 3 — main → dev (sync merge, mandatory)
+### PR 3 - main > dev (sync merge, mandatory)
 
 Immediately after PR 2 merges, bring the new squash commit into `dev`'s ancestry:
 
@@ -142,6 +132,6 @@ git merge origin/main          # merge the new squash commit as a second parent
 git push -u origin claude/sync-main-to-dev-X.Y.Z
 ```
 
-Open a PR targeting `dev`. **Merge as "Create a merge commit"** — not squash. The resulting commit will have `origin/main`'s tip as its second parent, making `git merge-base dev main` point at the new `vX.Y.Z` squash commit rather than the previous release.
+Open a PR targeting `dev`. **Merge as "Create a merge commit"** - not squash. The resulting commit will have `origin/main`'s tip as its second parent, making `git merge-base dev main` point at the new `vX.Y.Z` squash commit rather than the previous release.
 
 > **Common mistake (v1.3.0 / PR #47):** merging `origin/main` while `main` still points at the *previous* stable tag instead of the new squash commit. The tree content looks correct so CI passes, but the parent pointer is wrong and the merge base does not advance. Always run `git fetch origin main && git log --oneline origin/main -1` to confirm `main` is at the new release commit before running `git merge origin/main`.

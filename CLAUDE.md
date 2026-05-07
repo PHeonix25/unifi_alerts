@@ -1,4 +1,4 @@
-# CLAUDE.md — unifi_alerts
+# CLAUDE.md - unifi_alerts
 
 This is the primary context file for Claude Code. Read this first, then follow the references.
 
@@ -9,105 +9,54 @@ A Home Assistant custom integration (`domain: unifi_alerts`) that aggregates Uni
 This integration covers **UniFi Network** only (System Logs / SIEM events from the Network Application on UniFi OS). It does **not** support UniFi Protect (cameras, motion detection, NVR).
 
 **Two data paths run in parallel:**
-- **Webhook push** — UniFi Alarm Manager POSTs to per-category webhook URLs registered by HA. This is the real-time path.
-- **REST polling** — the integration polls the UniFi controller's alarm API on a configurable interval to populate open-count sensors and catch alerts that missed the webhook.
+- **Webhook push** - UniFi Alarm Manager POSTs to per-category webhook URLs registered by HA. This is the real-time path.
+- **REST polling** - the integration polls the UniFi controller's alarm API on a configurable interval to populate open-count sensors and catch alerts that missed the webhook.
 
 ## Reference documents
 
 | File | Read when you need to... |
 |---|---|
+| `docs/REPO_LAYOUT.md` | Find what a specific file or module is responsible for, and the load-bearing details that have caused regressions before |
 | `docs/ARCHITECTURE.md` | Understand how the modules fit together, data flow, and design decisions |
 | `docs/HOMEASSISTANT.md` | Work with HA-specific patterns: coordinators, entity classes, config flows, platforms |
 | `docs/UNIFI.md` | Understand the UniFi API, auth methods, alarm payloads, and event key taxonomy |
 | `docs/TESTING.md` | Run, write, or extend tests |
 | `docs/DEVELOPING.md` | Set up a local dev environment, run tests, contribute changes |
-| `docs/TODO.md` | Find the prioritised backlog of next steps. **Outstanding work only** — completed items are deleted, never struck through. Historical record lives in `docs/HISTORY.md` and per-release status in `docs/ROADMAP.md`. |
-| `docs/ROADMAP.md` | See which TODOs are planned for each release (v1.0, v1.1, v1.2, v2.0). Uses `[x]` checkboxes to track per-release completion — items stay in the file with their checkbox state, unlike `docs/TODO.md`. |
-| `docs/HISTORY.md` | Read the chronological log of completed work (append a dated entry after each task) |
-| `CHANGELOG.md` | User-facing release summary in Keep-a-Changelog format. Update the `[Unreleased]` section as user-visible changes land. |
+| `docs/TODO.md` | Find the outstanding-work backlog. Items are removed when they ship; never struck through, never annotated. Historical record lives in `docs/HISTORY.md`; per-release plan lives in `docs/ROADMAP.md`. |
+| `docs/ROADMAP.md` | See what's planned next per release (v1.5.0, v1.6.0, v1.7.0, v2.0.0). Open items only; completed releases are removed once they ship. |
+| `docs/HISTORY.md` | Dated record of completed work, newest first. **Updated only at tag time** (pre-release or stable) by the version-bump PR, which adds one date block listing every PR merged since the previous tag. Format: `## YYYY-MM-DD` heading, bullets `- **category**: short description ([#PR] or [SHA]). Short why.` Categories: `feat`, `fix`, `security`, `docs`, `ci`, `chore`, `tests`, `release`. No WHO. No "bundle/cluster/track/session N" framing. PR backlinks via reference-style at the bottom of the file. |
+| `CHANGELOG.md` | User-facing release summary in [common-changelog](https://common-changelog.org) format. Past tense, one line per change, references at the bottom. Update the `[Unreleased]` section as user-visible changes land. |
 | `SECURITY.md` | Vulnerability disclosure policy. If a task touches security-relevant components, check the in-/out-of-scope listing here before responding to a security report. |
 
 ## Repository layout
 
-```
-custom_components/unifi_alerts/   # integration source
-  __init__.py                     # entry setup/teardown, platform forwarding; raises ConfigEntryNotReady on auth or first-refresh failure so HA retries; emits _LOGGER.warning when SSL verification is disabled; unload order: coordinator.async_shutdown() → unregister webhooks → client.close()
-  manifest.json                   # HA metadata (domain, version, iot_class); do NOT add "homeassistant" min-version key — it is not in the HA manifest schema and breaks hassfest
-  const.py                        # all constants, category defs, UniFi key→category map; DEFAULT_VERIFY_SSL = True (secure by default); CONF_WEBHOOK_SECRET = "webhook_secret"
-  models.py                       # UniFiAlert and CategoryState dataclasses; all datetimes are UTC-aware (datetime.now(UTC))
-  unifi_client.py                 # async HTTP client, auth auto-detect
-  coordinator.py                  # DataUpdateCoordinator, owns all category state; polling path sets is_alerting/last_alert directly (does NOT call apply_alert, so alert_count is not incremented); open_count filtered by last_cleared_at watermark (alarms since last Clear only); async_clear_category()/async_clear_all() are the sole clear entry points — they cancel tasks, advance watermark, persist via Store, notify; cancel_clear(category) cancels pending auto-clear tasks; async_restore_watermarks() loads persisted watermarks from storage on startup; async_shutdown() cancels all pending clear tasks on unload
-  webhook_handler.py              # registers HA webhooks (POST-only), dispatches to coordinator; rejects requests missing/wrong ?token= with HTTP 401; bearer secret from CONF_WEBHOOK_SECRET
-  config_flow.py                  # three-step UI setup (credentials → categories → webhook URLs with token) + options flow; generates CONF_WEBHOOK_SECRET via secrets.token_urlsafe(32) on first auth; network_device and network_client default OFF; options flow reads entry.options first, falls back to entry.data
-  diagnostics.py                  # HA diagnostics platform; redacts password/api_key/username, exposes webhook URLs + coordinator state
-  binary_sensor.py                # per-category + rollup binary sensors
-  sensor.py                       # message, count, and rollup count sensors
-  event.py                        # event entities, fire per alert
-  button.py                       # manual clear buttons
-  strings.json                    # UI copy for config flow; must be identical to translations/en.json — CI enforces this
-  translations/en.json            # runtime translation file loaded by HA; must be identical to strings.json — CI enforces this
-tests/
-  conftest.py                     # shared fixtures, MOCK_CONFIG; make_hass() and make_entry() module-level helpers for setup/unload tests
-  test_models.py
-  test_coordinator.py
-  test_unifi_client.py
-  test_config_flow.py             # config flow steps, webhook URL token display, options flow defaults
-  test_diagnostics.py             # diagnostics platform: redaction, webhook URL exposure, coordinator state
-  test_webhook_handler.py         # WebhookManager: register/unregister, token auth, alert dispatch
-  test_init.py                    # async_setup_entry / async_unload_entry lifecycle, teardown order
-  test_entities.py                # all entity property methods: binary_sensor, sensor, event, button
-.github/workflows/
-  ci.yml                          # hassfest + hacs-preflight + HACS action + lint (ruff, mypy, translation drift) + pytest; runs on push/PR to main and dev
-  version-check.yml               # enforces version format per branch: main=X.Y.Z stable, dev=X.Y.Z-preN; runs on push/PR to main and dev
-  release.yml                     # triggered by version tags (v1.0.0 stable, v1.0.0-pre1 pre-release); validates tag matches manifest, packages the integration, and publishes via `gh release create --generate-notes` (NOT softprops/action-gh-release — that was removed; do not re-introduce it). Pre-release detection regex uses `grep -qE -- '-pre[0-9]+$'` (the `--` terminator is load-bearing).
-.github/
-  dependabot.yml                  # tracks the github-actions ecosystem only (weekly, Brisbane TZ); minor+patch grouped, major bumps individual. Required to keep the SHA pins fresh — do NOT remove. Python deps stay manual.
-  release.yml                     # release-notes categories file used by `gh release create --generate-notes` to group merged PRs by label (Security / Bug Fixes / Features / Documentation / Tests / CI / Other). DIFFERENT FILE from .github/workflows/release.yml.
-  ISSUE_TEMPLATE/
-    bug_report.yml                # required-field bug template; warns users to redact `?token=...` from logs.
-    feature_request.yml           # problem → solution → alternatives template.
-    config.yml                    # disables blank issues; surfaces the security-advisory link + Discussions.
-    unclassified_event_key.yml    # for reporting UniFi event keys not yet in UNIFI_KEY_TO_CATEGORY.
-.githooks/
-  pre-push                        # local gate: HACS preflight → translation drift → ruff → mypy → pytest; install with: git config core.hooksPath .githooks
-scripts/
-  validate_hacs.py                # pure-Python HACS manifest pre-flight; checks required fields, iot_class, dependencies (no HA core built-ins); run locally or in CI
-  setup-labels.sh                 # one-shot script that creates the non-default labels referenced in `.github/release.yml` (`security`, `feat`, `fix`, `tests`, `ci`, `github-actions`, `dependencies`). Run once per fork via `./scripts/setup-labels.sh`. Idempotent — existing labels skipped. The `bug`, `enhancement`, and `documentation` labels are GitHub defaults; the rest do not exist on a fresh fork and the categories file is inert without them. `feat` and `fix` are Conventional-Commits aliases for `enhancement` and `bug` respectively — either label works for those categories.
-Makefile                          # convenience targets: setup, lint, typecheck, validate, test, check (default = all)
-requirements-dev.txt              # single source of truth for all dev dependencies; used by make setup and both CI jobs
-hacs.json
-pyproject.toml                    # ruff and mypy config
-pytest.ini
-README.md                         # user-facing install, setup, and contributing guide
-CHANGELOG.md                      # Keep-a-Changelog file. The `[Unreleased]` section accumulates user-visible changes between tags. `docs/HISTORY.md` is the dated narrative source-of-truth; `CHANGELOG.md` is the user-facing summary scoped to releases. Pre-releases (`X.Y.Z-preN`) are NOT listed individually — only the consolidated `X.Y.Z` entry that bundles them.
-SECURITY.md                       # vulnerability disclosure policy. Reports go via GitHub private security advisories. Do NOT funnel security reports through public issues.
-CODEOWNERS                        # auto-requests review from @PHeonix25 on every PR.
-```
+Per-file annotations and load-bearing details live in [`docs/REPO_LAYOUT.md`](docs/REPO_LAYOUT.md). Read it when you need to know what a specific file does or owns; do not duplicate that detail here.
 
 ## Non-negotiable constraints
 
 - **Python 3.12+ only.** Use modern type hints (`list[str]` not `List[str]`, `X | None` not `Optional[X]`).
 - **All I/O is async.** No blocking calls anywhere. Use `aiohttp` for HTTP, never `requests`.
 - **No YAML configuration.** Everything goes through the config flow. Do not add `async_setup` or `configuration.yaml` support.
-- **`iot_class: local_push`** must stay in `manifest.json` — this is accurate and affects HA's energy/performance classification.
-- **`manifest.json` key order is enforced by hassfest** — keys must be: `domain`, `name`, then all remaining keys alphabetically. Violating this order breaks CI.
-- **`manifest.json` `dependencies` must only list HA integrations installable by HACS** — do NOT list HA core built-ins (e.g. `webhook`, `http`, `frontend`). hassfest accepts them but the HACS validator rejects them, breaking CI.
-- **`DEFAULT_VERIFY_SSL = True`** — SSL verification is on by default; only disable for controllers with self-signed certificates. Never silently change this default.
-- **Webhooks are `local_only: True`** — do not remove this without a documented reason.
-- **Webhook bearer token auth is mandatory** — every inbound webhook request must be validated against `CONF_WEBHOOK_SECRET` via `?token=` query param. Never remove this check or accept requests that fail it.
-- **Category state lives only in the coordinator** — entities must not cache state themselves.
-- **Every GitHub Actions `uses:` reference must be pinned to a full 40-character commit SHA** — no branch names (`@main`, `@master`), no tag names (`@v2`, `@v6`), no short SHAs. Add a trailing comment noting the resolved version or branch for human readers (e.g. `# v3.0.0` or `# master tip 2026-04-22`). This applies to every workflow in `.github/workflows/`. When bumping an action, resolve the new SHA via `gh api repos/OWNER/REPO/git/refs/tags/TAG` (or `.../heads/BRANCH` for repos without tags) and replace both the SHA and its comment in the same edit. Dependabot (`.github/dependabot.yml`) proposes these bumps weekly — review the SHA against the upstream tag before merging.
-- **The release pipeline uses `gh release create --generate-notes` only** — no third-party release actions. `softprops/action-gh-release` was deliberately removed in cluster D; do NOT re-introduce it (or any other third-party release publisher) when editing `.github/workflows/release.yml`. The GitHub CLI is pre-installed on `ubuntu-latest` runners. `actions/checkout` in that workflow MUST keep `fetch-depth: 0` — `--generate-notes` needs the full tag history to compute the previous-tag boundary.
-- **`CHANGELOG.md` must be updated alongside notable user-visible changes.** Add bullets under `[Unreleased]` as features/fixes/security work lands; never edit released sections. When bumping the manifest from `X.Y.Z-preN` to a stable `X.Y.Z`, rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD`, add a fresh empty `[Unreleased]` above it, and update the link references at the bottom. Pre-release version bumps (`-preN`) do NOT touch `CHANGELOG.md`. `docs/HISTORY.md` is still the dated narrative source-of-truth for everything; `CHANGELOG.md` is just the user-facing release summary.
-- **PRs must carry one of the labels recognised by `.github/release.yml`** so auto-generated release notes group them correctly. Valid labels (after `scripts/setup-labels.sh` has been run on the fork): `security`, `bug` / `fix`, `enhancement` / `feat`, `documentation`, `tests`, `ci`, `github-actions`, `dependencies`. The `feat` / `fix` aliases match Conventional Commits prefixes; either form lands in the correct category. **Unlabelled PRs silently fall through to "🧹 Other Changes" — this is the default and was the cause of the v1.4.0-pre2 release notes coming out flat.** The `mcp__github__create_pull_request` tool does NOT accept a `labels` field; immediately after opening a PR, apply the label via `mcp__github__issue_write` with `method: "update"`, `issue_number: <PR number>`, `labels: ["<label>"]` (PRs are issues for the labels API). One label per PR is enough; pick the dominant change category. Verify with `mcp__github__pull_request_read`/`get` — the response includes a `labels` field; if it's missing or empty, the categorisation will fail at release time.
+- **`iot_class: local_push`** must stay in `manifest.json` - this is accurate and affects HA's energy/performance classification.
+- **`manifest.json` key order is enforced by hassfest** - keys must be: `domain`, `name`, then all remaining keys alphabetically. Violating this order breaks CI.
+- **`manifest.json` `dependencies` must only list HA integrations installable by HACS** - do NOT list HA core built-ins (e.g. `webhook`, `http`, `frontend`). hassfest accepts them but the HACS validator rejects them, breaking CI.
+- **`DEFAULT_VERIFY_SSL = True`** - SSL verification is on by default; only disable for controllers with self-signed certificates. Never silently change this default.
+- **Webhooks are `local_only: True`** - do not remove this without a documented reason.
+- **Webhook bearer token auth is mandatory** - every inbound webhook request must be validated against `CONF_WEBHOOK_SECRET` via `?token=` query param. Never remove this check or accept requests that fail it.
+- **Category state lives only in the coordinator** - entities must not cache state themselves.
+- **Every GitHub Actions `uses:` reference must be pinned to a full 40-character commit SHA** - no branch names (`@main`, `@master`), no tag names (`@v2`, `@v6`), no short SHAs. Add a trailing comment noting the resolved version or branch for human readers (e.g. `# v3.0.0` or `# master tip 2026-04-22`). This applies to every workflow in `.github/workflows/`. When bumping an action, resolve the new SHA via `gh api repos/OWNER/REPO/git/refs/tags/TAG` (or `.../heads/BRANCH` for repos without tags) and replace both the SHA and its comment in the same edit. Dependabot (`.github/dependabot.yml`) proposes these bumps weekly - review the SHA against the upstream tag before merging.
+- **The release pipeline uses `gh release create --generate-notes` only**: no third-party release actions. `softprops/action-gh-release` was deliberately removed in v1.4.0; do NOT re-introduce it (or any other third-party release publisher) when editing `.github/workflows/release.yml`. The GitHub CLI is pre-installed on `ubuntu-latest` runners. `actions/checkout` in that workflow MUST keep `fetch-depth: 0`; `--generate-notes` needs the full tag history to compute the previous-tag boundary.
+- **`CHANGELOG.md` must be updated alongside notable user-visible changes, in the same PR that ships the change** (not retroactively, not at release time). Format follows [common-changelog](https://common-changelog.org): past tense, one line per change, references at the bottom. Append the bullet to `[Unreleased]` in the branch that ships the change; never edit released sections. When bumping the manifest from `X.Y.Z-preN` to a stable `X.Y.Z`, rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, add a fresh empty `[Unreleased]` above it, and update the link references at the bottom. Pre-release version bumps (`-preN`) do NOT touch `CHANGELOG.md`. `docs/HISTORY.md` is the dated record (written at tag time, see release workflow); `CHANGELOG.md` is the user-facing release summary (accumulated per PR).
+- **Writing style for all docs**: no em-dashes (`-`, `:`, `;` instead), no unicode arrows (`>` for nav paths, `->` for flow), no marketing prose. Tight, factual, and self-contained. Avoid "bundle/cluster/track/session N" framing; describe WHAT changed and WHY, not how the work was bundled.
+- **PRs must carry one of the labels recognised by `.github/release.yml`** so auto-generated release notes group them correctly. Valid labels (after `scripts/setup-labels.sh` has been run on the fork): `security`, `bug` / `fix`, `enhancement` / `feat`, `documentation`, `tests`, `ci`, `github-actions`, `dependencies`. **The `pr-labeler.yml` workflow handles this automatically** for PRs whose title starts with a Conventional Commit prefix (`feat:`, `fix:`, `docs:`, `test:`/`tests:`, `ci:`, `security:`); it skips when a release-notes label is already applied, so manual overrides win. If you open a PR without a CC prefix or with a prefix the workflow does not map (`chore`, `build`, `refactor`, `perf`, `style`), apply the label by hand: `mcp__github__create_pull_request` does NOT accept a `labels` field, so use `mcp__github__issue_write` with `method: "update"`, `issue_number: <PR number>`, `labels: ["<label>"]`. **Unlabelled PRs silently fall through to "🧹 Other Changes" - this was the cause of the v1.4.0-pre2 release notes coming out flat.** Verify with `mcp__github__pull_request_read`/`get` - the response includes a `labels` field; if it's missing or empty, the categorisation will fail at release time.
 
 ## Coding conventions
 
 - Module-level `_LOGGER = logging.getLogger(__name__)` in every file that logs.
-- `_attr_*` class attributes for HA entity properties — only override as `@property` if the value is dynamic.
-- `_device_info()` is a module-level helper function (not a method) duplicated across platform files intentionally — keeps each platform self-contained.
+- `_attr_*` class attributes for HA entity properties - only override as `@property` if the value is dynamic.
+- `_device_info()` is a module-level helper function (not a method) duplicated across platform files intentionally - keeps each platform self-contained.
 - All `const.py` additions go in the appropriate labelled section with a comment.
-- Tests use `MagicMock` / `AsyncMock` for the UniFi client — never make real HTTP calls in tests.
+- Tests use `MagicMock` / `AsyncMock` for the UniFi client - never make real HTTP calls in tests.
 
 ## Branching strategy and versioning
 
@@ -119,13 +68,13 @@ This project uses a two-branch model. All active development happens on `dev`; `
 |--------|---------|---------------|---------|
 | `main` | Stable releases only. CI enforces no pre-release suffix. | `X.Y.Z` | `1.0.0`, `1.1.0` |
 | `dev` | Active development. CI accepts `-preN` during development, or stable `X.Y.Z` when preparing a release. After each stable release, a sync merge from `main` back to `dev` is required (see release workflow step 3b). | `X.Y.Z-preN` or `X.Y.Z` | `1.1.0-pre1`, `1.1.0` |
-| `feature/*` or `claude/*` | Short-lived work. **Must branch off `dev`, not `main`.** No version format enforced by CI. | Any | — |
+| `feature/*` or `claude/*` | Short-lived work. **Must branch off `dev`, not `main`.** No version format enforced by CI. | Any | - |
 
 ### Versioning conventions
 
-- **Minor bumps on main:** releases from `main` increment the minor version (`1.0.0 → 1.1.0 → 1.2.0`). Patch releases (`1.0.1`) are reserved for critical hotfixes.
-- **Pre-release sequence on dev:** each tagged checkpoint on `dev` increments the pre-release counter (`1.1.0-pre1 → 1.1.0-pre2`). The base version (`1.1.0`) matches the *next* planned minor release on `main`.
-- **`manifest.json` is the single source of truth** for the version — the release workflow validates the pushed tag matches it exactly.
+- **Minor bumps on main:** releases from `main` increment the minor version (`1.0.0 > 1.1.0 > 1.2.0`). Patch releases (`1.0.1`) are reserved for critical hotfixes.
+- **Pre-release sequence on dev:** each tagged checkpoint on `dev` increments the pre-release counter (`1.1.0-pre1 > 1.1.0-pre2`). The base version (`1.1.0`) matches the *next* planned minor release on `main`.
+- **`manifest.json` is the single source of truth** for the version - the release workflow validates the pushed tag matches it exactly.
 
 ### Release workflow
 
@@ -134,87 +83,101 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
        │
        ├── (work) ──► tag v1.1.0-pre2  ──► GitHub pre-release  (automated)
        │
-       ├── bump manifest to 1.1.0 (via claude/* PR → dev)
-       │    └─► PR dev → main  [MERGE COMMIT — never squash]
+       ├── bump manifest to 1.1.0 (via claude/* PR > dev)
+       │    └─► PR dev > main  [MERGE COMMIT - never squash]
        │         ├─► tag v1.1.0  ──► GitHub stable release  (automated)
-       │         └─► PR main → dev  [sync merge — keep 389841a in dev ancestry]
+       │         └─► PR main > dev  [sync merge - keep 389841a in dev ancestry]
        │
-       └── bump manifest to 1.2.0-pre1 (via claude/* PR → dev)  ← start next cycle
+       └── bump manifest to 1.2.0-pre1 (via claude/* PR > dev)  (start next cycle)
 ```
 
+**Use `scripts/bump_version.py` for steps 2, 3, and 4 below.** It computes the next version per these rules, checks out a fresh `dev`, creates the `claude/bump-<new-version>` branch, updates `manifest.json` (and `CHANGELOG.md` for stable promotions), stages the change, and prints the `git log <prev-tag>..HEAD --merges` list ready to summarise into `docs/HISTORY.md`. Modes: `--pre`, `--stable`, `--next-cycle`.
+
 1. **Development:** work on `dev`. Version in manifest stays at `X.Y.Z-preN`.
-2. **Pre-release checkpoint:** bump the `N` in manifest (e.g. `pre1 → pre2`) on a short-lived `claude/*` branch, open a PR targeting `dev`, merge it, then provide the user with the tag command (Claude cannot push tags). After the PR merges, the user runs:
+2. **Pre-release checkpoint:** run `python3 scripts/bump_version.py --pre` to bump the `N` in manifest (e.g. `pre1 > pre2`) on a short-lived `claude/bump-*` branch, then open a PR targeting `dev`, merge it, and provide the user with the tag command (Claude cannot push tags). **In the same PR, write the HISTORY block** for this tag: the script prints the merge list since the previous tag; summarise it into a single `## YYYY-MM-DD` block in `docs/HISTORY.md` (newest first). **Drop completed items** from `docs/ROADMAP.md` for the section this tag advances. `CHANGELOG.md` is NOT touched on pre-release bumps. After the PR merges, the user runs:
    ```bash
    git checkout dev && git pull origin dev
    git tag vX.Y.Z-preN && git push origin vX.Y.Z-preN
    ```
    GitHub Actions creates a pre-release automatically.
-3. **Stable release:** bump manifest from `X.Y.Z-preN` to `X.Y.Z` on a `claude/*` branch, open PR targeting `dev`. **In the same PR, finalise `CHANGELOG.md`:** rename the `[Unreleased]` heading to `[X.Y.Z] — YYYY-MM-DD`, insert a fresh empty `[Unreleased]` above it, and add a `[X.Y.Z]: …/releases/tag/vX.Y.Z` link at the bottom. `dev` CI now accepts stable versions, so this passes. Merge to `dev`, then open a PR from `dev` → `main`. After that merges, provide the user with the tag command:
+3. **Stable release:** run `python3 scripts/bump_version.py --stable` to bump manifest from `X.Y.Z-preN` to `X.Y.Z` and rewrite `CHANGELOG.md` (rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, insert a fresh `[Unreleased]` above it, add the `[X.Y.Z]: .../releases/tag/vX.Y.Z` link reference). Open PR targeting `dev`. **In the same PR, write the HISTORY block** covering every PR merged since the previous tag (the most recent pre-release). `dev` CI now accepts stable versions, so this passes. Merge to `dev`, then open a PR from `dev` > `main`. After that merges, provide the user with the tag command:
    ```bash
    git checkout main && git pull origin main
    git tag vX.Y.Z && git push origin vX.Y.Z
    ```
    GitHub Actions creates a stable release automatically; the auto-generated notes are grouped by the labels on PRs merged between the previous tag and this one.
 
-   > **CRITICAL — use "Create a merge commit", never "Squash and merge", for the `dev → main` PR.** Squashing creates a new commit on `main` whose only parent is the previous `main` tip; dev's individual commits have no ancestry path through it. The merge base between `main` and `dev` never advances past the last stable release, so the next release produces a conflict storm across every file that both branches touched. A regular merge commit preserves both parents and keeps the merge base current.
+   > **CRITICAL - use "Create a merge commit", never "Squash and merge", for the `dev > main` PR.** Squashing creates a new commit on `main` whose only parent is the previous `main` tip; dev's individual commits have no ancestry path through it. The merge base between `main` and `dev` never advances past the last stable release, so the next release produces a conflict storm across every file that both branches touched. A regular merge commit preserves both parents and keeps the merge base current.
 
-3b. **Sync merge: main → dev (mandatory after every stable release).** Immediately after the `dev → main` release PR merges, open a short-lived `claude/sync-main-to-dev-X.Y.Z` branch **from `dev`**, run `git merge origin/main`, resolve any trivial conflicts (take dev's version number), push, and open a PR targeting `dev`. Merge it as a **merge commit** (not squash). This makes the release's squash commit an ancestor of `dev`, so the next `dev → main` PR will have the correct merge base and be a clean fast-forward.
+3b. **Sync merge: main > dev (mandatory after every stable release).** Immediately after the `dev > main` release PR merges, open a short-lived `claude/sync-main-to-dev-X.Y.Z` branch **from `dev`**, run `git merge origin/main`, resolve any trivial conflicts (take dev's version number), push, and open a PR targeting `dev`. Merge it as a **merge commit** (not squash). This makes the release's squash commit an ancestor of `dev`, so the next `dev > main` PR will have the correct merge base and be a clean fast-forward.
 
-   > **Why this step must target the new squash commit:** In the past (v1.3.0, PR #47) a sync merge was attempted but accidentally merged the *previous* stable tag (`v1.2.0`) rather than the new squash commit (`v1.3.0`). The tree content was identical so CI passed, but the parent pointer was wrong — the merge base never advanced. Always verify the second parent of the merge commit is the tip of `origin/main` *after* the release, not before.
+   > **Why this step must target the new squash commit:** In the past (v1.3.0, PR #47) a sync merge was attempted but accidentally merged the *previous* stable tag (`v1.2.0`) rather than the new squash commit (`v1.3.0`). The tree content was identical so CI passed, but the parent pointer was wrong - the merge base never advanced. Always verify the second parent of the merge commit is the tip of `origin/main` *after* the release, not before.
 
-4. **Start next cycle:** bump manifest to `X.(Y+1).0-pre1` on a `claude/*` branch, open PR targeting `dev`, merge. Development continues forward. Notable changes between releases accumulate under `CHANGELOG.md` `[Unreleased]` as their PRs land — don't batch them at release time.
+4. **Start next cycle:** run `python3 scripts/bump_version.py --next-cycle` to bump manifest to `X.(Y+1).0-pre1` on a `claude/bump-*` branch, open PR targeting `dev`, merge. Development continues forward. Notable changes between releases accumulate under `CHANGELOG.md` `[Unreleased]` as their PRs land - don't batch them at release time.
 
-> **Tag convention reminder:** Claude cannot push tags directly. Whenever the user says "update the tag", "cut a release", "tag the branch", or similar — open a version-bump PR to `dev` (or `main` for stable), wait for merge, then give the user the exact `git tag` + `git push origin <tag>` commands to run locally.
+> **Tag convention reminder:** Claude cannot push tags directly. Whenever the user says "update the tag", "cut a release", "tag the branch", or similar - open a version-bump PR to `dev` (or `main` for stable), wait for merge, then give the user the exact `git tag` + `git push origin <tag>` commands to run locally.
 
 ### CI enforcement
 
 - `version-check.yml` blocks pushes and PRs that violate the format for the target branch.
 - `release.yml` fails if the pushed tag does not exactly match `manifest.json`.
-- Never manually create a GitHub release — always push a version tag and let the workflow do it.
+- Never manually create a GitHub release - always push a version tag and let the workflow do it.
 
-### Branch protection (configure once in GitHub Settings → Branches)
+### Branch protection (configure once in GitHub Settings > Branches)
 
 Recommended rules:
 - **`main`:** require PR, require status checks (`CI / *`, `Version Check / *`), no direct push, no force-push.
-- **`dev`:** require PR, require status checks (`CI / *`, `Version Check / *`), no direct push, no force-push. Version bumps go via a short-lived `chore/bump-*` branch PR.
+- **`dev`:** require PR, require status checks (`CI / *`, `Version Check / *`), no direct push, no force-push. Version bumps go via a short-lived `claude/bump-*` branch PR (created by `scripts/bump_version.py`).
 
 ## Working style
 
-- **Never assume — always ask.** If anything about the task, scope, or approach is unclear, ask before proceeding. Do not guess intent.
-- **Always pull `dev` before starting work** — run `git pull origin dev` at the start of every session to avoid diverging from origin. Never start implementing changes on a stale branch. Pull `main` only when checking stable state.
-- **Work on `dev`, not `main`** — `main` is only updated via PRs from `dev`. Never commit directly to `main`.
-- **Feature and claude/* branches must be created from `dev`** — run `git checkout dev && git pull origin dev && git checkout -b <branch>`. Never branch off `main`. PRs from feature branches must target `dev`, not `main`.
-- **Always start fresh from `dev` for new work.** At the very start of a new task, even if a branch is already specified by the system instructions, run `git checkout dev && git pull origin dev` first, then create or recreate the working branch from that fresh `dev` tip. Never inherit whatever branch the previous session left checked out — it may be a stale `chore/bump-*` or other already-merged branch, and committing on top of it produces a branch that contains commits already in `dev`.
-- **After a PR merges, delete the local branch and switch back to `dev`** — run `git checkout dev && git pull origin dev && git branch -D <merged-branch>`. This forces the next task to branch off a clean `dev` instead of accidentally building on a stale, already-merged branch.
-- **Move into the working directory at the start of every session** — avoids needing path prefixes on every command.
-- Always run `make check` before committing — never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
-- Always update `docs/HISTORY.md` with a detailed description of what was done, why, and how, including test coverage. This is the primary source of truth for what has been completed and should be reflected in the codebase. Do not rely on memory or Git history alone.
-- Always update `docs/TODO.md` by **deleting** the line for any completed item — do NOT strike it through, leave a "fixed in cluster X" note, or otherwise keep it visible. `docs/TODO.md` is a list of outstanding work only; the historical record belongs in `docs/HISTORY.md`, and per-release completion status in `docs/ROADMAP.md` (which uses `[x]` checkboxes). Add new items as they surface. Do not rely on memory or Git history alone.
+- **Never assume - always ask.** If anything about the task, scope, or approach is unclear, ask before proceeding. Do not guess intent.
+- **Always pull `dev` before starting work** - run `git pull origin dev` at the start of every session to avoid diverging from origin. Never start implementing changes on a stale branch. Pull `main` only when checking stable state.
+- **Work on `dev`, not `main`** - `main` is only updated via PRs from `dev`. Never commit directly to `main`.
+- **Feature and claude/* branches must be created from `dev`** - run `git checkout dev && git pull origin dev && git checkout -b <branch>`. Never branch off `main`. PRs from feature branches must target `dev`, not `main`.
+- **Always start fresh from `dev` for new work.** At the very start of a new task, even if a branch is already specified by the system instructions, run `git checkout dev && git pull origin dev` first, then create or recreate the working branch from that fresh `dev` tip. Never inherit whatever branch the previous session left checked out - it may be a stale `claude/bump-*` or other already-merged branch, and committing on top of it produces a branch that contains commits already in `dev`.
+- **After a PR merges, delete the local branch and switch back to `dev`** - run `git checkout dev && git pull origin dev && git branch -D <merged-branch>`. This forces the next task to branch off a clean `dev` instead of accidentally building on a stale, already-merged branch.
+- **Move into the working directory at the start of every session** - avoids needing path prefixes on every command.
+- Always run `make check` before committing - never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
+- Update `docs/HISTORY.md` **only in the version-bump PR** (pre-release or stable), not on every PR. The bump PR adds a single `## YYYY-MM-DD` block (newest first) summarising every PR merged since the previous tag, plus the corresponding `[#PR]` reference links at the bottom. Format: `- **category**: short description ([#PR]). Short why.` Categories: `feat`, `fix`, `security`, `docs`, `ci`, `chore`, `tests`, `release`. No WHO, no multi-paragraph stories, no "bundle/cluster/session" framing. Feature/fix PRs do not touch HISTORY at all.
+- Always update `docs/TODO.md` by **deleting** the line for any completed item in the same PR that ships the change; never strike-through, never annotate "fixed in PR X". `docs/TODO.md` is outstanding work only. The historical record belongs in `docs/HISTORY.md`. Tick or remove items from `docs/ROADMAP.md` in the same PR that ships them, not at release time; once a release ships, drop its section from ROADMAP entirely. Add new items as they surface. Do not rely on memory or Git history alone.
 - At the end of the day, make sure there are no commits outstanding, no changes locally that need to be pushed, and that the `auto-memory\dirty-files` file is empty (if it exists on disk). This ensures a clean slate for the next session.
 
 ## Resuming an interrupted session
 
 Interruptions (timeouts, hibernation, re-login) are common. When a new conversation starts mid-task, always do this before anything else:
 
-1. **Read `docs/HISTORY.md`** — the last entry describes what was most recently completed.
-2. **Run `git status` and `git diff HEAD`** — uncommitted changes show exactly what was in-flight.
-3. **Read `docs/TODO.md`** — the top remaining item is what was probably being worked on.
-4. **Check the venv** — on Linux/Mac: `ls .venv/bin/pytest`; on Windows PowerShell: `Test-Path .venv\Scripts\pytest.exe`. If missing, recreate it:
+1. **Read `docs/HISTORY.md`** - the last entry describes what was most recently completed.
+2. **Run `git status` and `git diff HEAD`** - uncommitted changes show exactly what was in-flight.
+3. **Read `docs/TODO.md`** - the top remaining item is what was probably being worked on.
+4. **If a version-bump PR is in flight, audit its HISTORY block** - run `git log <prev-tag>..HEAD --merges --oneline` and confirm every merge appears in the new `docs/HISTORY.md` date block. Missing entries are the most common gap left by an interrupted release-prep session. Feature/fix PRs do NOT need HISTORY entries (HISTORY is written at tag time only); skip this step unless a `claude/bump-*` branch is active.
+5. **Check the venv** - on Linux/Mac: `ls .venv/bin/pytest`; on Windows PowerShell: `Test-Path .venv\Scripts\pytest.exe`. If missing, recreate it:
    - **Linux/Mac:** `make setup` (or manually: `python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt --quiet`)
    - **Windows:** `py -3.12 -m venv .venv && .venv\Scripts\pip install -r requirements-dev.txt --quiet`
-5. **Resume from where the diff left off** — do not re-do already-applied changes. Pick up at the next pending step (usually: run tests, fix lint, commit).
+6. **Resume from where the diff left off** - do not re-do already-applied changes. Pick up at the next pending step (usually: run tests, fix lint, commit).
 
 ## Before making changes
 
 1. Check `docs/TODO.md` for context on what's known to be incomplete or broken.
-2. Run `make check` (or `make` — it's the default target) to run all local validation in one shot:
+2. Run `make check` to run all local validation in one shot:
    - ruff lint + format check
    - mypy type check
    - HACS manifest pre-flight (`scripts/validate_hacs.py`)
    - strings.json ↔ translations/en.json drift check
    - full pytest suite
-3. Individual targets: `make lint`, `make typecheck`, `make validate`, `make test`.
-4. All commands use the `.venv` in the repo root — never the system Python.
+3. Individual targets: `make lint`, `make typecheck`, `make validate`, `make test`. Run `make help` for the full list.
+4. All commands use the `.venv` in the repo root - never the system Python. Use `make setup-lint` instead of `make setup` when you only need ruff and mypy (skips the ~200-package Home Assistant install).
+
+## Doc-only PRs (lighter path)
+
+If a PR only touches `*.md`, `docs/**`, `CHANGELOG.md`, `CLAUDE.md`, `README.md`, or `SECURITY.md`, skip the full `make check` cycle:
+
+1. Run `make doc-check`. This runs `scripts/validate_docs.py` (prose linter, HISTORY h2 format) plus the `strings.json` / `translations/en.json` drift check. No venv required for either step.
+2. `python3 scripts/validate_docs.py` works standalone if you do not even want to use `make`. It is pure stdlib.
+3. Skip `make setup` for a doc-only branch on a fresh clone. The full setup installs Home Assistant and ~200 packages just to give you `pytest`/`ruff`/`mypy`, none of which inspect docs.
+4. CI still runs the full suite on push. Treat that as the safety net rather than a local gate.
+
+For Claude specifically: do not invoke plan-mode or Explore agents for prose-only edits. `grep -n` to locate the section, `Read` with `offset`/`limit` to load just the lines being changed, then `Edit`. Reading whole files "to be safe" is the most common token waste; `Edit` already errors if the file changed underneath you.
 
 ## Pre-push hook (install once per clone)
 

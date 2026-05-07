@@ -1,4 +1,4 @@
-# UniFi Alerts — Home Assistant Integration
+# UniFi Alerts - Home Assistant Integration
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![GitHub Release](https://img.shields.io/github/v/release/PHeonix25/unifi_alerts)](https://github.com/PHeonix25/unifi_alerts/releases)
@@ -28,15 +28,15 @@ The integration uses the `/proxy/network` API path exclusively, which is only av
 
 ## Features
 
-- **Per-category binary sensors** — ON when an alert is active, OFF when clear
-- **Per-category message sensors** — last alert message + timestamp as attributes
-- **Per-category open-count sensors** — polled from the controller
-- **Rollup sensors** — combined "any alert" binary and total open count
-- **Event entities** — fire on every alert for automation triggers
-- **Clear buttons** — manually reset any category or all at once
-- **Auto-clear** — configurable timeout to reset sensors automatically
-- **UI config flow** — full setup and options UI, no YAML required
-- **Auto-detect auth** — tries API key (UniFi OS) then falls back to username/password
+- **Per-category binary sensors** - ON when an alert is active, OFF when clear
+- **Per-category message sensors** - last alert message + timestamp as attributes
+- **Per-category open-count sensors** - polled from the controller
+- **Rollup sensors** - combined "any alert" binary and total open count
+- **Event entities** - fire on every alert for automation triggers
+- **Clear buttons** - manually reset any category or all at once
+- **Auto-clear** - configurable timeout to reset sensors automatically
+- **UI config flow** - full setup and options UI, no YAML required
+- **Auto-detect auth** - tries API key (UniFi OS) then falls back to username/password
 
 ### Alert categories
 
@@ -56,7 +56,7 @@ The integration uses the `/proxy/network` API path exclusively, which is only av
 
 ### Via HACS (recommended)
 
-1. Open HACS → **Integrations** → ⋮ → **Custom repositories**
+1. Open HACS > **Integrations** > ⋮ > **Custom repositories**
 2. Add `https://github.com/PHeonix25/unifi_alerts` with category **Integration**
 3. Click **Download** on the UniFi Alerts card
 4. Restart Home Assistant
@@ -69,15 +69,15 @@ Copy `custom_components/unifi_alerts/` into your HA `config/custom_components/` 
 
 ## Setup
 
-1. Go to **Settings → Devices & Services → Add Integration** → search **UniFi Alerts**
+1. Go to **Settings > Devices & Services > Add Integration** > search **UniFi Alerts**
 2. Enter your controller URL (e.g. `https://192.168.1.1`) and credentials
    - **API key** (UDM Pro, UCG Ultra, and other UniFi OS devices): generate one in the UniFi OS web UI (see [Generating an API key](#generating-an-api-key) below), leave Username/Password blank
    - **Username / password** (older controllers, Cloud Key): fill in Username and Password, leave API Key blank
-3. Select the alert categories you want to monitor (see table above — client/device categories are noisy by default)
+3. Select the alert categories you want to monitor (see table above - client/device categories are noisy by default)
 4. Configure polling interval and auto-clear timeout
-5. **Copy the webhook URLs** shown on the final screen into UniFi Alarm Manager (see next section). Click **Submit** to save — the integration is not created until you click Submit.
+5. **Copy the webhook URLs** shown on the final screen into UniFi Alarm Manager (see next section). Click **Submit** to save - the integration is not created until you click Submit.
 
-> You can always retrieve your webhook URLs later from **Settings → Devices & Services → UniFi Alerts → Configure**.
+> You can always retrieve your webhook URLs later from **Settings > Devices & Services > UniFi Alerts > Configure**.
 
 ---
 
@@ -89,13 +89,13 @@ The navigation path to create a key varies by firmware version:
 
 | Firmware / UI version | Path |
 |---|---|
-| Network Application 8.x+ | **Settings → Admins & Users → API Keys → Create** |
-| Some UCG / UDM firmware | **Integrations → API → New API Key** |
-| Older Cloud Key Gen2+ | **Settings → Control Plane → API Keys** |
+| Network Application 8.x+ | **Settings > Admins & Users > API Keys > Create** |
+| Some UCG / UDM firmware | **Integrations > API > New API Key** |
+| Older Cloud Key Gen2+ | **Settings > Control Plane > API Keys** |
 
-If you cannot find the option, try each path in order. The key is only displayed once at creation — copy it immediately and paste it into the integration setup.
+If you cannot find the option, try each path in order. The key is only displayed once at creation - copy it immediately and paste it into the integration setup.
 
-> **Tip:** Create a dedicated read-only local admin account for the integration. Do not use a cloud account or an account with MFA enabled — non-interactive login will break.
+> **Tip:** Create a dedicated read-only local admin account for the integration. Do not use a cloud account or an account with MFA enabled - non-interactive login will break.
 
 ---
 
@@ -103,12 +103,12 @@ If you cannot find the option, try each path in order. The key is only displayed
 
 > ⚠️ **Local network required:** Webhook URLs are local-network only. Your UniFi controller must be on the same local network as your Home Assistant instance. Cloud-hosted controllers or remote access via Nabu Casa cannot reach these endpoints.
 
-For each enabled category, create an alarm in **UniFi Network → Settings → Notifications → Alarm Manager**:
+For each enabled category, create an alarm in **UniFi Network > Settings > Notifications > Alarm Manager**:
 
 1. Click **Create Alarm**
 2. Set the trigger(s) matching the category (see table above)
 3. Set scope (specific devices or network-wide)
-4. Under **Action**, choose **Webhook → Custom Webhook → POST**
+4. Under **Action**, choose **Webhook > Custom Webhook > POST**
 5. Paste the webhook URL from the HA integration page
 6. Click **Create**
 
@@ -148,7 +148,7 @@ The snippet below creates an **Entities card** showing network health at a glanc
 type: entities
 title: UniFi Network Health
 entities:
-  # Rollup — any category alerting
+  # Rollup - any category alerting
   - entity: binary_sensor.unifi_alerts_any_alert
     name: Any Alert Active
 
@@ -214,8 +214,8 @@ automation:
 
 #### Automation caveats
 
-- **Event entities show `unknown` until the first alert fires.** `EventEntity` has no persistent state — it only carries the data from the most recent event. On a fresh install or after an HA restart, all event entities start in `unknown` state. This is normal and expected; your automations will trigger correctly once the first alert arrives.
-- **Disabling a category makes its event entity `unavailable`.** If you disable a category in **Settings → Devices & Services → UniFi Alerts → Configure**, the corresponding event entity becomes unavailable and any automation that triggers on it will silently stop firing. Re-enable the category or update the automation accordingly.
+- **Event entities show `unknown` until the first alert fires.** `EventEntity` has no persistent state - it only carries the data from the most recent event. On a fresh install or after an HA restart, all event entities start in `unknown` state. This is normal and expected; your automations will trigger correctly once the first alert arrives.
+- **Disabling a category makes its event entity `unavailable`.** If you disable a category in **Settings > Devices & Services > UniFi Alerts > Configure**, the corresponding event entity becomes unavailable and any automation that triggers on it will silently stop firing. Re-enable the category or update the automation accordingly.
 
 ---
 
@@ -223,7 +223,7 @@ automation:
 
 Issues and PRs welcome at [github.com/PHeonix25/unifi_alerts](https://github.com/PHeonix25/unifi_alerts).
 
-The UniFi event key → category mappings in `const.py` are community-sourced and incomplete. If you see unrecognised alerts in your HA logs, please open an issue with the raw `key` value.
+The UniFi event key > category mappings in `const.py` are community-sourced and incomplete. If you see unrecognised alerts in your HA logs, please open an issue with the raw `key` value.
 
 ### Development setup
 
@@ -265,10 +265,10 @@ make test       # pytest only
 
 ### Key rules to know before submitting a PR
 
-- **`manifest.json` `dependencies`** — do NOT list HA core built-ins (`webhook`, `http`, `frontend`, etc.). `hassfest` accepts them but the HACS validator rejects them and will fail CI. Only list external integrations that HACS needs to install.
+- **`manifest.json` `dependencies`** - do NOT list HA core built-ins (`webhook`, `http`, `frontend`, etc.). `hassfest` accepts them but the HACS validator rejects them and will fail CI. Only list external integrations that HACS needs to install.
 - **`strings.json` and `translations/en.json`** must be kept identical. CI diffs them and fails if they diverge.
-- **All I/O must be async** — no `requests`, no blocking calls.
-- **No `configuration.yaml` support** — everything goes through the config flow.
-- **Webhook token auth is mandatory** — do not remove or bypass the `?token=` check in `webhook_handler.py`.
+- **All I/O must be async** - no `requests`, no blocking calls.
+- **No `configuration.yaml` support** - everything goes through the config flow.
+- **Webhook token auth is mandatory** - do not remove or bypass the `?token=` check in `webhook_handler.py`.
 
 See `CLAUDE.md` for the full developer context and `docs/TESTING.md` for test conventions.

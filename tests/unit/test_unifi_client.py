@@ -823,6 +823,41 @@ class TestClose:
         await client.close()
         client._session.post.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_logout_failure_logs_warning_with_class_name_only(self, caplog):
+        """A failed logout must log at WARNING with the exception class name only.
+
+        The previous `contextlib.suppress(Exception)` swallowed the error silently,
+        leaving operators no diagnostic and the session token live on the controller.
+        We log the class name (not str(err)) to avoid surfacing controller response
+        bodies that may include sensitive fragments.
+        """
+        import logging
+
+        client = make_client()
+        client._auth_method = "userpass"
+        client._authenticated = True
+        secret_marker = "controller.local: 401 Unauthorized — api_key=secret"
+        client._session.post = AsyncMock(side_effect=ConnectionResetError(secret_marker))
+
+        with caplog.at_level(logging.WARNING, logger="custom_components.unifi_alerts.unifi_client"):
+            await client.close()
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("ConnectionResetError" in r.getMessage() for r in warnings)
+        assert all(secret_marker not in r.getMessage() for r in warnings)
+
+    @pytest.mark.asyncio
+    async def test_logout_failure_does_not_propagate(self):
+        """close() must never raise — failed logout is best-effort."""
+        client = make_client()
+        client._auth_method = "userpass"
+        client._authenticated = True
+        client._session.post = AsyncMock(side_effect=RuntimeError("boom"))
+
+        # No pytest.raises — close() must absorb the failure.
+        await client.close()
+
 
 class TestSslFailOpen:
     """Verify that a missing CONF_VERIFY_SSL key falls back to DEFAULT_VERIFY_SSL (True).

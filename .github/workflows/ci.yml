@@ -24,6 +24,8 @@ jobs:
           python-version: "3.12"
       - name: Run HACS manifest checks
         run: python scripts/validate_hacs.py
+      - name: Run docs prose checks
+        run: python scripts/validate_docs.py
 
   hacs:
     name: Validate with HACS Action
@@ -52,10 +54,7 @@ jobs:
       - name: Mypy type check
         run: mypy custom_components/unifi_alerts --ignore-missing-imports
       - name: Check strings.json matches translations/en.json
-        run: |
-          diff custom_components/unifi_alerts/strings.json \
-               custom_components/unifi_alerts/translations/en.json \
-          || (echo "strings.json and translations/en.json have drifted" && exit 1)
+        run: python scripts/check_translations.py
 
   test:
     name: Run tests

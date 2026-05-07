@@ -1,0 +1,5 @@
+# Minimal dependencies for lint and typecheck only.
+# Install via `make setup-lint` when you do not need the full Home Assistant
+# test stack. Pairs with `make lint`, `make typecheck`, and `make doc-check`.
+mypy
+ruff

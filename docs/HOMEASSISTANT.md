@@ -1,6 +1,6 @@
-# HOMEASSISTANT.md
+# Home Assistant patterns
 
-Reference for Home Assistant-specific patterns used in this integration. Consult this when touching anything that extends an HA base class or interacts with the HA core.
+Reference for Home Assistant-specific patterns used in this integration. Consult this when touching anything that extends an HA base class or interacts with HA core.
 
 ## Minimum supported version
 
@@ -8,23 +8,22 @@ Reference for Home Assistant-specific patterns used in this integration. Consult
 
 ## Config entries
 
-This integration uses config entries exclusively — no `configuration.yaml` support.
+This integration uses config entries exclusively; no `configuration.yaml` support.
 
 - `async_setup_entry` in `__init__.py` is the entry point for all setup.
 - Runtime state (coordinator, webhook URLs, unregister callable, HTTP client) is stored on `entry.runtime_data` as a `RuntimeData` dataclass (see `models.py`). Do **not** use `hass.data` for per-entry state.
 - `async_unload_entry` must cleanly reverse everything `async_setup_entry` does: unload platforms, unregister webhooks, close the HTTP client.
-- Options changes trigger `_async_update_listener`, which calls `async_reload` — this tears down and re-sets-up the entry cleanly. No partial reload logic needed.
-- Config entry `VERSION = 1` in `config_flow.py`. If the data schema changes in a breaking way, increment this and add a migration step `async_migrate_entry`.
+- Options changes trigger `_async_update_listener`, which calls `async_reload`; this tears down and re-sets-up the entry cleanly. No partial reload logic needed.
+- Config entry `VERSION = 2` (in `config_flow.py`). `async_migrate_entry` in `__init__.py` strips the legacy `is_unifi_os` key from version-1 entries on first load. Bump `VERSION` and add a migration if the data schema changes again in a breaking way.
 
 ## DataUpdateCoordinator
 
 `UniFiAlertsCoordinator` extends `DataUpdateCoordinator[dict[str, CategoryState]]`.
 
-Important HA coordinator behaviour to be aware of:
-- `async_config_entry_first_refresh()` is called in `async_setup_entry`. If it raises `UpdateFailed`, setup fails and HA shows an error. If the controller is unreachable at startup, this will fail the entry — this is intentional.
+- `async_config_entry_first_refresh()` is awaited in `async_setup_entry`. If it fails, setup raises `ConfigEntryNotReady` and HA retries on the standard back-off. If the controller is unreachable at startup the entry stays in retry; intentional.
 - `async_set_updated_data(data)` pushes data to all listeners immediately without waiting for the next poll interval. Used on webhook push.
-- `self.data` on the coordinator always reflects the last successful `_async_update_data` return value — but since `_category_states` is mutated in place, `self.data` and `_category_states` point to the same dict. Don't rely on `self.data` for freshness — use the coordinator's public properties instead.
-- Entities call `self.coordinator.async_request_refresh()` if they need to force a poll. Do not call this on webhook push — use `async_set_updated_data` instead.
+- `self.data` reflects the last successful `_async_update_data` return value; since `_category_states` is mutated in place, `self.data` and `_category_states` point to the same dict. Don't rely on `self.data` for freshness; use the coordinator's public properties instead.
+- Entities call `self.coordinator.async_request_refresh()` to force a poll. Do not call this on webhook push; use `async_set_updated_data` instead.
 
 ## Entity base classes
 
@@ -33,9 +32,9 @@ Important HA coordinator behaviour to be aware of:
 | `binary_sensor` | `CoordinatorEntity[...], BinarySensorEntity` | `is_on` returns bool |
 | `sensor` | `CoordinatorEntity[...], SensorEntity` | `native_value` for state |
 | `event` | `CoordinatorEntity[...], EventEntity` | Override `_handle_coordinator_update` to fire |
-| `button` | `ButtonEntity` | No coordinator subscription needed |
+| `button` | `ButtonEntity` | No coordinator subscription today (TODO: add `CoordinatorEntity` mixin) |
 
-All entities set `_attr_has_entity_name = True`. This means HA prefixes the entity name with the device name in the UI. Entity IDs will be of the form `binary_sensor.unifi_alerts_network_device`.
+All entities set `_attr_has_entity_name = True`. HA prefixes the entity name with the device name in the UI; entity IDs are of the form `binary_sensor.unifi_alerts_network_device`.
 
 ## Entity unique IDs
 
@@ -46,26 +45,28 @@ Unique IDs must be stable across restarts. They are based on `entry.entry_id` (a
 ## Device registry
 
 All entities use the same `_device_info` dict:
+
 ```python
 {
     "identifiers": {(DOMAIN, entry.entry_id)},
     "name": "UniFi Alerts",
     "manufacturer": "Ubiquiti",
     "model": "UniFi Network Controller",
-    "entry_type": "service",   # not a physical device
+    "entry_type": "service",                  # not a physical device
+    "configuration_url": entry.data["controller_url"],
 }
 ```
 
-`entry_type: "service"` tells HA this is a software integration, not a hardware device. This affects how it's shown in the device registry UI.
+`entry_type: "service"` tells HA this is a software integration, not a hardware device. `async_setup_entry` proactively registers this device via `dr.async_get_or_create` before platform forwarding so the Services card appears immediately, not lazily on first entity registration.
 
 ## Webhooks
 
 Webhooks are registered with `homeassistant.components.webhook.async_register`.
 
-- `local_only=True` — HA rejects requests from outside the local network at the framework level. Do not remove this.
-- `allowed_methods=["POST"]` — only POST is accepted. UniFi Alarm Manager must be configured to send POST with a JSON body. GET requests are rejected with HTTP 405.
-- Webhook IDs are deterministic strings (`unifi_alerts_{category}`), not UUIDs, so they survive HA restarts.
-- `async_generate_url(hass, webhook_id)` generates the full URL including HA's `base_url`. This requires HA's external URL or internal URL to be configured correctly — if it isn't, the URL will be incorrect. This is a known limitation (see `TODO.md`).
+- `local_only=True`: HA rejects requests from outside the local network at the framework level. Do not remove this without a documented reason.
+- `allowed_methods=["POST"]`: only POST is accepted. UniFi Alarm Manager must be configured to send POST with a JSON body. GET requests are rejected with HTTP 405.
+- Webhook IDs are deterministic strings: `unifi_alerts_{suffix}_{category}` (multi-entry safe; per-entry suffix is `secrets.token_hex(4)`) or `unifi_alerts_{category}` (legacy single-entry installs). They survive HA restarts without re-registration.
+- `async_generate_url(hass, webhook_id)` generates the full URL including HA's `base_url`. Requires HA's external or internal URL to be configured correctly; otherwise the URL is wrong.
 
 ## Platforms
 
@@ -75,22 +76,26 @@ When adding a new platform: add it to `PLATFORMS`, create `{platform}.py`, imple
 
 ## aiohttp session lifecycle
 
+**Always use `async_get_clientsession(hass, verify_ssl=...)`. Never create a bare `aiohttp.ClientSession()`**: not in `__init__.py`, not in `config_flow.py`, nowhere. HA owns the session lifecycle, configures the proxy / connection pool, and routes the user's `verify_ssl` setting through to it.
+
 Two helpers exist; they have different ownership semantics:
 
 | Helper | Ownership | Close it? |
 |---|---|---|
-| `async_get_clientsession(hass)` | HA-owned shared session | **Never** |
-| `async_create_clientsession(hass)` | HA-owned dedicated session | **Never** — HA registers a cleanup handler that closes it on shutdown |
+| `async_get_clientsession(hass, verify_ssl=...)` | HA-owned shared session (one cached per `verify_ssl` value) | **Never** |
+| `async_create_clientsession(hass)` | HA-owned dedicated session | **Never**; HA registers a cleanup handler that closes it on shutdown |
 
-Calling `await session.close()` on either will trigger a deprecation warning from `homeassistant.helpers.frame` and is treated as a bug by HA. The session will be closed automatically when the integration is unloaded or HA shuts down.
-
-If you need a truly short-lived session with explicit lifecycle control (e.g. a one-off auth check in a config flow), create a raw `aiohttp.ClientSession()` yourself and use it as an async context manager:
+Calling `await session.close()` on either triggers a deprecation warning from `homeassistant.helpers.frame` and is treated as a bug by HA. The session is closed automatically when the integration unloads or HA shuts down.
 
 ```python
-# DO: own it explicitly
+# DO: HA-managed, no try/finally needed
+session = async_get_clientsession(hass, verify_ssl=verify_ssl)
+client = UniFiClient(session, url, user_input)
+auth_method = await client.authenticate()
+
+# DON'T: bare ClientSession bypasses HA's proxy + pool + verify_ssl wiring
 async with aiohttp.ClientSession() as session:
-    client = UniFiClient(session, url, user_input)
-    auth_method = await client.authenticate()
+    ...
 
 # DON'T: close an HA-managed session
 session = async_create_clientsession(hass)
@@ -100,41 +105,41 @@ finally:
     await session.close()  # triggers HA warning
 ```
 
-The config flow `async_step_user` currently does the wrong thing — see `TODO.md`.
+This applies to short-lived config-flow validation calls too: `async_get_clientsession` returns a cached session keyed by `verify_ssl`, so repeated calls during setup cost nothing.
+
+## Direct `aiohttp` use
+
+`aiohttp` is a Home Assistant core dependency and is always available. **Do not list `aiohttp` in `manifest.json` `requirements`**; hassfest treats core packages in custom-integration requirements as redundant. Importing `aiohttp` (e.g. for `aiohttp.ClientTimeout`, `aiohttp.ClientError`, `aiohttp.ClientResponseError`, or `aiohttp.web.Request` / `Response` in a webhook handler) is fine; that's working with the types, not creating sessions.
 
 ## Config flow patterns
 
 - `async_show_form` returns a form to the user. The same step function is called again with `user_input` populated when the user submits.
-- Validation errors go in `errors: dict[str, str]` where the key is a field name or `"base"` for form-level errors. Error codes map to strings in `strings.json` → `config.error`.
-- `self.context` is a dict that persists across steps within a single flow. Used here to pass credentials from step 1 to step 2.
-- `async_create_entry` finalises the flow and writes `entry.data`. It triggers `async_setup_entry`.
+- Validation errors go in `errors: dict[str, str]` where the key is a field name or `"base"` for form-level errors. Error codes map to strings in `strings.json` under `config.error`.
+- `self.context` is a dict that persists across steps within a single flow.
+- `async_create_entry` finalises the flow and writes `entry.data`; it triggers `async_setup_entry`.
 
 ## Translations
 
-`strings.json` and `translations/en.json` must be kept **identical**. The `strings.json` file is used by the HA frontend tooling; `translations/en.json` is the runtime file loaded by HA.
+`strings.json` and `translations/en.json` must be kept **identical**. `strings.json` is used by the HA frontend tooling; `translations/en.json` is the runtime file loaded by HA.
 
-Drift between the two files is now caught automatically:
-- **CI** (`lint` job): diffs the two files and fails if they differ.
-- **Pre-push hook** (`.githooks/pre-push`): same diff runs before every `git push`.
+Drift is caught automatically:
 
-If adding a new config flow step or error code, update **both** files before committing.
+- CI `lint` job: diffs the two files and fails on mismatch.
+- Pre-push hook (`.githooks/pre-push`): same diff before every `git push`.
+
+If adding a new config-flow step or error code, update **both** files before committing.
 
 ## Logging
 
 Use `_LOGGER.debug` for normal operational events (alert received, auth success). Use `_LOGGER.warning` for recoverable problems (auth expired, re-authenticating). Use `_LOGGER.error` for setup failures. Never use `print()`.
 
+When logging exceptions raised from external systems (UniFi, aiohttp), log `type(err).__name__` only, never `str(err)`. Some `aiohttp.ClientError` subclasses embed credential-bearing URLs in their string representation; logging only the class name prevents credentials from leaking into HA logs and the repair UI.
+
 ## Testing with pytest-homeassistant-custom-component
 
-The test suite currently uses plain `MagicMock` and `AsyncMock` fixtures and does not use the `hass` fixture from `pytest-homeassistant-custom-component`. See `TODO.md` — full HA integration tests (using the `hass` fixture and simulating config entry setup) are a planned improvement.
+The test suite has two layers:
 
-To use the `hass` fixture in future tests:
-```python
-# In conftest.py
-pytest_plugins = "pytest_homeassistant_custom_component"
+- `tests/unit/` uses plain `MagicMock` / `AsyncMock` fixtures and does not start a real `HomeAssistant`. No HTTP calls escape.
+- `tests/integration/` uses the real `hass` fixture from `pytest_homeassistant_custom_component`. `UniFiClient` is patched so no HTTP calls escape, but the HA setup lifecycle, entity registry, options flow, webhook dispatch, and auto-clear all run end-to-end.
 
-# In a test
-async def test_setup(hass, mock_unifi_client):
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-```
+Mark integration tests with `@pytest.mark.integration`. See `docs/TESTING.md` for fixtures and patterns.
