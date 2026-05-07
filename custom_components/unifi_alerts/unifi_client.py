@@ -144,8 +144,12 @@ class UniFiClient:
                     try:
                         body = await resp.json(content_type=None)
                         unifi_msg = body.get("meta", {}).get("msg", "")
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as err:  # noqa: BLE001
+                        _LOGGER.debug(
+                            "Could not parse 400 response body from %s: %s",
+                            url,
+                            type(err).__name__,
+                        )
                     if unifi_msg == "api.err.InvalidObject":
                         _LOGGER.debug(
                             "Alarm URL %s returned 400 api.err.InvalidObject — trying next URL",

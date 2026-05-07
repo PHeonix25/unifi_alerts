@@ -15,8 +15,6 @@ Closes remaining correctness gaps and polishes testing. The watermark re-asserti
 ### Reliability
 
 - [ ] **`_category_states` rebuild discards counters on reload**: `alert_count` and `last_alert` are lost on every reload. Persist alongside watermarks in the `Store`.
-- [ ] **Epoch-ms timestamp parsing** (`models.py:54-63`): numeric strings silently fall back to `now(UTC)`. Add an epoch-ms branch + `test_from_api_alarm_epoch_ms`. Note: the v2 `system-log` API always returns epoch-ms in its `timestamp` field, so this fix is a prerequisite for the v2 polling strategy below.
-- [ ] **Silent JSON-parse failure during 400-error inspection** (`unifi_client.py`): `except Exception: pass` masks malformed UniFi error bodies. Log at DEBUG with the exception class name.
 - [ ] **Switch polling to v2 system-log API** (`unifi_client.py`): `/list/alarm` caps at ~3000 records oldest-first; on controllers with more than ~33 alarms/day, recent alarms are never in the polled response and `open_count` is always 0 via polling. The v2 `POST /proxy/network/v2/api/site/{site}/system-log/all` endpoint accepts `timestampFrom`/`timestampTo` (epoch ms) and `pageNumber`/`pageSize`; field-confirmed on Network 10.3.58. Implementation: probe `/system-log/count` on startup; if available, poll `system-log/all` with `timestampFrom = last_cleared_at or (now - 24h)` and page through results; fall back to legacy `/list/alarm` for older controllers. Requires `UniFiAlert.from_system_log_event()` (v2 schema uses `message_raw` + `parameters` templates, epoch-ms `timestamp`, `status: "NEW"`, and a new key format with no `EVT_` prefix) and a separate v2 key-to-category map. See `docs/UNIFI.md § v2 system-log API` and `docs/research/alert-endpoints.md`.
 
 ### Testing / tooling

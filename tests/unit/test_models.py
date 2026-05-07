@@ -54,6 +54,23 @@ class TestUniFiAlert:
         alert = UniFiAlert.from_api_alarm(CATEGORY_SECURITY_THREAT, alarm)
         assert isinstance(alert.received_at, datetime)
 
+    def test_from_api_alarm_epoch_ms(self):
+        """Numeric epoch-ms timestamps must be parsed, not silently dropped."""
+        epoch_ms = 1705320600000
+        expected = datetime.fromtimestamp(epoch_ms / 1000, tz=UTC)
+        alarm = {"msg": "test", "timestamp": epoch_ms}
+        alert = UniFiAlert.from_api_alarm(CATEGORY_SECURITY_THREAT, alarm)
+        assert alert.received_at == expected
+        assert alert.received_at.tzinfo == UTC
+
+    def test_from_api_alarm_epoch_ms_string(self):
+        """Numeric-string epoch-ms timestamps are also accepted (fromisoformat rejects them)."""
+        epoch_ms = 1705320600000
+        expected = datetime.fromtimestamp(epoch_ms / 1000, tz=UTC)
+        alarm = {"msg": "test", "timestamp": str(epoch_ms)}
+        alert = UniFiAlert.from_api_alarm(CATEGORY_SECURITY_THREAT, alarm)
+        assert alert.received_at == expected
+
     def test_from_webhook_payload_received_at_is_timezone_aware(self):
         """received_at must be UTC-aware so HA time comparisons work."""
         alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": "test"})
