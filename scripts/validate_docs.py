@@ -60,6 +60,7 @@ HISTORY_H2_VALID = re.compile(r"^## \d{4}-\d{2}-\d{2}\s*$")
 
 
 def collect_files() -> list[Path]:
+    """Collect all target markdown files from the repository."""
     files: list[Path] = []
     for pat in TARGET_GLOBS:
         files.extend(sorted(REPO.glob(pat)))
@@ -67,6 +68,7 @@ def collect_files() -> list[Path]:
 
 
 def scan_forbidden(path: Path) -> list[tuple[int, int, str]]:
+    """Scan file for forbidden patterns and return violations as (line, col, msg)."""
     out: list[tuple[int, int, str]] = []
     for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         for pat, msg in FORBIDDEN:
@@ -76,6 +78,7 @@ def scan_forbidden(path: Path) -> list[tuple[int, int, str]]:
 
 
 def scan_history_format(path: Path) -> list[tuple[int, int, str]]:
+    """Check HISTORY.md h2 headings are in YYYY-MM-DD format."""
     out: list[tuple[int, int, str]] = []
     for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if line.startswith("## ") and not HISTORY_H2_VALID.match(line):
@@ -84,6 +87,7 @@ def scan_history_format(path: Path) -> list[tuple[int, int, str]]:
 
 
 def main() -> int:
+    """Run documentation validation checks on target files."""
     rc = 0
     for path in collect_files():
         rel = path.relative_to(REPO)
@@ -95,7 +99,7 @@ def main() -> int:
             print(f"{rel}:{line_no}:{col}: {msg}", file=sys.stderr)
             rc = 1
     if rc == 0:
-        print("Docs validation passed.")
+        print("✅ Docs validation passed.")
     return rc
 
 

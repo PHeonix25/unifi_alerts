@@ -19,6 +19,7 @@ EN = REPO_ROOT / "custom_components" / "unifi_alerts" / "translations" / "en.jso
 
 
 def main() -> int:
+    """Verify strings.json and translations/en.json are byte-identical."""
     if not STRINGS.exists():
         print(f"error: {STRINGS} does not exist", file=sys.stderr)
         return 1
@@ -34,6 +35,7 @@ def main() -> int:
         )
         return 1
 
+    print("✅ Translations match - validation passed.")
     return 0
 
 

@@ -45,6 +45,16 @@ VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-pre(\d+))?$")
 
 
 def run(*args: str, capture: bool = False, check: bool = True) -> str:
+    """Execute a subprocess command in the repo root directory.
+    
+    Args:
+        *args: Command and arguments to run.
+        capture: If True, return stdout; otherwise return empty string.
+        check: If True, raise exception on non-zero exit code.
+    
+    Returns:
+        Stripped stdout if capture is True, otherwise empty string.
+    """
     result = subprocess.run(
         args,
         cwd=REPO_ROOT,
@@ -56,16 +66,31 @@ def run(*args: str, capture: bool = False, check: bool = True) -> str:
 
 
 def fail(msg: str) -> NoReturn:
+    """Print error message and exit with code 1.
+    
+    Args:
+        msg: Error message to print.
+    """
     print(f"error: {msg}", file=sys.stderr)
     sys.exit(1)
 
 
 def read_version() -> str:
+    """Read version from manifest.
+    
+    Returns:
+        Version string from manifest.
+    """
     data = json.loads(MANIFEST.read_text())
     return str(data["version"])
 
 
 def write_version(new_version: str) -> None:
+    """Write version to manifest.
+    
+    Args:
+        new_version: New version string to write.
+    """
     # Python preserves dict insertion order, so json.loads + json.dumps keeps
     # the manifest key order. hassfest enforces: domain, name, then alphabetical.
     data = json.loads(MANIFEST.read_text())
@@ -74,6 +99,14 @@ def write_version(new_version: str) -> None:
 
 
 def parse_version(v: str) -> tuple[int, int, int, int | None]:
+    """Parse version string into components.
+    
+    Args:
+        v: Version string to parse.
+    
+    Returns:
+        Tuple of (major, minor, patch, pre) where pre is None for stable versions.
+    """
     m = VERSION_RE.match(v)
     if not m:
         fail(f"unrecognised version format: {v!r}")
@@ -83,6 +116,14 @@ def parse_version(v: str) -> tuple[int, int, int, int | None]:
 
 
 def bump_pre(current: str) -> str:
+    """Bump to the next pre-release version.
+    
+    Args:
+        current: Current version string.
+    
+    Returns:
+        Next pre-release version string.
+    """
     major, minor, patch, pre = parse_version(current)
     if pre is None:
         fail(
@@ -93,6 +134,14 @@ def bump_pre(current: str) -> str:
 
 
 def bump_stable(current: str) -> str:
+    """Bump to the next stable version from a pre-release.
+    
+    Args:
+        current: Current version string.
+    
+    Returns:
+        Next stable version string.
+    """
     major, minor, patch, pre = parse_version(current)
     if pre is None:
         fail(f"--stable requires a -preN version, but manifest is at {current!r}.")
@@ -100,6 +149,14 @@ def bump_stable(current: str) -> str:
 
 
 def bump_next_cycle(current: str) -> str:
+    """Bump to the next cycle pre-release from a stable version.
+    
+    Args:
+        current: Current version string.
+    
+    Returns:
+        Next cycle pre-release version string.
+    """
     major, minor, _patch, pre = parse_version(current)
     if pre is not None:
         fail(
@@ -110,12 +167,20 @@ def bump_next_cycle(current: str) -> str:
 
 
 def assert_clean_tree() -> None:
+    """Assert that the git working tree is clean.
+    
+    Fails if there are uncommitted or unstaged changes.
+    """
     out = run("git", "status", "--porcelain", capture=True)
     if out:
         fail("working tree is not clean. Commit or stash changes first.\n" + out)
 
 
 def checkout_fresh_dev() -> None:
+    """Checkout a fresh dev branch, fetching from origin/dev.
+    
+    Creates a local dev branch if it doesn't exist, otherwise pulls latest changes.
+    """
     print("Fetching origin/dev...")
     run("git", "fetch", "origin", "dev")
     branches = run("git", "branch", "--list", "dev", capture=True)
@@ -127,6 +192,10 @@ def checkout_fresh_dev() -> None:
 
 
 def create_bump_branch(new_version: str) -> str:
+    """Create a fresh bump branch for the new version.
+    
+    Fails if the branch already exists locally.
+    """
     branch = f"claude/bump-{new_version}"
     existing = run("git", "branch", "--list", branch, capture=True)
     if existing:
@@ -140,6 +209,10 @@ def create_bump_branch(new_version: str) -> str:
 
 
 def previous_tag() -> str | None:
+    """Get the most recent tag matching v*.
+    
+    Returns None if no tags exist.
+    """
     try:
         return run(
             "git",
@@ -156,10 +229,12 @@ def previous_tag() -> str | None:
 
 
 def merges_since(tag: str) -> str:
+    """Get merge commits since the given tag."""
     return run("git", "log", f"{tag}..HEAD", "--merges", "--oneline", capture=True)
 
 
 def update_changelog_for_stable(new_version: str) -> None:
+    """Update CHANGELOG.md to promote the [Unreleased] section as a stable release."""
     today = date.today().isoformat()
     text = CHANGELOG.read_text()
 
@@ -208,7 +283,23 @@ def update_changelog_for_stable(new_version: str) -> None:
     print(f"Updated {CHANGELOG.name}: [Unreleased] -> [{new_version}] - {today}")
 
 
+def _print_next_steps(new_version: str) -> None:
+    """Print next steps for version bump."""
+    print("Next steps:")
+    print(
+        f"  1. Write the docs/HISTORY.md block (## {date.today().isoformat()}) "
+        f"summarising the merges above."
+    )
+    print("  2. Update docs/ROADMAP.md if this tag advances a release section.")
+    print("  3. Run `make check`.")
+    print("  4. Commit and push, then open a PR targeting dev.")
+    print("  5. After the PR merges, tag with:")
+    print("     git checkout dev && git pull origin dev")
+    print(f"     git tag v{new_version} && git push origin v{new_version}")
+
+
 def main() -> int:
+    """Bump the integration version and prep a claude/bump-* branch."""
     p = argparse.ArgumentParser(
         description=(
             "Bump the integration version and prep a claude/bump-* branch."
@@ -277,17 +368,7 @@ def main() -> int:
         print("No previous tag found; skipping merges-since list.")
         print()
 
-    print("Next steps:")
-    print(
-        f"  1. Write the docs/HISTORY.md block (## {date.today().isoformat()}) "
-        f"summarising the merges above."
-    )
-    print("  2. Update docs/ROADMAP.md if this tag advances a release section.")
-    print("  3. Run `make check`.")
-    print("  4. Commit and push, then open a PR targeting dev.")
-    print("  5. After the PR merges, tag with:")
-    print("     git checkout dev && git pull origin dev")
-    print(f"     git tag v{new_version} && git push origin v{new_version}")
+    _print_next_steps(new_version)
 
     return 0
 
