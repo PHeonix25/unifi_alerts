@@ -3,16 +3,26 @@
 Windows-only workarounds for two issues that don't manifest on Linux/macOS.
 Both are no-ops on non-Windows platforms.
 
-1. ``WindowsSelectorEventLoopPolicy`` is installed at module load time so
-   ``aiodns`` works. Python's default loop on Windows since 3.8 is the
-   ``ProactorEventLoop``; ``aiodns`` (pulled in transitively via aiohttp/HA)
-   raises ``RuntimeError: aiodns needs a SelectorEventLoop on Windows``
-   otherwise. See https://github.com/saghul/aiodns/issues/86.
+1. ``aiodns`` requires a ``SelectorEventLoop`` on Windows
+   (https://github.com/saghul/aiodns/issues/86), but Python's default since
+   3.8 is ``ProactorEventLoop``. Two complementary patches force every loop
+   pytest-asyncio / HA creates to be a Selector loop:
+
+   a. ``asyncio.WindowsProactorEventLoopPolicy._loop_factory`` is rebound to
+      ``asyncio.SelectorEventLoop``. ``BaseDefaultEventLoopPolicy.new_event_loop``
+      returns ``self._loop_factory()``, so every inheriting policy produces
+      Selector loops without otherwise changing its behaviour. This is what
+      catches HA's ``HassEventLoopPolicy(asyncio.DefaultEventLoopPolicy)``,
+      which is installed per-test by the ``hass`` fixture and would
+      otherwise return a ``ProactorEventLoop`` from its
+      ``super().new_event_loop()`` call.
+
+   b. ``asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy())`` is
+      installed at module load time so unit tests (which never trigger HA's
+      runner) also get Selector loops via pytest-asyncio's default machinery.
 
 2. ``pytest_socket.disable_socket`` is rebound to a no-op in
-   ``pytest_configure`` so asyncio's self-pipe (which uses
-   ``socket.socketpair()`` even on the Selector loop) survives. See the
-   ``pytest_configure`` docstring for the full explanation.
+   ``pytest_configure``. See its docstring for the full explanation.
 """
 
 from __future__ import annotations
@@ -21,6 +31,7 @@ import asyncio
 import sys
 
 if sys.platform == "win32":
+    asyncio.WindowsProactorEventLoopPolicy._loop_factory = asyncio.SelectorEventLoop  # type: ignore[attr-defined]
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
