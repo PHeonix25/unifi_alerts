@@ -14,8 +14,8 @@ Closes the remaining auth/credential exposure paths, makes the options flow tran
 
 ### Options-flow atomicity
 
-- [ ] **Stage credential changes** (`config_flow.py`): `async_step_credentials` calls `async_update_entry()` eagerly. Abandoning the flow after credentials but before finish leaves the change persisted. Stage into `self._pending_data`, persist atomically in `async_step_finish`.
-- [ ] **`verify_ssl` toggle alone must persist**: `credentials_changed` ignores the SSL flag. Roll into the staging refactor above.
+- [x] **Stage credential changes** (`config_flow.py`): `async_step_credentials` no longer calls `async_update_entry()` eagerly; new credentials, rotated webhook secrets, and `verify_ssl` flips are staged in `self._pending_data` and persisted atomically by `async_step_finish`.
+- [x] **`verify_ssl` toggle alone now persists**: change detection no longer filters out the SSL flag, so flipping the checkbox without any credential change is staged and committed.
 
 ### Reliability (pulled forward from v1.6.0; field-confirmed)
 

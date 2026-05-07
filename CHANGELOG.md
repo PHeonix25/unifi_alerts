@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Options-flow credential changes are now staged and persisted atomically only when the user submits the finish step. Previously, `async_step_credentials` called `async_update_entry` eagerly, so closing the dialog at the categories step left a new password (or rotated webhook secret) persisted against the user's intent. The `verify_ssl` toggle now also persists when flipped on its own; previously it was filtered out of the change-detection check and silently ignored.
 - `make check` now passes on Windows. A new top-level `tests/conftest.py` applies two Windows-only workarounds: it forces `SelectorEventLoop` for `aiodns` (both via `set_event_loop_policy(WindowsSelectorEventLoopPolicy())` and by rebinding `WindowsProactorEventLoopPolicy._loop_factory` so HA's per-test `HassEventLoopPolicy` produces Selector loops via inheritance), and it neutralises `pytest_socket.disable_socket` so asyncio's `socket.socketpair()` self-pipe survives. HA core's earlier `socket_allow_hosts(["127.0.0.1"])` filter still applies, so external network egress remains blocked. No-op on Linux/macOS.
 - Polling no longer re-asserts `is_alerting` for alarms older than the acknowledgement watermark. Previously the binary sensor flipped back to Problem with a stale message after a Clear, while Open Count stayed at 0.
 - `_auto_clear` now persists the advanced watermark to storage. An HA restart immediately after a timer-triggered clear no longer resets `open_count` to the lifetime total.

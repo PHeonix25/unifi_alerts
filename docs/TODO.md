@@ -19,11 +19,6 @@ Outstanding work only. Items are removed when they ship; completion lives in `do
 - **`_category_states` rebuilt on reload** (`coordinator.py`): `alert_count` and `last_alert` are discarded on every options change. Persist them alongside watermarks in the existing `Store`.
 - **Silent JSON-parse failure during 400-error inspection** (`unifi_client.py`): `except Exception: pass` swallows malformed UniFi error bodies, hiding the `api.err.InvalidObject` fallback. Log at DEBUG with the exception class name.
 
-## Security
-
-- **Options-flow credential changes persist before the user submits the flow** (`config_flow.py`): `async_step_credentials` calls `async_update_entry()` eagerly. Abandoning the flow after credentials but before finish leaves the change persisted. Stage into `self._pending_data` and persist atomically in `async_step_finish`.
-- **`verify_ssl` toggle alone does not persist** (`config_flow.py`): `credentials_changed` ignores the SSL flag. Flipping the checkbox without other changes is a no-op. Best landed alongside the staging refactor above.
-
 ## Type safety / tech debt
 
 - **`mypy strict = false`**: migrate `UniFiClient.config: dict[str, Any]` to a `TypedDict` or frozen dataclass, then bump `pyproject.toml` to `strict = true`.
