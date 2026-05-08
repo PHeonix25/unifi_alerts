@@ -16,7 +16,6 @@ Outstanding work only. Items are removed when they ship; completion lives in `do
 
 - **`mypy strict = false`**: migrate `UniFiClient.config: dict[str, Any]` to a `TypedDict` or frozen dataclass, then bump `pyproject.toml` to `strict = true`.
 - **No sensor `device_class`** (`sensor.py`): open-count and rollup-count sensors have no class. None of HA's built-ins map cleanly; consider richer `state_class` instead.
-- **Buttons don't inherit `CoordinatorEntity`** (`button.py`): `UniFiClearCategoryButton` and `UniFiClearAllButton` extend `ButtonEntity` directly, so they always appear available even when their category is disabled. Add the mixin and an `available` property.
 
 ## Testing
 

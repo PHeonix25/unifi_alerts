@@ -22,10 +22,6 @@ Closes remaining correctness gaps and polishes testing. The watermark re-asserti
 - [ ] **`make lint` to cover `tests/`**: expand the Makefile target; resolve the six pre-existing `I001`/`F401` issues.
 - [ ] **Webhook-mid-poll interleaving test** (`test_coordinator.py`): assert a webhook during `_async_update_data()` cannot regress `is_alerting`.
 
-### Tech debt
-
-- [ ] **Buttons inherit `CoordinatorEntity`** (`button.py`): add the mixin + `available` property tied to `state.enabled`, consistent with the other platforms.
-
 ---
 
 ## v1.7.0: Documentation + architecture

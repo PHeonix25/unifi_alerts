@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
@@ -9,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     ALL_CATEGORIES,
@@ -17,6 +20,8 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import UniFiAlertsCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -35,7 +40,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class UniFiClearCategoryButton(ButtonEntity):
+class UniFiClearCategoryButton(CoordinatorEntity[UniFiAlertsCoordinator], ButtonEntity):
     """Button that manually clears the alert state for one category."""
 
     _attr_has_entity_name = True
@@ -48,17 +53,24 @@ class UniFiClearCategoryButton(ButtonEntity):
         entry: ConfigEntry,
         category: str,
     ) -> None:
-        self._coordinator = coordinator
+        super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_clear"
         self._attr_name = f"Clear {CATEGORY_LABELS[category]}"
         self._attr_device_info = _device_info(entry)
 
+    @property
+    def available(self) -> bool:
+        state = self.coordinator.get_category_state(self._category)
+        if state is None:
+            return False
+        return state.enabled
+
     async def async_press(self) -> None:
-        await self._coordinator.async_clear_category(self._category)
+        await self.coordinator.async_clear_category(self._category)
 
 
-class UniFiClearAllButton(ButtonEntity):
+class UniFiClearAllButton(CoordinatorEntity[UniFiAlertsCoordinator], ButtonEntity):
     """Button that clears alert state for all categories at once."""
 
     _attr_has_entity_name = True
@@ -71,12 +83,16 @@ class UniFiClearAllButton(ButtonEntity):
         coordinator: UniFiAlertsCoordinator,
         entry: ConfigEntry,
     ) -> None:
-        self._coordinator = coordinator
+        super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_clear_all"
         self._attr_device_info = _device_info(entry)
 
+    @property
+    def available(self) -> bool:
+        return any(state.enabled for state in self.coordinator.category_states.values())
+
     async def async_press(self) -> None:
-        await self._coordinator.async_clear_all()
+        await self.coordinator.async_clear_all()
 
 
 def _device_info(entry: ConfigEntry) -> DeviceInfo:
