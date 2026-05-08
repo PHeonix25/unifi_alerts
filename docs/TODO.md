@@ -5,7 +5,6 @@ Outstanding work only. Items are removed when they ship; completion lives in `do
 ## 🟡 High-value
 
 - **Verify update-in-place**: confirm a HACS file copy + config-entry reload (Settings > Integrations > UniFi Alerts > ⋮ > Reload) is enough on a real HA install. A forced restart would be a friction point. Document the expected flow in `README.md`.
-- **README + info.md examples sweep**: confirm sensor names in the dashboard / automation YAML match the current `unique_id` format and that no copy still references self-hosted controllers.
 
 ## 🟢 Nice-to-have
 

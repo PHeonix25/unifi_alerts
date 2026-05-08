@@ -6,6 +6,7 @@
 
 - Polled alarms with epoch-millisecond `timestamp`/`datetime` fields (numeric or numeric-string) are now parsed correctly. Previously `datetime.fromisoformat(str(ts))` rejected numeric strings, silently falling back to "now" and corrupting `received_at` for every polled alert on controllers that emit ms timestamps. Prerequisite for the v2 system-log polling switch.
 - 400-response bodies that fail JSON parsing during alarm-endpoint probing are now logged at DEBUG with the exception class. Previously a bare `except Exception: pass` masked malformed UniFi error bodies, hiding the `api.err.InvalidObject` fallback path.
+- README and info.md entity-ID examples now match what HA generates from the integration's entity names; stale short-form IDs (e.g. `binary_sensor.unifi_alerts_network_device`) replaced with the correct slugified forms (e.g. `binary_sensor.unifi_alerts_network_device_offline_online`). Credential setup copy updated to remove references to "older controllers" and self-hosted Network Application installs now that UniFi OS is required.
 
 ## [1.5.0] - 2026-05-07
 
