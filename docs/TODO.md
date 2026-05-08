@@ -2,10 +2,6 @@
 
 Outstanding work only. Items are removed when they ship; completion lives in `docs/HISTORY.md`, and the per-release plan lives in `docs/ROADMAP.md`.
 
-## 🟡 High-value
-
-- **Verify update-in-place**: confirm a HACS file copy + config-entry reload (Settings > Integrations > UniFi Alerts > ⋮ > Reload) is enough on a real HA install. A forced restart would be a friction point. Document the expected flow in `README.md`.
-
 ## 🟢 Nice-to-have
 
 - **HACS default catalogue submission**: open the PR to <https://github.com/hacs/default> once all v1.x items below are closed.

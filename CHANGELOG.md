@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added an "Updating the integration" section to README.md between Installation and Setup, explaining that a full Home Assistant restart is required after every HACS update; the config-entry Reload action does not pick up new code or manifest changes.
+
 ### Fixed
 
 - Polled alarms with epoch-millisecond `timestamp`/`datetime` fields (numeric or numeric-string) are now parsed correctly. Previously `datetime.fromisoformat(str(ts))` rejected numeric strings, silently falling back to "now" and corrupting `received_at` for every polled alert on controllers that emit ms timestamps. Prerequisite for the v2 system-log polling switch.
