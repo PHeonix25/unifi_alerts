@@ -71,8 +71,8 @@ Copy `custom_components/unifi_alerts/` into your HA `config/custom_components/` 
 
 1. Go to **Settings > Devices & Services > Add Integration** > search **UniFi Alerts**
 2. Enter your controller URL (e.g. `https://192.168.1.1`) and credentials
-   - **API key** (UDM Pro, UCG Ultra, and other UniFi OS devices): generate one in the UniFi OS web UI (see [Generating an API key](#generating-an-api-key) below), leave Username/Password blank
-   - **Username / password** (older controllers, Cloud Key): fill in Username and Password, leave API Key blank
+   - **API key** (recommended): generate one in the UniFi OS web UI (see [Generating an API key](#generating-an-api-key) below), leave Username/Password blank
+   - **Username / password**: fill in Username and Password, leave API Key blank
 3. Select the alert categories you want to monitor (see table above - client/device categories are noisy by default)
 4. Configure polling interval and auto-clear timeout
 5. **Copy the webhook URLs** shown on the final screen into UniFi Alarm Manager (see next section). Click **Submit** to save - the integration is not created until you click Submit.
@@ -83,7 +83,7 @@ Copy `custom_components/unifi_alerts/` into your HA `config/custom_components/` 
 
 ## Generating an API key
 
-API keys are supported on **UniFi OS consoles only** (UDM, UDM Pro, UDM SE, UCG-Ultra, Cloud Key Gen2+). They are not available on self-hosted (Linux/Windows) controllers.
+API keys are a UniFi OS feature, available on all supported consoles (UDM, UDM Pro, UDM SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+).
 
 The navigation path to create a key varies by firmware version:
 
@@ -118,23 +118,23 @@ For each enabled category, create an alarm in **UniFi Network > Settings > Notif
 
 ## Entities created
 
-For each enabled category (example: `network_device`):
+Entity IDs are derived from the entity's display name, which HA slugifies on first install. The unique_id format is `{entry_id}_{category}_{sensor_type}`; the entity_id is the slugified device name plus the entity name. Examples below use `network_device` as the category; the same pattern applies to all categories.
 
-| Entity | ID pattern | Type |
+| Entity | Example entity ID | Type |
 | --- | --- | --- |
-| Binary sensor | `binary_sensor.unifi_alerts_network_device` | ON = alert active |
-| Message sensor | `sensor.unifi_alerts_network_device_last_message` | Last alert text |
-| Count sensor | `sensor.unifi_alerts_network_device_open_count` | Open alarm count |
-| Event entity | `event.unifi_alerts_network_device` | Fires per alert |
-| Clear button | `button.unifi_alerts_clear_network_device` | Manual clear |
+| Binary sensor | `binary_sensor.unifi_alerts_network_device_offline_online` | ON = alert active |
+| Message sensor | `sensor.unifi_alerts_network_device_offline_online_last_message` | Last alert text |
+| Count sensor | `sensor.unifi_alerts_network_device_offline_online_open_count` | Open alarm count |
+| Event entity | `event.unifi_alerts_network_device_offline_online_event` | Fires per alert |
+| Clear button | `button.unifi_alerts_clear_network_device_offline_online` | Manual clear |
 
-Plus rollup entities:
+Plus rollup entities (one per config entry, regardless of which categories are enabled):
 
 | Entity | ID | Type |
 | --- | --- | --- |
 | Rollup binary | `binary_sensor.unifi_alerts_any_alert` | Any category alerting |
 | Rollup count | `sensor.unifi_alerts_total_open_alerts` | Total open count |
-| Clear all button | `button.unifi_alerts_clear_all` | Clear everything |
+| Clear all button | `button.unifi_alerts_clear_all_alerts` | Clear everything |
 
 ---
 
@@ -153,15 +153,15 @@ entities:
     name: Any Alert Active
 
   # Per-category binary sensors (ON = alert active)
-  - entity: binary_sensor.unifi_alerts_network_device
+  - entity: binary_sensor.unifi_alerts_network_device_offline_online
     name: Device Offline/Online
-  - entity: binary_sensor.unifi_alerts_network_wan
+  - entity: binary_sensor.unifi_alerts_network_wan_offline_latency
     name: WAN Offline/Latency
-  - entity: binary_sensor.unifi_alerts_security_threat
+  - entity: binary_sensor.unifi_alerts_security_threat_ids_detected
     name: Threat / IDS
-  - entity: binary_sensor.unifi_alerts_security_firewall
+  - entity: binary_sensor.unifi_alerts_security_firewall_block
     name: Firewall Block
-  - entity: binary_sensor.unifi_alerts_power
+  - entity: binary_sensor.unifi_alerts_power_poe_power_loss
     name: Power / PoE
 
   # Total open-alarm count (polled from controller)
@@ -169,7 +169,7 @@ entities:
     name: Total Open Alerts
 ```
 
-> **Tip:** For a more compact view, replace `type: entities` with `type: glance`. Per-category message sensors (`sensor.unifi_alerts_<category>_last_message`) and open-count sensors (`sensor.unifi_alerts_<category>_open_count`) can be added the same way.
+> **Tip:** For a more compact view, replace `type: entities` with `type: glance`. Per-category message and open-count sensors follow the same naming pattern, for example: `sensor.unifi_alerts_network_device_offline_online_last_message` and `sensor.unifi_alerts_network_device_offline_online_open_count`.
 
 ---
 
@@ -194,7 +194,7 @@ automation:
   - alias: "Notify on UniFi security threat"
     trigger:
       - platform: state
-        entity_id: event.unifi_alerts_security_threat
+        entity_id: event.unifi_alerts_security_threat_ids_detected_event
     condition:
       # Only act when the entity actually fired a new event (state changes on each alert)
       - condition: template
@@ -210,7 +210,7 @@ automation:
           notification_id: "unifi_security_threat"
 ```
 
-> **Tip:** Replace `event.unifi_alerts_security_threat` with any per-category event entity (e.g. `event.unifi_alerts_network_device`, `event.unifi_alerts_power`). Swap `persistent_notification.create` for `notify.mobile_app_your_phone` or any other notify action.
+> **Tip:** Replace `event.unifi_alerts_security_threat_ids_detected_event` with any per-category event entity (e.g. `event.unifi_alerts_network_device_offline_online_event`, `event.unifi_alerts_power_poe_power_loss_event`). Swap `persistent_notification.create` for `notify.mobile_app_your_phone` or any other notify action.
 
 #### Automation caveats
 
