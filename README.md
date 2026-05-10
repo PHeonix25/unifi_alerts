@@ -67,6 +67,22 @@ Copy `custom_components/unifi_alerts/` into your HA `config/custom_components/` 
 
 ---
 
+## Updating the integration
+
+After every HACS update (or manual file copy), restart Home Assistant. Do not rely on the integration's Reload action; it does not pick up new code or the new `manifest.json` version.
+
+Home Assistant caches imported Python modules in memory. The Reload action under **Settings > Devices & Services > UniFi Alerts > ⋮ > Reload** re-runs `async_setup_entry` and re-registers entities, but it does so against the cached in-memory module. The new files HACS copied to disk are not loaded until HA imports the module fresh, which only happens on a full restart.
+
+**Steps:**
+
+1. Open HACS, find UniFi Alerts, and click **Update**.
+2. Restart Home Assistant: **Settings > System > Restart Home Assistant > Restart Home Assistant**. HACS prompts you to do this on every update; follow the prompt.
+3. Verify the new version: open **Settings > Devices & Services > UniFi Alerts**, click into the controller device, and check the version field on the device-info pane.
+
+> **Note:** Clicking Reload after an update will appear successful (entities re-register, setup logs fire), but the integration is still running the old code. Always do a full restart.
+
+---
+
 ## Setup
 
 1. Go to **Settings > Devices & Services > Add Integration** > search **UniFi Alerts**

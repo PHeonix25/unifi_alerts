@@ -52,7 +52,6 @@ Closes the remaining documentation gaps and the largest architecture items.
 
 ### QA
 
-- [ ] **Verify update-in-place**: HACS file copy + config-entry reload sufficient; no HA restart required.
 - [ ] **Optional: integration test for full rotation cycle**: options-flow > entry-update > reload > re-register, end-to-end.
 
 ---
