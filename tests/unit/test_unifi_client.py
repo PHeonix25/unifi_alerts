@@ -528,9 +528,7 @@ class TestFetchAlarms:
             f"Expected exactly three GET calls walking the chain; got {len(captured_urls)}"
         )
         assert captured_urls[0].endswith("/list/alarm")
-        assert captured_urls[1].endswith("/alarm") and not captured_urls[1].endswith(
-            "/list/alarm"
-        )
+        assert captured_urls[1].endswith("/alarm") and not captured_urls[1].endswith("/list/alarm")
         assert captured_urls[2].endswith("/stat/alarm")
         assert result == []
 

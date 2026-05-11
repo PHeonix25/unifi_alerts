@@ -829,9 +829,7 @@ class TestWatermarks:
         for i, a in enumerate(alarms):
             a.received_at = datetime(2024, 6, 1, i, 0, 0, tzinfo=UTC)
 
-        client.categorise_alarms = AsyncMock(
-            return_value={CATEGORY_NETWORK_WAN: alarms}
-        )
+        client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: alarms})
         config = {
             CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
             CONF_POLL_INTERVAL: 60,
@@ -920,9 +918,7 @@ class TestPollingWatermarkSuppressesIsAlerting:
         )
 
         client = MagicMock()
-        client.categorise_alarms = AsyncMock(
-            return_value={CATEGORY_NETWORK_WAN: [stale_alarm]}
-        )
+        client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: [stale_alarm]})
 
         config = {
             CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
@@ -960,9 +956,7 @@ class TestPollingWatermarkSuppressesIsAlerting:
         )
 
         client = MagicMock()
-        client.categorise_alarms = AsyncMock(
-            return_value={CATEGORY_NETWORK_WAN: [stale, fresh]}
-        )
+        client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: [stale, fresh]})
 
         config = {
             CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,

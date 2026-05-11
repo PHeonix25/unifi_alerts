@@ -572,14 +572,19 @@ class TestEntityCategories:
         from custom_components.unifi_alerts.sensor import UniFiCategoryMessageSensor
 
         # CachedProperties metaclass stores _attr_* backing values as __attr_* in __dict__
-        assert UniFiCategoryMessageSensor.__dict__.get("__attr_entity_category") == EntityCategory.DIAGNOSTIC
+        assert (
+            UniFiCategoryMessageSensor.__dict__.get("__attr_entity_category")
+            == EntityCategory.DIAGNOSTIC
+        )
 
     def test_clear_category_button_is_config(self):
         from homeassistant.const import EntityCategory
 
         from custom_components.unifi_alerts.button import UniFiClearCategoryButton
 
-        assert UniFiClearCategoryButton.__dict__.get("__attr_entity_category") == EntityCategory.CONFIG
+        assert (
+            UniFiClearCategoryButton.__dict__.get("__attr_entity_category") == EntityCategory.CONFIG
+        )
 
     def test_clear_all_button_is_config(self):
         from homeassistant.const import EntityCategory

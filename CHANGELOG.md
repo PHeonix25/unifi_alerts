@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `make lint` now covers `tests/` in addition to `custom_components/`. Zero pre-existing `I001`/`F401` issues were present at the time the scope was widened; the target was simply not wired up.
+
 ### Added
 
 - Added an "Updating the integration" section to README.md between Installation and Setup, explaining that a full Home Assistant restart is required after every HACS update; the config-entry Reload action does not pick up new code or manifest changes.

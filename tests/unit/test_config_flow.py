@@ -334,7 +334,13 @@ async def test_options_flow_full_cycle() -> None:
     flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
 
     # Step 1: blank credentials → skip to categories
-    blank_creds = {CONF_CONTROLLER_URL: "", CONF_USERNAME: "", CONF_PASSWORD: "", CONF_API_KEY: "", CONF_VERIFY_SSL: True}
+    blank_creds = {
+        CONF_CONTROLLER_URL: "",
+        CONF_USERNAME: "",
+        CONF_PASSWORD: "",
+        CONF_API_KEY: "",
+        CONF_VERIFY_SSL: True,
+    }
     flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
     await flow.async_step_credentials(blank_creds)
 
@@ -764,9 +770,7 @@ class TestReauthFlow:
         confirm_result = {"type": "form", "step_id": "reauth_confirm"}
         flow.async_step_reauth_confirm = AsyncMock(return_value=confirm_result)
 
-        with patch(
-            "custom_components.unifi_alerts.config_flow._create_auth_failed_issue"
-        ):
+        with patch("custom_components.unifi_alerts.config_flow._create_auth_failed_issue"):
             result = await flow.async_step_reauth({})
 
         assert result == confirm_result
@@ -1034,9 +1038,7 @@ class TestOptionsFlowCredentials:
         from custom_components.unifi_alerts.unifi_client import InvalidAuthError
 
         flow = _make_options_flow()
-        flow.async_show_form = MagicMock(
-            return_value={"type": "form", "step_id": "credentials"}
-        )
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "credentials"})
 
         new_creds = {
             CONF_CONTROLLER_URL: "",
@@ -1069,9 +1071,7 @@ class TestOptionsFlowCredentials:
     async def test_invalid_url_scheme_shows_error(self) -> None:
         """A non-http/https URL scheme must show a field-level error without hitting the network."""
         flow = _make_options_flow()
-        flow.async_show_form = MagicMock(
-            return_value={"type": "form", "step_id": "credentials"}
-        )
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "credentials"})
 
         bad_url_input = {
             CONF_CONTROLLER_URL: "ftp://192.168.1.1",
@@ -1279,13 +1279,15 @@ class TestOptionsFlowCredentials:
         )
         flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
 
-        await flow.async_step_credentials({
-            CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
-            CONF_API_KEY: "",
-            CONF_VERIFY_SSL: False,
-        })
+        await flow.async_step_credentials(
+            {
+                CONF_CONTROLLER_URL: "",
+                CONF_USERNAME: "",
+                CONF_PASSWORD: "",
+                CONF_API_KEY: "",
+                CONF_VERIFY_SSL: False,
+            }
+        )
 
         cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
         cat_input[CONF_POLL_INTERVAL] = 60
@@ -1454,14 +1456,16 @@ class TestWebhookSecretRotation:
         flow.async_show_form = MagicMock(
             side_effect=lambda **kwargs: {"type": "form", "step_id": kwargs["step_id"]}
         )
-        await flow.async_step_credentials({
-            CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
-            CONF_API_KEY: "",
-            CONF_VERIFY_SSL: True,
-            CONF_REGENERATE_WEBHOOK_SECRET: True,
-        })
+        await flow.async_step_credentials(
+            {
+                CONF_CONTROLLER_URL: "",
+                CONF_USERNAME: "",
+                CONF_PASSWORD: "",
+                CONF_API_KEY: "",
+                CONF_VERIFY_SSL: True,
+                CONF_REGENERATE_WEBHOOK_SECRET: True,
+            }
+        )
 
         # Staged but not persisted: entry.data still holds the old secret.
         flow.hass.config_entries.async_update_entry.assert_not_called()
