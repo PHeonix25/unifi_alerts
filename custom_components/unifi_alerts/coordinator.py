@@ -84,9 +84,21 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     # ── DataUpdateCoordinator override ───────────────────────────────────
 
     async def _async_update_data(self) -> dict[str, CategoryState]:
-        """Fetch open alarm counts from the controller (polling path)."""
+        """Fetch open alarm counts from the controller (polling path).
+
+        Dispatches to the v2 system-log endpoint when available (detected via
+        a one-shot probe of /system-log/count). Falls back to the legacy
+        /list/alarm path for older controllers or when the probe fails.
+
+        Watermark policy for v2 polling:
+          timestampFrom = the oldest last_cleared_at across all enabled
+          categories (so we fetch everything since the oldest unacknowledged
+          window). If no category has been cleared, fall back to now-24h.
+          This is conservative: it over-fetches slightly but guarantees that
+          recent alarms in every enabled category are always reachable.
+        """
         try:
-            categorised = await self._client.categorise_alarms(self._site)
+            categorised = await self._fetch_categorised()
         except InvalidAuthError as err:
             # Re-authenticate once then retry
             _LOGGER.warning("Auth expired, re-authenticating: %s", err)
@@ -100,7 +112,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                     f"Re-authentication failed; credentials may have changed: {reauth_err}"
                 ) from reauth_err
             try:
-                categorised = await self._client.categorise_alarms(self._site)
+                categorised = await self._fetch_categorised()
             except CannotConnectError as retry_err:
                 raise UpdateFailed(
                     f"Cannot reach UniFi controller after re-authentication: {retry_err}"
@@ -144,6 +156,59 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 state.open_count = 0
 
         return self._category_states
+
+    async def _fetch_categorised(self) -> dict[str, list[UniFiAlert]]:
+        """Fetch and categorise alarms using v2 or legacy path as appropriate.
+
+        Calls probe_system_log_endpoint() once per client instance. On success,
+        fetches from system-log/all with a timestampFrom watermark and parses
+        each event with UniFiAlert.from_system_log_event(). Skips events whose
+        resolved category is empty (unknown keys with no broad enum fallback).
+
+        Falls back to legacy categorise_alarms() if:
+          - the probe returns False (404 / 4xx from the controller)
+          - the probe itself raises a network error (logged at DEBUG)
+          - this is an older controller without the v2 endpoint
+        """
+        try:
+            has_v2 = await self._client.probe_system_log_endpoint(self._site)
+        except Exception as probe_err:  # noqa: BLE001
+            _LOGGER.debug(
+                "v2 system-log probe raised %s; falling back to legacy path",
+                type(probe_err).__name__,
+            )
+            has_v2 = False
+
+        if not has_v2:
+            return await self._client.categorise_alarms(self._site)
+
+        # v2 path: compute the oldest watermark across enabled categories so we
+        # fetch everything since the oldest unacknowledged window.
+        watermarks = [
+            state.last_cleared_at
+            for state in self._category_states.values()
+            if state.enabled and state.last_cleared_at is not None
+        ]
+        since: datetime | None = min(watermarks) if watermarks else None
+
+        raw_events = await self._client.fetch_system_log_alarms(self._site, since=since)
+
+        categorised: dict[str, list[UniFiAlert]] = {}
+        for event in raw_events:
+            alert = UniFiAlert.from_system_log_event(event)
+            if not alert.category:
+                # Unknown key and no broad enum fallback — skip, same as legacy behaviour
+                key = event.get("key", "")
+                if key:
+                    _LOGGER.debug(
+                        "Unclassified v2 system-log event key %r — consider reporting it at "
+                        "https://github.com/PHeonix25/unifi_alerts/issues",
+                        key,
+                    )
+                continue
+            categorised.setdefault(alert.category, []).append(alert)
+
+        return categorised
 
     # ── Webhook push path ────────────────────────────────────────────────
 

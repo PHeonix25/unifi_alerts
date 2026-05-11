@@ -5,6 +5,7 @@
 ### Changed
 
 - `make lint` now covers `tests/` in addition to `custom_components/`. Zero pre-existing `I001`/`F401` issues were present at the time the scope was widened; the target was simply not wired up.
+- Polling now uses the v2 `system-log/all` endpoint when the controller exposes it (detected via a one-shot probe of `/system-log/count`). The v2 endpoint accepts `timestampFrom` and pagination, so recent alarms on busy controllers (more than ~33 alarms/day) are no longer truncated out of the polled response. Controllers without the endpoint continue to use the legacy `/list/alarm` path; no user action required.
 
 ### Added
 

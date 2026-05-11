@@ -9,7 +9,7 @@ Outstanding work only. Items are removed when they ship; completion lives in `do
 
 ## Reliability / correctness
 
-- **Polling strategy must switch to v2 system-log API for busy controllers** (`unifi_client.py`): `/list/alarm` caps at ~3000 records oldest-first. The v2 `POST /proxy/network/v2/api/site/{site}/system-log/all` endpoint supports `timestampFrom`/`timestampTo` (epoch ms) and `pageNumber`/`pageSize` pagination; field-confirmed working on Network 10.3.58. Implementation: probe `/system-log/count` on startup; if available, use `system-log/all` with `timestampFrom = last_cleared_at or (now - 24h)` for polling; fall back to legacy `/list/alarm` for older controllers. Requires a new `UniFiAlert.from_system_log_event()` parser (the v2 schema uses `message_raw` + `parameters` templates, epoch-ms `timestamp`, `status: "NEW"`, and a new key format with no `EVT_` prefix) and a separate v2 key-to-category map. See `docs/research/alert-endpoints.md` and `docs/UNIFI.md § v2 system-log API`.
+- **`SYSTEM_LOG_KEY_TO_CATEGORY` is incomplete** (`const.py`): the v2 system-log key map was seeded from field-confirmed events on Network 10.3.58 (UCG-Ultra) and the documented API schema. Additional keys will surface in the wild; add them as users report unclassified v2 events. Coarse-grained fallback via `SYSTEM_LOG_CATEGORY_FALLBACK` (broad enum) keeps events in roughly the right category until key-level entries are added.
 
 ## Type safety / tech debt
 
