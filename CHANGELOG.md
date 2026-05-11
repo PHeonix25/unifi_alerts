@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-11
+
 ### Changed
 
 - `make lint` now covers `tests/` in addition to `custom_components/`. Zero pre-existing `I001`/`F401` issues were present at the time the scope was widened; the target was simply not wired up.
@@ -136,7 +138,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.6.0
 [1.5.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.5.0
 [1.4.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.4.0
 [1.3.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.3.0
