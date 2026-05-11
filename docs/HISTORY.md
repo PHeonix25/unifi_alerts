@@ -2,6 +2,20 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-05-11
+
+- **release**: v1.6.0-pre2 tagged. Ships the v1.6.0 reliability batch: v2 system-log polling with legacy fallback, persistent counters across reloads, button-availability gating, plus tests / ci / docs items that closed the rest of the v1.6.0 backlog. v1.6.0-pre1 was never tagged; this checkpoint is the first published pre-release of the v1.6.0 cycle.
+- **feat**: v2 `system-log/all` polling switch with capability probe and legacy fallback ([#90]). `/list/alarm` caps at ~3000 records oldest-first, so recent alarms never appear in the polled response on busy controllers; the v2 endpoint supports `timestampFrom` + pagination. Probe caches definitive 200 / 404 responses; transient errors re-probe next poll so a single network blip cannot pin a capable controller to legacy mode. Adds `from_system_log_event` parser, `SYSTEM_LOG_KEY_TO_CATEGORY`, coarse `SYSTEM_LOG_CATEGORY_FALLBACK` for unmapped keys, and warn-once observability for unknown keys.
+- **fix**: `alert_count` and `last_alert` persist across config-entry reloads ([#89]). Previously every options-flow change rebuilt `_category_states` and discarded both counters; they now save alongside the existing watermark in `Store` with backward-compat for legacy payloads.
+- **fix**: Clear buttons inherit `CoordinatorEntity` and gate availability on category-enabled state ([#84]). Previously appeared clickable but no-oped when their category was disabled; per-category buttons now report unavailable via dynamic `available`, and the all-clear button is unavailable when no categories are enabled.
+- **fix**: polled alarms with epoch-ms `timestamp` / `datetime` fields parse correctly ([#83]). Previously `datetime.fromisoformat(str(ts))` rejected numeric strings and fell back to "now", corrupting `received_at`. Also DEBUG-logs 400-response bodies that fail JSON parsing during alarm-endpoint probing. Prerequisite for the v2 system-log switch.
+- **tests**: webhook-mid-poll interleaving regression test ([#88]). Asserts that a webhook arriving during an in-flight poll cannot regress `is_alerting` to False; documents an existing invariant for future refactors.
+- **ci**: `make lint` now covers `tests/` in addition to `custom_components/` ([#87]). Seven test files reformatted by `ruff format` autofix; no test-logic changes.
+- **docs**: README "Updating the integration" section between Installation and Setup ([#86]). Live-tested against v1.5.0-pre3: HACS file copy plus config-entry Reload is not enough; a full HA restart is required because Reload runs against the cached in-memory module.
+- **docs**: README and info.md entity-ID examples refreshed to match the slugified IDs HA actually generates ([#85]). Credential-setup copy purged of "older controllers" and self-hosted Network Application references now that UniFi OS is required.
+- **docs**: retire the `main > dev` sync-merge step from the release workflow ([#81]). With merge-commit-only on `main`, `dev`'s tip is already the second parent of the release commit; the merge base advances correctly without a sync PR.
+- **chore**: start v1.6.0-pre1 development cycle ([#82]). Manifest bumped to `1.6.0-pre1`; no tag pushed.
+
 ## 2026-05-07
 
 - **release**: v1.5.0 tagged. Ships the v1.5.0 security-hardening II + field-confirmed reliability scope: HA-managed clientsession for credential validation, sanitised auth-failure log lines and exception messages, three coordinator reliability bugs (watermark-aware `is_alerting`, persistent `_auto_clear` watermark, optimistic `open_count` increment on the webhook path), and the options-flow atomicity refactor that stages credential / `verify_ssl` / secret-rotation changes and persists them only when the user submits the finish step.
@@ -184,6 +198,16 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 [#73]: https://github.com/PHeonix25/unifi_alerts/pull/73
 [#74]: https://github.com/PHeonix25/unifi_alerts/pull/74
 [#76]: https://github.com/PHeonix25/unifi_alerts/pull/76
+[#81]: https://github.com/PHeonix25/unifi_alerts/pull/81
+[#82]: https://github.com/PHeonix25/unifi_alerts/pull/82
+[#83]: https://github.com/PHeonix25/unifi_alerts/pull/83
+[#84]: https://github.com/PHeonix25/unifi_alerts/pull/84
+[#85]: https://github.com/PHeonix25/unifi_alerts/pull/85
+[#86]: https://github.com/PHeonix25/unifi_alerts/pull/86
+[#87]: https://github.com/PHeonix25/unifi_alerts/pull/87
+[#88]: https://github.com/PHeonix25/unifi_alerts/pull/88
+[#89]: https://github.com/PHeonix25/unifi_alerts/pull/89
+[#90]: https://github.com/PHeonix25/unifi_alerts/pull/90
 
 [0d951b3]: https://github.com/PHeonix25/unifi_alerts/commit/0d951b3
 [0f17afb]: https://github.com/PHeonix25/unifi_alerts/commit/0f17afb
