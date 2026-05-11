@@ -183,12 +183,15 @@ class UniFiClient:
         """Probe the v2 system-log endpoint to determine whether it is available.
 
         Calls POST /proxy/network/v2/api/site/{site}/system-log/count with an
-        empty body. A JSON-object response indicates availability. 404 or any
-        4xx/5xx or network error means the endpoint is not available on this
-        controller; fall back to the legacy /list/alarm path.
+        empty body. A 200 response indicates availability; 404 is the
+        controller's definitive "endpoint not implemented" response. Any other
+        4xx/5xx or network error is treated as transient: the current poll
+        falls back to the legacy path, but the next poll re-probes.
 
-        The result is cached in self._has_system_log and returned on subsequent
-        calls without hitting the network again.
+        Cache semantics: self._has_system_log is set to True or False only on
+        definitive responses (200 / 404). Transient failures leave the cache
+        as None so a capable controller is not pinned to legacy mode by a
+        single network blip.
         """
         if self._has_system_log is not None:
             return self._has_system_log
@@ -210,18 +213,22 @@ class UniFiClient:
                     _LOGGER.debug("v2 system-log endpoint available")
                     self._has_system_log = True
                     return True
+                if resp.status == 404:
+                    _LOGGER.debug(
+                        "v2 system-log endpoint not implemented (HTTP 404); using legacy path"
+                    )
+                    self._has_system_log = False
+                    return False
                 _LOGGER.debug(
-                    "v2 system-log endpoint not available (HTTP %d); using legacy path",
+                    "v2 system-log probe got HTTP %d (transient); legacy path this poll, will retry next",
                     resp.status,
                 )
-                self._has_system_log = False
                 return False
         except aiohttp.ClientError as err:
             _LOGGER.debug(
-                "v2 system-log probe failed with %s; using legacy path",
+                "v2 system-log probe failed with %s (transient); legacy path this poll, will retry next",
                 type(err).__name__,
             )
-            self._has_system_log = False
             return False
 
     async def fetch_system_log_alarms(

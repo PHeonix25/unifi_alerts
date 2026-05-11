@@ -12,7 +12,12 @@ from custom_components.unifi_alerts.const import (
     CATEGORY_SECURITY_FIREWALL,
     CATEGORY_SECURITY_THREAT,
 )
-from custom_components.unifi_alerts.models import CategoryState, UniFiAlert, _render_message_raw
+from custom_components.unifi_alerts.models import (
+    CategoryState,
+    UniFiAlert,
+    _render_message_raw,
+    _unknown_system_log_keys,
+)
 
 
 class TestUniFiAlert:
@@ -296,3 +301,74 @@ class TestFromSystemLogEvent:
         event.pop("title_raw", None)
         alert = UniFiAlert.from_system_log_event(event)
         assert alert.message == "THREAT_BLOCKED_KNOWN_DESTINATION_CLIENT"
+
+
+class TestUnknownSystemLogKeyObservability:
+    """Tests for warn-once-per-unknown-key behaviour in from_system_log_event."""
+
+    _BASE_EVENT = {
+        "id": "x",
+        "category": "SECURITY",
+        "key": "UNMAPPED_BUT_HAS_ENUM_FALLBACK",
+        "timestamp": 1700000000000,
+        "status": "NEW",
+    }
+
+    def setup_method(self):
+        _unknown_system_log_keys.clear()
+
+    def teardown_method(self):
+        _unknown_system_log_keys.clear()
+
+    def test_unknown_key_with_enum_fallback_warns_once_per_key(self, caplog):
+        """Unmapped key whose enum has a coarse fallback warns once, then stays quiet."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="custom_components.unifi_alerts.models")
+        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT))
+        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT))
+        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT))
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "UNMAPPED_BUT_HAS_ENUM_FALLBACK" in warnings[0].getMessage()
+        assert "coarse fallback" in warnings[0].getMessage()
+
+    def test_unknown_key_with_no_fallback_warns_once_per_key(self, caplog):
+        """Unmapped key whose enum is also unknown warns once with the 'event skipped' phrasing."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="custom_components.unifi_alerts.models")
+        event = dict(self._BASE_EVENT, key="FULLY_UNMAPPED", category="UNRECOGNISED_ENUM")
+        UniFiAlert.from_system_log_event(event)
+        UniFiAlert.from_system_log_event(event)
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "FULLY_UNMAPPED" in warnings[0].getMessage()
+        assert "event skipped" in warnings[0].getMessage()
+        alert = UniFiAlert.from_system_log_event(event)
+        assert alert.category == ""
+
+    def test_known_key_does_not_warn(self, caplog):
+        """A mapped key produces no observability warning."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="custom_components.unifi_alerts.models")
+        # FIREWALL_BLOCK is in SYSTEM_LOG_KEY_TO_CATEGORY per existing tests above.
+        event = dict(self._BASE_EVENT, key="FIREWALL_BLOCK")
+        UniFiAlert.from_system_log_event(event)
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings == []
+
+    def test_distinct_unknown_keys_each_warn_once(self, caplog):
+        """Each new unknown key produces its own warning; the dedupe is per-key, not global."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="custom_components.unifi_alerts.models")
+        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT, key="UNMAPPED_A"))
+        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT, key="UNMAPPED_B"))
+        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT, key="UNMAPPED_A"))  # repeat
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 2
+        messages = [r.getMessage() for r in warnings]
+        assert any("UNMAPPED_A" in m for m in messages)
+        assert any("UNMAPPED_B" in m for m in messages)

@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+
+_LOGGER = logging.getLogger(__name__)
+
+_unknown_system_log_keys: set[str] = set()
 
 if TYPE_CHECKING:
     from .coordinator import UniFiAlertsCoordinator
@@ -141,9 +146,30 @@ class UniFiAlert:
         # Category: key-level lookup first, broad enum fallback second
         key = payload.get("key", "")
         v2_category_enum = payload.get("category", "")
-        category = SYSTEM_LOG_KEY_TO_CATEGORY.get(key) or SYSTEM_LOG_CATEGORY_FALLBACK.get(
-            v2_category_enum, ""
-        )
+        mapped_category = SYSTEM_LOG_KEY_TO_CATEGORY.get(key)
+        fallback_category = SYSTEM_LOG_CATEGORY_FALLBACK.get(v2_category_enum, "")
+        category = mapped_category or fallback_category
+
+        # Warn once per unmapped key so production map gaps are discoverable.
+        # The dedupe set is module-scoped because from_system_log_event is a
+        # classmethod with no caller-local state to thread through.
+        if mapped_category is None and key and key not in _unknown_system_log_keys:
+            _unknown_system_log_keys.add(key)
+            if fallback_category:
+                _LOGGER.warning(
+                    "Unrecognised v2 system-log key %r (enum=%s); using coarse fallback category %s. "
+                    "Add this key to SYSTEM_LOG_KEY_TO_CATEGORY in const.py.",
+                    key,
+                    v2_category_enum,
+                    fallback_category,
+                )
+            else:
+                _LOGGER.warning(
+                    "Unrecognised v2 system-log key %r (enum=%s); no category fallback, event skipped. "
+                    "Add this key to SYSTEM_LOG_KEY_TO_CATEGORY in const.py.",
+                    key,
+                    v2_category_enum,
+                )
 
         return cls(
             category=category,

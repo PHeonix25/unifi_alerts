@@ -943,18 +943,35 @@ class TestProbeSystemLogEndpoint:
         assert client._has_system_log is False
 
     @pytest.mark.asyncio
-    async def test_probe_returns_false_on_403(self):
-        """HTTP 403 from /system-log/count must return False."""
+    async def test_probe_returns_false_on_403_does_not_cache(self):
+        """HTTP 403 (non-definitive) must return False this call but leave the cache None.
+
+        Only 404 is treated as a definitive "endpoint not implemented" response.
+        Other 4xx codes may be transient (e.g., temporary permission state) and
+        re-probing on the next poll is preferable to pinning to legacy mode.
+        """
         client = make_client()
         client._authenticated = True
         ctx, _ = _make_post_json_response(403)
         client._session.post = ctx
         result = await client.probe_system_log_endpoint()
         assert result is False
+        assert client._has_system_log is None
 
     @pytest.mark.asyncio
-    async def test_probe_returns_false_on_network_error(self):
-        """aiohttp.ClientError during probe must return False, not raise."""
+    async def test_probe_returns_false_on_500_does_not_cache(self):
+        """HTTP 5xx is treated as transient: returns False without caching."""
+        client = make_client()
+        client._authenticated = True
+        ctx, _ = _make_post_json_response(503)
+        client._session.post = ctx
+        result = await client.probe_system_log_endpoint()
+        assert result is False
+        assert client._has_system_log is None
+
+    @pytest.mark.asyncio
+    async def test_probe_returns_false_on_network_error_does_not_cache(self):
+        """aiohttp.ClientError during probe must return False, not raise, and not cache."""
         import aiohttp
 
         client = make_client()
@@ -968,7 +985,30 @@ class TestProbeSystemLogEndpoint:
         client._session.post = _raise
         result = await client.probe_system_log_endpoint()
         assert result is False
-        assert client._has_system_log is False
+        assert client._has_system_log is None
+
+    @pytest.mark.asyncio
+    async def test_probe_retries_after_transient_failure(self):
+        """A 5xx followed by a 200 must end with cache=True (transient does not pin to legacy)."""
+        client = make_client()
+        client._authenticated = True
+
+        responses = [503, 200]
+
+        @asynccontextmanager
+        async def _stub(*args, **kwargs):
+            resp = MagicMock()
+            resp.status = responses.pop(0)
+            resp.json = AsyncMock(return_value={})
+            yield resp
+
+        client._session.post = _stub
+        first = await client.probe_system_log_endpoint()
+        assert first is False
+        assert client._has_system_log is None, "Transient failure must not cache"
+        second = await client.probe_system_log_endpoint()
+        assert second is True
+        assert client._has_system_log is True
 
     @pytest.mark.asyncio
     async def test_probe_is_cached_after_true(self):
