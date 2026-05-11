@@ -1226,3 +1226,188 @@ class TestCounterPersistence:
             coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
 
         mock_persist.assert_called_once()
+
+
+def _make_hass_and_client():
+    """Return a hass mock + client mock for coordinator tests."""
+    hass = MagicMock()
+
+    def _create_task(coro, **kwargs):
+        coro.close()
+        return MagicMock()
+
+    hass.async_create_task = _create_task
+    hass.async_create_background_task = _create_task
+
+    client = MagicMock()
+    client.probe_system_log_endpoint = AsyncMock(return_value=False)
+    client.fetch_system_log_alarms = AsyncMock(return_value=[])
+    client.categorise_alarms = AsyncMock(return_value={})
+    return hass, client
+
+
+def _make_full_coordinator(hass, client):
+    config = {
+        CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+        CONF_POLL_INTERVAL: 60,
+        CONF_CLEAR_TIMEOUT: 30,
+    }
+    coord = UniFiAlertsCoordinator(hass, client, config)
+    coord.async_set_updated_data = MagicMock()
+    return coord
+
+
+class TestCoordinatorV2Dispatch:
+    """Tests for the v2 system-log dispatch path in _async_update_data."""
+
+    @pytest.mark.asyncio
+    async def test_coordinator_uses_system_log_when_available(self):
+        """When probe returns True, coordinator must call fetch_system_log_alarms."""
+        hass, client = _make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=True)
+        client.fetch_system_log_alarms = AsyncMock(return_value=[])
+        coord = _make_full_coordinator(hass, client)
+
+        await coord._async_update_data()
+
+        client.fetch_system_log_alarms.assert_awaited_once()
+        client.categorise_alarms.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_coordinator_falls_back_to_legacy_on_probe_false(self):
+        """When probe returns False, coordinator must use categorise_alarms."""
+        hass, client = _make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
+        coord = _make_full_coordinator(hass, client)
+
+        await coord._async_update_data()
+
+        client.categorise_alarms.assert_awaited_once()
+        client.fetch_system_log_alarms.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_coordinator_falls_back_to_legacy_on_probe_exception(self):
+        """If probe raises an exception, coordinator must fall back to legacy path."""
+        from custom_components.unifi_alerts.unifi_client import CannotConnectError
+
+        hass, client = _make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(
+            side_effect=CannotConnectError("network error")
+        )
+        coord = _make_full_coordinator(hass, client)
+
+        await coord._async_update_data()
+
+        client.categorise_alarms.assert_awaited_once()
+        client.fetch_system_log_alarms.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_coordinator_falls_back_to_legacy_on_404(self):
+        """probe=False (from a 404) triggers legacy fallback."""
+        hass, client = _make_hass_and_client()
+        # Simulates the probe returning False due to 404 (already handled in UniFiClient)
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
+        coord = _make_full_coordinator(hass, client)
+
+        await coord._async_update_data()
+
+        client.categorise_alarms.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_v2_events_parsed_and_categorised(self):
+        """v2 events returned from fetch_system_log_alarms must be parsed and grouped by category."""
+        from custom_components.unifi_alerts.const import CATEGORY_SECURITY_THREAT
+
+        hass, client = _make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=True)
+        client.fetch_system_log_alarms = AsyncMock(
+            return_value=[
+                {
+                    "key": "THREAT_BLOCKED_KNOWN_DESTINATION_CLIENT",
+                    "category": "SECURITY",
+                    "status": "NEW",
+                    "timestamp": 1778025612345,
+                    "message_raw": "Threat from {SRC_IP}.",
+                    "parameters": {"SRC_IP": {"name": "1.2.3.4"}},
+                    "severity": "HIGH",
+                },
+                {
+                    "key": "THREAT_BLOCKED_KNOWN_DESTINATION_CLIENT",
+                    "category": "SECURITY",
+                    "status": "NEW",
+                    "timestamp": 1778025612000,
+                    "message_raw": "Threat from {SRC_IP}.",
+                    "parameters": {"SRC_IP": {"name": "5.6.7.8"}},
+                    "severity": "HIGH",
+                },
+            ]
+        )
+        coord = _make_full_coordinator(hass, client)
+
+        await coord._async_update_data()
+
+        state = coord.get_category_state(CATEGORY_SECURITY_THREAT)
+        assert state.open_count == 2
+
+    @pytest.mark.asyncio
+    async def test_v2_unknown_key_with_unknown_category_is_skipped(self):
+        """Events with no matching key or category enum must be silently skipped."""
+        hass, client = _make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=True)
+        client.fetch_system_log_alarms = AsyncMock(
+            return_value=[
+                {
+                    "key": "TOTALLY_UNKNOWN_KEY",
+                    "category": "AUDIT",  # not in SYSTEM_LOG_CATEGORY_FALLBACK
+                    "status": "NEW",
+                    "timestamp": 1778025612345,
+                    "message_raw": "Some audit event.",
+                    "parameters": {},
+                    "severity": "LOW",
+                }
+            ]
+        )
+        coord = _make_full_coordinator(hass, client)
+
+        await coord._async_update_data()
+
+        # No category should have an open_count > 0
+        for state in coord.category_states.values():
+            assert state.open_count == 0
+
+    @pytest.mark.asyncio
+    async def test_v2_watermark_passed_as_since_to_fetch(self):
+        """The oldest watermark across enabled categories must be passed as since=."""
+        from datetime import UTC, datetime
+
+        hass, client = _make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=True)
+        client.fetch_system_log_alarms = AsyncMock(return_value=[])
+        coord = _make_full_coordinator(hass, client)
+
+        # Set distinct watermarks; the oldest should be passed as since
+        older_wm = datetime(2026, 5, 1, 10, 0, 0, tzinfo=UTC)
+        newer_wm = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
+        coord.get_category_state(CATEGORY_NETWORK_WAN).last_cleared_at = older_wm
+        coord.get_category_state(CATEGORY_SECURITY_THREAT).last_cleared_at = newer_wm
+
+        await coord._async_update_data()
+
+        client.fetch_system_log_alarms.assert_awaited_once()
+        _, kwargs = client.fetch_system_log_alarms.call_args
+        assert kwargs.get("since") == older_wm
+
+    @pytest.mark.asyncio
+    async def test_v2_no_watermark_passes_none_as_since(self):
+        """When no category has been cleared, since=None must be passed (client picks lookback)."""
+        hass, client = _make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=True)
+        client.fetch_system_log_alarms = AsyncMock(return_value=[])
+        coord = _make_full_coordinator(hass, client)
+
+        # No watermarks set; all last_cleared_at are None
+        await coord._async_update_data()
+
+        client.fetch_system_log_alarms.assert_awaited_once()
+        _, kwargs = client.fetch_system_log_alarms.call_args
+        assert kwargs.get("since") is None

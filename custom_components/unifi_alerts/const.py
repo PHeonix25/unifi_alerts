@@ -33,6 +33,11 @@ WEBHOOK_DEDUP_WINDOW_SECONDS = (
     5.0  # suppress duplicate (category, alert_key) pushes within this window
 )
 
+# v2 system-log polling parameters
+SYSTEM_LOG_PAGE_SIZE = 100  # confirmed observed limit per page
+MAX_SYSTEM_LOG_PAGES = 10  # safety cap: at most 100*10 = 1000 events per poll cycle
+DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS = 24  # hours to look back when no watermark exists
+
 # ──────────────────────────────────────────────
 # Category identifiers
 # ──────────────────────────────────────────────
@@ -178,6 +183,74 @@ UNIFI_KEY_TO_CATEGORY: dict[str, str] = {
     "EVT_XG_OutletPowerCycle": CATEGORY_POWER,
     "EVT_USP_RpsPowerDeniedByPsuOverload": CATEGORY_POWER,
     "EVT_UPS_": CATEGORY_POWER,
+}
+
+# ──────────────────────────────────────────────
+# v2 system-log event key → category mapping
+# Keys are the exact `key` field values from POST /system-log/all responses.
+# These use a flat descriptive format with no EVT_ prefix.
+# The v2 `category` field provides broad grouping; this map provides fine-grained
+# mapping to the integration's categories.
+# Source: field-confirmed on UCG-Ultra running Network 10.3.58; see docs/UNIFI.md.
+# NOTE: this list is intentionally incomplete. Additional keys must be added as
+# they surface in the wild — see docs/TODO.md.
+# ──────────────────────────────────────────────
+SYSTEM_LOG_KEY_TO_CATEGORY: dict[str, str] = {
+    # Security: threat / IPS / IDS — confirmed SECURITY category
+    "THREAT_BLOCKED_KNOWN_DESTINATION_CLIENT": CATEGORY_SECURITY_THREAT,
+    "THREAT_BLOCKED_KNOWN_SOURCE_IP": CATEGORY_SECURITY_THREAT,
+    "THREAT_BLOCKED_KNOWN_DESTINATION_IP": CATEGORY_SECURITY_THREAT,
+    "THREAT_BLOCKED": CATEGORY_SECURITY_THREAT,
+    "THREAT_DETECTED": CATEGORY_SECURITY_THREAT,
+    "IDS_ALERT": CATEGORY_SECURITY_THREAT,
+    "IPS_ALERT": CATEGORY_SECURITY_THREAT,
+    # Security: firewall blocks — SECURITY category
+    "GEO_IP_FILTERED": CATEGORY_SECURITY_FIREWALL,
+    "FIREWALL_BLOCK": CATEGORY_SECURITY_FIREWALL,
+    "CLIENT_BLOCKED": CATEGORY_SECURITY_FIREWALL,
+    # Security: honeypot — SECURITY category
+    "HONEYPOT_DETECTED": CATEGORY_SECURITY_HONEYPOT,
+    "HONEYPOT": CATEGORY_SECURITY_HONEYPOT,
+    # Network: WAN — confirmed INTERNET_AND_WAN category
+    "WAN_TRANSITION": CATEGORY_NETWORK_WAN,
+    "WAN_FAILOVER": CATEGORY_NETWORK_WAN,
+    "WAN_DISCONNECTED": CATEGORY_NETWORK_WAN,
+    "WAN_CONNECTED": CATEGORY_NETWORK_WAN,
+    "INTERNET_UNREACHABLE": CATEGORY_NETWORK_WAN,
+    "INTERNET_RESTORED": CATEGORY_NETWORK_WAN,
+    # Network: device offline/online — confirmed UNIFI_DEVICES category
+    "DEVICE_DISCONNECTED": CATEGORY_NETWORK_DEVICE,
+    "DEVICE_CONNECTED": CATEGORY_NETWORK_DEVICE,
+    "DEVICE_LOST_CONTACT": CATEGORY_NETWORK_DEVICE,
+    "DEVICE_ADOPTED": CATEGORY_NETWORK_DEVICE,
+    "DEVICE_RESTARTED": CATEGORY_NETWORK_DEVICE,
+    "DEVICE_UPGRADED": CATEGORY_NETWORK_DEVICE,
+    "AP_DISCONNECTED": CATEGORY_NETWORK_DEVICE,
+    "AP_CONNECTED": CATEGORY_NETWORK_DEVICE,
+    "SWITCH_DISCONNECTED": CATEGORY_NETWORK_DEVICE,
+    "SWITCH_CONNECTED": CATEGORY_NETWORK_DEVICE,
+    "GATEWAY_DISCONNECTED": CATEGORY_NETWORK_DEVICE,
+    "GATEWAY_CONNECTED": CATEGORY_NETWORK_DEVICE,
+    # Network: client — CLIENT_DEVICES category
+    "CLIENT_CONNECTED": CATEGORY_NETWORK_CLIENT,
+    "CLIENT_DISCONNECTED": CATEGORY_NETWORK_CLIENT,
+    "CLIENT_ROAMED": CATEGORY_NETWORK_CLIENT,
+    # Power — POWER category
+    "POE_OVERLOAD": CATEGORY_POWER,
+    "POE_DISCONNECT": CATEGORY_POWER,
+    "POWER_LOSS": CATEGORY_POWER,
+    "UPS_LOW_BATTERY": CATEGORY_POWER,
+    "DEVICE_OVERHEAT": CATEGORY_POWER,
+}
+
+# v2 category field values that map to integration categories.
+# Used when key-level mapping fails to provide coarse-grained fallback.
+SYSTEM_LOG_CATEGORY_FALLBACK: dict[str, str] = {
+    "SECURITY": CATEGORY_SECURITY_THREAT,
+    "INTERNET_AND_WAN": CATEGORY_NETWORK_WAN,
+    "UNIFI_DEVICES": CATEGORY_NETWORK_DEVICE,
+    "CLIENT_DEVICES": CATEGORY_NETWORK_CLIENT,
+    "POWER": CATEGORY_POWER,
 }
 
 # Webhook IDs — one per category, auto-registered by the integration.

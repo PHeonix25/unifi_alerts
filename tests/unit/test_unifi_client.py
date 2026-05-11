@@ -900,3 +900,347 @@ class TestSslFailOpen:
             f"got {captured_ssl[0]!r}"
         )
         assert captured_ssl[0] is True, "DEFAULT_VERIFY_SSL must be True — fail closed"
+
+
+def _make_post_json_response(status: int, body: dict | None = None):
+    """Build a mock aiohttp POST response that returns JSON body."""
+    resp = MagicMock()
+    resp.status = status
+    resp.headers = {}
+    resp.raise_for_status = MagicMock()
+    resp.json = AsyncMock(return_value=body or {})
+
+    @asynccontextmanager
+    async def _ctx(*args, **kwargs):
+        yield resp
+
+    return _ctx, resp
+
+
+class TestProbeSystemLogEndpoint:
+    """Tests for UniFiClient.probe_system_log_endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_probe_returns_true_on_200(self):
+        """HTTP 200 from /system-log/count must return True and set _has_system_log=True."""
+        client = make_client()
+        client._authenticated = True
+        ctx, _ = _make_post_json_response(200, {"categories": []})
+        client._session.post = ctx
+        result = await client.probe_system_log_endpoint()
+        assert result is True
+        assert client._has_system_log is True
+
+    @pytest.mark.asyncio
+    async def test_probe_returns_false_on_404(self):
+        """HTTP 404 from /system-log/count must return False and set _has_system_log=False."""
+        client = make_client()
+        client._authenticated = True
+        ctx, _ = _make_post_json_response(404)
+        client._session.post = ctx
+        result = await client.probe_system_log_endpoint()
+        assert result is False
+        assert client._has_system_log is False
+
+    @pytest.mark.asyncio
+    async def test_probe_returns_false_on_403(self):
+        """HTTP 403 from /system-log/count must return False."""
+        client = make_client()
+        client._authenticated = True
+        ctx, _ = _make_post_json_response(403)
+        client._session.post = ctx
+        result = await client.probe_system_log_endpoint()
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_probe_returns_false_on_network_error(self):
+        """aiohttp.ClientError during probe must return False, not raise."""
+        import aiohttp
+
+        client = make_client()
+        client._authenticated = True
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectionError("unreachable")
+            yield
+
+        client._session.post = _raise
+        result = await client.probe_system_log_endpoint()
+        assert result is False
+        assert client._has_system_log is False
+
+    @pytest.mark.asyncio
+    async def test_probe_is_cached_after_true(self):
+        """Second call must not hit the network when _has_system_log is True."""
+        client = make_client()
+        client._authenticated = True
+        client._has_system_log = True  # pre-set the cache
+
+        call_count = [0]
+
+        @asynccontextmanager
+        async def _counting(*args, **kwargs):
+            call_count[0] += 1
+            resp = MagicMock()
+            resp.status = 200
+            resp.json = AsyncMock(return_value={})
+            yield resp
+
+        client._session.post = _counting
+        result = await client.probe_system_log_endpoint()
+        assert result is True
+        assert call_count[0] == 0, "Network must not be hit when result is cached"
+
+    @pytest.mark.asyncio
+    async def test_probe_is_cached_after_false(self):
+        """Second call must not hit the network when _has_system_log is False."""
+        client = make_client()
+        client._authenticated = True
+        client._has_system_log = False  # pre-set the cache
+
+        call_count = [0]
+
+        @asynccontextmanager
+        async def _counting(*args, **kwargs):
+            call_count[0] += 1
+            yield MagicMock()
+
+        client._session.post = _counting
+        result = await client.probe_system_log_endpoint()
+        assert result is False
+        assert call_count[0] == 0, "Network must not be hit when result is cached"
+
+    @pytest.mark.asyncio
+    async def test_probe_url_includes_v2_and_site(self):
+        """Probe URL must include /v2/api/site/{site}/system-log/count."""
+        client = make_client()
+        client._authenticated = True
+
+        captured_url: list[str] = []
+
+        @asynccontextmanager
+        async def _tracking(*args, **kwargs):
+            captured_url.append(args[0] if args else "")
+            resp = MagicMock()
+            resp.status = 200
+            resp.json = AsyncMock(return_value={})
+            yield resp
+
+        client._session.post = _tracking
+        await client.probe_system_log_endpoint(site="mysite")
+
+        assert captured_url, "Expected one POST call"
+        assert "v2/api/site/mysite/system-log/count" in captured_url[0]
+
+
+class TestFetchSystemLogAlarms:
+    """Tests for UniFiClient.fetch_system_log_alarms."""
+
+    def _make_page_response(self, events: list[dict], total_pages: int, page: int = 0):
+        """Build a mock POST response for one system-log/all page."""
+        body = {
+            "data": events,
+            "page_number": page,
+            "total_element_count": len(events),
+            "total_page_count": total_pages,
+        }
+        ctx, resp = _make_post_json_response(200, body)
+        return ctx, resp
+
+    @pytest.mark.asyncio
+    async def test_returns_new_events_only(self):
+        """Only events with status='NEW' must be returned; others are filtered."""
+        client = make_client()
+        client._authenticated = True
+        events = [
+            {"key": "THREAT_BLOCKED", "status": "NEW", "timestamp": 1778025612345},
+            {"key": "THREAT_BLOCKED", "status": "ARCHIVED", "timestamp": 1778025612000},
+        ]
+        ctx, _ = self._make_page_response(events, total_pages=1)
+        client._session.post = ctx
+        result = await client.fetch_system_log_alarms()
+        assert len(result) == 1
+        assert result[0]["status"] == "NEW"
+
+    @pytest.mark.asyncio
+    async def test_paginates_until_total_pages_exhausted(self):
+        """Must fetch pages until total_page_count is reached."""
+        client = make_client()
+        client._authenticated = True
+
+        call_count = [0]
+
+        @asynccontextmanager
+        async def _paginated(*args, **kwargs):
+            call_count[0] += 1
+            page = call_count[0] - 1
+            body = {
+                "data": [{"key": "K", "status": "NEW", "timestamp": 1000}],
+                "page_number": page,
+                "total_element_count": 3,
+                "total_page_count": 3,
+            }
+            resp = MagicMock()
+            resp.status = 200
+            resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(return_value=body)
+            yield resp
+
+        client._session.post = _paginated
+        result = await client.fetch_system_log_alarms()
+        assert call_count[0] == 3
+        assert len(result) == 3  # one NEW event per page
+
+    @pytest.mark.asyncio
+    async def test_stops_at_max_pages_cap(self):
+        """Must stop after MAX_SYSTEM_LOG_PAGES even if total_page_count is larger."""
+        from custom_components.unifi_alerts.const import MAX_SYSTEM_LOG_PAGES
+
+        client = make_client()
+        client._authenticated = True
+
+        call_count = [0]
+
+        @asynccontextmanager
+        async def _many_pages(*args, **kwargs):
+            call_count[0] += 1
+            body = {
+                "data": [{"key": "K", "status": "NEW", "timestamp": 1000}],
+                "page_number": call_count[0] - 1,
+                "total_element_count": 9999,
+                "total_page_count": 9999,  # more than MAX_SYSTEM_LOG_PAGES
+            }
+            resp = MagicMock()
+            resp.status = 200
+            resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(return_value=body)
+            yield resp
+
+        client._session.post = _many_pages
+        await client.fetch_system_log_alarms()
+        assert call_count[0] == MAX_SYSTEM_LOG_PAGES, (
+            f"Expected exactly {MAX_SYSTEM_LOG_PAGES} page fetches; got {call_count[0]}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_stops_on_empty_page(self):
+        """Must stop when a page returns an empty data list."""
+        client = make_client()
+        client._authenticated = True
+
+        call_count = [0]
+
+        @asynccontextmanager
+        async def _empty_second_page(*args, **kwargs):
+            call_count[0] += 1
+            data = [{"key": "K", "status": "NEW", "timestamp": 1000}] if call_count[0] == 1 else []
+            body = {
+                "data": data,
+                "page_number": call_count[0] - 1,
+                "total_element_count": 1,
+                "total_page_count": 99,  # large total — early stop on empty page
+            }
+            resp = MagicMock()
+            resp.status = 200
+            resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(return_value=body)
+            yield resp
+
+        client._session.post = _empty_second_page
+        result = await client.fetch_system_log_alarms()
+        assert call_count[0] == 2  # first page + one empty page
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_passes_timestamp_from_as_epoch_ms(self):
+        """timestampFrom must be epoch milliseconds derived from the since datetime."""
+        from datetime import UTC, datetime
+
+        client = make_client()
+        client._authenticated = True
+
+        captured_body: list[dict] = []
+
+        @asynccontextmanager
+        async def _capturing(*args, **kwargs):
+            captured_body.append(kwargs.get("json", {}))
+            body = {"data": [], "page_number": 0, "total_element_count": 0, "total_page_count": 1}
+            resp = MagicMock()
+            resp.status = 200
+            resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(return_value=body)
+            yield resp
+
+        client._session.post = _capturing
+
+        since = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
+        expected_ms = int(since.timestamp() * 1000)
+        await client.fetch_system_log_alarms(since=since)
+
+        assert captured_body, "Expected at least one POST call"
+        assert captured_body[0]["timestampFrom"] == expected_ms, (
+            f"Expected timestampFrom={expected_ms}, got {captured_body[0].get('timestampFrom')}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_uses_default_lookback_when_no_since(self):
+        """When since=None, timestampFrom must be approximately now - DEFAULT lookback."""
+        from datetime import UTC, datetime, timedelta
+
+        from custom_components.unifi_alerts.const import DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS
+
+        client = make_client()
+        client._authenticated = True
+
+        captured_body: list[dict] = []
+
+        @asynccontextmanager
+        async def _capturing(*args, **kwargs):
+            captured_body.append(kwargs.get("json", {}))
+            body = {"data": [], "page_number": 0, "total_element_count": 0, "total_page_count": 1}
+            resp = MagicMock()
+            resp.status = 200
+            resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(return_value=body)
+            yield resp
+
+        client._session.post = _capturing
+        await client.fetch_system_log_alarms(since=None)
+
+        expected_approx_ms = int(
+            (datetime.now(UTC) - timedelta(hours=DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS)).timestamp()
+            * 1000
+        )
+        actual_ms = captured_body[0]["timestampFrom"]
+        # Allow 5-second slack for test execution time
+        assert abs(actual_ms - expected_approx_ms) < 5000, (
+            f"timestampFrom {actual_ms} deviates too far from expected {expected_approx_ms}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_401_raises_invalid_auth(self):
+        """HTTP 401 during system-log fetch must raise InvalidAuthError."""
+        client = make_client()
+        client._authenticated = True
+        ctx, _ = _make_post_json_response(401)
+        client._session.post = ctx
+        with pytest.raises(InvalidAuthError):
+            await client.fetch_system_log_alarms()
+
+    @pytest.mark.asyncio
+    async def test_network_error_raises_cannot_connect(self):
+        """aiohttp.ClientError during fetch must raise CannotConnectError."""
+        import aiohttp
+
+        client = make_client()
+        client._authenticated = True
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectionError("unreachable")
+            yield
+
+        client._session.post = _raise
+        with pytest.raises(CannotConnectError):
+            await client.fetch_system_log_alarms()
