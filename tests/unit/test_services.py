@@ -131,9 +131,7 @@ class TestHandleClearCategory:
         coord_a = make_coordinator()
         coord_b = make_coordinator()
         hass = make_hass({"entry-a": coord_a, "entry-b": coord_b})
-        call = make_call(
-            hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "entry-a"}
-        )
+        call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "entry-a"})
 
         await _handle_clear_category(call)
 
@@ -303,9 +301,7 @@ class TestServicesWiredFromInit:
             ),
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
             patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
-            patch(
-                "custom_components.unifi_alerts.async_register_services"
-            ) as mock_register,
+            patch("custom_components.unifi_alerts.async_register_services") as mock_register,
         ):
             await async_setup_entry(hass, entry)
 
@@ -328,9 +324,7 @@ class TestServicesWiredFromInit:
         entry.runtime_data.client = mock_client
         hass.config_entries.async_entries = MagicMock(return_value=[entry])
 
-        with patch(
-            "custom_components.unifi_alerts.async_unregister_services"
-        ) as mock_unregister:
+        with patch("custom_components.unifi_alerts.async_unregister_services") as mock_unregister:
             await async_unload_entry(hass, entry)
 
         mock_unregister.assert_called_once_with(hass)
@@ -354,9 +348,7 @@ class TestServicesWiredFromInit:
             entry.runtime_data.client = mock_client
         hass.config_entries.async_entries = MagicMock(return_value=[entry1, entry2])
 
-        with patch(
-            "custom_components.unifi_alerts.async_unregister_services"
-        ) as mock_unregister:
+        with patch("custom_components.unifi_alerts.async_unregister_services") as mock_unregister:
             # Unload only entry1 — entry2 still remains
             await async_unload_entry(hass, entry1)
 
@@ -424,9 +416,7 @@ class TestGetCoordinatorsGuard:
         hass.config_entries.async_get_entry = MagicMock(return_value=retry_entry)
         hass.config_entries.async_entries = MagicMock(return_value=[retry_entry])
 
-        call = make_call(
-            hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "entry-retry"}
-        )
+        call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "entry-retry"})
 
         with patch("custom_components.unifi_alerts.services._LOGGER") as mock_log:
             # Must not raise — the guard should log and return early

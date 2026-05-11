@@ -39,8 +39,8 @@ test:
 	$(VENV)/pytest$(EXE) tests/ -v
 
 lint:
-	$(VENV)/ruff$(EXE) check custom_components/
-	$(VENV)/ruff$(EXE) format --check custom_components/
+	$(VENV)/ruff$(EXE) check custom_components/ tests/
+	$(VENV)/ruff$(EXE) format --check custom_components/ tests/
 
 typecheck:
 	$(VENV)/mypy$(EXE) custom_components/unifi_alerts --ignore-missing-imports

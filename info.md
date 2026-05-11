@@ -38,7 +38,7 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 
 - Home Assistant 2026.1.0 or later
 - UniFi Network controller reachable on the same local network as your HA instance
-- Credentials: API key (UniFi OS consoles) **or** username + password (older controllers)
+- Credentials: API key (recommended) **or** username + password
 
 > **Local network only:** webhook URLs are not reachable over Nabu Casa remote access or from cloud-hosted controllers.
 

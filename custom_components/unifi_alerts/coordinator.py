@@ -84,9 +84,21 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     # ── DataUpdateCoordinator override ───────────────────────────────────
 
     async def _async_update_data(self) -> dict[str, CategoryState]:
-        """Fetch open alarm counts from the controller (polling path)."""
+        """Fetch open alarm counts from the controller (polling path).
+
+        Dispatches to the v2 system-log endpoint when available (detected via
+        a one-shot probe of /system-log/count). Falls back to the legacy
+        /list/alarm path for older controllers or when the probe fails.
+
+        Watermark policy for v2 polling:
+          timestampFrom = the oldest last_cleared_at across all enabled
+          categories (so we fetch everything since the oldest unacknowledged
+          window). If no category has been cleared, fall back to now-24h.
+          This is conservative: it over-fetches slightly but guarantees that
+          recent alarms in every enabled category are always reachable.
+        """
         try:
-            categorised = await self._client.categorise_alarms(self._site)
+            categorised = await self._fetch_categorised()
         except InvalidAuthError as err:
             # Re-authenticate once then retry
             _LOGGER.warning("Auth expired, re-authenticating: %s", err)
@@ -100,7 +112,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                     f"Re-authentication failed; credentials may have changed: {reauth_err}"
                 ) from reauth_err
             try:
-                categorised = await self._client.categorise_alarms(self._site)
+                categorised = await self._fetch_categorised()
             except CannotConnectError as retry_err:
                 raise UpdateFailed(
                     f"Cannot reach UniFi controller after re-authentication: {retry_err}"
@@ -144,6 +156,59 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 state.open_count = 0
 
         return self._category_states
+
+    async def _fetch_categorised(self) -> dict[str, list[UniFiAlert]]:
+        """Fetch and categorise alarms using v2 or legacy path as appropriate.
+
+        Calls probe_system_log_endpoint() once per client instance. On success,
+        fetches from system-log/all with a timestampFrom watermark and parses
+        each event with UniFiAlert.from_system_log_event(). Skips events whose
+        resolved category is empty (unknown keys with no broad enum fallback).
+
+        Falls back to legacy categorise_alarms() if:
+          - the probe returns False (404 / 4xx from the controller)
+          - the probe itself raises a network error (logged at DEBUG)
+          - this is an older controller without the v2 endpoint
+        """
+        try:
+            has_v2 = await self._client.probe_system_log_endpoint(self._site)
+        except Exception as probe_err:  # noqa: BLE001
+            _LOGGER.debug(
+                "v2 system-log probe raised %s; falling back to legacy path",
+                type(probe_err).__name__,
+            )
+            has_v2 = False
+
+        if not has_v2:
+            return await self._client.categorise_alarms(self._site)
+
+        # v2 path: compute the oldest watermark across enabled categories so we
+        # fetch everything since the oldest unacknowledged window.
+        watermarks = [
+            state.last_cleared_at
+            for state in self._category_states.values()
+            if state.enabled and state.last_cleared_at is not None
+        ]
+        since: datetime | None = min(watermarks) if watermarks else None
+
+        raw_events = await self._client.fetch_system_log_alarms(self._site, since=since)
+
+        categorised: dict[str, list[UniFiAlert]] = {}
+        for event in raw_events:
+            alert = UniFiAlert.from_system_log_event(event)
+            if not alert.category:
+                # Unknown key and no broad enum fallback — skip, same as legacy behaviour
+                key = event.get("key", "")
+                if key:
+                    _LOGGER.debug(
+                        "Unclassified v2 system-log event key %r — consider reporting it at "
+                        "https://github.com/PHeonix25/unifi_alerts/issues",
+                        key,
+                    )
+                continue
+            categorised.setdefault(alert.category, []).append(alert)
+
+        return categorised
 
     # ── Webhook push path ────────────────────────────────────────────────
 
@@ -196,6 +261,11 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             state.open_count += 1
         _LOGGER.debug("Alert pushed to category %s: %s", category, alert.message)
 
+        # Persist alert_count and last_alert so they survive a config-entry
+        # reload triggered by an options change. Scheduled as a background
+        # task because push_alert is synchronous.
+        self._schedule_persist()
+
         # Cancel any existing clear timer and start a fresh one
         self._schedule_clear(category)
 
@@ -235,26 +305,54 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     # ── Watermark persistence ─────────────────────────────────────────────
 
     async def async_restore_watermarks(self) -> None:
-        """Load persisted acknowledgement watermarks from storage on startup."""
+        """Load persisted category state from storage on startup.
+
+        Restores ``last_cleared_at``, ``alert_count``, and ``last_alert`` for
+        each category. Legacy payloads that only contain ``last_cleared_at``
+        (a plain ISO string, pre-v1.6.0) are handled transparently: the dict
+        branch runs when the stored value is a dict; the string branch handles
+        the old format so existing installs are not disrupted.
+        """
         data: dict | None = await self._store.async_load()
         if not data:
             return
-        for cat, ts_str in data.items():
+        for cat, entry in data.items():
             state = self._category_states.get(cat)
             if state is None:
                 continue
-            try:
-                state.last_cleared_at = datetime.fromisoformat(ts_str)
-            except (ValueError, TypeError):
-                _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, ts_str)
+            if isinstance(entry, str):
+                # Legacy format: bare ISO string watermark only.
+                try:
+                    state.last_cleared_at = datetime.fromisoformat(entry)
+                except (ValueError, TypeError):
+                    _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, entry)
+            elif isinstance(entry, dict):
+                ts_str = entry.get("last_cleared_at")
+                if ts_str is not None:
+                    try:
+                        state.last_cleared_at = datetime.fromisoformat(ts_str)
+                    except (ValueError, TypeError):
+                        _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, ts_str)
+                state.alert_count = int(entry.get("alert_count", 0))
+                raw_alert = entry.get("last_alert")
+                if raw_alert is not None:
+                    try:
+                        state.last_alert = UniFiAlert.from_dict(raw_alert)
+                    except (KeyError, TypeError, ValueError):
+                        _LOGGER.warning("Ignoring invalid stored last_alert for %s", cat)
 
     async def _async_persist_watermarks(self) -> None:
-        """Persist current acknowledgement watermarks to storage."""
-        data = {
-            cat: state.last_cleared_at.isoformat()
-            for cat, state in self._category_states.items()
-            if state.last_cleared_at is not None
-        }
+        """Persist current category state (watermark, alert_count, last_alert) to storage."""
+        data: dict[str, dict] = {}
+        for cat, state in self._category_states.items():
+            entry: dict = {}
+            if state.last_cleared_at is not None:
+                entry["last_cleared_at"] = state.last_cleared_at.isoformat()
+            entry["alert_count"] = state.alert_count
+            entry["last_alert"] = (
+                state.last_alert.to_dict() if state.last_alert is not None else None
+            )
+            data[cat] = entry
         await self._store.async_save(data)
 
     # ── Clear entry points (called by buttons and services) ───────────────
@@ -298,6 +396,19 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             create_task = getattr(self.hass, "async_create_task", None)
             task = create_task(coro) if create_task is not None else asyncio.ensure_future(coro)
         self._clear_tasks[category] = task
+
+    def _schedule_persist(self) -> None:
+        """Schedule a fire-and-forget persist so push_alert (sync) can trigger a save."""
+        coro = self._async_persist_watermarks()
+        create_bg = getattr(self.hass, "async_create_background_task", None)
+        if create_bg is not None:
+            create_bg(coro, name="unifi_alerts_persist_state")
+        else:
+            create_task = getattr(self.hass, "async_create_task", None)
+            if create_task is not None:
+                create_task(coro)
+            else:
+                asyncio.ensure_future(coro)
 
     def cancel_clear(self, category: str) -> None:
         """Cancel any pending auto-clear task for the given category."""

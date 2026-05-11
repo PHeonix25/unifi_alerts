@@ -39,7 +39,11 @@ def make_request(token: str | None = "test-secret-123", json_body: dict | None =
     """Build a minimal mock aiohttp.web.Request."""
     req = MagicMock()
     req.query = {"token": token} if token is not None else {}
-    body_dict = json_body if json_body is not None else {"key": "EVT_GW_WANTransition", "message": "WAN down"}
+    body_dict = (
+        json_body
+        if json_body is not None
+        else {"key": "EVT_GW_WANTransition", "message": "WAN down"}
+    )
     req.content.read = AsyncMock(return_value=json.dumps(body_dict).encode())
     return req
 

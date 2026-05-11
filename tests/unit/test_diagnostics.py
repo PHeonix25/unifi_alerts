@@ -51,9 +51,11 @@ def _make_coordinator(
     coordinator.any_alerting = any_alerting
     coordinator.rollup_alert_count = rollup_alert_count
     coordinator.rollup_open_count = rollup_open_count
-    coordinator.category_states = category_states if category_states is not None else {
-        cat: CategoryState(category=cat) for cat in ALL_CATEGORIES
-    }
+    coordinator.category_states = (
+        category_states
+        if category_states is not None
+        else {cat: CategoryState(category=cat) for cat in ALL_CATEGORIES}
+    )
     return coordinator
 
 
@@ -69,7 +71,9 @@ async def test_diagnostics_redacts_password() -> None:
 
 @pytest.mark.asyncio
 async def test_diagnostics_redacts_api_key() -> None:
-    entry = _make_entry_with_runtime(_make_coordinator(), extra_data={CONF_API_KEY: "super-secret-key"})
+    entry = _make_entry_with_runtime(
+        _make_coordinator(), extra_data={CONF_API_KEY: "super-secret-key"}
+    )
     hass = MagicMock()
 
     result = await async_get_config_entry_diagnostics(hass, entry)

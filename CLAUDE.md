@@ -67,7 +67,7 @@ This project uses a two-branch model. All active development happens on `dev`; `
 | Branch | Purpose | Version format | Example |
 |--------|---------|---------------|---------|
 | `main` | Stable releases only. CI enforces no pre-release suffix. | `X.Y.Z` | `1.0.0`, `1.1.0` |
-| `dev` | Active development. CI accepts `-preN` during development, or stable `X.Y.Z` when preparing a release. After each stable release, a sync merge from `main` back to `dev` is required (see release workflow step 3b). | `X.Y.Z-preN` or `X.Y.Z` | `1.1.0-pre1`, `1.1.0` |
+| `dev` | Active development. CI accepts `-preN` during development, or stable `X.Y.Z` when preparing a release. | `X.Y.Z-preN` or `X.Y.Z` | `1.1.0-pre1`, `1.1.0` |
 | `feature/*` or `claude/*` | Short-lived work. **Must branch off `dev`, not `main`.** No version format enforced by CI. | Any | - |
 
 ### Versioning conventions
@@ -85,8 +85,7 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
        │
        ├── bump manifest to 1.1.0 (via claude/* PR > dev)
        │    └─► PR dev > main  [MERGE COMMIT - never squash]
-       │         ├─► tag v1.1.0  ──► GitHub stable release  (automated)
-       │         └─► PR main > dev  [sync merge - keep 389841a in dev ancestry]
+       │         └─► tag v1.1.0  ──► GitHub stable release  (automated)
        │
        └── bump manifest to 1.2.0-pre1 (via claude/* PR > dev)  (start next cycle)
 ```
@@ -107,11 +106,9 @@ dev  ──┬── (work) ──► tag v1.1.0-pre1  ──► GitHub pre-rele
    ```
    GitHub Actions creates a stable release automatically; the auto-generated notes are grouped by the labels on PRs merged between the previous tag and this one.
 
-   > **CRITICAL - use "Create a merge commit", never "Squash and merge", for the `dev > main` PR.** Squashing creates a new commit on `main` whose only parent is the previous `main` tip; dev's individual commits have no ancestry path through it. The merge base between `main` and `dev` never advances past the last stable release, so the next release produces a conflict storm across every file that both branches touched. A regular merge commit preserves both parents and keeps the merge base current.
+   > **CRITICAL - use "Create a merge commit", never "Squash and merge", for the `dev > main` PR.** Squashing creates a new commit on `main` whose only parent is the previous `main` tip; dev's individual commits have no ancestry path through it. The merge base between `main` and `dev` never advances past the last stable release, so the next release produces a conflict storm across every file that both branches touched. A regular merge commit preserves both parents and keeps the merge base current. The `main` ruleset is configured to enforce merge-commit-only.
 
-3b. **Sync merge: main > dev (mandatory after every stable release).** Immediately after the `dev > main` release PR merges, open a short-lived `claude/sync-main-to-dev-X.Y.Z` branch **from `dev`**, run `git merge origin/main`, resolve any trivial conflicts (take dev's version number), push, and open a PR targeting `dev`. Merge it as a **merge commit** (not squash). This makes the release's squash commit an ancestor of `dev`, so the next `dev > main` PR will have the correct merge base and be a clean fast-forward.
-
-   > **Why this step must target the new squash commit:** In the past (v1.3.0, PR #47) a sync merge was attempted but accidentally merged the *previous* stable tag (`v1.2.0`) rather than the new squash commit (`v1.3.0`). The tree content was identical so CI passed, but the parent pointer was wrong - the merge base never advanced. Always verify the second parent of the merge commit is the tip of `origin/main` *after* the release, not before.
+   > **No `main > dev` sync merge needed.** Earlier releases (v1.3.0, v1.4.0) ran a `claude/sync-main-to-dev-X.Y.Z` PR after every stable release because the `dev > main` PR was squash-merged, which left the release commit out of dev's ancestry. With merge-commit-only on `main` (above), dev's tip is already the second parent of the release commit; the merge base advances correctly and no sync is required. Attempting one now contradicts the squash-only-on-dev ruleset.
 
 4. **Start next cycle:** run `python3 scripts/bump_version.py --next-cycle` to bump manifest to `X.(Y+1).0-pre1` on a `claude/bump-*` branch, open PR targeting `dev`, merge. Development continues forward. Notable changes between releases accumulate under `CHANGELOG.md` `[Unreleased]` as their PRs land - don't batch them at release time.
 

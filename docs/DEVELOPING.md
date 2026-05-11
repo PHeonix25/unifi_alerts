@@ -99,7 +99,7 @@ HA requires `strings.json` and `translations/en.json` to match exactly. Edit bot
 
 ## Release process
 
-Stable releases require **three** PRs, in order. Skipping or mis-ordering them causes merge-base drift that turns the next release into a conflict storm.
+Stable releases require **two** PRs, in order. Skipping or mis-ordering them causes merge-base drift that turns the next release into a conflict storm.
 
 ### PR 1 - version bump + CHANGELOG (feature/* > dev)
 
@@ -120,18 +120,4 @@ git checkout main && git pull origin main
 git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-### PR 3 - main > dev (sync merge, mandatory)
-
-Immediately after PR 2 merges, bring the new squash commit into `dev`'s ancestry:
-
-```bash
-git checkout dev && git pull origin dev
-git checkout -b claude/sync-main-to-dev-X.Y.Z
-git merge origin/main          # merge the new squash commit as a second parent
-# resolve any trivial conflicts (version number: take dev's X.(Y+1).0-pre1)
-git push -u origin claude/sync-main-to-dev-X.Y.Z
-```
-
-Open a PR targeting `dev`. **Merge as "Create a merge commit"** - not squash. The resulting commit will have `origin/main`'s tip as its second parent, making `git merge-base dev main` point at the new `vX.Y.Z` squash commit rather than the previous release.
-
-> **Common mistake (v1.3.0 / PR #47):** merging `origin/main` while `main` still points at the *previous* stable tag instead of the new squash commit. The tree content looks correct so CI passes, but the parent pointer is wrong and the merge base does not advance. Always run `git fetch origin main && git log --oneline origin/main -1` to confirm `main` is at the new release commit before running `git merge origin/main`.
+> **No `main > dev` sync merge needed.** Earlier releases (v1.3.0, v1.4.0) ran a third PR (`claude/sync-main-to-dev-X.Y.Z`) because the `dev > main` PR was squash-merged, which left the release commit out of dev's ancestry. With merge-commit-only on `main` (PR 2 above), dev's tip is already the second parent of the release commit; the merge base advances correctly and no sync is required. Attempting one now also conflicts with the squash-only-on-dev ruleset.

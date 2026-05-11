@@ -2,11 +2,6 @@
 
 Outstanding work only. Items are removed when they ship; completion lives in `docs/HISTORY.md`, and the per-release plan lives in `docs/ROADMAP.md`.
 
-## 🟡 High-value
-
-- **Verify update-in-place**: confirm a HACS file copy + config-entry reload (Settings > Integrations > UniFi Alerts > ⋮ > Reload) is enough on a real HA install. A forced restart would be a friction point. Document the expected flow in `README.md`.
-- **README + info.md examples sweep**: confirm sensor names in the dashboard / automation YAML match the current `unique_id` format and that no copy still references self-hosted controllers.
-
 ## 🟢 Nice-to-have
 
 - **HACS default catalogue submission**: open the PR to <https://github.com/hacs/default> once all v1.x items below are closed.
@@ -14,22 +9,15 @@ Outstanding work only. Items are removed when they ship; completion lives in `do
 
 ## Reliability / correctness
 
-- **Epoch-ms timestamps dropped** (`models.py:54-63`): `datetime.fromisoformat(str(ts))` rejects numeric strings, so polled alerts using epoch-ms `datetime`/`timestamp` fields silently fall back to `now(UTC)`. Add an epoch-ms branch before the ISO fallback.
-- **Polling strategy must switch to v2 system-log API for busy controllers** (`unifi_client.py`): `/list/alarm` caps at ~3000 records oldest-first. The v2 `POST /proxy/network/v2/api/site/{site}/system-log/all` endpoint supports `timestampFrom`/`timestampTo` (epoch ms) and `pageNumber`/`pageSize` pagination; field-confirmed working on Network 10.3.58. Implementation: probe `/system-log/count` on startup; if available, use `system-log/all` with `timestampFrom = last_cleared_at or (now - 24h)` for polling; fall back to legacy `/list/alarm` for older controllers. Requires a new `UniFiAlert.from_system_log_event()` parser (the v2 schema uses `message_raw` + `parameters` templates, epoch-ms `timestamp`, `status: "NEW"`, and a new key format with no `EVT_` prefix) and a separate v2 key-to-category map. See `docs/research/alert-endpoints.md` and `docs/UNIFI.md § v2 system-log API`.
-- **`_category_states` rebuilt on reload** (`coordinator.py`): `alert_count` and `last_alert` are discarded on every options change. Persist them alongside watermarks in the existing `Store`.
-- **Silent JSON-parse failure during 400-error inspection** (`unifi_client.py`): `except Exception: pass` swallows malformed UniFi error bodies, hiding the `api.err.InvalidObject` fallback. Log at DEBUG with the exception class name.
+- **`SYSTEM_LOG_KEY_TO_CATEGORY` is incomplete** (`const.py`): the v2 system-log key map was seeded from field-confirmed events on Network 10.3.58 (UCG-Ultra) and the documented API schema. Additional keys will surface in the wild; add them as users report unclassified v2 events. Coarse-grained fallback via `SYSTEM_LOG_CATEGORY_FALLBACK` (broad enum) keeps events in roughly the right category until key-level entries are added.
 
 ## Type safety / tech debt
 
 - **`mypy strict = false`**: migrate `UniFiClient.config: dict[str, Any]` to a `TypedDict` or frozen dataclass, then bump `pyproject.toml` to `strict = true`.
 - **No sensor `device_class`** (`sensor.py`): open-count and rollup-count sensors have no class. None of HA's built-ins map cleanly; consider richer `state_class` instead.
-- **Buttons don't inherit `CoordinatorEntity`** (`button.py`): `UniFiClearCategoryButton` and `UniFiClearAllButton` extend `ButtonEntity` directly, so they always appear available even when their category is disabled. Add the mixin and an `available` property.
 
 ## Testing
 
-- **`test_from_api_alarm_epoch_ms`**: assert a numeric epoch-ms timestamp produces the correct UTC datetime.
-- **Webhook-mid-poll interleaving test** (`test_coordinator.py`): assert a webhook arriving while `_async_update_data()` is awaited does not regress `is_alerting`.
-- **`make lint` to cover `tests/`**: extend the Makefile target and resolve the six pre-existing `I001`/`F401` issues in `test_services.py` and `test_config_flow.py`.
 - **Optional: integration test for full rotation cycle**: options-flow > entry-update > reload > re-register, end-to-end. Each step is unit-tested already.
 
 ## Documentation

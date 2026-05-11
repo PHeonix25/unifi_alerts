@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-11
+
+### Changed
+
+- `make lint` now covers `tests/` in addition to `custom_components/`. Zero pre-existing `I001`/`F401` issues were present at the time the scope was widened; the target was simply not wired up.
+- Polling now uses the v2 `system-log/all` endpoint when the controller exposes it (detected via a one-shot probe of `/system-log/count`). The v2 endpoint accepts `timestampFrom` and pagination, so recent alarms on busy controllers (more than ~33 alarms/day) are no longer truncated out of the polled response. Controllers without the endpoint continue to use the legacy `/list/alarm` path; no user action required.
+
+### Added
+
+- Added an "Updating the integration" section to README.md between Installation and Setup, explaining that a full Home Assistant restart is required after every HACS update; the config-entry Reload action does not pick up new code or manifest changes.
+
+### Fixed
+
+- Polled alarms with epoch-millisecond `timestamp`/`datetime` fields (numeric or numeric-string) are now parsed correctly. Previously `datetime.fromisoformat(str(ts))` rejected numeric strings, silently falling back to "now" and corrupting `received_at` for every polled alert on controllers that emit ms timestamps. Prerequisite for the v2 system-log polling switch.
+- 400-response bodies that fail JSON parsing during alarm-endpoint probing are now logged at DEBUG with the exception class. Previously a bare `except Exception: pass` masked malformed UniFi error bodies, hiding the `api.err.InvalidObject` fallback path.
+- Per-category Clear buttons now report unavailable when their category is disabled in options. Previously they appeared clickable but no-oped on press. The all-clear button is also now unavailable when no categories are enabled. Both button classes now inherit `CoordinatorEntity` so they respond to coordinator updates consistently with the other platforms. (`button.py`)
+- README and info.md entity-ID examples now match what HA generates from the integration's entity names; stale short-form IDs (e.g. `binary_sensor.unifi_alerts_network_device`) replaced with the correct slugified forms (e.g. `binary_sensor.unifi_alerts_network_device_offline_online`). Credential setup copy updated to remove references to "older controllers" and self-hosted Network Application installs now that UniFi OS is required.
+- `alert_count` and `last_alert` now persist across config-entry reloads. Previously every options change discarded both counters; they are now saved alongside the existing watermark in the integration's `Store` and restored on startup.
+
 ## [1.5.0] - 2026-05-07
 
 ### Fixed
@@ -119,7 +138,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.6.0
 [1.5.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.5.0
 [1.4.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.4.0
 [1.3.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.3.0

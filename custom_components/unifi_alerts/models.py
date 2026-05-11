@@ -2,14 +2,41 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from contextlib import suppress
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+
+_LOGGER = logging.getLogger(__name__)
+
+_unknown_system_log_keys: set[str] = set()
 
 if TYPE_CHECKING:
     from .coordinator import UniFiAlertsCoordinator
     from .unifi_client import UniFiClient
+
+
+def _render_message_raw(message_raw: str, parameters: dict) -> str:
+    """Substitute {KEY} placeholders in message_raw with values from parameters.
+
+    The v2 system-log schema uses a template string (message_raw) with
+    {PARAM_NAME} placeholders and a parameters object whose values are dicts
+    with at least a 'name' field (and sometimes an 'id' and other metadata).
+    Simple substitution is sufficient; do not over-engineer.
+    """
+    result = message_raw
+    for key, value in parameters.items():
+        placeholder = "{" + key + "}"
+        if placeholder in result:
+            # Prefer 'name', fall back to 'id', then the key itself
+            if isinstance(value, dict):
+                display = value.get("name") or value.get("id") or key
+            else:
+                display = str(value)
+            result = result.replace(placeholder, str(display))
+    return result
 
 
 @dataclass
@@ -55,12 +82,22 @@ class UniFiAlert:
     def from_api_alarm(cls, category: str, alarm: dict) -> UniFiAlert:
         """Build an alert from a polled UniFi controller alarm record."""
         message = alarm.get("msg") or alarm.get("message") or alarm.get("key") or "Unknown alert"
-        # UniFi stores timestamps as epoch milliseconds in some fields
+        # UniFi returns timestamps as epoch milliseconds (v2 system-log always; legacy
+        # /list/alarm sometimes) or ISO strings. fromisoformat rejects numeric strings,
+        # so try the numeric branch first.
         ts = alarm.get("datetime") or alarm.get("timestamp")
-        try:
-            received_at = datetime.fromisoformat(str(ts)) if ts else datetime.now(UTC)
-        except (ValueError, TypeError):
-            received_at = datetime.now(UTC)
+        received_at = datetime.now(UTC)
+        if ts is not None:
+            try:
+                epoch_ms = int(ts)
+            except (ValueError, TypeError):
+                epoch_ms = None
+            if epoch_ms is not None:
+                with suppress(OverflowError, OSError, ValueError):
+                    received_at = datetime.fromtimestamp(epoch_ms / 1000, tz=UTC)
+            else:
+                with suppress(ValueError, TypeError):
+                    received_at = datetime.fromisoformat(str(ts))
 
         return cls(
             category=category,
@@ -71,6 +108,103 @@ class UniFiAlert:
             device_name=alarm.get("device_name") or alarm.get("ap_name") or "",
             site=alarm.get("site_name") or "",
             severity=alarm.get("severity") or alarm.get("subsystem") or "",
+        )
+
+    @classmethod
+    def from_system_log_event(cls, payload: dict) -> UniFiAlert:
+        """Build an alert from a v2 system-log/all event record.
+
+        The v2 schema differs substantially from the legacy /list/alarm format:
+          - timestamp: epoch milliseconds integer (not an ISO string)
+          - message_raw + parameters: template + substitution values (not a pre-rendered msg)
+          - status: "NEW" means open/unacknowledged (equivalent to archived: false)
+          - key: flat descriptive string with no EVT_ prefix
+          - category: explicit enum value (SECURITY, INTERNET_AND_WAN, etc.)
+
+        Category resolution uses SYSTEM_LOG_KEY_TO_CATEGORY (key-level) with
+        SYSTEM_LOG_CATEGORY_FALLBACK (broad enum) as a fallback. If neither
+        matches, category is set to "" to match the existing fall-through
+        behaviour in from_dict / the legacy path.
+        """
+        from .const import SYSTEM_LOG_CATEGORY_FALLBACK, SYSTEM_LOG_KEY_TO_CATEGORY
+
+        # Timestamp: always epoch milliseconds in the v2 schema
+        ts = payload.get("timestamp")
+        received_at = datetime.now(UTC)
+        if ts is not None:
+            with suppress(OverflowError, OSError, ValueError, TypeError):
+                received_at = datetime.fromtimestamp(int(ts) / 1000, tz=UTC)
+
+        # Message: render template or fall back to title_raw / key / sentinel
+        message_raw = payload.get("message_raw", "")
+        parameters = payload.get("parameters") or {}
+        if message_raw:
+            message = _render_message_raw(message_raw, parameters)
+        else:
+            message = payload.get("title_raw") or payload.get("key") or "Unknown alert"
+
+        # Category: key-level lookup first, broad enum fallback second
+        key = payload.get("key", "")
+        v2_category_enum = payload.get("category", "")
+        mapped_category = SYSTEM_LOG_KEY_TO_CATEGORY.get(key)
+        fallback_category = SYSTEM_LOG_CATEGORY_FALLBACK.get(v2_category_enum, "")
+        category = mapped_category or fallback_category
+
+        # Warn once per unmapped key so production map gaps are discoverable.
+        # The dedupe set is module-scoped because from_system_log_event is a
+        # classmethod with no caller-local state to thread through.
+        if mapped_category is None and key and key not in _unknown_system_log_keys:
+            _unknown_system_log_keys.add(key)
+            if fallback_category:
+                _LOGGER.warning(
+                    "Unrecognised v2 system-log key %r (enum=%s); using coarse fallback category %s. "
+                    "Add this key to SYSTEM_LOG_KEY_TO_CATEGORY in const.py.",
+                    key,
+                    v2_category_enum,
+                    fallback_category,
+                )
+            else:
+                _LOGGER.warning(
+                    "Unrecognised v2 system-log key %r (enum=%s); no category fallback, event skipped. "
+                    "Add this key to SYSTEM_LOG_KEY_TO_CATEGORY in const.py.",
+                    key,
+                    v2_category_enum,
+                )
+
+        return cls(
+            category=category,
+            message=str(message)[:255],
+            received_at=received_at,
+            raw=payload,
+            key=key,
+            device_name=payload.get("device_name") or "",
+            site=payload.get("site_name") or payload.get("site") or "",
+            severity=payload.get("severity") or "",
+        )
+
+    def to_dict(self) -> dict:
+        """Serialise this alert to a JSON-safe dict for Store persistence."""
+        d = asdict(self)
+        d["received_at"] = self.received_at.isoformat()
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> UniFiAlert:
+        """Deserialise an alert previously written by ``to_dict``."""
+        received_at_raw = data.get("received_at", "")
+        try:
+            received_at = datetime.fromisoformat(received_at_raw)
+        except (ValueError, TypeError):
+            received_at = datetime.now(UTC)
+        return cls(
+            category=data.get("category", ""),
+            message=data.get("message", ""),
+            received_at=received_at,
+            raw=data.get("raw", {}),
+            key=data.get("key", ""),
+            device_name=data.get("device_name", ""),
+            site=data.get("site", ""),
+            severity=data.get("severity", ""),
         )
 
 
