@@ -2,15 +2,9 @@
 
 What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `main` as `X.Y.Z`. Completed work is removed from this file; the historical record lives in `docs/HISTORY.md`, and the user-visible release summary lives in `CHANGELOG.md`.
 
-> **Status (2026-05-07):** v1.5.0 released; active development on `dev` at `1.6.0-pre1`. Path to v2.0.0: v1.6.0 (reliability + completeness), v1.7.0 (documentation + architecture), v2.0.0 (HACS default).
+> **Status (2026-05-11):** v1.6.0 released; active development on `dev` at the next pre-release cycle. Path to v2.0.0: v1.7.0 (documentation + architecture), v2.0.0 (HACS default).
 
 > **Branching model:** see `CLAUDE.md § Branching strategy and versioning`.
-
----
-
-## v1.6.0: Reliability + completeness
-
-Closes remaining correctness gaps and polishes testing. The watermark re-assertion, auto-clear persistence, and open_count webhook-path bugs were pulled forward into v1.5.0.
 
 ---
 
