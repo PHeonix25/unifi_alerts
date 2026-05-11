@@ -16,6 +16,7 @@
 - 400-response bodies that fail JSON parsing during alarm-endpoint probing are now logged at DEBUG with the exception class. Previously a bare `except Exception: pass` masked malformed UniFi error bodies, hiding the `api.err.InvalidObject` fallback path.
 - Per-category Clear buttons now report unavailable when their category is disabled in options. Previously they appeared clickable but no-oped on press. The all-clear button is also now unavailable when no categories are enabled. Both button classes now inherit `CoordinatorEntity` so they respond to coordinator updates consistently with the other platforms. (`button.py`)
 - README and info.md entity-ID examples now match what HA generates from the integration's entity names; stale short-form IDs (e.g. `binary_sensor.unifi_alerts_network_device`) replaced with the correct slugified forms (e.g. `binary_sensor.unifi_alerts_network_device_offline_online`). Credential setup copy updated to remove references to "older controllers" and self-hosted Network Application installs now that UniFi OS is required.
+- `alert_count` and `last_alert` now persist across config-entry reloads. Previously every options change discarded both counters; they are now saved alongside the existing watermark in the integration's `Store` and restored on startup.
 
 ## [1.5.0] - 2026-05-07
 

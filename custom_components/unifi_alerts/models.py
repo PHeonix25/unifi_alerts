@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -82,6 +82,31 @@ class UniFiAlert:
             device_name=alarm.get("device_name") or alarm.get("ap_name") or "",
             site=alarm.get("site_name") or "",
             severity=alarm.get("severity") or alarm.get("subsystem") or "",
+        )
+
+    def to_dict(self) -> dict:
+        """Serialise this alert to a JSON-safe dict for Store persistence."""
+        d = asdict(self)
+        d["received_at"] = self.received_at.isoformat()
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> UniFiAlert:
+        """Deserialise an alert previously written by ``to_dict``."""
+        received_at_raw = data.get("received_at", "")
+        try:
+            received_at = datetime.fromisoformat(received_at_raw)
+        except (ValueError, TypeError):
+            received_at = datetime.now(UTC)
+        return cls(
+            category=data.get("category", ""),
+            message=data.get("message", ""),
+            received_at=received_at,
+            raw=data.get("raw", {}),
+            key=data.get("key", ""),
+            device_name=data.get("device_name", ""),
+            site=data.get("site", ""),
+            severity=data.get("severity", ""),
         )
 
 

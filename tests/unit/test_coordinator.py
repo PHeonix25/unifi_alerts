@@ -1131,3 +1131,98 @@ class TestPushAlertOptimisticOpenCount:
         await coord._async_update_data()
 
         assert coord.get_category_state(CATEGORY_NETWORK_WAN).open_count == 0
+
+
+class TestCounterPersistence:
+    """Tests for alert_count and last_alert persistence across reloads."""
+
+    def _make_coord_with_mock_store(self):
+        """Coordinator with a Store mock so async_load/async_save are controllable."""
+        coord = make_coordinator()
+        coord._store = MagicMock()
+        coord._store.async_load = AsyncMock(return_value=None)
+        coord._store.async_save = AsyncMock()
+        return coord
+
+    @pytest.mark.asyncio
+    async def test_alert_count_persists_across_reload(self):
+        """alert_count written by push_alert is restored by a freshly created coordinator."""
+        coord = self._make_coord_with_mock_store()
+        coord.async_set_updated_data = MagicMock()
+
+        # Push 3 distinct alerts so alert_count reaches 3.
+        for i in range(3):
+            coord.push_alert(
+                CATEGORY_NETWORK_WAN,
+                make_alert(CATEGORY_NETWORK_WAN, f"alert {i}", key=f"EVT_TEST_{i}"),
+            )
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 3
+
+        # Capture what was saved by the last _schedule_persist call.
+        # _schedule_persist is fire-and-forget via hass background tasks which
+        # are mocked to no-ops in make_coordinator; call the save directly.
+        await coord._async_persist_watermarks()
+        saved = coord._store.async_save.await_args.args[0]
+
+        # Simulate a reload: new coordinator, same store data.
+        coord2 = self._make_coord_with_mock_store()
+        coord2._store.async_load.return_value = saved
+        await coord2.async_restore_watermarks()
+
+        assert coord2.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 3
+
+    @pytest.mark.asyncio
+    async def test_last_alert_persists_across_reload(self):
+        """last_alert round-trips through the Store correctly."""
+        coord = self._make_coord_with_mock_store()
+        coord.async_set_updated_data = MagicMock()
+
+        alert = make_alert(CATEGORY_NETWORK_WAN, "persistent alert", key="EVT_PERSIST")
+        coord.push_alert(CATEGORY_NETWORK_WAN, alert)
+
+        await coord._async_persist_watermarks()
+        saved = coord._store.async_save.await_args.args[0]
+
+        coord2 = self._make_coord_with_mock_store()
+        coord2._store.async_load.return_value = saved
+        await coord2.async_restore_watermarks()
+
+        restored = coord2.get_category_state(CATEGORY_NETWORK_WAN).last_alert
+        assert restored is not None
+        assert restored.message == "persistent alert"
+        assert restored.category == CATEGORY_NETWORK_WAN
+        assert restored.received_at == alert.received_at
+
+    @pytest.mark.asyncio
+    async def test_restore_handles_legacy_payload_without_counters(self):
+        """A store payload with only last_cleared_at (pre-v1.6.0) restores cleanly.
+
+        alert_count must default to 0 and last_alert to None.
+        """
+        coord = self._make_coord_with_mock_store()
+        # Old-format payload: bare ISO string per category.
+        legacy_payload = {CATEGORY_NETWORK_WAN: "2024-06-01T10:00:00+00:00"}
+        coord._store.async_load.return_value = legacy_payload
+
+        await coord.async_restore_watermarks()
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.last_cleared_at is not None
+        assert state.alert_count == 0
+        assert state.last_alert is None
+
+    @pytest.mark.asyncio
+    async def test_apply_alert_triggers_save(self):
+        """push_alert must schedule a persist (via _schedule_persist) after apply_alert.
+
+        We verify by patching _schedule_persist and asserting it is called.
+        """
+        from unittest.mock import patch as _patch
+
+        coord = self._make_coord_with_mock_store()
+        coord.async_set_updated_data = MagicMock()
+
+        with _patch.object(coord, "_schedule_persist") as mock_persist:
+            coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
+
+        mock_persist.assert_called_once()
