@@ -451,12 +451,26 @@ class TestUniFiClearCategoryButton:
         state = make_state(is_alerting=True)
         entity = self._make(state)
         await entity.async_press()
-        entity._coordinator.async_clear_category.assert_awaited_once_with(CATEGORY_NETWORK_WAN)
+        entity.coordinator.async_clear_category.assert_awaited_once_with(CATEGORY_NETWORK_WAN)
 
     def test_unique_id_format(self):
         state = make_state()
         entity = self._make(state)
         assert entity.unique_id == f"entry-abc_{CATEGORY_NETWORK_WAN}_clear"
+
+    def test_available_true_when_enabled(self):
+        state = make_state(enabled=True)
+        entity = self._make(state)
+        assert entity.available is True
+
+    def test_available_false_when_disabled(self):
+        state = make_state(enabled=False)
+        entity = self._make(state)
+        assert entity.available is False
+
+    def test_available_false_when_state_missing(self):
+        entity = self._make(None)
+        assert entity.available is False
 
 
 class TestUniFiClearAllButton:
@@ -473,7 +487,27 @@ class TestUniFiClearAllButton:
         states = {CATEGORY_NETWORK_WAN: wan_state}
         entity = self._make(states)
         await entity.async_press()
-        entity._coordinator.async_clear_all.assert_awaited_once()
+        entity.coordinator.async_clear_all.assert_awaited_once()
+
+    def test_available_true_when_any_category_enabled(self):
+        states = {
+            CATEGORY_NETWORK_WAN: make_state(enabled=True),
+            CATEGORY_SECURITY_THREAT: make_state(enabled=False),
+        }
+        entity = self._make(states)
+        assert entity.available is True
+
+    def test_available_false_when_all_categories_disabled(self):
+        states = {
+            CATEGORY_NETWORK_WAN: make_state(enabled=False),
+            CATEGORY_SECURITY_THREAT: make_state(enabled=False),
+        }
+        entity = self._make(states)
+        assert entity.available is False
+
+    def test_available_false_when_no_categories(self):
+        entity = self._make({})
+        assert entity.available is False
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
