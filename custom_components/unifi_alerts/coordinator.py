@@ -196,6 +196,11 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             state.open_count += 1
         _LOGGER.debug("Alert pushed to category %s: %s", category, alert.message)
 
+        # Persist alert_count and last_alert so they survive a config-entry
+        # reload triggered by an options change. Scheduled as a background
+        # task because push_alert is synchronous.
+        self._schedule_persist()
+
         # Cancel any existing clear timer and start a fresh one
         self._schedule_clear(category)
 
@@ -235,26 +240,54 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     # ── Watermark persistence ─────────────────────────────────────────────
 
     async def async_restore_watermarks(self) -> None:
-        """Load persisted acknowledgement watermarks from storage on startup."""
+        """Load persisted category state from storage on startup.
+
+        Restores ``last_cleared_at``, ``alert_count``, and ``last_alert`` for
+        each category. Legacy payloads that only contain ``last_cleared_at``
+        (a plain ISO string, pre-v1.6.0) are handled transparently: the dict
+        branch runs when the stored value is a dict; the string branch handles
+        the old format so existing installs are not disrupted.
+        """
         data: dict | None = await self._store.async_load()
         if not data:
             return
-        for cat, ts_str in data.items():
+        for cat, entry in data.items():
             state = self._category_states.get(cat)
             if state is None:
                 continue
-            try:
-                state.last_cleared_at = datetime.fromisoformat(ts_str)
-            except (ValueError, TypeError):
-                _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, ts_str)
+            if isinstance(entry, str):
+                # Legacy format: bare ISO string watermark only.
+                try:
+                    state.last_cleared_at = datetime.fromisoformat(entry)
+                except (ValueError, TypeError):
+                    _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, entry)
+            elif isinstance(entry, dict):
+                ts_str = entry.get("last_cleared_at")
+                if ts_str is not None:
+                    try:
+                        state.last_cleared_at = datetime.fromisoformat(ts_str)
+                    except (ValueError, TypeError):
+                        _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, ts_str)
+                state.alert_count = int(entry.get("alert_count", 0))
+                raw_alert = entry.get("last_alert")
+                if raw_alert is not None:
+                    try:
+                        state.last_alert = UniFiAlert.from_dict(raw_alert)
+                    except (KeyError, TypeError, ValueError):
+                        _LOGGER.warning("Ignoring invalid stored last_alert for %s", cat)
 
     async def _async_persist_watermarks(self) -> None:
-        """Persist current acknowledgement watermarks to storage."""
-        data = {
-            cat: state.last_cleared_at.isoformat()
-            for cat, state in self._category_states.items()
-            if state.last_cleared_at is not None
-        }
+        """Persist current category state (watermark, alert_count, last_alert) to storage."""
+        data: dict[str, dict] = {}
+        for cat, state in self._category_states.items():
+            entry: dict = {}
+            if state.last_cleared_at is not None:
+                entry["last_cleared_at"] = state.last_cleared_at.isoformat()
+            entry["alert_count"] = state.alert_count
+            entry["last_alert"] = (
+                state.last_alert.to_dict() if state.last_alert is not None else None
+            )
+            data[cat] = entry
         await self._store.async_save(data)
 
     # ── Clear entry points (called by buttons and services) ───────────────
@@ -298,6 +331,19 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             create_task = getattr(self.hass, "async_create_task", None)
             task = create_task(coro) if create_task is not None else asyncio.ensure_future(coro)
         self._clear_tasks[category] = task
+
+    def _schedule_persist(self) -> None:
+        """Schedule a fire-and-forget persist so push_alert (sync) can trigger a save."""
+        coro = self._async_persist_watermarks()
+        create_bg = getattr(self.hass, "async_create_background_task", None)
+        if create_bg is not None:
+            create_bg(coro, name="unifi_alerts_persist_state")
+        else:
+            create_task = getattr(self.hass, "async_create_task", None)
+            if create_task is not None:
+                create_task(coro)
+            else:
+                asyncio.ensure_future(coro)
 
     def cancel_clear(self, category: str) -> None:
         """Cancel any pending auto-clear task for the given category."""
