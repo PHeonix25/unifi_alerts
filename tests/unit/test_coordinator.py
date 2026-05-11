@@ -975,6 +975,72 @@ class TestPollingWatermarkSuppressesIsAlerting:
         assert state.open_count == 1
 
 
+class TestWebhookMidPollRace:
+    """A webhook arriving while _async_update_data() is mid-await must not regress is_alerting.
+
+    The coordinator's polling path only sets is_alerting=True when it finds open
+    alarms and is_alerting is currently False. It never clears is_alerting on its
+    own. So if a webhook fires during a poll and asserts is_alerting=True, the
+    poll completing with an empty result cannot clobber that state — the poll
+    simply zeroes open_count and leaves is_alerting untouched.
+    """
+
+    @pytest.mark.asyncio
+    async def test_webhook_during_poll_does_not_regress_is_alerting(self):
+        import asyncio
+
+        gate = asyncio.Event()  # held open until the test releases it
+
+        async def blocking_categorise_alarms(site):  # noqa: ARG001
+            # Block the poll mid-await until the test fires the webhook
+            await gate.wait()
+            # Return empty list — the regression scenario: poll sees no alarms
+            return {}
+
+        hass = MagicMock()
+
+        def _create_task(coro, **kwargs):
+            coro.close()  # discard auto-clear coroutines — not under test
+            return MagicMock()
+
+        hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
+
+        client = MagicMock()
+        client.categorise_alarms = blocking_categorise_alarms
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        coord.async_set_updated_data = MagicMock()
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.is_alerting is False
+
+        # Start the poll as a concurrent task; it will block on gate.wait()
+        poll_task = asyncio.ensure_future(coord._async_update_data())
+
+        # Yield to the event loop so poll_task enters blocking_categorise_alarms
+        # and parks on gate.wait() before we interact with coordinator state.
+        await asyncio.sleep(0)
+
+        # Webhook arrives while the poll is suspended — asserts is_alerting
+        webhook_alert = make_alert(CATEGORY_NETWORK_WAN, "webhook during poll", key="EVT_RACE")
+        coord.push_alert(CATEGORY_NETWORK_WAN, webhook_alert)
+        assert state.is_alerting is True
+
+        # Release the gate: poll resumes, calls categorise_alarms, gets {}, and
+        # zeroes open_count for categories with no alarms. It must NOT flip
+        # is_alerting back to False.
+        gate.set()
+        await poll_task
+
+        assert state.is_alerting is True
+
+
 class TestPushAlertOptimisticOpenCount:
     """push_alert must increment open_count optimistically.
 
