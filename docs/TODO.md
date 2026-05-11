@@ -19,7 +19,6 @@ Outstanding work only. Items are removed when they ship; completion lives in `do
 
 ## Testing
 
-- **Webhook-mid-poll interleaving test** (`test_coordinator.py`): assert a webhook arriving while `_async_update_data()` is awaited does not regress `is_alerting`.
 - **Optional: integration test for full rotation cycle**: options-flow > entry-update > reload > re-register, end-to-end. Each step is unit-tested already.
 
 ## Documentation
