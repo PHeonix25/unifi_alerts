@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Internal
+
+- Split `tests/unit/test_config_flow.py` (1565 lines) into `tests/unit/config_flow/` package with separate files per flow type to reduce rebase conflicts.
+
 ## [1.6.0] - 2026-05-11
 
 ### Changed

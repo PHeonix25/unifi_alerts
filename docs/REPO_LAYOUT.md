@@ -24,7 +24,13 @@ tests/
   test_models.py
   test_coordinator.py
   test_unifi_client.py
-  test_config_flow.py             # config flow steps, webhook URL token display, options flow defaults
+  unit/
+    config_flow/                  # config flow tests (split from monolithic file in v1.7)
+      __init__.py
+      conftest.py                 # shared flow helpers and mock builders (make_flow, make_options_flow, make_reauth_flow)
+      test_setup.py               # initial setup flow: user, categories, finish steps
+      test_options.py             # options flow: credential changes, category toggles, regenerate secret
+      test_reauth.py              # reauth flow: async_step_reauth, repair issue
   test_diagnostics.py             # diagnostics platform: redaction, webhook URL exposure, coordinator state
   test_webhook_handler.py         # WebhookManager: register/unregister, token auth, alert dispatch
   test_init.py                    # async_setup_entry / async_unload_entry lifecycle, teardown order
