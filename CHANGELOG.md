@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Internal
+
+- Confirmed `SensorStateClass.MEASUREMENT` on open-count and rollup-count sensors; no `SensorDeviceClass` is set (none of the HA built-ins fit an alert counter).
+
+
 ## [1.6.0] - 2026-05-11
 
 ### Changed
