@@ -667,7 +667,11 @@ async def test_step_user_fetch_alarms_failure_shows_cannot_connect() -> None:
 
 @pytest.mark.asyncio
 async def test_async_migrate_entry_strips_conf_is_unifi_os() -> None:
-    """async_migrate_entry must remove is_unifi_os from entry.data and bump version to 2."""
+    """async_migrate_entry must remove is_unifi_os and ultimately reach version 3.
+
+    A v1 entry passes through v1->2 (strip is_unifi_os) and then v2->3
+    (backfill webhook_secret / webhook_id_suffix) in the same call.
+    """
     from custom_components.unifi_alerts import async_migrate_entry
 
     entry = MagicMock()
@@ -694,7 +698,8 @@ async def test_async_migrate_entry_strips_conf_is_unifi_os() -> None:
     result = await async_migrate_entry(hass, entry)
 
     assert result is True
-    assert entry.version == 2
+    # v1->2->3: the chained migration ends at version 3
+    assert entry.version == 3
     assert "is_unifi_os" not in entry.data
     # Remaining fields must be preserved
     assert entry.data[CONF_CONTROLLER_URL] == "https://192.168.1.1"

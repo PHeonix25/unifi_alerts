@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Security
+
+- Webhook handler now rejects requests with HTTP 500 when no bearer secret is configured, rather than accepting them. Config entries missing `webhook_secret` are backfilled during migration to schema version 3. ([#PR])
+
 ## [1.6.0] - 2026-05-11
 
 ### Changed
@@ -165,3 +169,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#59]: https://github.com/PHeonix25/unifi_alerts/pull/59
 [#67]: https://github.com/PHeonix25/unifi_alerts/pull/67
 [#68]: https://github.com/PHeonix25/unifi_alerts/pull/68
+[#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR
