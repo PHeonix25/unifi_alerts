@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Internal
+
+- Improved code comments on webhook dedup, polling-vs-webhook alert_count invariant, acknowledgement watermark, and system-log probe. Clarified webhook body decode-failure log message.
+
 ### Documentation
 
 - Added Troubleshooting guide (docs/TROUBLESHOOTING.md) covering four common setup scenarios.
