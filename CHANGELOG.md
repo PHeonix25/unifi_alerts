@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- Added Troubleshooting guide (docs/TROUBLESHOOTING.md) covering four common setup scenarios.
+- Added tested-controllers matrix, privacy/data-retention section, and uninstall instructions to README.
+- Added local-network-only warning to info.md first paragraph.
+- Updated setup-flow finish step to stress copying webhook URLs before clicking Submit.
+
 ## [1.6.0] - 2026-05-11
 
 ### Changed

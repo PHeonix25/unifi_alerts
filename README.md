@@ -26,6 +26,21 @@ The integration uses the `/proxy/network` API path exclusively, which is only av
 
 ---
 
+## Tested controllers
+
+The following models have been verified by the maintainer or reported by users:
+
+| Model | Minimum firmware | Notes |
+|---|---|---|
+| UCG-Ultra | 4.0.x | Primary test platform |
+| UDM-SE | 4.0.x | Reported by users |
+| UCG-Max | 4.0.x | Reported by users |
+| Cloud Key Gen2+ | 4.0.x | Reported by users |
+
+If your model is not listed, open an issue with your controller model and firmware version so we can grow this table.
+
+---
+
 ## Features
 
 - **Per-category binary sensors** - ON when an alert is active, OFF when clear
@@ -130,11 +145,13 @@ For each enabled category, create an alarm in **UniFi Network > Settings > Notif
 
 > **Tip:** Use **Test Alarm** in UniFi to verify the webhook reaches HA before saving.
 
+> **Webhook secret rotation:** if you regenerate the webhook secret via the options flow, the old URLs become invalid immediately. Re-paste all new URLs into UniFi Network > Settings > Notifications > Alarm Manager, or alarms will silently fail with HTTP 401.
+
 ---
 
 ## Entities created
 
-Entity IDs are derived from the entity's display name, which HA slugifies on first install. The unique_id format is `{entry_id}_{category}_{sensor_type}`; the entity_id is the slugified device name plus the entity name. Examples below use `network_device` as the category; the same pattern applies to all categories.
+Entity IDs are derived from the entity's display name, which HA slugifies on first install. The unique_id format is `{entry_id}_{category}_{sensor_type}`; the entity_id is the slugified device name plus the entity name. Examples below use `network_device` as the category; the same pattern applies to all categories. Renaming an entity in the Home Assistant UI changes the friendly name only; the `unique_id` is stable so automations referencing the entity ID remain valid.
 
 | Entity | Example entity ID | Type |
 | --- | --- | --- |
@@ -232,6 +249,30 @@ automation:
 
 - **Event entities show `unknown` until the first alert fires.** `EventEntity` has no persistent state - it only carries the data from the most recent event. On a fresh install or after an HA restart, all event entities start in `unknown` state. This is normal and expected; your automations will trigger correctly once the first alert arrives.
 - **Disabling a category makes its event entity `unavailable`.** If you disable a category in **Settings > Devices & Services > UniFi Alerts > Configure**, the corresponding event entity becomes unavailable and any automation that triggers on it will silently stop firing. Re-enable the category or update the automation accordingly.
+
+---
+
+## Privacy and data retention
+
+All data stays on your local network. The integration does not communicate with any external service.
+
+Fields stored per alert: `message` (truncated to 255 characters), `category`, `device_name`, `alert_key`, `severity`, `site`, and `received_at` (UTC timestamp).
+
+Auto-clear removes `is_alerting` and `last_alert` for a category after the configured clear timeout (default 30 seconds). The acknowledgement watermark (`last_cleared_at`) persists across HA restarts so `open_count` reflects "since last Clear", not a lifetime total.
+
+---
+
+## Uninstall
+
+Settings > Devices & Services > UniFi Alerts > three-dot menu > Delete.
+
+---
+
+## Getting help
+
+For common setup issues, see [Troubleshooting](docs/TROUBLESHOOTING.md).
+
+Issues and questions: [github.com/PHeonix25/unifi_alerts/issues](https://github.com/PHeonix25/unifi_alerts/issues).
 
 ---
 

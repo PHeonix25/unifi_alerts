@@ -125,8 +125,8 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 state = self._category_states[cat]
                 if not state.enabled:
                     continue
-                # Filter to alarms newer than the acknowledgement watermark so
-                # open_count reflects "since last cleared" not a lifetime total.
+                # Count only alarms newer than last_cleared_at so open_count reads as
+                # "since last Clear", not a lifetime total.
                 watermark = state.last_cleared_at
                 counted = (
                     [a for a in alerts if a.received_at > watermark]
@@ -141,9 +141,8 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 # show Problem + Open Count=0 simultaneously).
                 if counted and not state.is_alerting:
                     most_recent = max(counted, key=lambda a: a.received_at)
-                    # Use direct assignment instead of apply_alert() so that
-                    # poll-detected alerts do not increment alert_count.  Only
-                    # webhook-pushed alerts (real new events) should do that.
+                    # Polling sets is_alerting directly without incrementing alert_count; that counter
+                    # is webhook-only so event entities only fire on real pushes, not poll reconciliation.
                     state.is_alerting = True
                     state.last_alert = most_recent
                     self._schedule_clear(cat)
@@ -232,6 +231,8 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         dedup_key = (category, alert.key or "")
         now = time.monotonic()
+        # Absorbs duplicate webhook deliveries from the controller within the window;
+        # monotonic time makes the window immune to clock skew during HA suspend/resume.
         prev = self._last_push_at.get(dedup_key)
         if prev is not None and (now - prev) < WEBHOOK_DEDUP_WINDOW_SECONDS:
             _LOGGER.debug(

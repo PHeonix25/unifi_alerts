@@ -377,7 +377,7 @@ class TestDecodeErrorLogging:
         assert mock_logger.warning.called
         warning_msg = mock_logger.warning.call_args[0][0]
         warning_args = mock_logger.warning.call_args[0][1:]
-        assert "decode failed" in warning_msg
+        assert "Malformed webhook body" in warning_msg
         assert "JSONDecodeError" in warning_args
         # push_callback is still invoked with the empty-payload fallback
         push_cb.assert_called_once()

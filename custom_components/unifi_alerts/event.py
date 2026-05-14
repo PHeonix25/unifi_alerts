@@ -48,6 +48,7 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
     """
 
     _attr_has_entity_name = True
+    # Fixed at class level; HA requires declaring event types at init, not per-fire.
     _attr_event_types = ["alert_received"]
 
     def __init__(

@@ -305,6 +305,16 @@ class TestUniFiCategoryCountSensor:
         assert entity_on.available is True
         assert entity_off.available is False
 
+    def test_state_class_is_measurement(self):
+        from homeassistant.components.sensor import SensorStateClass
+
+        entity = self._make(make_state())
+        assert entity.state_class == SensorStateClass.MEASUREMENT
+
+    def test_device_class_is_none(self):
+        entity = self._make(make_state())
+        assert entity.device_class is None
+
 
 class TestUniFiRollupCountSensor:
     def _make(self, states: dict[str, CategoryState]):
@@ -340,6 +350,16 @@ class TestUniFiRollupCountSensor:
         attrs = entity.extra_state_attributes
         assert "last_message" not in attrs
         assert attrs["total_webhook_count"] == 0
+
+    def test_state_class_is_measurement(self):
+        from homeassistant.components.sensor import SensorStateClass
+
+        entity = self._make({})
+        assert entity.state_class == SensorStateClass.MEASUREMENT
+
+    def test_device_class_is_none(self):
+        entity = self._make({})
+        assert entity.device_class is None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

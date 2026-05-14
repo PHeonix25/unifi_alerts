@@ -69,7 +69,9 @@ class UniFiClient:
         self._config = config
         self._auth_method: str | None = None
         self._authenticated: bool = False
-        self._has_system_log: bool | None = None  # None = not yet probed
+        # None = not yet probed. authenticate() detects v2 system-log availability
+        # on first connect; fetch_alarms() falls back to legacy /list/alarm if False.
+        self._has_system_log: bool | None = None
 
     # ── Public interface ──────────────────────────────────────────────────
 

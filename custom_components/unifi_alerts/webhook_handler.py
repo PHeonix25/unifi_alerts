@@ -144,7 +144,7 @@ class WebhookManager:
                 # bodies. Log enough to diagnose without dumping the full body.
                 preview = raw[:80].decode("utf-8", errors="replace") if raw else ""
                 _LOGGER.warning(
-                    "Webhook body decode failed for category %s (%s): %r",
+                    "Malformed webhook body from controller for category %s (%s): %r",
                     category,
                     type(err).__name__,
                     preview,
