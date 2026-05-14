@@ -5,6 +5,7 @@
 ### Internal
 
 - Improved code comments on webhook dedup, polling-vs-webhook alert_count invariant, acknowledgement watermark, and system-log probe. Clarified webhook body decode-failure log message.
+- Confirmed `SensorStateClass.MEASUREMENT` on open-count and rollup-count sensors; no `SensorDeviceClass` is set (none of the HA built-ins fit an alert counter).
 
 ### Documentation
 
