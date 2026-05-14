@@ -32,7 +32,6 @@ Outstanding work only. Items are removed when they ship; completion lives in `do
 - **`info.md` local-network warning**: bold "⚠ Local network only: webhooks are not reachable over Nabu Casa remote access" in the first paragraph.
 - **Setup-flow webhook copy warning**: `strings.json` note on the finish step: "Copy all URLs into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit."
 - **Privacy / data-retention section** in README: which payload fields are stored, that nothing leaves the local network, that auto-clear removes `is_alerting`/`last_alert` after the configured timeout.
-- **Automation edge case** in README: disabling a category in options makes its event entity unavailable, breaking dependent automations.
 - **`unique_id` format** in README: document `{entry_id}_{category}_{sensor_type}` and that UI renames preserve the unique_id so automations are safe.
 
 ## Architecture
