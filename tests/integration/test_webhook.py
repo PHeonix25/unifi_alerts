@@ -4,11 +4,11 @@ Exercises the full path from an inbound HTTP POST to a binary sensor state
 change, using the real HA HTTP server via hass_client.
 
 Scenarios covered:
-- Valid POST with correct token  → binary sensor flips to ON
-- POST without ?token=           → 401, sensor stays OFF
-- POST with wrong token          → 401, sensor stays OFF
-- GET to webhook URL             → handler not called, sensor stays OFF
-- No-secret config               → POST accepted without token
+- Valid POST with correct token  -> binary sensor flips to ON
+- POST without ?token=           -> 401, sensor stays OFF
+- POST with wrong token          -> 401, sensor stays OFF
+- GET to webhook URL             -> handler not called, sensor stays OFF
+- No-secret config               -> POST rejected with 500 (fail-closed since v1.7)
 
 Run only these tests:
     pytest tests/integration/test_webhook.py -v
@@ -24,11 +24,18 @@ from custom_components.unifi_alerts.const import (
     webhook_id_for_category,
 )
 
-from .conftest import BASE_CONFIG, ENTRY_ID, WEBHOOK_SECRET, entity_id_for, get_coordinator
+from .conftest import (
+    BASE_CONFIG,
+    ENTRY_ID,
+    WEBHOOK_ID_SUFFIX,
+    WEBHOOK_SECRET,
+    entity_id_for,
+    get_coordinator,
+)
 
 # Use network_wan for all webhook tests — a single category is enough to verify routing
 TEST_CATEGORY = CATEGORY_NETWORK_WAN
-TEST_WEBHOOK_ID = webhook_id_for_category(TEST_CATEGORY)
+TEST_WEBHOOK_ID = webhook_id_for_category(TEST_CATEGORY, WEBHOOK_ID_SUFFIX)
 TEST_PAYLOAD = {"key": "EVT_GW_WANTransition", "message": "WAN port went offline"}
 
 
@@ -123,26 +130,37 @@ async def test_get_request_does_not_dispatch_alert(hass, entry, hass_client):
 
 
 @pytest.mark.integration
-async def test_no_secret_config_accepts_post_without_token(hass, mock_unifi_client, hass_client):
-    """When CONF_WEBHOOK_SECRET is empty, any POST is accepted without a token."""
+async def test_no_secret_config_rejects_post_with_500(hass, mock_unifi_client, hass_client):
+    """When CONF_WEBHOOK_SECRET is empty, any POST is rejected with HTTP 500.
+
+    Pre-v1.7 an empty secret bypassed the token check entirely and accepted
+    all requests silently. The VERSION 3 migration backfills a secret for every
+    entry that lacks one, so an empty secret in production means something went
+    wrong. The handler now fails closed rather than silently accepting requests.
+    """
     from homeassistant.setup import async_setup_component
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-    from custom_components.unifi_alerts.const import DOMAIN
+    from custom_components.unifi_alerts.const import CONF_WEBHOOK_ID_SUFFIX, DOMAIN
 
     # Set up HTTP and webhook infrastructure (normally done by the entry fixture)
     await hass.config.async_update(internal_url="http://homeassistant.test:8123")
     await async_setup_component(hass, "webhook", {})
     await hass.async_block_till_done()
 
-    no_secret_config = dict(BASE_CONFIG)
-    no_secret_config[CONF_WEBHOOK_SECRET] = ""
+    no_secret_suffix = "nosecret"
+    no_secret_config = {
+        **BASE_CONFIG,
+        CONF_WEBHOOK_SECRET: "",
+        CONF_WEBHOOK_ID_SUFFIX: no_secret_suffix,
+    }
     no_secret_entry_id = "test-entry-no-secret"
 
     config_entry = MockConfigEntry(
         domain=DOMAIN,
         data=no_secret_config,
         entry_id=no_secret_entry_id,
+        version=3,
     )
     config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(config_entry.entry_id)
@@ -152,16 +170,18 @@ async def test_no_secret_config_accepts_post_without_token(hass, mock_unifi_clie
     eid = entity_id_for(hass, "binary_sensor", uid)
 
     client = await hass_client()
-    webhook_id = webhook_id_for_category(TEST_CATEGORY)
+    webhook_id = webhook_id_for_category(TEST_CATEGORY, no_secret_suffix)
     resp = await client.post(
-        f"/api/webhook/{webhook_id}",  # no token, no secret configured
+        f"/api/webhook/{webhook_id}",  # no token, empty secret configured
         json=TEST_PAYLOAD,
     )
-    assert resp.status == 200
+    # Handler must fail closed — HTTP 500 when no secret is configured
+    assert resp.status == 500
     await resp.read()
     await hass.async_block_till_done()
 
-    assert hass.states.get(eid).state == "on"
+    # Sensor must stay off because the POST was rejected
+    assert hass.states.get(eid).state == "off"
 
     # Unload the entry to cancel any auto-clear tasks and prevent lingering state
     await hass.config_entries.async_unload(config_entry.entry_id)

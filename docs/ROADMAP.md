@@ -26,7 +26,6 @@ Closes the remaining documentation gaps and the largest architecture items.
 - [ ] **`info.md` local-network warning**: "⚠ Local network only: webhooks are not reachable over Nabu Casa remote access" in the first paragraph.
 - [ ] **Setup-flow webhook copy warning**: `strings.json` note on the finish step.
 - [ ] **Privacy / data-retention section** in README: which fields are stored, locally only, auto-clear timing.
-- [ ] **Automation edge case**: disabling a category in options makes its event entity unavailable.
 - [ ] **`unique_id` format**: document `{entry_id}_{category}_{sensor_type}`; UI renames preserve unique_id.
 
 ### QA

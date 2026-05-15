@@ -36,7 +36,7 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 
 ## Requirements
 
-- Home Assistant 2026.1.0 or later
+- Home Assistant 2024.5 or later
 - UniFi Network controller reachable on the same local network as your HA instance
 - Credentials: API key (recommended) **or** username + password
 
