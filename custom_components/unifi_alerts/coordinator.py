@@ -6,7 +6,6 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -25,7 +24,7 @@ from .const import (
     DOMAIN,
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
-from .models import CategoryState, UniFiAlert
+from .models import CategoryState, UniFiAlert, UniFiClientConfig
 from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,7 +48,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self,
         hass: HomeAssistant,
         client: UniFiClient,
-        config: dict[str, Any],
+        config: UniFiClientConfig,
         entry_id: str = "",
     ) -> None:
         poll_interval = config.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
@@ -60,7 +59,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             update_interval=timedelta(seconds=poll_interval),
         )
         self._client = client
-        self._config = config
+        self._config: UniFiClientConfig = config
         self._clear_timeout_minutes: int = config.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT)
         self._enabled_categories: list[str] = config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         self._site: str = config.get(CONF_SITE, DEFAULT_SITE)

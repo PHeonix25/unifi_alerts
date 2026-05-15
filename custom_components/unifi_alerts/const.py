@@ -2,24 +2,29 @@
 
 from __future__ import annotations
 
+from typing import Final
+
 DOMAIN = "unifi_alerts"
 
 # ──────────────────────────────────────────────
 # Config entry keys
 # ──────────────────────────────────────────────
-CONF_CONTROLLER_URL = "controller_url"
-CONF_USERNAME = "username"
-CONF_PASSWORD = "password"
-CONF_API_KEY = "api_key"
-CONF_AUTH_METHOD = "auth_method"
-CONF_POLL_INTERVAL = "poll_interval"
-CONF_CLEAR_TIMEOUT = "clear_timeout"
-CONF_ENABLED_CATEGORIES = "enabled_categories"
-CONF_VERIFY_SSL = "verify_ssl"
-CONF_WEBHOOK_SECRET = "webhook_secret"
-CONF_WEBHOOK_ID_SUFFIX = "webhook_id_suffix"
-CONF_REGENERATE_WEBHOOK_SECRET = "regenerate_webhook_secret"
-CONF_SITE = "site"
+# Typed as Final so mypy resolves them to literal types when used as
+# UniFiClientConfig TypedDict keys; without this, `.get(key, default)`
+# returns `object` instead of the field's declared type.
+CONF_CONTROLLER_URL: Final = "controller_url"
+CONF_USERNAME: Final = "username"
+CONF_PASSWORD: Final = "password"
+CONF_API_KEY: Final = "api_key"
+CONF_AUTH_METHOD: Final = "auth_method"
+CONF_POLL_INTERVAL: Final = "poll_interval"
+CONF_CLEAR_TIMEOUT: Final = "clear_timeout"
+CONF_ENABLED_CATEGORIES: Final = "enabled_categories"
+CONF_VERIFY_SSL: Final = "verify_ssl"
+CONF_WEBHOOK_SECRET: Final = "webhook_secret"
+CONF_WEBHOOK_ID_SUFFIX: Final = "webhook_id_suffix"
+CONF_REGENERATE_WEBHOOK_SECRET: Final = "regenerate_webhook_secret"
+CONF_SITE: Final = "site"
 
 AUTH_METHOD_USERPASS = "userpass"
 AUTH_METHOD_APIKEY = "apikey"

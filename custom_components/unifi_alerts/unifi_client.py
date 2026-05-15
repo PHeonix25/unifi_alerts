@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 import aiohttp
 
@@ -22,7 +21,7 @@ from .const import (
     SYSTEM_LOG_PAGE_SIZE,
     UNIFI_KEY_TO_CATEGORY,
 )
-from .models import UniFiAlert
+from .models import UniFiAlert, UniFiClientConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,11 +61,11 @@ class UniFiClient:
         self,
         session: aiohttp.ClientSession,
         controller_url: str,
-        config: dict[str, Any],
+        config: UniFiClientConfig,
     ) -> None:
         self._session = session
         self._base = controller_url.rstrip("/")
-        self._config = config
+        self._config: UniFiClientConfig = config
         self._auth_method: str | None = None
         self._authenticated: bool = False
         # None = not yet probed. authenticate() detects v2 system-log availability
