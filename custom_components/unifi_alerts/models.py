@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 
 _LOGGER = logging.getLogger(__name__)
 
+# Module-level so the classmethod from_system_log_event() can deduplicate
+# "unrecognised key" warnings without instance state.
 _unknown_system_log_keys: set[str] = set()
 
 if TYPE_CHECKING:
@@ -151,8 +153,6 @@ class UniFiAlert:
         category = mapped_category or fallback_category
 
         # Warn once per unmapped key so production map gaps are discoverable.
-        # The dedupe set is module-scoped because from_system_log_event is a
-        # classmethod with no caller-local state to thread through.
         if mapped_category is None and key and key not in _unknown_system_log_keys:
             _unknown_system_log_keys.add(key)
             if fallback_category:

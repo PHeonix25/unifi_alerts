@@ -18,16 +18,6 @@ Closes the remaining documentation gaps and the largest architecture items.
 - [ ] **`has_entity_name = True` + `_attr_translation_key`**: move display strings out of platform files into `strings.json`. Unlocks localisation.
 - [ ] **Split `tests/unit/test_config_flow.py` into a package**: ~1405 lines, four independent classes. Convert to `tests/unit/config_flow/{__init__,conftest,test_setup,test_options,test_reauth}.py`.
 
-### Documentation
-
-- [ ] **Supported-firmware matrix**: README/info.md table of tested UDM-SE / UCG-Ultra / UCG-Max / Cloud Key Gen2+ models with firmware and known quirks.
-- [ ] **Troubleshooting / FAQ section**: consolidate scattered notes.
-- [ ] **Uninstall instructions**: Settings > Devices & Services > UniFi Alerts > ⋮ > Delete.
-- [ ] **`info.md` local-network warning**: "⚠ Local network only: webhooks are not reachable over Nabu Casa remote access" in the first paragraph.
-- [ ] **Setup-flow webhook copy warning**: `strings.json` note on the finish step.
-- [ ] **Privacy / data-retention section** in README: which fields are stored, locally only, auto-clear timing.
-- [ ] **`unique_id` format**: document `{entry_id}_{category}_{sensor_type}`; UI renames preserve unique_id.
-
 ### QA
 
 - [ ] **Optional: integration test for full rotation cycle**: options-flow > entry-update > reload > re-register, end-to-end.

@@ -9,11 +9,16 @@
 ### Documentation
 
 - Reconciled documentation against current code: corrected test directory layout in REPO_LAYOUT (unit/integration subpackages with three conftest files), fixed button platform table row in HOMEASSISTANT (both classes now inherit CoordinatorEntity), updated HA minimum version in info.md (2024.5 not 2026.1.0), corrected HISTORY.md update guidance in DEVELOPING (bump-PR only, not per-PR), updated conftest diagram in TESTING (three conftest files), and removed already-shipped automation-edge-case item from ROADMAP and TODO.
+- Added Troubleshooting guide (docs/TROUBLESHOOTING.md) covering four common setup scenarios.
+- Added tested-controllers matrix, privacy/data-retention section, and uninstall instructions to README.
+- Added local-network-only warning to info.md first paragraph.
+- Updated setup-flow finish step to stress copying webhook URLs before clicking Submit.
 
 ### Internal
 
 - Split `tests/unit/test_config_flow.py` (1565 lines) into `tests/unit/config_flow/` package with separate files per flow type to reduce rebase conflicts.
 - Confirmed `SensorStateClass.MEASUREMENT` on open-count and rollup-count sensors; no `SensorDeviceClass` is set (none of the HA built-ins fit an alert counter).
+- Improved code comments on webhook dedup, polling-vs-webhook alert_count invariant, acknowledgement watermark, and system-log probe. Clarified webhook body decode-failure log message.
 
 ## [1.6.0] - 2026-05-11
 
