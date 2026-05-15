@@ -32,7 +32,7 @@ This integration uses config entries exclusively; no `configuration.yaml` suppor
 | `binary_sensor` | `CoordinatorEntity[...], BinarySensorEntity` | `is_on` returns bool |
 | `sensor` | `CoordinatorEntity[...], SensorEntity` | `native_value` for state |
 | `event` | `CoordinatorEntity[...], EventEntity` | Override `_handle_coordinator_update` to fire |
-| `button` | `ButtonEntity` | No coordinator subscription today (TODO: add `CoordinatorEntity` mixin) |
+| `button` | `CoordinatorEntity[...], ButtonEntity` | `available` reflects category-enabled state |
 
 All entities set `_attr_has_entity_name = True`. HA prefixes the entity name with the device name in the UI; entity IDs are of the form `binary_sensor.unifi_alerts_network_device`.
 
