@@ -13,6 +13,7 @@
 - Added tested-controllers matrix, privacy/data-retention section, and uninstall instructions to README.
 - Added local-network-only warning to info.md first paragraph.
 - Updated setup-flow finish step to stress copying webhook URLs before clicking Submit.
+- Restructured README into a standard flow (Features > Requirements > Installation > Setup > Entities > Privacy > Uninstall > Support > Contributing), merged the two duplicate tested-consoles tables into one, and moved Lovelace/automation examples to `docs/EXAMPLES.md`. Slimmed info.md by removing duplicated local-network warning and a redundant link block. README dropped from 331 to 186 lines without losing user-facing content.
 
 ### Internal
 
