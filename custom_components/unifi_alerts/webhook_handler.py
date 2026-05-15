@@ -25,7 +25,7 @@ from .const import (
     WEBHOOK_MAX_BODY_BYTES,
     webhook_id_for_category,
 )
-from .models import UniFiAlert
+from .models import UniFiAlert, UniFiClientConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,12 +47,12 @@ class WebhookManager:
         self,
         hass: HomeAssistant,
         entry_id: str,
-        config: dict,
+        config: UniFiClientConfig,
         push_callback: Callable[[str, UniFiAlert], None],
     ) -> None:
         self._hass = hass
         self._entry_id = entry_id
-        self._config = config
+        self._config: UniFiClientConfig = config
         self._push_callback = push_callback
         self._registered: list[str] = []
 

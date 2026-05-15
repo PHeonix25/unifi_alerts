@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import Any
+from typing import Any, cast
 
 import voluptuous as vol
 from homeassistant.components.webhook import async_generate_url
@@ -38,6 +38,7 @@ from .const import (
     DOMAIN,
     webhook_id_for_category,
 )
+from .models import UniFiClientConfig
 from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                     self.hass,
                     verify_ssl=user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                 )
-                client = UniFiClient(session, url, user_input)
+                client = UniFiClient(session, url, cast(UniFiClientConfig, user_input))
                 try:
                     auth_method = await client.authenticate()
                     await client.fetch_alarms()  # validate alarm endpoint reachable
@@ -245,7 +246,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 self.hass,
                 verify_ssl=entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
             )
-            client = UniFiClient(session, url, user_input)
+            client = UniFiClient(session, url, cast(UniFiClientConfig, user_input))
             try:
                 auth_method = await client.authenticate()
             except InvalidAuthError:
@@ -377,7 +378,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                     test_data[CONF_API_KEY] = new_api_key
 
                 session = async_get_clientsession(self.hass, verify_ssl=new_verify_ssl)
-                client = UniFiClient(session, effective_url, test_data)
+                client = UniFiClient(session, effective_url, cast(UniFiClientConfig, test_data))
                 try:
                     auth_method = await client.authenticate()
                     await client.fetch_alarms()

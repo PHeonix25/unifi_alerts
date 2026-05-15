@@ -7,7 +7,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,6 +18,31 @@ _unknown_system_log_keys: set[str] = set()
 if TYPE_CHECKING:
     from .coordinator import UniFiAlertsCoordinator
     from .unifi_client import UniFiClient
+
+
+class UniFiClientConfig(TypedDict, total=False):
+    """Shape of the dict passed to UniFiClient, UniFiAlertsCoordinator, and WebhookManager.
+
+    total=False because legacy entries and credential subsets may omit fields;
+    call sites use .get(key, default) for optional fields.
+
+    auth_method is typed as str (not Literal["userpass", "apikey"]) because the
+    value originates from user input and is validated in unifi_client.authenticate();
+    constraining the type here would force casts at the validation boundary.
+    """
+
+    controller_url: str
+    username: str
+    password: str
+    api_key: str
+    auth_method: str
+    verify_ssl: bool
+    webhook_secret: str
+    webhook_id_suffix: str
+    enabled_categories: list[str]
+    poll_interval: int
+    clear_timeout: int
+    site: str
 
 
 def _render_message_raw(message_raw: str, parameters: dict) -> str:
