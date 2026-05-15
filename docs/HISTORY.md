@@ -2,6 +2,18 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-05-15
+
+- **release**: v1.7.0-pre1 tagged. Ships the v1.7.0 documentation + architecture scope: fail-closed webhook auth with schema v3 migration that backfills missing secrets on legacy entries (SEC-1), `UniFiClientConfig` TypedDict that closed the largest `dict[str, Any]` surface and unblocked `mypy --strict` (ARCH-1), `strict = true` flipped with zero `# type: ignore` debt (CI-1), `tests/unit/config_flow/` package split (ARCH-3), `SensorStateClass.MEASUREMENT` confirmed on count sensors (ARCH-4), end-to-end documentation accuracy pass (DOC-A), new troubleshooting / privacy / tested-controllers / uninstall sections (DOC-B), WHY comments on dedup / watermark / system-log probe (QUAL-1), and a README + info.md restructure that dropped README from 331 to 186 lines.
+- **security**: fail-closed webhook auth and schema v3 migration that backfills `webhook_secret` / `webhook_id_suffix` on legacy entries ([#94]). Webhook handler now returns HTTP 500 when no bearer secret is configured (previously accepting); migration generates a fresh secret and suffix only when missing or empty, leaving correctly-configured entries untouched.
+- **docs**: reconcile documentation against current code (DOC-A) ([#95]). 35 verified drift points across REPO_LAYOUT test paths, HOMEASSISTANT button row, info.md HA baseline (2024.5 not 2026.1.0), DEVELOPING HISTORY guidance, TESTING conftest tree.
+- **tests**: split `tests/unit/test_config_flow.py` (1565 lines) into `tests/unit/config_flow/` package (ARCH-3) ([#96]). Four files (`test_setup`, `test_options`, `test_reauth`, plus shared `conftest`); same test count, smaller rebase blast radius.
+- **feat**: confirm `SensorStateClass.MEASUREMENT` on open-count and rollup-count sensors (ARCH-4) ([#97]). No `SensorDeviceClass` is set (none of HA's built-ins fit an alert counter); comment added so a future reader does not re-open the question.
+- **docs**: v1.7 user docs (DOC-B) and WHY comments (QUAL-1) ([#98]). Troubleshooting / privacy / tested-controllers / uninstall sections in README; `info.md` local-network warning; setup-flow finish step copy stresses copying webhook URLs before Submit. Code-side WHY comments cover the webhook 5s dedup window, polling-vs-webhook `alert_count` invariant, acknowledgement watermark, and system-log probe.
+- **docs**: restructure README and info.md, dedupe content, move examples to `docs/EXAMPLES.md` ([#99]). Standard flow (Features > Requirements > Installation > Setup > Entities > Privacy > Uninstall > Support > Contributing); merged the two duplicate "tested consoles" tables; README dropped from 331 to 186 lines with no content cut.
+- **chore**: introduce `UniFiClientConfig` TypedDict for the client / coordinator / webhook config dict (ARCH-1) ([#100]). Replaces `dict[str, Any]` parameters and storage; `cast()` at the HA `ConfigEntry` boundary; `Final` annotations on the 13 `CONF_*` keys so mypy resolves them as literal types. Prerequisite for CI-1.
+- **ci**: enable `mypy --strict` across the integration (CI-1) ([#101]). Fixed every issue with real type annotations and one import-path move (`DeviceInfo` from `helpers.device_registry` instead of the unmarked re-export on `helpers.entity`); zero `# type: ignore` lines added.
+
 ## 2026-05-11
 
 - **release**: v1.6.0 tagged. Ships the v1.6.0 reliability scope: v2 `system-log/all` polling switch with capability probe and legacy fallback (closes the ~3000-record cap on `/list/alarm` that left `open_count` stuck at 0 on busy controllers), persistent `alert_count` and `last_alert` across config-entry reloads, button-availability gating that respects category-enabled state, and the epoch-ms timestamp parser fix the v2 path depends on. Live-validated against a UCG-Ultra running Network 10.3.58 via the v1.6.0-pre2 canary before promotion; no functional changes between pre2 and stable.
@@ -209,6 +221,14 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 [#88]: https://github.com/PHeonix25/unifi_alerts/pull/88
 [#89]: https://github.com/PHeonix25/unifi_alerts/pull/89
 [#90]: https://github.com/PHeonix25/unifi_alerts/pull/90
+[#94]: https://github.com/PHeonix25/unifi_alerts/pull/94
+[#95]: https://github.com/PHeonix25/unifi_alerts/pull/95
+[#96]: https://github.com/PHeonix25/unifi_alerts/pull/96
+[#97]: https://github.com/PHeonix25/unifi_alerts/pull/97
+[#98]: https://github.com/PHeonix25/unifi_alerts/pull/98
+[#99]: https://github.com/PHeonix25/unifi_alerts/pull/99
+[#100]: https://github.com/PHeonix25/unifi_alerts/pull/100
+[#101]: https://github.com/PHeonix25/unifi_alerts/pull/101
 
 [0d951b3]: https://github.com/PHeonix25/unifi_alerts/commit/0d951b3
 [0f17afb]: https://github.com/PHeonix25/unifi_alerts/commit/0f17afb
