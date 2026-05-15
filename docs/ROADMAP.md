@@ -18,10 +18,6 @@ Closes the remaining documentation gaps and the largest architecture items.
 - [ ] **`has_entity_name = True` + `_attr_translation_key`**: move display strings out of platform files into `strings.json`. Unlocks localisation.
 - [ ] **Split `tests/unit/test_config_flow.py` into a package**: ~1405 lines, four independent classes. Convert to `tests/unit/config_flow/{__init__,conftest,test_setup,test_options,test_reauth}.py`.
 
-### Documentation
-
-- [ ] **Automation edge case**: disabling a category in options makes its event entity unavailable.
-
 ### QA
 
 - [ ] **Optional: integration test for full rotation cycle**: options-flow > entry-update > reload > re-register, end-to-end.

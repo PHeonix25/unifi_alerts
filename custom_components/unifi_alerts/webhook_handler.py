@@ -114,18 +114,24 @@ class WebhookManager:
             webhook_id: str,
             request: Request,
         ) -> Response | None:
-            if secret:
-                provided = request.query.get("token", "")
-                # Use hmac.compare_digest to avoid leaking the secret via a
-                # timing side-channel — `==` / `!=` exit early on the first
-                # mismatching byte, which lets a remote attacker recover the
-                # secret byte-by-byte.
-                if not hmac.compare_digest(provided, secret):
-                    _LOGGER.warning(
-                        "Webhook request for category %s rejected: missing or invalid token",
-                        category,
-                    )
-                    return Response(status=401)
+            if not secret:
+                _LOGGER.error(
+                    "Webhook for category %s has no bearer secret configured; rejecting request. "
+                    "Re-save the integration via Settings > Devices & Services > UniFi Alerts > Configure.",
+                    category,
+                )
+                return Response(status=500)
+            provided = request.query.get("token", "")
+            # Use hmac.compare_digest to avoid leaking the secret via a
+            # timing side-channel — `==` / `!=` exit early on the first
+            # mismatching byte, which lets a remote attacker recover the
+            # secret byte-by-byte.
+            if not hmac.compare_digest(provided, secret):
+                _LOGGER.warning(
+                    "Webhook request for category %s rejected: missing or invalid token",
+                    category,
+                )
+                return Response(status=401)
 
             raw = b""
             try:

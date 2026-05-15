@@ -19,10 +19,6 @@ Outstanding work only. Items are removed when they ship; completion lives in `do
 
 - **Optional: integration test for full rotation cycle**: options-flow > entry-update > reload > re-register, end-to-end. Each step is unit-tested already.
 
-## Documentation
-
-- **Automation edge case** in README: disabling a category in options makes its event entity unavailable, breaking dependent automations.
-
 ## Architecture
 
 - **Entity naming via `_attr_translation_key`**: all four platform files hard-code `_attr_name = f"{CATEGORY_LABELS[cat]} ..."`. Migrate to `has_entity_name = True` + `_attr_translation_key` so strings live in `strings.json`. Unlocks localisation.

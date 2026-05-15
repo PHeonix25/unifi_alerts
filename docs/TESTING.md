@@ -84,25 +84,28 @@ If the hook blocks your push, fix the reported issue - do not use `git push --no
 
 ## Test directory structure
 
-Tests are split into two peer subdirectories:
+Tests are split into two peer subdirectories, with a root conftest shared by both:
 
 ```
 tests/
+  conftest.py              # root shared fixtures; Windows-only event-loop and socket workarounds (no-op on Linux/macOS)
   unit/                    # plain-mock unit tests - no real HA instance
-    conftest.py            # MOCK_CONFIG, make_hass(), make_entry(), shared fixtures
+    conftest.py            # MOCK_CONFIG, make_hass(), make_entry(), unit-test fixtures
     test_coordinator.py
     test_config_flow.py
     test_diagnostics.py
     test_entities.py
     test_init.py
     test_models.py
+    test_services.py
     test_unifi_client.py
     test_webhook_handler.py
   integration/             # full HA lifecycle tests using hass fixture
     __init__.py            # enables relative imports within the package
-    conftest.py            # entry fixture, mock_unifi_client, get_coordinator()
+    conftest.py            # entry fixture, mock_unifi_client, get_coordinator(); real entry setup/teardown
     test_auto_clear.py     # auto-clear timeout resets binary sensors
     test_lifecycle.py      # entity creation, options flow, coordinator wiring
+    test_multi_entry.py    # two config entries active simultaneously
     test_webhook.py        # webhook HTTP dispatch end-to-end
 ```
 
