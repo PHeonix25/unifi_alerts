@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -40,6 +41,27 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         new_data = {k: v for k, v in config_entry.data.items() if k != "is_unifi_os"}
         hass.config_entries.async_update_entry(config_entry, data=new_data, version=2)
         _LOGGER.info("Migrated config entry %s from version 1 to 2", config_entry.entry_id)
+
+    if config_entry.version == 2:
+        new_data = dict(config_entry.data)
+        changed = False
+        if not new_data.get("webhook_secret"):
+            new_data["webhook_secret"] = secrets.token_urlsafe(32)
+            changed = True
+        if not new_data.get("webhook_id_suffix"):
+            new_data["webhook_id_suffix"] = secrets.token_hex(4)
+            changed = True
+        if changed:
+            hass.config_entries.async_update_entry(config_entry, data=new_data, version=3)
+            _LOGGER.info(
+                "Migrated config entry %s to version 3: backfilled webhook secret. "
+                "Re-paste webhook URLs from Settings > Devices & Services > UniFi Alerts > Configure.",
+                config_entry.entry_id,
+            )
+        else:
+            hass.config_entries.async_update_entry(config_entry, version=3)
+        return True
+
     return True
 
 
