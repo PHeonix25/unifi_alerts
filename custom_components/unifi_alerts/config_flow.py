@@ -59,7 +59,7 @@ def _create_auth_failed_issue(hass: Any, entry: Any) -> None:
 class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the initial setup flow shown in Settings → Integrations."""
 
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self) -> None:
         self._controller_url: str = ""

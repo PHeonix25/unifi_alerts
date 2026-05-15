@@ -61,6 +61,23 @@ believed compromised), the only recovery is to delete and re-add the config
 entry. Rotation alone is sufficient for the common "I think my token leaked"
 case; it is not sufficient for "the URL has been published publicly".
 
+## Schema version 3 migration (v1.7)
+
+v1.7 introduced a config entry schema version 3 migration that backfills
+`webhook_secret` and `webhook_id_suffix` on any entry that lacks them. This
+affects installations that were originally set up before v1.4.0 and have never
+been reconfigured via the options flow.
+
+The webhook handler now fails closed: if no secret is configured, incoming
+requests are rejected with HTTP 500 instead of being accepted silently. This
+removes the pre-v1.7 bypass where an empty `CONF_WEBHOOK_SECRET` caused the
+token check to be skipped entirely.
+
+Users who installed before v1.4.0 and have never reconfigured should
+re-paste their webhook URLs into the UniFi Alarm Manager after upgrading.
+New webhook URLs are available at Settings > Devices & Services >
+UniFi Alerts > Configure.
+
 ## What's out of scope
 
 - Vulnerabilities in upstream Home Assistant Core or in third-party HA
