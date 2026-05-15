@@ -7,7 +7,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class UniFiClientConfig(TypedDict, total=False):
     site: str
 
 
-def _render_message_raw(message_raw: str, parameters: dict) -> str:
+def _render_message_raw(message_raw: str, parameters: dict[str, Any]) -> str:
     """Substitute {KEY} placeholders in message_raw with values from parameters.
 
     The v2 system-log schema uses a template string (message_raw) with
@@ -73,7 +73,7 @@ class UniFiAlert:
     category: str
     message: str
     received_at: datetime
-    raw: dict = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict)
 
     # Optional enrichment fields parsed from the UniFi payload
     key: str = ""
@@ -82,7 +82,7 @@ class UniFiAlert:
     severity: str = ""
 
     @classmethod
-    def from_webhook_payload(cls, category: str, payload: dict) -> UniFiAlert:
+    def from_webhook_payload(cls, category: str, payload: dict[str, Any]) -> UniFiAlert:
         """Build an alert from a raw UniFi Alarm Manager webhook POST body."""
         message = (
             payload.get("message")
@@ -106,7 +106,7 @@ class UniFiAlert:
         )
 
     @classmethod
-    def from_api_alarm(cls, category: str, alarm: dict) -> UniFiAlert:
+    def from_api_alarm(cls, category: str, alarm: dict[str, Any]) -> UniFiAlert:
         """Build an alert from a polled UniFi controller alarm record."""
         message = alarm.get("msg") or alarm.get("message") or alarm.get("key") or "Unknown alert"
         # UniFi returns timestamps as epoch milliseconds (v2 system-log always; legacy
@@ -138,7 +138,7 @@ class UniFiAlert:
         )
 
     @classmethod
-    def from_system_log_event(cls, payload: dict) -> UniFiAlert:
+    def from_system_log_event(cls, payload: dict[str, Any]) -> UniFiAlert:
         """Build an alert from a v2 system-log/all event record.
 
         The v2 schema differs substantially from the legacy /list/alarm format:
@@ -207,14 +207,14 @@ class UniFiAlert:
             severity=payload.get("severity") or "",
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialise this alert to a JSON-safe dict for Store persistence."""
         d = asdict(self)
         d["received_at"] = self.received_at.isoformat()
         return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> UniFiAlert:
+    def from_dict(cls, data: dict[str, Any]) -> UniFiAlert:
         """Deserialise an alert previously written by ``to_dict``."""
         received_at_raw = data.get("received_at", "")
         try:

@@ -173,7 +173,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_finish()
 
         # Build a schema with one boolean per category
-        fields: dict = {}
+        fields: dict[Any, Any] = {}
         # Default noisy client/device categories to OFF; exceptional events ON
         _chatty = {"network_device", "network_client"}
         for cat in ALL_CATEGORIES:
@@ -206,7 +206,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         enabled: list[str] = self._entry_data.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         secret: str = self._entry_data.get(CONF_WEBHOOK_SECRET, "")
         suffix: str = self._entry_data.get(CONF_WEBHOOK_ID_SUFFIX, "")
-        fields: dict = {}
+        fields: dict[Any, Any] = {}
         for cat in ALL_CATEGORIES:
             if cat in enabled:
                 url = (
@@ -479,7 +479,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             self._config_entry.data.get(CONF_SITE, DEFAULT_SITE),
         )
 
-        fields: dict = {}
+        fields: dict[Any, Any] = {}
         for cat in ALL_CATEGORIES:
             fields[vol.Optional(f"cat_{cat}", default=(cat in current_enabled))] = bool
         fields[vol.Optional(CONF_POLL_INTERVAL, default=current_poll)] = vol.All(
@@ -517,7 +517,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             self._config_entry.data.get(CONF_WEBHOOK_SECRET, ""),
         )
         suffix: str = self._config_entry.data.get(CONF_WEBHOOK_ID_SUFFIX, "")
-        fields: dict = {}
+        fields: dict[Any, Any] = {}
         for cat in ALL_CATEGORIES:
             if cat in enabled:
                 url = (

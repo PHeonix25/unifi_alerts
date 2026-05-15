@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timedelta
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -63,7 +64,9 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._clear_timeout_minutes: int = config.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT)
         self._enabled_categories: list[str] = config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         self._site: str = config.get(CONF_SITE, DEFAULT_SITE)
-        self._store: Store = Store(hass, _STORAGE_VERSION, f"{DOMAIN}_watermarks_{entry_id}")
+        self._store: Store[dict[str, Any]] = Store(
+            hass, _STORAGE_VERSION, f"{DOMAIN}_watermarks_{entry_id}"
+        )
 
         # Category state is long-lived; do NOT reset between coordinator refreshes
         self._category_states: dict[str, CategoryState] = {
@@ -72,7 +75,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         }
 
         # Tracks pending auto-clear tasks keyed by category
-        self._clear_tasks: dict[str, asyncio.Task] = {}
+        self._clear_tasks: dict[str, asyncio.Task[None]] = {}
 
         # Per-(category, alert_key) monotonic timestamps of the last webhook
         # push that was actually applied. Subsequent pushes for the same pair
@@ -313,7 +316,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         branch runs when the stored value is a dict; the string branch handles
         the old format so existing installs are not disrupted.
         """
-        data: dict | None = await self._store.async_load()
+        data: dict[str, Any] | None = await self._store.async_load()
         if not data:
             return
         for cat, entry in data.items():
@@ -343,9 +346,9 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
     async def _async_persist_watermarks(self) -> None:
         """Persist current category state (watermark, alert_count, last_alert) to storage."""
-        data: dict[str, dict] = {}
+        data: dict[str, dict[str, Any]] = {}
         for cat, state in self._category_states.items():
-            entry: dict = {}
+            entry: dict[str, Any] = {}
             if state.last_cleared_at is not None:
                 entry["last_cleared_at"] = state.last_cleared_at.isoformat()
             entry["alert_count"] = state.alert_count
