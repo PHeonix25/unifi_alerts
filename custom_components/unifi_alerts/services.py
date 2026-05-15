@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
@@ -10,6 +12,9 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 
 from .const import ALL_CATEGORIES, DOMAIN
+
+if TYPE_CHECKING:
+    from .coordinator import UniFiAlertsCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,7 +38,9 @@ CLEAR_ALL_SCHEMA = vol.Schema(
 )
 
 
-def _get_coordinators(hass: HomeAssistant, entry_id: str | None):
+def _get_coordinators(
+    hass: HomeAssistant, entry_id: str | None
+) -> Iterator[UniFiAlertsCoordinator]:
     """Yield coordinator(s) from loaded entries, optionally filtered by entry_id."""
     if entry_id is not None:
         entry = hass.config_entries.async_get_entry(entry_id)

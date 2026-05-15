@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -78,7 +79,7 @@ class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sens
         return CATEGORY_ICONS_OK[self._category]
 
     @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict[str, Any]:
         state: CategoryState | None = self.coordinator.get_category_state(self._category)
         if not state or not state.last_alert:
             return {}
@@ -147,9 +148,9 @@ class UniFiRollupCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEn
         return self.coordinator.rollup_open_count
 
     @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict[str, Any]:
         last = self.coordinator.rollup_last_alert
-        attrs: dict = {"total_webhook_count": self.coordinator.rollup_alert_count}
+        attrs: dict[str, Any] = {"total_webhook_count": self.coordinator.rollup_alert_count}
         if last:
             attrs["last_message"] = last.message
             attrs["last_category"] = last.category

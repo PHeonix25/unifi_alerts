@@ -6,7 +6,7 @@ import contextlib
 import hmac
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from aiohttp.web import Request, Response
 from homeassistant.components.webhook import (
@@ -106,7 +106,9 @@ class WebhookManager:
                 async_unregister(self._hass, webhook_id)
         self._registered.clear()
 
-    def _make_handler(self, category: str, secret: str):
+    def _make_handler(
+        self, category: str, secret: str
+    ) -> Callable[[HomeAssistant, str, Request], Awaitable[Response | None]]:
         """Return an async webhook handler bound to a specific category."""
 
         async def handle_webhook(
