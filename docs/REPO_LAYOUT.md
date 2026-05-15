@@ -20,21 +20,29 @@ custom_components/unifi_alerts/   # integration source
   strings.json                    # UI copy for config flow; must be identical to translations/en.json - CI enforces this
   translations/en.json            # runtime translation file loaded by HA; must be identical to strings.json - CI enforces this
 tests/
-  conftest.py                     # shared fixtures, MOCK_CONFIG; make_hass() and make_entry() module-level helpers for setup/unload tests
-  test_models.py
-  test_coordinator.py
-  test_unifi_client.py
-  unit/
-    config_flow/                  # config flow tests (split from monolithic file in v1.7)
+  conftest.py                     # root shared fixtures; Windows-only event-loop and socket workarounds (no-op on Linux/macOS)
+  unit/                           # plain-mock unit tests - no real HA instance
+    conftest.py                   # MOCK_CONFIG; make_hass() and make_entry() helpers for setup/unload tests
+    config_flow/                  # config flow tests (split from monolithic test_config_flow.py in v1.7)
       __init__.py
       conftest.py                 # shared flow helpers and mock builders (make_flow, make_options_flow, make_reauth_flow)
       test_setup.py               # initial setup flow: user, categories, finish steps
       test_options.py             # options flow: credential changes, category toggles, regenerate secret
       test_reauth.py              # reauth flow: async_step_reauth, repair issue
-  test_diagnostics.py             # diagnostics platform: redaction, webhook URL exposure, coordinator state
-  test_webhook_handler.py         # WebhookManager: register/unregister, token auth, alert dispatch
-  test_init.py                    # async_setup_entry / async_unload_entry lifecycle, teardown order
-  test_entities.py                # all entity property methods: binary_sensor, sensor, event, button
+    test_coordinator.py
+    test_diagnostics.py           # diagnostics platform: redaction, webhook URL exposure, coordinator state
+    test_entities.py              # all entity property methods: binary_sensor, sensor, event, button
+    test_init.py                  # async_setup_entry / async_unload_entry lifecycle, teardown order
+    test_models.py
+    test_services.py
+    test_unifi_client.py
+    test_webhook_handler.py       # WebhookManager: register/unregister, token auth, alert dispatch
+  integration/                    # full HA lifecycle tests using hass fixture
+    conftest.py                   # entry fixture, mock_unifi_client, get_coordinator(); real entry setup/teardown
+    test_auto_clear.py            # auto-clear timeout resets binary sensors
+    test_lifecycle.py             # entity creation, options flow, coordinator wiring
+    test_multi_entry.py           # two config entries active simultaneously
+    test_webhook.py               # webhook HTTP dispatch end-to-end
 .github/workflows/
   ci.yml                          # hassfest + hacs-preflight + HACS action + lint (ruff, mypy, translation drift) + pytest; runs on push/PR to main and dev
   version-check.yml               # enforces version format per branch: main=X.Y.Z stable, dev=X.Y.Z-preN; runs on push/PR to main and dev

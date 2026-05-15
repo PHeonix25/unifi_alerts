@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Security
+
+- Webhook handler now rejects requests with HTTP 500 when no bearer secret is configured, rather than accepting them. Config entries missing `webhook_secret` are backfilled during migration to schema version 3. ([#PR])
+
+### Documentation
+
+- Reconciled documentation against current code: corrected test directory layout in REPO_LAYOUT (unit/integration subpackages with three conftest files), fixed button platform table row in HOMEASSISTANT (both classes now inherit CoordinatorEntity), updated HA minimum version in info.md (2024.5 not 2026.1.0), corrected HISTORY.md update guidance in DEVELOPING (bump-PR only, not per-PR), updated conftest diagram in TESTING (three conftest files), and removed already-shipped automation-edge-case item from ROADMAP and TODO.
+
 ### Internal
 
 - Split `tests/unit/test_config_flow.py` (1565 lines) into `tests/unit/config_flow/` package with separate files per flow type to reduce rebase conflicts.
@@ -169,3 +177,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#59]: https://github.com/PHeonix25/unifi_alerts/pull/59
 [#67]: https://github.com/PHeonix25/unifi_alerts/pull/67
 [#68]: https://github.com/PHeonix25/unifi_alerts/pull/68
+[#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR

@@ -22,6 +22,7 @@ from custom_components.unifi_alerts.const import (
     CONF_POLL_INTERVAL,
     CONF_SITE,
     CONF_VERIFY_SSL,
+    CONF_WEBHOOK_ID_SUFFIX,
     CONF_WEBHOOK_SECRET,
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
@@ -61,6 +62,7 @@ def _prime_pycares_shutdown_thread() -> None:
 
 ENTRY_ID = "test-entry-integration"
 WEBHOOK_SECRET = "integration-test-secret"
+WEBHOOK_ID_SUFFIX = "testcafe"
 HA_TEST_URL = "http://homeassistant.test:8123"
 
 BASE_CONFIG: dict = {
@@ -72,6 +74,7 @@ BASE_CONFIG: dict = {
     CONF_CLEAR_TIMEOUT: DEFAULT_CLEAR_TIMEOUT,
     CONF_VERIFY_SSL: False,
     CONF_WEBHOOK_SECRET: WEBHOOK_SECRET,
+    CONF_WEBHOOK_ID_SUFFIX: WEBHOOK_ID_SUFFIX,
     "auth_method": "userpass",
     CONF_SITE: "default",
 }
@@ -123,7 +126,7 @@ async def entry(hass, mock_unifi_client):
         domain=DOMAIN,
         data=dict(BASE_CONFIG),
         entry_id=ENTRY_ID,
-        version=2,
+        version=3,
     )
     config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(config_entry.entry_id)
