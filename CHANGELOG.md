@@ -10,6 +10,10 @@
 
 - Reconciled documentation against current code: corrected test directory layout in REPO_LAYOUT (unit/integration subpackages with three conftest files), fixed button platform table row in HOMEASSISTANT (both classes now inherit CoordinatorEntity), updated HA minimum version in info.md (2024.5 not 2026.1.0), corrected HISTORY.md update guidance in DEVELOPING (bump-PR only, not per-PR), updated conftest diagram in TESTING (three conftest files), and removed already-shipped automation-edge-case item from ROADMAP and TODO.
 
+### Internal
+
+- Split `tests/unit/test_config_flow.py` (1565 lines) into `tests/unit/config_flow/` package with separate files per flow type to reduce rebase conflicts.
+
 ## [1.6.0] - 2026-05-11
 
 ### Changed

@@ -23,7 +23,12 @@ tests/
   conftest.py                     # root shared fixtures; Windows-only event-loop and socket workarounds (no-op on Linux/macOS)
   unit/                           # plain-mock unit tests - no real HA instance
     conftest.py                   # MOCK_CONFIG; make_hass() and make_entry() helpers for setup/unload tests
-    test_config_flow.py           # config flow steps, webhook URL token display, options flow defaults
+    config_flow/                  # config flow tests (split from monolithic test_config_flow.py in v1.7)
+      __init__.py
+      conftest.py                 # shared flow helpers and mock builders (make_flow, make_options_flow, make_reauth_flow)
+      test_setup.py               # initial setup flow: user, categories, finish steps
+      test_options.py             # options flow: credential changes, category toggles, regenerate secret
+      test_reauth.py              # reauth flow: async_step_reauth, repair issue
     test_coordinator.py
     test_diagnostics.py           # diagnostics platform: redaction, webhook URL exposure, coordinator state
     test_entities.py              # all entity property methods: binary_sensor, sensor, event, button
