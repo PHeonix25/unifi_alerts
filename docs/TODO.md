@@ -14,7 +14,6 @@ Outstanding work only. Items are removed when they ship; completion lives in `do
 ## Type safety / tech debt
 
 - **`mypy strict = false`**: migrate `UniFiClient.config: dict[str, Any]` to a `TypedDict` or frozen dataclass, then bump `pyproject.toml` to `strict = true`.
-- **No sensor `device_class`** (`sensor.py`): open-count and rollup-count sensors have no class. None of HA's built-ins map cleanly; consider richer `state_class` instead.
 
 ## Testing
 

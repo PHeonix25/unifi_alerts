@@ -95,6 +95,7 @@ class UniFiCategoryCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sensor
     """Sensor whose state is the number of open (unarchived) alarms for a category."""
 
     _attr_has_entity_name = True
+    # No SensorDeviceClass fits an alert counter; MEASUREMENT suits a resettable integer.
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "alerts"
     _attr_icon = "mdi:counter"
@@ -127,6 +128,7 @@ class UniFiRollupCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEn
 
     _attr_has_entity_name = True
     _attr_name = "Total Open Alerts"
+    # No SensorDeviceClass fits an alert counter; MEASUREMENT suits a resettable integer.
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "alerts"
     _attr_icon = "mdi:bell-alert"
