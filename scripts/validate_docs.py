@@ -8,9 +8,13 @@ Catches AI-style prose patterns and HISTORY.md format drift before they land:
 - "bundle/cluster/track/session N" framing phrases
 - HISTORY.md h2 headings that are not `## YYYY-MM-DD`
 
-Run via `make lint` or directly: `python3 scripts/validate_docs.py`. Exits
-non-zero if any violations are found, printing `path:line:col: message` for
-each one.
+Scans every `*.md` file in the repository (excluding `.git`, `.venv`,
+`node_modules`, `.claude`, and similar generated/vendored directories) so
+new markdown added anywhere inherits the same rules automatically.
+
+Run via `make doc-check` / `make validate` or directly:
+`python3 scripts/validate_docs.py`. Exits non-zero if any violations are
+found, printing `path:line:col: message` for each one.
 """
 
 from __future__ import annotations
@@ -21,16 +25,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
-# Files in scope. Anything outside this list is ignored on purpose so plugin
-# generated content (e.g. .claude, scripts) cannot trip the linter.
-TARGET_GLOBS: tuple[str, ...] = (
-    "CLAUDE.md",
-    "AGENTS.md",
-    "CHANGELOG.md",
-    "README.md",
-    "info.md",
-    "SECURITY.md",
-    "docs/*.md",
+# Every markdown file in the repo is in scope, recursively, so the same rules
+# apply to docs, agent definitions, PR templates, and anything else added
+# later. Directories that hold generated or vendored content are excluded so
+# the linter cannot trip on files we do not own.
+EXCLUDED_DIRS: frozenset[str] = frozenset(
+    {".git", ".venv", "venv", "node_modules", ".claude", ".mypy_cache", ".ruff_cache"}
 )
 
 # (compiled pattern, human message). Patterns are matched per-line.
@@ -60,11 +60,16 @@ HISTORY_H2_VALID = re.compile(r"^## \d{4}-\d{2}-\d{2}\s*$")
 
 
 def collect_files() -> list[Path]:
-    """Collect all target markdown files from the repository."""
+    """Collect every markdown file in the repo, skipping excluded directories."""
     files: list[Path] = []
-    for pat in TARGET_GLOBS:
-        files.extend(sorted(REPO.glob(pat)))
-    return [f for f in files if f.is_file()]
+    for path in REPO.rglob("*.md"):
+        if not path.is_file():
+            continue
+        rel_parts = path.relative_to(REPO).parts
+        if any(part in EXCLUDED_DIRS for part in rel_parts[:-1]):
+            continue
+        files.append(path)
+    return sorted(files)
 
 
 def scan_forbidden(path: Path) -> list[tuple[int, int, str]]:
