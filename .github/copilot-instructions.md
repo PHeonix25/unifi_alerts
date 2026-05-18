@@ -63,3 +63,56 @@ See [`CLAUDE.md`](../CLAUDE.md) for the complete list with rationale.
 - Claude cannot push tags — provide the user with the exact `git tag` + `git push origin <tag>` command after a version-bump PR merges.
 
 See [`CLAUDE.md`](../CLAUDE.md) for the full release workflow.
+
+## Maintenance matrix
+
+What must be updated when specific parts of the codebase change.
+
+### Adding a new alert category
+
+| File | Change required |
+| ---- | --------------- |
+| `custom_components/unifi_alerts/const.py` | Add `CATEGORY_<NAME>` constant; add to `ALL_CATEGORIES`, `CATEGORY_LABELS`, `CATEGORY_ICONS`, `CATEGORY_ICONS_OK`; add all `EVT_*` keys to `UNIFI_KEY_TO_CATEGORY` |
+| `custom_components/unifi_alerts/strings.json` | Add `"cat_<name>"` label to `config.step.categories.data`, `config.step.finish.data`, `options.step.options.data`; add webhook URL label |
+| `custom_components/unifi_alerts/translations/en.json` | Mirror every change to `strings.json` exactly |
+| `tests/unit/conftest.py` | Add category to fixture category lists |
+| `tests/integration/conftest.py` | Add category to fixture category lists |
+
+Run `make validate` after: catches translation drift and HACS preflight failures immediately.
+
+### Modifying webhook request handling
+
+| File | Change required |
+| ---- | --------------- |
+| `custom_components/unifi_alerts/webhook_handler.py` | Primary change site - all webhook registration, token validation, dedup logic |
+| `tests/unit/test_webhook_handler.py` | Unit tests for handler logic |
+| `tests/integration/test_webhook.py` | Integration tests for full webhook flow |
+
+Never remove the `?token=` validation check - it is a security hard requirement.
+
+### Changing coordinator data shape
+
+| File | Change required |
+| ---- | --------------- |
+| `custom_components/unifi_alerts/coordinator.py` | Primary change site |
+| `custom_components/unifi_alerts/binary_sensor.py` | Reads `coordinator.data` - check all `@property` accessors |
+| `custom_components/unifi_alerts/sensor.py` | Reads `coordinator.data` - check all `@property` accessors |
+| `custom_components/unifi_alerts/event.py` | Reads `coordinator.data` - check all `@property` accessors |
+| `custom_components/unifi_alerts/button.py` | Reads `coordinator.data` - check all `@property` accessors |
+| `tests/unit/test_coordinator.py` | Coordinator unit tests |
+| `tests/integration/test_lifecycle.py` | Full lifecycle integration tests |
+
+### Modifying `UniFiClientConfig` or `UniFiAlert`
+
+| File | Change required |
+| ---- | --------------- |
+| `custom_components/unifi_alerts/models.py` | Primary change site |
+| `custom_components/unifi_alerts/unifi_client.py` | Uses `UniFiClientConfig` and returns `UniFiAlert` instances |
+| `custom_components/unifi_alerts/coordinator.py` | Constructs `UniFiClientConfig`; processes `UniFiAlert` objects |
+| `custom_components/unifi_alerts/webhook_handler.py` | Constructs `UniFiClientConfig` at registration time |
+| `custom_components/unifi_alerts/__init__.py` | Casts `entry.data` to `UniFiClientConfig` at setup |
+| `tests/unit/test_models.py` | Model unit tests |
+
+### Editing `manifest.json`
+
+Keys must remain: `domain`, `name`, then all remaining keys alphabetically. hassfest will reject any other order. Run `make validate` after every edit.
