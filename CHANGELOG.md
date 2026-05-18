@@ -22,6 +22,7 @@
 - Improved code comments on webhook dedup, polling-vs-webhook alert_count invariant, acknowledgement watermark, and system-log probe. Clarified webhook body decode-failure log message.
 - Introduced `UniFiClientConfig` TypedDict in `models.py` to replace `dict[str, Any]` config dicts passed to `UniFiClient`, `UniFiAlertsCoordinator`, and `WebhookManager`. Pure refactor; no behaviour change. Prerequisite for flipping `mypy strict = true`.
 - Enabled `mypy --strict` across the integration (`pyproject.toml`). All call sites use the `UniFiClientConfig` TypedDict from ARCH-1; residual fixes were limited to parameterising generic `dict`/`list`/`Store`/`Task` annotations and routing the `DeviceInfo` import through `homeassistant.helpers.device_registry` (its canonical module) so mypy accepts the export.
+- Migrated all entity display names to `_attr_translation_key` + `_attr_translation_placeholders`; English strings now live in `strings.json` and `translations/en.json`. Existing automations are unaffected because `unique_id` values are unchanged.
 
 ## [1.6.0] - 2026-05-11
 

@@ -59,7 +59,8 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_event"
-        self._attr_name = f"{CATEGORY_LABELS[category]} — Event"
+        self._attr_translation_key = "event"
+        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
         self._attr_icon = CATEGORY_ICONS[category]
         self._attr_device_info = _device_info(entry)
         # Track alert_count to detect new alerts on coordinator update

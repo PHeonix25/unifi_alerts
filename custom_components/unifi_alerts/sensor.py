@@ -56,7 +56,8 @@ class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sens
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_message"
-        self._attr_name = f"{CATEGORY_LABELS[category]} — Last Message"
+        self._attr_translation_key = "last_message"
+        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -110,7 +111,8 @@ class UniFiCategoryCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sensor
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_count"
-        self._attr_name = f"{CATEGORY_LABELS[category]} — Open Count"
+        self._attr_translation_key = "open_count"
+        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -128,7 +130,7 @@ class UniFiRollupCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEn
     """Sensor: total open alert count across all enabled categories."""
 
     _attr_has_entity_name = True
-    _attr_name = "Total Open Alerts"
+    _attr_translation_key = "total_open"
     # No SensorDeviceClass fits an alert counter; MEASUREMENT suits a resettable integer.
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "alerts"

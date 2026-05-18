@@ -102,6 +102,24 @@
       }
     }
   },
+  "entity": {
+    "binary_sensor": {
+      "category_binary": {"name": "{category}"},
+      "any_alert": {"name": "Any Alert"}
+    },
+    "sensor": {
+      "last_message": {"name": "{category} — Last Message"},
+      "open_count": {"name": "{category} — Open Count"},
+      "total_open": {"name": "Total Open Alerts"}
+    },
+    "event": {
+      "event": {"name": "{category} — Event"}
+    },
+    "button": {
+      "clear_category": {"name": "Clear {category}"},
+      "clear_all": {"name": "Clear All Alerts"}
+    }
+  },
   "options": {
     "step": {
       "credentials": {
