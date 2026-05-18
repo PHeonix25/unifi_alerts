@@ -30,28 +30,28 @@ make validate   # HACS preflight + translation drift check
 make test       # pytest
 ```
 
-All commands use `.venv` in the repo root — never the system Python.
+All commands use `.venv` in the repo root, never the system Python.
 
 ## Key source files
 
 | File | Role |
 |------|------|
-| `custom_components/unifi_alerts/const.py` | All constants, category defs, UniFi key→category map |
-| `custom_components/unifi_alerts/coordinator.py` | DataUpdateCoordinator — owns all category state |
+| `custom_components/unifi_alerts/const.py` | All constants, category defs, UniFi key to category map |
+| `custom_components/unifi_alerts/coordinator.py` | DataUpdateCoordinator, owns all category state |
 | `custom_components/unifi_alerts/webhook_handler.py` | Registers HA webhooks, validates `?token=` bearer auth |
 | `custom_components/unifi_alerts/config_flow.py` | Three-step UI setup + options flow |
 | `custom_components/unifi_alerts/strings.json` | Must stay identical to `translations/en.json` |
 
 ## Non-negotiable rules (summary)
 
-- **No blocking I/O** — every network/disk call must be `async`.
+- **No blocking I/O**: every network/disk call must be `async`.
 - **`X | None`** not `Optional[X]`; `list[str]` not `List[str]`.
-- **Entities never cache state** — read from coordinator only.
-- **`manifest.json` keys** must be `domain`, `name`, then alphabetical — hassfest enforces order.
-- **Webhook token auth is mandatory** — reject requests without a valid `?token=` query param (HTTP 401).
-- **GitHub Actions `uses:` must be full 40-char SHA** — no tags, no branch refs.
-- **No third-party release actions** — use `gh release create --generate-notes` only.
-- **`strings.json` and `translations/en.json` must be identical** — CI enforces this.
+- **Entities never cache state**: read from coordinator only.
+- **`manifest.json` keys** must be `domain`, `name`, then alphabetical; hassfest enforces order.
+- **Webhook token auth is mandatory**: reject requests without a valid `?token=` query param (HTTP 401).
+- **GitHub Actions `uses:` must be full 40-char SHA**: no tags, no branch refs.
+- **No third-party release actions**: use `gh release create --generate-notes` only.
+- **`strings.json` and `translations/en.json` must be identical**: CI enforces this.
 
 See [`CLAUDE.md`](../CLAUDE.md) for the complete list with rationale.
 
@@ -60,7 +60,7 @@ See [`CLAUDE.md`](../CLAUDE.md) for the complete list with rationale.
 - Work on `dev`; `main` is stable-only.
 - `main` version format: `X.Y.Z`; `dev` format: `X.Y.Z-preN` (or stable when preparing a release).
 - Feature branches: `claude/*` or `feature/*`, always branched from `dev`.
-- Claude cannot push tags — provide the user with the exact `git tag` + `git push origin <tag>` command after a version-bump PR merges.
+- Claude cannot push tags; provide the user with the exact `git tag` + `git push origin <tag>` command after a version-bump PR merges.
 
 See [`CLAUDE.md`](../CLAUDE.md) for the full release workflow.
 
