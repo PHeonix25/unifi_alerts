@@ -850,3 +850,86 @@ class TestWebhookSecretRotation:
                 f"Finish step displayed an old/wrong token. URL: {url}, "
                 f"expected new secret: {new_secret}"
             )
+
+
+class TestOptionsCredentialsErrorsAndStaging:
+    @pytest.mark.asyncio
+    async def test_credentials_cannot_connect_shows_error(self) -> None:
+        from custom_components.unifi_alerts.unifi_client import CannotConnectError
+
+        flow = make_options_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "credentials"})
+        user_input = {
+            CONF_CONTROLLER_URL: "https://10.0.0.1",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "newpass",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+        }
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+                return_value=make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(side_effect=CannotConnectError("down"))
+            result = await flow.async_step_credentials(user_input)
+
+        assert result["step_id"] == "credentials"
+        assert flow.async_show_form.call_args.kwargs["errors"] == {"base": "cannot_connect"}
+
+    @pytest.mark.asyncio
+    async def test_credentials_unexpected_error_shows_unknown(self) -> None:
+        flow = make_options_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "credentials"})
+        user_input = {
+            CONF_CONTROLLER_URL: "https://10.0.0.1",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "newpass",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+        }
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+                return_value=make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(side_effect=RuntimeError("boom"))
+            result = await flow.async_step_credentials(user_input)
+
+        assert result["step_id"] == "credentials"
+        assert flow.async_show_form.call_args.kwargs["errors"] == {"base": "unknown"}
+
+    @pytest.mark.asyncio
+    async def test_credentials_stages_api_key_update(self) -> None:
+        flow = make_options_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
+        user_input = {
+            CONF_CONTROLLER_URL: "",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "",
+            CONF_API_KEY: "new-api-key",
+            CONF_VERIFY_SSL: True,
+        }
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+                return_value=make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value="apikey")
+            instance.fetch_alarms = AsyncMock(return_value=[])
+            result = await flow.async_step_credentials(user_input)
+
+        assert result["step_id"] == "categories"
+        assert flow._pending_data[CONF_API_KEY] == "new-api-key"

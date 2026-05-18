@@ -372,3 +372,21 @@ class TestUnknownSystemLogKeyObservability:
         messages = [r.getMessage() for r in warnings]
         assert any("UNMAPPED_A" in m for m in messages)
         assert any("UNMAPPED_B" in m for m in messages)
+
+
+class TestAlertSerialization:
+    def test_to_dict_serializes_received_at_isoformat(self):
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": "serialized"})
+        serialized = alert.to_dict()
+        assert serialized["received_at"] == alert.received_at.isoformat()
+
+    def test_from_dict_invalid_received_at_type_falls_back_to_now(self):
+        restored = UniFiAlert.from_dict(
+            {
+                "category": CATEGORY_NETWORK_WAN,
+                "message": "bad-ts",
+                "received_at": {},
+            }
+        )
+        assert isinstance(restored.received_at, datetime)
+        assert restored.received_at.tzinfo == UTC
