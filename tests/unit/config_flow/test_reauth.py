@@ -186,3 +186,47 @@ class TestReauthFlow:
             )
 
         mock_del.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reauth_confirm_unexpected_exception_shows_unknown(self) -> None:
+        flow = make_reauth_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "reauth_confirm"})
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+                return_value=make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(side_effect=RuntimeError("boom"))
+            result = await flow.async_step_reauth_confirm(
+                user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "pw"}
+            )
+
+        assert result["step_id"] == "reauth_confirm"
+        assert flow.async_show_form.call_args.kwargs["errors"] == {"base": "unknown"}
+
+    def test_create_auth_failed_issue_calls_issue_registry(self) -> None:
+        from custom_components.unifi_alerts.config_flow import _create_auth_failed_issue
+
+        hass = MagicMock()
+        entry = MagicMock()
+        entry.entry_id = "entry-1"
+        entry.title = "Controller"
+
+        with patch(
+            "custom_components.unifi_alerts.config_flow.ir.async_create_issue"
+        ) as mock_create:
+            _create_auth_failed_issue(hass, entry)
+
+        mock_create.assert_called_once()
+        assert mock_create.call_args.args[2] == "auth_failed_entry-1"
+
+    def test_async_get_options_flow_returns_options_flow_instance(self) -> None:
+        entry = MagicMock()
+        options_flow = UniFiAlertsConfigFlow.async_get_options_flow(entry)
+        from custom_components.unifi_alerts.config_flow import UniFiAlertsOptionsFlow
+
+        assert isinstance(options_flow, UniFiAlertsOptionsFlow)
