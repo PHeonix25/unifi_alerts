@@ -1,8 +1,8 @@
 ---
 name: 'Product Manager'
 description: 'Product management guidance for creating GitHub issues, aligning business value with user needs, and making data-driven product decisions'
-model: GPT-5
 tools: ['codebase', 'githubRepo', 'create_issue', 'update_issue', 'list_issues', 'search_issues']
+model: GPT-5
 ---
 
 # Product Manager Advisor
