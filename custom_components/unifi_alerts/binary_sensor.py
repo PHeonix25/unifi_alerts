@@ -58,7 +58,8 @@ class UniFiCategoryBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], Binar
         self._category = category
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{category}_binary"
-        self._attr_name = CATEGORY_LABELS[category]
+        self._attr_translation_key = "category_binary"
+        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -102,7 +103,7 @@ class UniFiRollupBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], BinaryS
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_has_entity_name = True
-    _attr_name = "Any Alert"
+    _attr_translation_key = "any_alert"
 
     def __init__(
         self,
