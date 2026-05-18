@@ -14,6 +14,8 @@
 - Added local-network-only warning to info.md first paragraph.
 - Updated setup-flow finish step to stress copying webhook URLs before clicking Submit.
 - Restructured README into a standard flow (Features > Requirements > Installation > Setup > Entities > Privacy > Uninstall > Support > Contributing), merged the two duplicate tested-consoles tables into one, and moved Lovelace/automation examples to `docs/EXAMPLES.md`. Slimmed info.md by removing duplicated local-network warning and a redundant link block. README dropped from 331 to 186 lines without losing user-facing content.
+- Rewrote `AGENTS.md` as a self-contained agent context file with the repo map, the six-step category-registration walkthrough, and the common-pitfalls list. Added a maintenance matrix to `.github/copilot-instructions.md` covering the four common change cascades (new category, webhook handler, coordinator shape, `UniFiClientConfig` / `UniFiAlert`). Added `.github/PULL_REQUEST_TEMPLATE.md` and an "AI Ready" badge to README.
+- Added six Copilot agent definitions under `.github/agents/` (SE Lead, QE Lead, Security Lead, Responsible AI, Product Manager, Technical Debt Remediation) with named personas and a unified Identity / Mission / Core Principles / Workflow / Output Format / Anti-Patterns structure.
 
 ### Internal
 
@@ -22,6 +24,10 @@
 - Improved code comments on webhook dedup, polling-vs-webhook alert_count invariant, acknowledgement watermark, and system-log probe. Clarified webhook body decode-failure log message.
 - Introduced `UniFiClientConfig` TypedDict in `models.py` to replace `dict[str, Any]` config dicts passed to `UniFiClient`, `UniFiAlertsCoordinator`, and `WebhookManager`. Pure refactor; no behaviour change. Prerequisite for flipping `mypy strict = true`.
 - Enabled `mypy --strict` across the integration (`pyproject.toml`). All call sites use the `UniFiClientConfig` TypedDict from ARCH-1; residual fixes were limited to parameterising generic `dict`/`list`/`Store`/`Task` annotations and routing the `DeviceInfo` import through `homeassistant.helpers.device_registry` (its canonical module) so mypy accepts the export.
+- Moved `make lint` and `make typecheck` from inline shell invocations to `scripts/run_lint.py` and `scripts/run_typecheck.py` so the same logic runs identically on Linux, macOS, and Windows without per-platform shims.
+- Added `.github/workflows/copilot-setup-steps.yml` so GitHub Copilot coding-agent sessions self-provision Python 3.12, a venv, and `requirements-dev.txt` on first run.
+- Widened `scripts/validate_docs.py` to scan every `*.md` in the repo recursively (excluding `.git`, `.venv`, `node_modules`, `.claude`, `.mypy_cache`, `.ruff_cache`). New markdown anywhere in the tree now inherits the same prose rules automatically.
+- Added 232 lines of targeted branch-path unit tests across `test_options.py`, `test_reauth.py`, `test_coordinator.py`, and `test_models.py`. Pure coverage uplift; no production-code changes.
 - Migrated all entity display names to `_attr_translation_key` + `_attr_translation_placeholders`; English strings now live in `strings.json` and `translations/en.json`. Existing automations are unaffected because `unique_id` values are unchanged.
 
 ## [1.6.0] - 2026-05-11
