@@ -2,6 +2,16 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-05-18
+
+- **release**: v1.7.0-pre2 tagged. Ships ARCH-2 (the last v1.7 code item) plus the off-plan tooling and docs PRs that landed during the pre1 review window. Pre2 is the validation checkpoint for the maintainer's pre1 -> pre2 upgrade test plan on a real HA + UniFi controller; pass criteria are byte-identical entity_id, unique_id, and friendly_name snapshots across the two pre-releases.
+- **feat**: migrate entity names to `_attr_translation_key` + `_attr_translation_placeholders` (ARCH-2) ([#107]). Display strings move from hard-coded `_attr_name = f"{CATEGORY_LABELS[cat]} ..."` formatting to `strings.json` and byte-identical `translations/en.json` under the HA-standard `entity.{platform}.{key}.name` schema; English-rendered names are preserved byte-for-byte, `_attr_unique_id` is untouched. Unlocks localisation without code changes.
+- **docs**: backfill CHANGELOG entries for off-plan PRs and resolve the `[#PR]` placeholder on the SEC-1 bullet to `[#94]` ([#107]). The four off-plan PRs (#103-#106) merged without their own `[Unreleased]` bullets; backfilled now so the v1.7.0 stable promotion PR has a complete starting point.
+- **ci**: move `make lint` and `make typecheck` from inline shell invocations to `scripts/run_lint.py` and `scripts/run_typecheck.py` ([#103]). Same logic now runs identically on Linux, macOS, and Windows without per-platform shims; replaces the `ifeq ($(OS),Windows_NT)` cross-platform branching previously needed in the Makefile.
+- **docs**: rewrite `AGENTS.md` as a self-contained agent context file ([#104]). Adds repo structure map, six-step category-registration walkthrough, and common-pitfalls list so agents that cannot follow cross-file links (web-based tools, third-party AI) get the conventions inline. Also adds a maintenance matrix to `.github/copilot-instructions.md` covering the four common change cascades, a `.github/PULL_REQUEST_TEMPLATE.md`, a `copilot-setup-steps.yml` workflow for one-command Copilot session provisioning, and an "AI Ready" badge to README.
+- **docs**: add six Copilot agent definitions under `.github/agents/` (SE Lead, QE Lead, Security Lead, Responsible AI, Product Manager, Technical Debt Remediation) ([#105]). Unified Identity / Mission / Core Principles / Workflow / Output Format / Anti-Patterns structure across all six, named personas for self-identification in reviews. Also widens `scripts/validate_docs.py` to scan every `*.md` recursively rather than a fixed glob list so new markdown anywhere in the tree inherits the prose rules automatically.
+- **tests**: 232 lines of targeted branch-path unit tests across `test_options.py`, `test_reauth.py`, `test_coordinator.py`, and `test_models.py` ([#106]). Pure coverage uplift; no production-code changes.
+
 ## 2026-05-15
 
 - **release**: v1.7.0-pre1 tagged. Ships the v1.7.0 documentation + architecture scope: fail-closed webhook auth with schema v3 migration that backfills missing secrets on legacy entries (SEC-1), `UniFiClientConfig` TypedDict that closed the largest `dict[str, Any]` surface and unblocked `mypy --strict` (ARCH-1), `strict = true` flipped with zero `# type: ignore` debt (CI-1), `tests/unit/config_flow/` package split (ARCH-3), `SensorStateClass.MEASUREMENT` confirmed on count sensors (ARCH-4), end-to-end documentation accuracy pass (DOC-A), new troubleshooting / privacy / tested-controllers / uninstall sections (DOC-B), WHY comments on dedup / watermark / system-log probe (QUAL-1), and a README + info.md restructure that dropped README from 331 to 186 lines.
@@ -229,6 +239,11 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 [#99]: https://github.com/PHeonix25/unifi_alerts/pull/99
 [#100]: https://github.com/PHeonix25/unifi_alerts/pull/100
 [#101]: https://github.com/PHeonix25/unifi_alerts/pull/101
+[#103]: https://github.com/PHeonix25/unifi_alerts/pull/103
+[#104]: https://github.com/PHeonix25/unifi_alerts/pull/104
+[#105]: https://github.com/PHeonix25/unifi_alerts/pull/105
+[#106]: https://github.com/PHeonix25/unifi_alerts/pull/106
+[#107]: https://github.com/PHeonix25/unifi_alerts/pull/107
 
 [0d951b3]: https://github.com/PHeonix25/unifi_alerts/commit/0d951b3
 [0f17afb]: https://github.com/PHeonix25/unifi_alerts/commit/0f17afb
