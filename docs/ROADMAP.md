@@ -2,23 +2,42 @@
 
 What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `main` as `X.Y.Z`. Completed work is removed from this file; the historical record lives in `docs/HISTORY.md`, and the user-visible release summary lives in `CHANGELOG.md`.
 
-> **Status (2026-05-29):** v1.7.0 released. Path to v2.0.0: v1.8.0 (incremental polish; backlog lives in `docs/TODO.md`), v2.0.0 (HACS default).
+> **Status (2026-05-29):** v1.7.0 released; v1.8.0-pre1 in development. Path to v2.0.0: v1.8.0 (Trust and Hardening), v1.9.0 (Localisation and Scale), then v2.0.0 (HACS default catalogue). Item-level detail and ordering live in `docs/TODO.md`.
 
 > **Branching model:** see `CLAUDE.md § Branching strategy and versioning`.
 
 ---
 
+## v1.8.0: Trust and Hardening
+
+Correctness, privacy, security, and onboarding-confidence polish. Themes:
+
+- Privacy: stop persisting raw payloads to disk; clarify retention and data handling.
+- Correctness: fix the stale event replay on reload; coalesce watermark persistence and surface its failures.
+- Onboarding: a webhook health signal; complete the Alarm Manager setup docs.
+- Structure: consolidate the two alert-classification paths; extract controller auth into its own seam.
+
+Item-level detail and ordering live in `docs/TODO.md`.
+
+## v1.9.0: Localisation and Scale
+
+- Localisation: translatable category labels and the remaining inline strings.
+- Scale and efficiency: clamp the watermark fetch window; add probe backoff.
+- Capability: severity filtering for noisy categories; a self-healing key map.
+- Process: adopt GitHub Issues for the backlog so work items carry stable identifiers.
+
+Item-level detail lives in `docs/TODO.md`.
+
 ## v2.0.0: HACS default catalogue
 
 Prerequisites for submitting to <https://github.com/hacs/default>.
 
-- [ ] All v1.x items in `docs/TODO.md` resolved.
+- [ ] All v1.x items in `docs/TODO.md` resolved, including the privacy and docs gates flagged there (raw-payload persistence, retention and data-handling statement, Alarm Manager onboarding docs, and localisation maturity).
 - [ ] Submit PR to `hacs/default`.
 
 ---
 
 ## Deferred / low priority
 
-- Extract `_device_info()` duplication into a shared `entity_base.py` mixin (only if maintenance burden grows).
+- Extract `_device_info()` duplication into a shared `entity_base.py` mixin (only if maintenance burden grows; currently intentional for platform isolation).
 - Configurable site per category (power-user feature).
-- Optional integration test for the full rotation cycle (options-flow > entry-update > reload > re-register, end-to-end). Each step is unit-tested already; the integration test would catch wiring regressions.
