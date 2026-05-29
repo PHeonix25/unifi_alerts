@@ -2,6 +2,7 @@
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![GitHub Release](https://img.shields.io/github/v/release/PHeonix25/unifi_alerts)](https://github.com/PHeonix25/unifi_alerts/releases)
+[![codecov](https://codecov.io/gh/PHeonix25/unifi_alerts/graph/badge.svg)](https://codecov.io/gh/PHeonix25/unifi_alerts)
 [![AI Ready](https://img.shields.io/badge/AI--Ready-yes-brightgreen?style=flat)](https://github.com/johnpapa/ai-ready)
 
 Aggregates **UniFi Network controller alerts** into Home Assistant sensors, binary sensors, and event entities. Real-time push via UniFi Alarm Manager webhooks, with REST polling as a backstop for open-count data and missed pushes.

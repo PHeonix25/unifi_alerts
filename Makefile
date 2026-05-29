@@ -25,7 +25,7 @@ help:
 	@echo "  make lint       - ruff check + format check"
 	@echo "  make typecheck  - mypy"
 	@echo "  make validate   - HACS manifest preflight + docs prose linter"
-	@echo "  make test       - full pytest suite"
+	@echo "  make test       - full pytest suite with coverage (fail below 95%)"
 
 setup:
 	$(PY312) -m venv .venv

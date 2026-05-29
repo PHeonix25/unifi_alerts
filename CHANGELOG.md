@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Internal
+
+- Added test coverage reporting via Codecov: `pytest-cov` added to dev requirements, 95% floor enforced in CI (`--cov-fail-under=95`), XML report uploaded to Codecov on every run, and coverage badge added to README and info.md.
+
 ## [1.7.0] - 2026-05-29
 
 ### Security
