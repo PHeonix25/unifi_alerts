@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-05-29
+
 ### Security
 
 - Webhook handler now rejects requests with HTTP 500 when no bearer secret is configured, rather than accepting them. Config entries missing `webhook_secret` are backfilled during migration to schema version 3. ([#94])
@@ -166,7 +168,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.7.0
 [1.6.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.6.0
 [1.5.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.5.0
 [1.4.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.4.0
