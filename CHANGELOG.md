@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-05-29
+
+### Security
+
+- Webhook handler now rejects requests with HTTP 500 when no bearer secret is configured, rather than accepting them. Config entries missing `webhook_secret` are backfilled during migration to schema version 3. ([#94])
+- Added explicit `permissions: contents: read` to `ci.yml`, `version-check.yml`, and `copilot-setup-steps.yml`. Closes a CodeQL "Workflow does not contain permissions" finding on `copilot-setup-steps.yml` and pre-emptively scopes the other two read-only workflows to the same minimum. `release.yml` and `pr-labeler.yml` already had explicit blocks. ([#111])
+
+### Documentation
+
+- Reconciled documentation against current code: corrected test directory layout in REPO_LAYOUT (unit/integration subpackages with three conftest files), fixed button platform table row in HOMEASSISTANT (both classes now inherit CoordinatorEntity), updated HA minimum version in info.md (2024.5 not 2026.1.0), corrected HISTORY.md update guidance in DEVELOPING (bump-PR only, not per-PR), updated conftest diagram in TESTING (three conftest files), and removed already-shipped automation-edge-case item from ROADMAP and TODO.
+- Added Troubleshooting guide (docs/TROUBLESHOOTING.md) covering four common setup scenarios.
+- Added tested-controllers matrix, privacy/data-retention section, and uninstall instructions to README.
+- Added local-network-only warning to info.md first paragraph.
+- Updated setup-flow finish step to stress copying webhook URLs before clicking Submit.
+- Restructured README into a standard flow (Features > Requirements > Installation > Setup > Entities > Privacy > Uninstall > Support > Contributing), merged the two duplicate tested-consoles tables into one, and moved Lovelace/automation examples to `docs/EXAMPLES.md`. Slimmed info.md by removing duplicated local-network warning and a redundant link block. README dropped from 331 to 186 lines without losing user-facing content.
+- Rewrote `AGENTS.md` as a self-contained agent context file with the repo map, the six-step category-registration walkthrough, and the common-pitfalls list. Added a maintenance matrix to `.github/copilot-instructions.md` covering the four common change cascades (new category, webhook handler, coordinator shape, `UniFiClientConfig` / `UniFiAlert`). Added `.github/PULL_REQUEST_TEMPLATE.md` and an "AI Ready" badge to README.
+- Added six Copilot agent definitions under `.github/agents/` (SE Lead, QE Lead, Security Lead, Responsible AI, Product Manager, Technical Debt Remediation) with named personas and a unified Identity / Mission / Core Principles / Workflow / Output Format / Anti-Patterns structure.
+
+### Internal
+
+- Split `tests/unit/test_config_flow.py` (1565 lines) into `tests/unit/config_flow/` package with separate files per flow type to reduce rebase conflicts.
+- Confirmed `SensorStateClass.MEASUREMENT` on open-count and rollup-count sensors; no `SensorDeviceClass` is set (none of the HA built-ins fit an alert counter).
+- Improved code comments on webhook dedup, polling-vs-webhook alert_count invariant, acknowledgement watermark, and system-log probe. Clarified webhook body decode-failure log message.
+- Introduced `UniFiClientConfig` TypedDict in `models.py` to replace `dict[str, Any]` config dicts passed to `UniFiClient`, `UniFiAlertsCoordinator`, and `WebhookManager`. Pure refactor; no behaviour change. Prerequisite for flipping `mypy strict = true`.
+- Enabled `mypy --strict` across the integration (`pyproject.toml`). All call sites use the `UniFiClientConfig` TypedDict from ARCH-1; residual fixes were limited to parameterising generic `dict`/`list`/`Store`/`Task` annotations and routing the `DeviceInfo` import through `homeassistant.helpers.device_registry` (its canonical module) so mypy accepts the export.
+- Moved `make lint` and `make typecheck` from inline shell invocations to `scripts/run_lint.py` and `scripts/run_typecheck.py` so the same logic runs identically on Linux, macOS, and Windows without per-platform shims.
+- Added `.github/workflows/copilot-setup-steps.yml` so GitHub Copilot coding-agent sessions self-provision Python 3.12, a venv, and `requirements-dev.txt` on first run.
+- Widened `scripts/validate_docs.py` to scan every `*.md` in the repo recursively (excluding `.git`, `.venv`, `node_modules`, `.claude`, `.mypy_cache`, `.ruff_cache`). New markdown anywhere in the tree now inherits the same prose rules automatically.
+- Added 232 lines of targeted branch-path unit tests across `test_options.py`, `test_reauth.py`, `test_coordinator.py`, and `test_models.py`. Pure coverage uplift; no production-code changes.
+- Migrated all entity display names to `_attr_translation_key` + `_attr_translation_placeholders`; English strings now live in `strings.json` and `translations/en.json`. Existing automations are unaffected because `unique_id` values are unchanged.
+
 ## [1.6.0] - 2026-05-11
 
 ### Changed
@@ -138,7 +169,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.7.0
 [1.6.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.6.0
 [1.5.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.5.0
 [1.4.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.4.0
@@ -165,3 +197,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#59]: https://github.com/PHeonix25/unifi_alerts/pull/59
 [#67]: https://github.com/PHeonix25/unifi_alerts/pull/67
 [#68]: https://github.com/PHeonix25/unifi_alerts/pull/68
+[#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR

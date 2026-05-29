@@ -7,10 +7,12 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, TypedDict
 
 _LOGGER = logging.getLogger(__name__)
 
+# Module-level so the classmethod from_system_log_event() can deduplicate
+# "unrecognised key" warnings without instance state.
 _unknown_system_log_keys: set[str] = set()
 
 if TYPE_CHECKING:
@@ -18,7 +20,32 @@ if TYPE_CHECKING:
     from .unifi_client import UniFiClient
 
 
-def _render_message_raw(message_raw: str, parameters: dict) -> str:
+class UniFiClientConfig(TypedDict, total=False):
+    """Shape of the dict passed to UniFiClient, UniFiAlertsCoordinator, and WebhookManager.
+
+    total=False because legacy entries and credential subsets may omit fields;
+    call sites use .get(key, default) for optional fields.
+
+    auth_method is typed as str (not Literal["userpass", "apikey"]) because the
+    value originates from user input and is validated in unifi_client.authenticate();
+    constraining the type here would force casts at the validation boundary.
+    """
+
+    controller_url: str
+    username: str
+    password: str
+    api_key: str
+    auth_method: str
+    verify_ssl: bool
+    webhook_secret: str
+    webhook_id_suffix: str
+    enabled_categories: list[str]
+    poll_interval: int
+    clear_timeout: int
+    site: str
+
+
+def _render_message_raw(message_raw: str, parameters: dict[str, Any]) -> str:
     """Substitute {KEY} placeholders in message_raw with values from parameters.
 
     The v2 system-log schema uses a template string (message_raw) with
@@ -46,7 +73,7 @@ class UniFiAlert:
     category: str
     message: str
     received_at: datetime
-    raw: dict = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict)
 
     # Optional enrichment fields parsed from the UniFi payload
     key: str = ""
@@ -55,7 +82,7 @@ class UniFiAlert:
     severity: str = ""
 
     @classmethod
-    def from_webhook_payload(cls, category: str, payload: dict) -> UniFiAlert:
+    def from_webhook_payload(cls, category: str, payload: dict[str, Any]) -> UniFiAlert:
         """Build an alert from a raw UniFi Alarm Manager webhook POST body."""
         message = (
             payload.get("message")
@@ -79,7 +106,7 @@ class UniFiAlert:
         )
 
     @classmethod
-    def from_api_alarm(cls, category: str, alarm: dict) -> UniFiAlert:
+    def from_api_alarm(cls, category: str, alarm: dict[str, Any]) -> UniFiAlert:
         """Build an alert from a polled UniFi controller alarm record."""
         message = alarm.get("msg") or alarm.get("message") or alarm.get("key") or "Unknown alert"
         # UniFi returns timestamps as epoch milliseconds (v2 system-log always; legacy
@@ -111,7 +138,7 @@ class UniFiAlert:
         )
 
     @classmethod
-    def from_system_log_event(cls, payload: dict) -> UniFiAlert:
+    def from_system_log_event(cls, payload: dict[str, Any]) -> UniFiAlert:
         """Build an alert from a v2 system-log/all event record.
 
         The v2 schema differs substantially from the legacy /list/alarm format:
@@ -151,8 +178,6 @@ class UniFiAlert:
         category = mapped_category or fallback_category
 
         # Warn once per unmapped key so production map gaps are discoverable.
-        # The dedupe set is module-scoped because from_system_log_event is a
-        # classmethod with no caller-local state to thread through.
         if mapped_category is None and key and key not in _unknown_system_log_keys:
             _unknown_system_log_keys.add(key)
             if fallback_category:
@@ -182,14 +207,14 @@ class UniFiAlert:
             severity=payload.get("severity") or "",
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialise this alert to a JSON-safe dict for Store persistence."""
         d = asdict(self)
         d["received_at"] = self.received_at.isoformat()
         return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> UniFiAlert:
+    def from_dict(cls, data: dict[str, Any]) -> UniFiAlert:
         """Deserialise an alert previously written by ``to_dict``."""
         received_at_raw = data.get("received_at", "")
         try:

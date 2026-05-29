@@ -213,21 +213,38 @@ class TestMakeHandler:
         push_cb.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_no_secret_configured_accepts_any_request(self):
-        """When secret is empty string, token check is skipped entirely.
+    async def test_empty_secret_returns_500(self):
+        """When secret is empty string, handler must fail closed with HTTP 500.
 
-        This is intentional: if the admin chose not to set a webhook secret
-        (CONF_WEBHOOK_SECRET is empty), the integration operates without
-        bearer-token auth.  The webhook is still local-only (local_only=True),
-        so accepting token-less requests is a deliberate trade-off, not a bug.
+        Pre-v1.7 the empty-secret case silently accepted any request.  The
+        VERSION 3 migration backfills a secret for every entry that lacks one,
+        so reaching this branch in production means something went wrong.  The
+        handler now rejects the request rather than accepting it.
         """
         manager, push_cb = make_manager(secret="")
         handler = manager._make_handler(CATEGORY_NETWORK_WAN, "")
         req = make_request(token=None)
         response = await handler(manager._hass, "wh-id", req)
-        # Should not return 401
-        assert response is None
-        push_cb.assert_called_once()
+        assert response is not None
+        assert response.status == 500
+        push_cb.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_none_secret_coerced_to_empty_returns_500(self):
+        """A secret of None (e.g. .get() returning None) must also return HTTP 500.
+
+        The handler receives the secret via _make_handler(category, secret)
+        where secret is already resolved from config.get(CONF_WEBHOOK_SECRET, "").
+        If somehow None slips through, the not-secret branch still fires.
+        """
+        manager, push_cb = make_manager(secret="")
+        # Simulate the handler being created with None cast to empty string
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, None or "")
+        req = make_request(token=None)
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is not None
+        assert response.status == 500
+        push_cb.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_malformed_json_uses_empty_dict_fallback(self):
@@ -377,7 +394,7 @@ class TestDecodeErrorLogging:
         assert mock_logger.warning.called
         warning_msg = mock_logger.warning.call_args[0][0]
         warning_args = mock_logger.warning.call_args[0][1:]
-        assert "decode failed" in warning_msg
+        assert "Malformed webhook body" in warning_msg
         assert "JSONDecodeError" in warning_args
         # push_callback is still invoked with the empty-payload fallback
         push_cb.assert_called_once()

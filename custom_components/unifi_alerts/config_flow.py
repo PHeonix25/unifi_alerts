@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import Any
+from typing import Any, cast
 
 import voluptuous as vol
 from homeassistant.components.webhook import async_generate_url
@@ -38,6 +38,7 @@ from .const import (
     DOMAIN,
     webhook_id_for_category,
 )
+from .models import UniFiClientConfig
 from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ def _create_auth_failed_issue(hass: Any, entry: Any) -> None:
 class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the initial setup flow shown in Settings → Integrations."""
 
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self) -> None:
         self._controller_url: str = ""
@@ -82,7 +83,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                     self.hass,
                     verify_ssl=user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                 )
-                client = UniFiClient(session, url, user_input)
+                client = UniFiClient(session, url, cast(UniFiClientConfig, user_input))
                 try:
                     auth_method = await client.authenticate()
                     await client.fetch_alarms()  # validate alarm endpoint reachable
@@ -172,7 +173,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_finish()
 
         # Build a schema with one boolean per category
-        fields: dict = {}
+        fields: dict[Any, Any] = {}
         # Default noisy client/device categories to OFF; exceptional events ON
         _chatty = {"network_device", "network_client"}
         for cat in ALL_CATEGORIES:
@@ -205,7 +206,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         enabled: list[str] = self._entry_data.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         secret: str = self._entry_data.get(CONF_WEBHOOK_SECRET, "")
         suffix: str = self._entry_data.get(CONF_WEBHOOK_ID_SUFFIX, "")
-        fields: dict = {}
+        fields: dict[Any, Any] = {}
         for cat in ALL_CATEGORIES:
             if cat in enabled:
                 url = (
@@ -245,7 +246,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 self.hass,
                 verify_ssl=entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
             )
-            client = UniFiClient(session, url, user_input)
+            client = UniFiClient(session, url, cast(UniFiClientConfig, user_input))
             try:
                 auth_method = await client.authenticate()
             except InvalidAuthError:
@@ -377,7 +378,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                     test_data[CONF_API_KEY] = new_api_key
 
                 session = async_get_clientsession(self.hass, verify_ssl=new_verify_ssl)
-                client = UniFiClient(session, effective_url, test_data)
+                client = UniFiClient(session, effective_url, cast(UniFiClientConfig, test_data))
                 try:
                     auth_method = await client.authenticate()
                     await client.fetch_alarms()
@@ -478,7 +479,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             self._config_entry.data.get(CONF_SITE, DEFAULT_SITE),
         )
 
-        fields: dict = {}
+        fields: dict[Any, Any] = {}
         for cat in ALL_CATEGORIES:
             fields[vol.Optional(f"cat_{cat}", default=(cat in current_enabled))] = bool
         fields[vol.Optional(CONF_POLL_INTERVAL, default=current_poll)] = vol.All(
@@ -516,7 +517,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             self._config_entry.data.get(CONF_WEBHOOK_SECRET, ""),
         )
         suffix: str = self._config_entry.data.get(CONF_WEBHOOK_ID_SUFFIX, "")
-        fields: dict = {}
+        fields: dict[Any, Any] = {}
         for cat in ALL_CATEGORIES:
             if cat in enabled:
                 url = (

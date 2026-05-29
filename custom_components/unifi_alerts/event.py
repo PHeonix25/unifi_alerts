@@ -9,8 +9,7 @@ from __future__ import annotations
 from homeassistant.components.event import EventEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -48,6 +47,7 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
     """
 
     _attr_has_entity_name = True
+    # Fixed at class level; HA requires declaring event types at init, not per-fire.
     _attr_event_types = ["alert_received"]
 
     def __init__(
@@ -59,7 +59,8 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_event"
-        self._attr_name = f"{CATEGORY_LABELS[category]} — Event"
+        self._attr_translation_key = "event"
+        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
         self._attr_icon = CATEGORY_ICONS[category]
         self._attr_device_info = _device_info(entry)
         # Track alert_count to detect new alerts on coordinator update

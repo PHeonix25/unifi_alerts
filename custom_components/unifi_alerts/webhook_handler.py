@@ -6,7 +6,7 @@ import contextlib
 import hmac
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from aiohttp.web import Request, Response
 from homeassistant.components.webhook import (
@@ -25,7 +25,7 @@ from .const import (
     WEBHOOK_MAX_BODY_BYTES,
     webhook_id_for_category,
 )
-from .models import UniFiAlert
+from .models import UniFiAlert, UniFiClientConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,12 +47,12 @@ class WebhookManager:
         self,
         hass: HomeAssistant,
         entry_id: str,
-        config: dict,
+        config: UniFiClientConfig,
         push_callback: Callable[[str, UniFiAlert], None],
     ) -> None:
         self._hass = hass
         self._entry_id = entry_id
-        self._config = config
+        self._config: UniFiClientConfig = config
         self._push_callback = push_callback
         self._registered: list[str] = []
 
@@ -106,7 +106,9 @@ class WebhookManager:
                 async_unregister(self._hass, webhook_id)
         self._registered.clear()
 
-    def _make_handler(self, category: str, secret: str):
+    def _make_handler(
+        self, category: str, secret: str
+    ) -> Callable[[HomeAssistant, str, Request], Awaitable[Response | None]]:
         """Return an async webhook handler bound to a specific category."""
 
         async def handle_webhook(
@@ -114,18 +116,24 @@ class WebhookManager:
             webhook_id: str,
             request: Request,
         ) -> Response | None:
-            if secret:
-                provided = request.query.get("token", "")
-                # Use hmac.compare_digest to avoid leaking the secret via a
-                # timing side-channel — `==` / `!=` exit early on the first
-                # mismatching byte, which lets a remote attacker recover the
-                # secret byte-by-byte.
-                if not hmac.compare_digest(provided, secret):
-                    _LOGGER.warning(
-                        "Webhook request for category %s rejected: missing or invalid token",
-                        category,
-                    )
-                    return Response(status=401)
+            if not secret:
+                _LOGGER.error(
+                    "Webhook for category %s has no bearer secret configured; rejecting request. "
+                    "Re-save the integration via Settings > Devices & Services > UniFi Alerts > Configure.",
+                    category,
+                )
+                return Response(status=500)
+            provided = request.query.get("token", "")
+            # Use hmac.compare_digest to avoid leaking the secret via a
+            # timing side-channel — `==` / `!=` exit early on the first
+            # mismatching byte, which lets a remote attacker recover the
+            # secret byte-by-byte.
+            if not hmac.compare_digest(provided, secret):
+                _LOGGER.warning(
+                    "Webhook request for category %s rejected: missing or invalid token",
+                    category,
+                )
+                return Response(status=401)
 
             raw = b""
             try:
@@ -144,7 +152,7 @@ class WebhookManager:
                 # bodies. Log enough to diagnose without dumping the full body.
                 preview = raw[:80].decode("utf-8", errors="replace") if raw else ""
                 _LOGGER.warning(
-                    "Webhook body decode failed for category %s (%s): %r",
+                    "Malformed webhook body from controller for category %s (%s): %r",
                     category,
                     type(err).__name__,
                     preview,

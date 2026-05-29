@@ -2,46 +2,28 @@
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![GitHub Release](https://img.shields.io/github/v/release/PHeonix25/unifi_alerts)](https://github.com/PHeonix25/unifi_alerts/releases)
+[![AI Ready](https://img.shields.io/badge/AI--Ready-yes-brightgreen?style=flat)](https://github.com/johnpapa/ai-ready)
 
-Aggregates **UniFi Network controller alerts** into Home Assistant sensors, binary sensors, and event entities. Supports real-time push via UniFi Alarm Manager webhooks and polling for historical/count data.
-
----
-
-## Prerequisites
-
-**Requires UniFi OS.** This integration works exclusively with UniFi OS consoles. Classic Network Application (self-hosted on bare Linux/Windows) is **not** supported.
-
-Tested consoles:
-
-| Console | Notes |
-|---|---|
-| UDM (UniFi Dream Machine) | All firmware versions with Network Application |
-| UDM-Pro | All firmware versions with Network Application |
-| UDM-SE | All firmware versions with Network Application |
-| UCG-Ultra | All firmware versions with Network Application |
-| UCG-Max | All firmware versions with Network Application |
-| Cloud Key Gen2+ | Running UniFi OS with Network Application |
-
-The integration uses the `/proxy/network` API path exclusively, which is only available on UniFi OS. API keys (the recommended auth method) are also a UniFi OS-only feature.
+Aggregates **UniFi Network controller alerts** into Home Assistant sensors, binary sensors, and event entities. Real-time push via UniFi Alarm Manager webhooks, with REST polling as a backstop for open-count data and missed pushes.
 
 ---
 
 ## Features
 
 - **Per-category binary sensors** - ON when an alert is active, OFF when clear
-- **Per-category message sensors** - last alert message + timestamp as attributes
+- **Per-category message sensors** - last alert message plus timestamp attributes
 - **Per-category open-count sensors** - polled from the controller
 - **Rollup sensors** - combined "any alert" binary and total open count
 - **Event entities** - fire on every alert for automation triggers
 - **Clear buttons** - manually reset any category or all at once
 - **Auto-clear** - configurable timeout to reset sensors automatically
-- **UI config flow** - full setup and options UI, no YAML required
+- **UI config flow** - full setup and options UI, no YAML
 - **Auto-detect auth** - tries API key (UniFi OS) then falls back to username/password
 
 ### Alert categories
 
 | Category | Covers |
-| --- | --- |
+|---|---|
 | Network: Device offline/online | APs, switches, gateways disconnecting/reconnecting |
 | Network: WAN offline/latency | WAN failover, internet access events |
 | Network: Client connect/disconnect | Wireless and wired client join/leave |
@@ -52,11 +34,32 @@ The integration uses the `/proxy/network` API path exclusively, which is only av
 
 ---
 
+## Requirements
+
+- **Home Assistant** 2024.5 or later
+- **UniFi OS console** - the classic self-hosted Network Application is not supported. The integration uses the `/proxy/network` API path, which is UniFi OS-only.
+- **Local network reachability** - your UniFi controller and HA must share a network. Webhook URLs are local-only and cannot be reached over Nabu Casa remote access or from cloud-hosted controllers.
+- **Credentials** - API key (recommended) or username + password.
+
+### Tested controllers
+
+| Model | Minimum firmware | Notes |
+|---|---|---|
+| UCG-Ultra | 4.0.x | Primary test platform |
+| UDM-SE | 4.0.x | Reported by users |
+| UCG-Max | 4.0.x | Reported by users |
+| Cloud Key Gen2+ | 4.0.x | Reported by users |
+| UDM / UDM-Pro | 4.0.x | Should work; not yet reported |
+
+If your model is not listed, open an [issue](https://github.com/PHeonix25/unifi_alerts/issues) with controller model and firmware so we can grow this table.
+
+---
+
 ## Installation
 
 ### Via HACS (recommended)
 
-1. Open HACS > **Integrations** > ⋮ > **Custom repositories**
+1. Open HACS > **Integrations** > three-dot menu > **Custom repositories**
 2. Add `https://github.com/PHeonix25/unifi_alerts` with category **Integration**
 3. Click **Download** on the UniFi Alerts card
 4. Restart Home Assistant
@@ -65,43 +68,21 @@ The integration uses the `/proxy/network` API path exclusively, which is only av
 
 Copy `custom_components/unifi_alerts/` into your HA `config/custom_components/` directory and restart.
 
----
+### Updating
 
-## Updating the integration
+After every HACS update (or manual file copy), **fully restart Home Assistant**. The integration's Reload action will not pick up new code or a new `manifest.json` version - HA caches imported Python modules in memory, and only a full restart re-imports them from disk.
 
-After every HACS update (or manual file copy), restart Home Assistant. Do not rely on the integration's Reload action; it does not pick up new code or the new `manifest.json` version.
-
-Home Assistant caches imported Python modules in memory. The Reload action under **Settings > Devices & Services > UniFi Alerts > ⋮ > Reload** re-runs `async_setup_entry` and re-registers entities, but it does so against the cached in-memory module. The new files HACS copied to disk are not loaded until HA imports the module fresh, which only happens on a full restart.
-
-**Steps:**
-
-1. Open HACS, find UniFi Alerts, and click **Update**.
-2. Restart Home Assistant: **Settings > System > Restart Home Assistant > Restart Home Assistant**. HACS prompts you to do this on every update; follow the prompt.
-3. Verify the new version: open **Settings > Devices & Services > UniFi Alerts**, click into the controller device, and check the version field on the device-info pane.
-
-> **Note:** Clicking Reload after an update will appear successful (entities re-register, setup logs fire), but the integration is still running the old code. Always do a full restart.
+1. HACS > **UniFi Alerts** > **Update**
+2. **Settings > System > Restart Home Assistant > Restart Home Assistant**
+3. Verify the new version on the device-info pane: **Settings > Devices & Services > UniFi Alerts**
 
 ---
 
 ## Setup
 
-1. Go to **Settings > Devices & Services > Add Integration** > search **UniFi Alerts**
-2. Enter your controller URL (e.g. `https://192.168.1.1`) and credentials
-   - **API key** (recommended): generate one in the UniFi OS web UI (see [Generating an API key](#generating-an-api-key) below), leave Username/Password blank
-   - **Username / password**: fill in Username and Password, leave API Key blank
-3. Select the alert categories you want to monitor (see table above - client/device categories are noisy by default)
-4. Configure polling interval and auto-clear timeout
-5. **Copy the webhook URLs** shown on the final screen into UniFi Alarm Manager (see next section). Click **Submit** to save - the integration is not created until you click Submit.
+### 1. Generate a UniFi API key (recommended)
 
-> You can always retrieve your webhook URLs later from **Settings > Devices & Services > UniFi Alerts > Configure**.
-
----
-
-## Generating an API key
-
-API keys are a UniFi OS feature, available on all supported consoles (UDM, UDM Pro, UDM SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+).
-
-The navigation path to create a key varies by firmware version:
+API keys are available on all supported UniFi OS consoles. The navigation path varies by firmware:
 
 | Firmware / UI version | Path |
 |---|---|
@@ -109,182 +90,98 @@ The navigation path to create a key varies by firmware version:
 | Some UCG / UDM firmware | **Integrations > API > New API Key** |
 | Older Cloud Key Gen2+ | **Settings > Control Plane > API Keys** |
 
-If you cannot find the option, try each path in order. The key is only displayed once at creation - copy it immediately and paste it into the integration setup.
+The key is shown only once at creation - copy it immediately.
 
-> **Tip:** Create a dedicated read-only local admin account for the integration. Do not use a cloud account or an account with MFA enabled - non-interactive login will break.
+> **Tip:** Create a dedicated local admin account for the integration. Do not use a cloud account or one with MFA enabled, since non-interactive login will fail.
 
----
+### 2. Add the integration in Home Assistant
 
-## Configuring UniFi Alarm Manager
+1. **Settings > Devices & Services > Add Integration** > search **UniFi Alerts**
+2. Enter your controller URL (e.g. `https://192.168.1.1`) and credentials. For API key auth, leave Username/Password blank; for username/password, leave API Key blank.
+3. Select the alert categories you want to monitor (client/device categories are noisy by default).
+4. Configure polling interval and auto-clear timeout.
+5. **Copy the webhook URLs** shown on the final screen before clicking Submit. The integration is not created until you click Submit.
 
-> ⚠️ **Local network required:** Webhook URLs are local-network only. Your UniFi controller must be on the same local network as your Home Assistant instance. Cloud-hosted controllers or remote access via Nabu Casa cannot reach these endpoints.
+> You can retrieve webhook URLs later from **Settings > Devices & Services > UniFi Alerts > Configure**.
+
+### 3. Configure UniFi Alarm Manager
 
 For each enabled category, create an alarm in **UniFi Network > Settings > Notifications > Alarm Manager**:
 
 1. Click **Create Alarm**
-2. Set the trigger(s) matching the category (see table above)
+2. Set the trigger matching the category (see [Alert categories](#alert-categories))
 3. Set scope (specific devices or network-wide)
 4. Under **Action**, choose **Webhook > Custom Webhook > POST**
 5. Paste the webhook URL from the HA integration page
 6. Click **Create**
 
-> **Tip:** Use **Test Alarm** in UniFi to verify the webhook reaches HA before saving.
+> **Test Alarm** in UniFi verifies the webhook reaches HA before you save.
+
+> **Webhook secret rotation:** if you regenerate the secret via the options flow, every existing URL becomes invalid immediately. Re-paste all new URLs into Alarm Manager, or affected alarms will silently fail with HTTP 401.
 
 ---
 
-## Entities created
+## Entities
 
-Entity IDs are derived from the entity's display name, which HA slugifies on first install. The unique_id format is `{entry_id}_{category}_{sensor_type}`; the entity_id is the slugified device name plus the entity name. Examples below use `network_device` as the category; the same pattern applies to all categories.
+Entity IDs are derived from the entity's display name, which HA slugifies on first install. The `unique_id` format is `{entry_id}_{category}_{sensor_type}`. Renaming an entity in the UI changes the friendly name only; the `unique_id` is stable, so automations referencing the entity ID remain valid.
+
+Per-category entities (example uses `network_device`; the same pattern applies to all categories):
 
 | Entity | Example entity ID | Type |
-| --- | --- | --- |
+|---|---|---|
 | Binary sensor | `binary_sensor.unifi_alerts_network_device_offline_online` | ON = alert active |
 | Message sensor | `sensor.unifi_alerts_network_device_offline_online_last_message` | Last alert text |
 | Count sensor | `sensor.unifi_alerts_network_device_offline_online_open_count` | Open alarm count |
 | Event entity | `event.unifi_alerts_network_device_offline_online_event` | Fires per alert |
 | Clear button | `button.unifi_alerts_clear_network_device_offline_online` | Manual clear |
 
-Plus rollup entities (one per config entry, regardless of which categories are enabled):
+Rollup entities (one per config entry, regardless of enabled categories):
 
-| Entity | ID | Type |
-| --- | --- | --- |
+| Entity | Entity ID | Type |
+|---|---|---|
 | Rollup binary | `binary_sensor.unifi_alerts_any_alert` | Any category alerting |
 | Rollup count | `sensor.unifi_alerts_total_open_alerts` | Total open count |
 | Clear all button | `button.unifi_alerts_clear_all_alerts` | Clear everything |
 
----
-
-## Examples
-
-### Lovelace / dashboard card
-
-The snippet below creates an **Entities card** showing network health at a glance: the rollup binary sensor lights up when any category is alerting, followed by per-category binary sensors and the total open-alarm count. Swap in only the categories you have enabled.
-
-```yaml
-type: entities
-title: UniFi Network Health
-entities:
-  # Rollup - any category alerting
-  - entity: binary_sensor.unifi_alerts_any_alert
-    name: Any Alert Active
-
-  # Per-category binary sensors (ON = alert active)
-  - entity: binary_sensor.unifi_alerts_network_device_offline_online
-    name: Device Offline/Online
-  - entity: binary_sensor.unifi_alerts_network_wan_offline_latency
-    name: WAN Offline/Latency
-  - entity: binary_sensor.unifi_alerts_security_threat_ids_detected
-    name: Threat / IDS
-  - entity: binary_sensor.unifi_alerts_security_firewall_block
-    name: Firewall Block
-  - entity: binary_sensor.unifi_alerts_power_poe_power_loss
-    name: Power / PoE
-
-  # Total open-alarm count (polled from controller)
-  - entity: sensor.unifi_alerts_total_open_alerts
-    name: Total Open Alerts
-```
-
-> **Tip:** For a more compact view, replace `type: entities` with `type: glance`. Per-category message and open-count sensors follow the same naming pattern, for example: `sensor.unifi_alerts_network_device_offline_online_last_message` and `sensor.unifi_alerts_network_device_offline_online_open_count`.
+See [docs/EXAMPLES.md](docs/EXAMPLES.md) for a Lovelace dashboard card and an automation that fires on security threats.
 
 ---
 
-### Automation example
+## Privacy and data retention
 
-UniFi Alerts uses Home Assistant **Event entities** (not the hass event bus). When an alert arrives the entity fires a single event of type `alert_received` and its state updates with the full payload as attributes. Trigger on the event entity using `platform: state`; the payload is available on `trigger.to_state.attributes`.
+All data stays on your local network; the integration does not communicate with any external service.
 
-The event data attributes are:
+Stored per alert: `message` (truncated to 255 characters), `category`, `device_name`, `alert_key`, `severity`, `site`, and `received_at` (UTC timestamp).
 
-| Attribute | Description |
-|---|---|
-| `message` | Human-readable alert text from UniFi |
-| `category` | Integration category slug (e.g. `security_threat`) |
-| `device_name` | UniFi device that raised the alert |
-| `alert_key` | Raw UniFi event key (e.g. `EVT_IPS_ThreatDetected`) |
-| `severity` | Severity string from the UniFi payload |
-| `site` | UniFi site name (default: `default`) |
-| `received_at` | ISO-8601 UTC timestamp |
+Auto-clear removes `is_alerting` and `last_alert` after the configured clear timeout (default 30 seconds). The acknowledgement watermark (`last_cleared_at`) persists across HA restarts so `open_count` reflects "since last Clear", not a lifetime total.
 
-```yaml
-automation:
-  - alias: "Notify on UniFi security threat"
-    trigger:
-      - platform: state
-        entity_id: event.unifi_alerts_security_threat_ids_detected_event
-    condition:
-      # Only act when the entity actually fired a new event (state changes on each alert)
-      - condition: template
-        value_template: "{{ trigger.to_state.state != 'unavailable' }}"
-    action:
-      - service: persistent_notification.create
-        data:
-          title: "UniFi Security Alert"
-          message: >
-            {{ trigger.to_state.attributes.get('message', 'Unknown alert') }}
-            (device: {{ trigger.to_state.attributes.get('device_name', 'unknown') }},
-            key: {{ trigger.to_state.attributes.get('alert_key', '') }})
-          notification_id: "unifi_security_threat"
-```
+---
 
-> **Tip:** Replace `event.unifi_alerts_security_threat_ids_detected_event` with any per-category event entity (e.g. `event.unifi_alerts_network_device_offline_online_event`, `event.unifi_alerts_power_poe_power_loss_event`). Swap `persistent_notification.create` for `notify.mobile_app_your_phone` or any other notify action.
+## Uninstall
 
-#### Automation caveats
+**Settings > Devices & Services > UniFi Alerts > three-dot menu > Delete.**
 
-- **Event entities show `unknown` until the first alert fires.** `EventEntity` has no persistent state - it only carries the data from the most recent event. On a fresh install or after an HA restart, all event entities start in `unknown` state. This is normal and expected; your automations will trigger correctly once the first alert arrives.
-- **Disabling a category makes its event entity `unavailable`.** If you disable a category in **Settings > Devices & Services > UniFi Alerts > Configure**, the corresponding event entity becomes unavailable and any automation that triggers on it will silently stop firing. Re-enable the category or update the automation accordingly.
+---
+
+## Support
+
+- Common setup issues: [Troubleshooting](docs/TROUBLESHOOTING.md)
+- Bug reports and questions: [github.com/PHeonix25/unifi_alerts/issues](https://github.com/PHeonix25/unifi_alerts/issues)
+- Unrecognised alert keys: open an issue with the raw `key` value from your HA logs. The UniFi event key > category mappings in `const.py` are community-sourced and incomplete.
 
 ---
 
 ## Contributing
 
-Issues and PRs welcome at [github.com/PHeonix25/unifi_alerts](https://github.com/PHeonix25/unifi_alerts).
+Issues and PRs welcome. The full developer guide lives in [docs/DEVELOPING.md](docs/DEVELOPING.md): local setup, running checks, the CI pipeline, branching strategy, and release process.
 
-The UniFi event key > category mappings in `const.py` are community-sourced and incomplete. If you see unrecognised alerts in your HA logs, please open an issue with the raw `key` value.
+A short tour of the rest of the documentation:
 
-### Development setup
-
-**Requirements:** Python 3.12+, Git.
-
-```bash
-# 1. Clone and enter the repo
-git clone https://github.com/PHeonix25/unifi_alerts.git
-cd unifi_alerts
-
-# 2. Install the pre-push hook (one-time, per clone)
-git config core.hooksPath .githooks
-
-# 3. Create a virtual environment and install all dev dependencies
-make setup
-```
-
-### Running checks
-
-```bash
-make check      # run everything: lint, typecheck, HACS validation, tests (default)
-make lint       # ruff lint + format check only
-make typecheck  # mypy only
-make validate   # HACS manifest pre-flight only
-make test       # pytest only
-```
-
-`make check` is the same suite that CI runs. The pre-push hook runs it automatically before every `git push`, so CI should never see a failure that didn't appear locally first.
-
-### CI pipeline
-
-| Job | What it checks |
+| Document | When to read |
 |---|---|
-| **Validate with hassfest** | HA manifest schema and key ordering |
-| **HACS manifest pre-flight** | Required fields, iot_class, no HA core built-ins in `dependencies` |
-| **Validate with HACS Action** | Full HACS compatibility (runs after pre-flight) |
-| **Lint & type-check** | ruff, mypy, and `strings.json` ↔ `translations/en.json` parity |
-| **Run tests** | Full pytest suite (234 tests) |
-
-### Key rules to know before submitting a PR
-
-- **`manifest.json` `dependencies`** - do NOT list HA core built-ins (`webhook`, `http`, `frontend`, etc.). `hassfest` accepts them but the HACS validator rejects them and will fail CI. Only list external integrations that HACS needs to install.
-- **`strings.json` and `translations/en.json`** must be kept identical. CI diffs them and fails if they diverge.
-- **All I/O must be async** - no `requests`, no blocking calls.
-- **No `configuration.yaml` support** - everything goes through the config flow.
-- **Webhook token auth is mandatory** - do not remove or bypass the `?token=` check in `webhook_handler.py`.
-
-See `CLAUDE.md` for the full developer context and `docs/TESTING.md` for test conventions.
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the modules fit together |
+| [docs/HOMEASSISTANT.md](docs/HOMEASSISTANT.md) | HA-specific patterns: coordinators, entities, config flow |
+| [docs/UNIFI.md](docs/UNIFI.md) | UniFi API, auth methods, alarm payload taxonomy |
+| [docs/TESTING.md](docs/TESTING.md) | Test layout and conventions |
+| [docs/REPO_LAYOUT.md](docs/REPO_LAYOUT.md) | Per-file responsibilities |
+| [CLAUDE.md](CLAUDE.md) | Non-negotiable constraints and coding conventions |

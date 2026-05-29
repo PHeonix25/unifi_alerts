@@ -39,11 +39,10 @@ test:
 	$(VENV)/pytest$(EXE) tests/ -v
 
 lint:
-	$(VENV)/ruff$(EXE) check custom_components/ tests/
-	$(VENV)/ruff$(EXE) format --check custom_components/ tests/
+	$(VENV)/python$(EXE) scripts/run_lint.py
 
 typecheck:
-	$(VENV)/mypy$(EXE) custom_components/unifi_alerts --ignore-missing-imports
+	$(VENV)/python$(EXE) scripts/run_typecheck.py
 
 # `validate` and `doc-check` use the system python via $(PY312) wrapper - both
 # scripts are pure stdlib so they don't need the venv at all. Falls back to
@@ -58,5 +57,6 @@ doc-check:
 	$(PY312) scripts/check_translations.py
 
 check: lint typecheck validate test
+	@echo All checks passed.
 
 .DEFAULT_GOAL := help

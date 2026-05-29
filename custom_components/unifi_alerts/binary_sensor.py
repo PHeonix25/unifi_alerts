@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -57,7 +58,8 @@ class UniFiCategoryBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], Binar
         self._category = category
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{category}_binary"
-        self._attr_name = CATEGORY_LABELS[category]
+        self._attr_translation_key = "category_binary"
+        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -77,11 +79,11 @@ class UniFiCategoryBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], Binar
         return CATEGORY_ICONS_OK[self._category]
 
     @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict[str, Any]:
         state: CategoryState | None = self.coordinator.get_category_state(self._category)
         if not state:
             return {}
-        attrs: dict = {
+        attrs: dict[str, Any] = {
             "category": self._category,
             "alert_count": state.alert_count,
             "open_count": state.open_count,
@@ -101,7 +103,7 @@ class UniFiRollupBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], BinaryS
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_has_entity_name = True
-    _attr_name = "Any Alert"
+    _attr_translation_key = "any_alert"
 
     def __init__(
         self,
@@ -122,9 +124,9 @@ class UniFiRollupBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], BinaryS
         return "mdi:shield-alert" if self.is_on else "mdi:shield-check"
 
     @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict[str, Any]:
         last = self.coordinator.rollup_last_alert
-        attrs: dict = {
+        attrs: dict[str, Any] = {
             "total_alert_count": self.coordinator.rollup_alert_count,
             "total_open_count": self.coordinator.rollup_open_count,
         }

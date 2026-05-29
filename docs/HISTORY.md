@@ -2,6 +2,33 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-05-29
+
+- **release**: v1.7.0 tagged. Promotes v1.7.0-pre2 to stable after on-controller validation confirmed byte-identical entity_id, unique_id, and friendly_name snapshots across the pre1 -> pre2 upgrade (the ARCH-2 translation-key migration regression test). Cycle headline: documentation + architecture. Ships SEC-1 (fail-closed webhook auth with schema v3 migration), ARCH-1 (`UniFiClientConfig` TypedDict), CI-1 (`mypy --strict` enabled), ARCH-2 (entity-name translation keys, unlocking localisation), ARCH-3 (config-flow test package split), ARCH-4 (`SensorStateClass.MEASUREMENT` confirmed on count sensors), DOC-A (35-point documentation accuracy reconciliation), DOC-B (new troubleshooting / privacy / tested-controllers / uninstall sections plus README + info.md restructure), QUAL-1 (WHY comments on dedup / watermark / system-log probe), plus off-plan tooling and docs (`scripts/run_lint.py` / `run_typecheck.py`, AGENTS.md rewrite, Copilot agent definitions, 232 lines of coverage tests). Closes all v1.7.0 ROADMAP items.
+- **security**: scope read-only GitHub Actions workflows to `permissions: contents: read` ([#111]). Closes a CodeQL "Workflow does not contain permissions" finding on `.github/workflows/copilot-setup-steps.yml` (shipped in #104) and pre-emptively applies the same minimum scope to `ci.yml` and `version-check.yml`, which were latent CodeQL warnings outside the diff of any individual feature PR. `release.yml` and `pr-labeler.yml` already had explicit permissions blocks.
+
+## 2026-05-18
+
+- **release**: v1.7.0-pre2 tagged. Ships ARCH-2 (the last v1.7 code item) plus the off-plan tooling and docs PRs that landed during the pre1 review window. Pre2 is the validation checkpoint for the maintainer's pre1 -> pre2 upgrade test plan on a real HA + UniFi controller; pass criteria are byte-identical entity_id, unique_id, and friendly_name snapshots across the two pre-releases.
+- **feat**: migrate entity names to `_attr_translation_key` + `_attr_translation_placeholders` (ARCH-2) ([#107]). Display strings move from hard-coded `_attr_name = f"{CATEGORY_LABELS[cat]} ..."` formatting to `strings.json` and byte-identical `translations/en.json` under the HA-standard `entity.{platform}.{key}.name` schema; English-rendered names are preserved byte-for-byte, `_attr_unique_id` is untouched. Unlocks localisation without code changes.
+- **docs**: backfill CHANGELOG entries for off-plan PRs and resolve the `[#PR]` placeholder on the SEC-1 bullet to `[#94]` ([#107]). The four off-plan PRs (#103-#106) merged without their own `[Unreleased]` bullets; backfilled now so the v1.7.0 stable promotion PR has a complete starting point.
+- **ci**: move `make lint` and `make typecheck` from inline shell invocations to `scripts/run_lint.py` and `scripts/run_typecheck.py` ([#103]). Same logic now runs identically on Linux, macOS, and Windows without per-platform shims; replaces the `ifeq ($(OS),Windows_NT)` cross-platform branching previously needed in the Makefile.
+- **docs**: rewrite `AGENTS.md` as a self-contained agent context file ([#104]). Adds repo structure map, six-step category-registration walkthrough, and common-pitfalls list so agents that cannot follow cross-file links (web-based tools, third-party AI) get the conventions inline. Also adds a maintenance matrix to `.github/copilot-instructions.md` covering the four common change cascades, a `.github/PULL_REQUEST_TEMPLATE.md`, a `copilot-setup-steps.yml` workflow for one-command Copilot session provisioning, and an "AI Ready" badge to README.
+- **docs**: add six Copilot agent definitions under `.github/agents/` (SE Lead, QE Lead, Security Lead, Responsible AI, Product Manager, Technical Debt Remediation) ([#105]). Unified Identity / Mission / Core Principles / Workflow / Output Format / Anti-Patterns structure across all six, named personas for self-identification in reviews. Also widens `scripts/validate_docs.py` to scan every `*.md` recursively rather than a fixed glob list so new markdown anywhere in the tree inherits the prose rules automatically.
+- **tests**: 232 lines of targeted branch-path unit tests across `test_options.py`, `test_reauth.py`, `test_coordinator.py`, and `test_models.py` ([#106]). Pure coverage uplift; no production-code changes.
+
+## 2026-05-15
+
+- **release**: v1.7.0-pre1 tagged. Ships the v1.7.0 documentation + architecture scope: fail-closed webhook auth with schema v3 migration that backfills missing secrets on legacy entries (SEC-1), `UniFiClientConfig` TypedDict that closed the largest `dict[str, Any]` surface and unblocked `mypy --strict` (ARCH-1), `strict = true` flipped with zero `# type: ignore` debt (CI-1), `tests/unit/config_flow/` package split (ARCH-3), `SensorStateClass.MEASUREMENT` confirmed on count sensors (ARCH-4), end-to-end documentation accuracy pass (DOC-A), new troubleshooting / privacy / tested-controllers / uninstall sections (DOC-B), WHY comments on dedup / watermark / system-log probe (QUAL-1), and a README + info.md restructure that dropped README from 331 to 186 lines.
+- **security**: fail-closed webhook auth and schema v3 migration that backfills `webhook_secret` / `webhook_id_suffix` on legacy entries ([#94]). Webhook handler now returns HTTP 500 when no bearer secret is configured (previously accepting); migration generates a fresh secret and suffix only when missing or empty, leaving correctly-configured entries untouched.
+- **docs**: reconcile documentation against current code (DOC-A) ([#95]). 35 verified drift points across REPO_LAYOUT test paths, HOMEASSISTANT button row, info.md HA baseline (2024.5 not 2026.1.0), DEVELOPING HISTORY guidance, TESTING conftest tree.
+- **tests**: split `tests/unit/test_config_flow.py` (1565 lines) into `tests/unit/config_flow/` package (ARCH-3) ([#96]). Four files (`test_setup`, `test_options`, `test_reauth`, plus shared `conftest`); same test count, smaller rebase blast radius.
+- **feat**: confirm `SensorStateClass.MEASUREMENT` on open-count and rollup-count sensors (ARCH-4) ([#97]). No `SensorDeviceClass` is set (none of HA's built-ins fit an alert counter); comment added so a future reader does not re-open the question.
+- **docs**: v1.7 user docs (DOC-B) and WHY comments (QUAL-1) ([#98]). Troubleshooting / privacy / tested-controllers / uninstall sections in README; `info.md` local-network warning; setup-flow finish step copy stresses copying webhook URLs before Submit. Code-side WHY comments cover the webhook 5s dedup window, polling-vs-webhook `alert_count` invariant, acknowledgement watermark, and system-log probe.
+- **docs**: restructure README and info.md, dedupe content, move examples to `docs/EXAMPLES.md` ([#99]). Standard flow (Features > Requirements > Installation > Setup > Entities > Privacy > Uninstall > Support > Contributing); merged the two duplicate "tested consoles" tables; README dropped from 331 to 186 lines with no content cut.
+- **chore**: introduce `UniFiClientConfig` TypedDict for the client / coordinator / webhook config dict (ARCH-1) ([#100]). Replaces `dict[str, Any]` parameters and storage; `cast()` at the HA `ConfigEntry` boundary; `Final` annotations on the 13 `CONF_*` keys so mypy resolves them as literal types. Prerequisite for CI-1.
+- **ci**: enable `mypy --strict` across the integration (CI-1) ([#101]). Fixed every issue with real type annotations and one import-path move (`DeviceInfo` from `helpers.device_registry` instead of the unmarked re-export on `helpers.entity`); zero `# type: ignore` lines added.
+
 ## 2026-05-11
 
 - **release**: v1.6.0 tagged. Ships the v1.6.0 reliability scope: v2 `system-log/all` polling switch with capability probe and legacy fallback (closes the ~3000-record cap on `/list/alarm` that left `open_count` stuck at 0 on busy controllers), persistent `alert_count` and `last_alert` across config-entry reloads, button-availability gating that respects category-enabled state, and the epoch-ms timestamp parser fix the v2 path depends on. Live-validated against a UCG-Ultra running Network 10.3.58 via the v1.6.0-pre2 canary before promotion; no functional changes between pre2 and stable.
@@ -209,6 +236,20 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 [#88]: https://github.com/PHeonix25/unifi_alerts/pull/88
 [#89]: https://github.com/PHeonix25/unifi_alerts/pull/89
 [#90]: https://github.com/PHeonix25/unifi_alerts/pull/90
+[#94]: https://github.com/PHeonix25/unifi_alerts/pull/94
+[#95]: https://github.com/PHeonix25/unifi_alerts/pull/95
+[#96]: https://github.com/PHeonix25/unifi_alerts/pull/96
+[#97]: https://github.com/PHeonix25/unifi_alerts/pull/97
+[#98]: https://github.com/PHeonix25/unifi_alerts/pull/98
+[#99]: https://github.com/PHeonix25/unifi_alerts/pull/99
+[#100]: https://github.com/PHeonix25/unifi_alerts/pull/100
+[#101]: https://github.com/PHeonix25/unifi_alerts/pull/101
+[#103]: https://github.com/PHeonix25/unifi_alerts/pull/103
+[#104]: https://github.com/PHeonix25/unifi_alerts/pull/104
+[#105]: https://github.com/PHeonix25/unifi_alerts/pull/105
+[#106]: https://github.com/PHeonix25/unifi_alerts/pull/106
+[#107]: https://github.com/PHeonix25/unifi_alerts/pull/107
+[#111]: https://github.com/PHeonix25/unifi_alerts/pull/111
 
 [0d951b3]: https://github.com/PHeonix25/unifi_alerts/commit/0d951b3
 [0f17afb]: https://github.com/PHeonix25/unifi_alerts/commit/0f17afb

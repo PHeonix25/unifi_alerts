@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import secrets
+from typing import cast
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -19,7 +21,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import UniFiAlertsCoordinator
-from .models import RuntimeData
+from .models import RuntimeData, UniFiClientConfig
 from .services import async_register_services, async_unregister_services
 from .unifi_client import InvalidAuthError, UniFiClient
 from .webhook_handler import WebhookManager
@@ -40,6 +42,27 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         new_data = {k: v for k, v in config_entry.data.items() if k != "is_unifi_os"}
         hass.config_entries.async_update_entry(config_entry, data=new_data, version=2)
         _LOGGER.info("Migrated config entry %s from version 1 to 2", config_entry.entry_id)
+
+    if config_entry.version == 2:
+        new_data = dict(config_entry.data)
+        changed = False
+        if not new_data.get("webhook_secret"):
+            new_data["webhook_secret"] = secrets.token_urlsafe(32)
+            changed = True
+        if not new_data.get("webhook_id_suffix"):
+            new_data["webhook_id_suffix"] = secrets.token_hex(4)
+            changed = True
+        if changed:
+            hass.config_entries.async_update_entry(config_entry, data=new_data, version=3)
+            _LOGGER.info(
+                "Migrated config entry %s to version 3: backfilled webhook secret. "
+                "Re-paste webhook URLs from Settings > Devices & Services > UniFi Alerts > Configure.",
+                config_entry.entry_id,
+            )
+        else:
+            hass.config_entries.async_update_entry(config_entry, version=3)
+        return True
+
     return True
 
 
@@ -53,7 +76,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry.data.get("controller_url", "unknown"),
         )
     session = async_get_clientsession(hass, verify_ssl=verify_ssl)
-    client = UniFiClient(session, entry.data["controller_url"], dict(entry.data))
+    # HA's ConfigEntry.data is Mapping[str, Any]; cast at the boundary so
+    # internal call sites are typed via UniFiClientConfig.
+    client = UniFiClient(
+        session,
+        entry.data["controller_url"],
+        cast(UniFiClientConfig, dict(entry.data)),
+    )
 
     try:
         await client.authenticate()
@@ -82,7 +111,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     coordinator = UniFiAlertsCoordinator(
-        hass, client, dict(entry.data) | dict(entry.options), entry.entry_id
+        hass,
+        client,
+        cast(UniFiClientConfig, dict(entry.data) | dict(entry.options)),
+        entry.entry_id,
     )
 
     # Restore persisted acknowledgement watermarks before first poll so that
@@ -99,7 +131,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     webhook_manager = WebhookManager(
         hass,
         entry.entry_id,
-        dict(entry.data) | dict(entry.options),
+        cast(UniFiClientConfig, dict(entry.data) | dict(entry.options)),
         coordinator.push_alert,
     )
     webhook_urls = webhook_manager.register_all()

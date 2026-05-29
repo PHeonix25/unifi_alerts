@@ -1,23 +1,20 @@
 # UniFi Alerts for Home Assistant
 
-⚠ **Requires UniFi OS** (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+). Classic self-hosted Network Application is not supported.
+**Local network only: webhooks are not reachable over Nabu Casa remote access.**
 
-Aggregates **UniFi Network controller alerts** into Home Assistant sensors, binary sensors, event entities, and buttons. Alerts arrive in real time via UniFi Alarm Manager webhooks and are supplemented by periodic REST polling for open-count data and resilience against missed pushes.
+Aggregates **UniFi Network controller alerts** into Home Assistant sensors, binary sensors, event entities, and buttons. Alerts arrive in real time via UniFi Alarm Manager webhooks, with periodic REST polling as a backstop for open-count data and missed pushes.
 
 ---
 
 ## Features
 
-- **Real-time webhook push** - UniFi Alarm Manager POSTs alerts to per-category endpoints registered by HA; no polling delay for active alerts
+- **Real-time webhook push** - UniFi Alarm Manager POSTs alerts to per-category endpoints; no polling delay for active alerts
 - **REST polling fallback** - configurable interval keeps open-count sensors accurate even if a webhook is missed
-- **Per-category binary sensors** - ON when an alert is active, auto-clears after a configurable timeout
-- **Per-category message sensors** - last alert text and timestamp as state attributes
-- **Per-category open-count sensors** - live count polled from the controller
-- **Rollup sensors** - a single "any alert active" binary and a total open-count sensor
+- **Per-category binary, message, and open-count sensors** - plus rollup "any alert" and total-open-count
 - **Event entities** - fire on every inbound alert; use as automation triggers
 - **Clear buttons** - reset any individual category or all categories at once
 - **UI config flow** - full setup and options UI; no YAML required
-- **Auto-detect auth** - tries API key (UniFi OS) then falls back to username/password
+- **Auto-detect auth** - API key (recommended) or username/password
 - **Secure defaults** - SSL verification on, webhook bearer-token auth enforced, local-only endpoints
 
 ### Alert categories
@@ -36,29 +33,28 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 
 ## Requirements
 
-- Home Assistant 2026.1.0 or later
-- UniFi Network controller reachable on the same local network as your HA instance
-- Credentials: API key (recommended) **or** username + password
-
-> **Local network only:** webhook URLs are not reachable over Nabu Casa remote access or from cloud-hosted controllers.
+- Home Assistant 2024.5 or later
+- UniFi OS console (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+). Classic self-hosted Network Application is not supported.
+- UniFi controller reachable on the same local network as your HA instance
+- Credentials: API key (recommended) or username + password
 
 ---
 
 ## Quick setup
 
-1. Install via HACS: **Integrations > Custom repositories** > add `https://github.com/PHeonix25/unifi_alerts` > **Download** > restart HA.
-2. Go to **Settings > Devices & Services > Add Integration** > search **UniFi Alerts**.
-3. Enter your controller URL and credentials (API key or username/password).
-4. Select the alert categories you want to monitor and configure polling interval and auto-clear timeout.
-5. **Copy the webhook URLs** shown on the final screen into **UniFi Network > Settings > Notifications > Alarm Manager** - one URL per category.
+1. Install via HACS, then restart Home Assistant.
+2. **Settings > Devices & Services > Add Integration** > search **UniFi Alerts**.
+3. Enter your controller URL and credentials.
+4. Select alert categories, polling interval, and auto-clear timeout.
+5. **Copy the webhook URLs** shown on the final screen into **UniFi Network > Settings > Notifications > Alarm Manager** - one URL per category - before clicking Submit.
 
-See the [full documentation](https://github.com/PHeonix25/unifi_alerts) for detailed instructions, screenshots, and an automation example.
+See the [full README](https://github.com/PHeonix25/unifi_alerts) for the API-key path, the Alarm Manager walkthrough, dashboard examples, and troubleshooting.
 
 ---
 
 ## Links
 
 - [Full documentation / README](https://github.com/PHeonix25/unifi_alerts)
+- [Troubleshooting](https://github.com/PHeonix25/unifi_alerts/blob/main/docs/TROUBLESHOOTING.md)
 - [Issue tracker](https://github.com/PHeonix25/unifi_alerts/issues)
-- [Source code](https://github.com/PHeonix25/unifi_alerts)
 - [License (MIT)](https://github.com/PHeonix25/unifi_alerts/blob/main/LICENSE)

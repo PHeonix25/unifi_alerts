@@ -22,7 +22,7 @@ from .const import (
     SYSTEM_LOG_PAGE_SIZE,
     UNIFI_KEY_TO_CATEGORY,
 )
-from .models import UniFiAlert
+from .models import UniFiAlert, UniFiClientConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,14 +62,16 @@ class UniFiClient:
         self,
         session: aiohttp.ClientSession,
         controller_url: str,
-        config: dict[str, Any],
+        config: UniFiClientConfig,
     ) -> None:
         self._session = session
         self._base = controller_url.rstrip("/")
-        self._config = config
+        self._config: UniFiClientConfig = config
         self._auth_method: str | None = None
         self._authenticated: bool = False
-        self._has_system_log: bool | None = None  # None = not yet probed
+        # None = not yet probed. authenticate() detects v2 system-log availability
+        # on first connect; fetch_alarms() falls back to legacy /list/alarm if False.
+        self._has_system_log: bool | None = None
 
     # ── Public interface ──────────────────────────────────────────────────
 
@@ -96,7 +98,7 @@ class UniFiClient:
         _LOGGER.debug("Authenticated via username/password")
         return AUTH_METHOD_USERPASS
 
-    async def fetch_alarms(self, site: str = "default") -> list[dict]:
+    async def fetch_alarms(self, site: str = "default") -> list[dict[str, Any]]:
         """Return all unarchived alarms from the controller."""
         if not self._authenticated:
             await self.authenticate()
@@ -123,7 +125,7 @@ class UniFiClient:
             f"Could not find the alarm endpoint for site '{site}'. Tried: {', '.join(alarm_paths)}"
         )
 
-    async def _try_fetch_alarms(self, url: str, site: str) -> list[dict] | None:
+    async def _try_fetch_alarms(self, url: str, site: str) -> list[dict[str, Any]] | None:
         """Fetch alarms from one URL. Returns None on 404 (caller tries next URL)."""
         _LOGGER.debug("Fetching alarms from %s", url)
         try:
@@ -235,7 +237,7 @@ class UniFiClient:
         self,
         site: str = "default",
         since: datetime | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Fetch alarms from the v2 system-log/all endpoint with pagination.
 
         Uses timestampFrom = since (or now - DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS
@@ -259,7 +261,7 @@ class UniFiClient:
         timestamp_to = int(now.timestamp() * 1000)
 
         url = f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/v2/api/site/{site}/system-log/all"
-        results: list[dict] = []
+        results: list[dict[str, Any]] = []
 
         for page in range(MAX_SYSTEM_LOG_PAGES):
             body = {
@@ -291,7 +293,7 @@ class UniFiClient:
             except aiohttp.ClientError as err:
                 raise CannotConnectError(type(err).__name__) from err
 
-            page_data: list[dict] = data.get("data") or []
+            page_data: list[dict[str, Any]] = data.get("data") or []
             # Filter to open/unacknowledged events only (status="NEW")
             new_events = [e for e in page_data if e.get("status") == "NEW"]
             results.extend(new_events)
@@ -411,7 +413,7 @@ class UniFiClient:
         return headers
 
     @staticmethod
-    def _classify(alarm: dict) -> str | None:
+    def _classify(alarm: dict[str, Any]) -> str | None:
         """Map a raw alarm dict to a category string, or None if unrecognised."""
         key = alarm.get("key", "")
         for prefix, category in UNIFI_KEY_TO_CATEGORY.items():

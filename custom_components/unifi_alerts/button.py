@@ -6,8 +6,7 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -52,7 +51,8 @@ class UniFiClearCategoryButton(CoordinatorEntity[UniFiAlertsCoordinator], Button
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_clear"
-        self._attr_name = f"Clear {CATEGORY_LABELS[category]}"
+        self._attr_translation_key = "clear_category"
+        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -70,7 +70,7 @@ class UniFiClearAllButton(CoordinatorEntity[UniFiAlertsCoordinator], ButtonEntit
     """Button that clears alert state for all categories at once."""
 
     _attr_has_entity_name = True
-    _attr_name = "Clear All Alerts"
+    _attr_translation_key = "clear_all"
     _attr_icon = "mdi:shield-off"
     _attr_entity_category = EntityCategory.CONFIG
 

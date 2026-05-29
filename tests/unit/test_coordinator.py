@@ -1411,3 +1411,90 @@ class TestCoordinatorV2Dispatch:
         client.fetch_system_log_alarms.assert_awaited_once()
         _, kwargs = client.fetch_system_log_alarms.call_args
         assert kwargs.get("since") is None
+
+
+class TestCoordinatorUncoveredBranches:
+    @pytest.mark.asyncio
+    async def test_restore_watermarks_ignores_unknown_category(self):
+        coord = make_coordinator()
+        coord._store = MagicMock()
+        coord._store.async_load = AsyncMock(
+            return_value={"unknown_category": "2024-01-01T00:00:00+00:00"}
+        )
+        coord._store.async_save = AsyncMock()
+
+        await coord.async_restore_watermarks()
+
+        for cat in ALL_CATEGORIES:
+            assert coord.get_category_state(cat) is not None
+
+    @pytest.mark.asyncio
+    async def test_restore_watermarks_invalid_dict_timestamp_is_ignored(self):
+        coord = make_coordinator()
+        coord._store = MagicMock()
+        coord._store.async_load = AsyncMock(
+            return_value={
+                CATEGORY_NETWORK_WAN: {"last_cleared_at": "bad-timestamp", "alert_count": 2}
+            }
+        )
+        coord._store.async_save = AsyncMock()
+
+        await coord.async_restore_watermarks()
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.last_cleared_at is None
+        assert state.alert_count == 2
+
+    @pytest.mark.asyncio
+    async def test_clear_unknown_category_is_noop(self):
+        coord = make_coordinator()
+        coord._store = MagicMock()
+        coord._store.async_save = AsyncMock()
+
+        await coord.async_clear_category("unknown_category")
+
+        coord._store.async_save.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_clear_all_skips_disabled_categories(self):
+        coord = make_coordinator(enabled=[CATEGORY_NETWORK_WAN])
+        coord._store = MagicMock()
+        coord._store.async_save = AsyncMock()
+        wan_state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        threat_state = coord.get_category_state(CATEGORY_SECURITY_THREAT)
+        wan_state.is_alerting = True
+        threat_state.is_alerting = True
+
+        await coord.async_clear_all()
+
+        assert wan_state.is_alerting is False
+        assert threat_state.is_alerting is True
+
+    def test_schedule_clear_falls_back_to_async_create_task(self):
+        hass = MagicMock()
+        hass.async_create_background_task = None
+        created = MagicMock()
+
+        def _create_task(coro):
+            coro.close()
+            return created
+
+        hass.async_create_task = _create_task
+        coord = make_coordinator(hass=hass)
+        coord._schedule_clear(CATEGORY_NETWORK_WAN)
+        assert coord._clear_tasks[CATEGORY_NETWORK_WAN] is created
+
+    def test_schedule_persist_uses_async_create_task_when_background_missing(self):
+        hass = MagicMock()
+        hass.async_create_background_task = None
+        called = {"create_task": 0}
+
+        def _create_task(coro):
+            called["create_task"] += 1
+            coro.close()
+            return MagicMock()
+
+        hass.async_create_task = _create_task
+        coord = make_coordinator(hass=hass)
+        coord._schedule_persist()
+        assert called["create_task"] == 1

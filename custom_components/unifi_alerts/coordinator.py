@@ -25,7 +25,7 @@ from .const import (
     DOMAIN,
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
-from .models import CategoryState, UniFiAlert
+from .models import CategoryState, UniFiAlert, UniFiClientConfig
 from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self,
         hass: HomeAssistant,
         client: UniFiClient,
-        config: dict[str, Any],
+        config: UniFiClientConfig,
         entry_id: str = "",
     ) -> None:
         poll_interval = config.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
@@ -60,11 +60,13 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             update_interval=timedelta(seconds=poll_interval),
         )
         self._client = client
-        self._config = config
+        self._config: UniFiClientConfig = config
         self._clear_timeout_minutes: int = config.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT)
         self._enabled_categories: list[str] = config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         self._site: str = config.get(CONF_SITE, DEFAULT_SITE)
-        self._store: Store = Store(hass, _STORAGE_VERSION, f"{DOMAIN}_watermarks_{entry_id}")
+        self._store: Store[dict[str, Any]] = Store(
+            hass, _STORAGE_VERSION, f"{DOMAIN}_watermarks_{entry_id}"
+        )
 
         # Category state is long-lived; do NOT reset between coordinator refreshes
         self._category_states: dict[str, CategoryState] = {
@@ -73,7 +75,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         }
 
         # Tracks pending auto-clear tasks keyed by category
-        self._clear_tasks: dict[str, asyncio.Task] = {}
+        self._clear_tasks: dict[str, asyncio.Task[None]] = {}
 
         # Per-(category, alert_key) monotonic timestamps of the last webhook
         # push that was actually applied. Subsequent pushes for the same pair
@@ -125,8 +127,8 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 state = self._category_states[cat]
                 if not state.enabled:
                     continue
-                # Filter to alarms newer than the acknowledgement watermark so
-                # open_count reflects "since last cleared" not a lifetime total.
+                # Count only alarms newer than last_cleared_at so open_count reads as
+                # "since last Clear", not a lifetime total.
                 watermark = state.last_cleared_at
                 counted = (
                     [a for a in alerts if a.received_at > watermark]
@@ -141,9 +143,8 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 # show Problem + Open Count=0 simultaneously).
                 if counted and not state.is_alerting:
                     most_recent = max(counted, key=lambda a: a.received_at)
-                    # Use direct assignment instead of apply_alert() so that
-                    # poll-detected alerts do not increment alert_count.  Only
-                    # webhook-pushed alerts (real new events) should do that.
+                    # Polling sets is_alerting directly without incrementing alert_count; that counter
+                    # is webhook-only so event entities only fire on real pushes, not poll reconciliation.
                     state.is_alerting = True
                     state.last_alert = most_recent
                     self._schedule_clear(cat)
@@ -232,6 +233,8 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         dedup_key = (category, alert.key or "")
         now = time.monotonic()
+        # Absorbs duplicate webhook deliveries from the controller within the window;
+        # monotonic time makes the window immune to clock skew during HA suspend/resume.
         prev = self._last_push_at.get(dedup_key)
         if prev is not None and (now - prev) < WEBHOOK_DEDUP_WINDOW_SECONDS:
             _LOGGER.debug(
@@ -313,7 +316,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         branch runs when the stored value is a dict; the string branch handles
         the old format so existing installs are not disrupted.
         """
-        data: dict | None = await self._store.async_load()
+        data: dict[str, Any] | None = await self._store.async_load()
         if not data:
             return
         for cat, entry in data.items():
@@ -343,9 +346,9 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
     async def _async_persist_watermarks(self) -> None:
         """Persist current category state (watermark, alert_count, last_alert) to storage."""
-        data: dict[str, dict] = {}
+        data: dict[str, dict[str, Any]] = {}
         for cat, state in self._category_states.items():
-            entry: dict = {}
+            entry: dict[str, Any] = {}
             if state.last_cleared_at is not None:
                 entry["last_cleared_at"] = state.last_cleared_at.isoformat()
             entry["alert_count"] = state.alert_count

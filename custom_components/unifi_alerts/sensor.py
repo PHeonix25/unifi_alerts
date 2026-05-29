@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -55,7 +56,8 @@ class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sens
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_message"
-        self._attr_name = f"{CATEGORY_LABELS[category]} — Last Message"
+        self._attr_translation_key = "last_message"
+        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -78,7 +80,7 @@ class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sens
         return CATEGORY_ICONS_OK[self._category]
 
     @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict[str, Any]:
         state: CategoryState | None = self.coordinator.get_category_state(self._category)
         if not state or not state.last_alert:
             return {}
@@ -95,6 +97,7 @@ class UniFiCategoryCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sensor
     """Sensor whose state is the number of open (unarchived) alarms for a category."""
 
     _attr_has_entity_name = True
+    # No SensorDeviceClass fits an alert counter; MEASUREMENT suits a resettable integer.
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "alerts"
     _attr_icon = "mdi:counter"
@@ -108,7 +111,8 @@ class UniFiCategoryCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sensor
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_count"
-        self._attr_name = f"{CATEGORY_LABELS[category]} — Open Count"
+        self._attr_translation_key = "open_count"
+        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -126,7 +130,8 @@ class UniFiRollupCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEn
     """Sensor: total open alert count across all enabled categories."""
 
     _attr_has_entity_name = True
-    _attr_name = "Total Open Alerts"
+    _attr_translation_key = "total_open"
+    # No SensorDeviceClass fits an alert counter; MEASUREMENT suits a resettable integer.
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "alerts"
     _attr_icon = "mdi:bell-alert"
@@ -145,9 +150,9 @@ class UniFiRollupCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEn
         return self.coordinator.rollup_open_count
 
     @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict[str, Any]:
         last = self.coordinator.rollup_last_alert
-        attrs: dict = {"total_webhook_count": self.coordinator.rollup_alert_count}
+        attrs: dict[str, Any] = {"total_webhook_count": self.coordinator.rollup_alert_count}
         if last:
             attrs["last_message"] = last.message
             attrs["last_category"] = last.category
