@@ -2,6 +2,10 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-05-29
+
+- **release**: v1.7.0 tagged. Promotes v1.7.0-pre2 to stable after on-controller validation confirmed byte-identical entity_id, unique_id, and friendly_name snapshots across the pre1 -> pre2 upgrade (the ARCH-2 translation-key migration regression test). Cycle headline: documentation + architecture. Ships SEC-1 (fail-closed webhook auth with schema v3 migration), ARCH-1 (`UniFiClientConfig` TypedDict), CI-1 (`mypy --strict` enabled), ARCH-2 (entity-name translation keys, unlocking localisation), ARCH-3 (config-flow test package split), ARCH-4 (`SensorStateClass.MEASUREMENT` confirmed on count sensors), DOC-A (35-point documentation accuracy reconciliation), DOC-B (new troubleshooting / privacy / tested-controllers / uninstall sections plus README + info.md restructure), QUAL-1 (WHY comments on dedup / watermark / system-log probe), plus off-plan tooling and docs (`scripts/run_lint.py` / `run_typecheck.py`, AGENTS.md rewrite, Copilot agent definitions, 232 lines of coverage tests). Closes all v1.7.0 ROADMAP items.
+
 ## 2026-05-18
 
 - **release**: v1.7.0-pre2 tagged. Ships ARCH-2 (the last v1.7 code item) plus the off-plan tooling and docs PRs that landed during the pre1 review window. Pre2 is the validation checkpoint for the maintainer's pre1 -> pre2 upgrade test plan on a real HA + UniFi controller; pass criteria are byte-identical entity_id, unique_id, and friendly_name snapshots across the two pre-releases.
