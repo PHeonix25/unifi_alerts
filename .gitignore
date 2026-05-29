@@ -16,6 +16,10 @@ venv/
 dist/
 .env
 
+# Coverage artifacts
+.coverage
+coverage.xml
+
 # Claude Code auto-memory internal state
 .claude/auto-memory/
 .claude/worktrees/
