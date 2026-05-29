@@ -1,24 +1,29 @@
 # TODO
 
-Outstanding work only. Items are removed when they ship; completion lives in `docs/HISTORY.md`, and the per-release plan lives in `docs/ROADMAP.md`.
+Outstanding work is tracked in **GitHub Issues**, not in this file. This page is a pointer and a description of how the tracker is organised.
 
-## 🟢 Nice-to-have
+- Open backlog: <https://github.com/PHeonix25/unifi_alerts/issues>
+- Per-release plan and themes: `docs/ROADMAP.md`
+- Completed work: `docs/HISTORY.md` (written at tag time)
 
-- **HACS default catalogue submission**: open the PR to <https://github.com/hacs/default> once all v1.x items below are closed.
-- **Tier 2 docs linter (markdownlint)**: layer `markdownlint-cli2` on top of `scripts/validate_docs.py` to catch structural issues (heading-level skips, mixed list markers, bare URLs, trailing whitespace) that a regex linter cannot. Adds a Node dependency; commit a `.markdownlint.json` config tuned for this repo. Run it from CI's `lint` job and the pre-push hook alongside the existing prose check.
+## How the tracker is organised
 
-## Reliability / correctness
+Each issue carries a **milestone**, a **category** label, a **size** label, and a **priority** label. Pick work by filtering on the milestone and sorting by priority, then by the size that fits the time you have.
 
-- **`SYSTEM_LOG_KEY_TO_CATEGORY` is incomplete** (`const.py`): the v2 system-log key map was seeded from field-confirmed events on Network 10.3.58 (UCG-Ultra) and the documented API schema. Additional keys will surface in the wild; add them as users report unclassified v2 events. Coarse-grained fallback via `SYSTEM_LOG_CATEGORY_FALLBACK` (broad enum) keeps events in roughly the right category until key-level entries are added.
+| Dimension | Values | Notes |
+| --- | --- | --- |
+| Milestone | `v1.8.0`, `v1.9.0`, `v2.0.0` | The release the item is planned for. |
+| Category | `security`, `fix`, `feat`, `enhancement`, `tests`, `ci`, `documentation`, `github-actions`, `dependencies` | Mirrors `.github/release.yml` so release notes group correctly. |
+| Size | `size: S`, `size: M`, `size: L` | Rough effort and review-time guide. |
+| Priority | `priority: high`, `priority: medium`, `priority: low` | Order within a milestone. |
+| Gate | `v2.0-gate` | Prerequisite for the HACS default submission; lives in an earlier milestone. |
 
-## Testing
+## Filing and closing work
 
-- **Optional: integration test for full rotation cycle**: options-flow > entry-update > reload > re-register, end-to-end. Each step is unit-tested already.
+- File new work with the **Task** issue template (or Bug / Feature where they fit). Apply a category, `size`, and `priority` label and assign a milestone.
+- Close items by landing a PR that references the issue (`Closes #NN`); do not delete lines here.
+- The seed/migration tool is `scripts/seed_issues.py` (idempotent; re-run to add new backlog items in bulk).
 
-## Architecture
+## Known issues: intentional, do not action
 
-- **Entity naming via `_attr_translation_key`**: all four platform files hard-code `_attr_name = f"{CATEGORY_LABELS[cat]} ..."`. Migrate to `has_entity_name = True` + `_attr_translation_key` so strings live in `strings.json`. Unlocks localisation.
-
-## Known issues
-
-- **`_device_info()` duplication**: duplicated identically across `binary_sensor.py`, `sensor.py`, `event.py`, `button.py`. Intentional for platform isolation; extract to a shared `entity_base.py` only if it becomes a maintenance burden.
+- **`_device_info()` duplication**: duplicated identically across `binary_sensor.py`, `sensor.py`, `event.py`, `button.py`. Intentional for platform isolation; extract to a shared `entity_base.py` only if it becomes a maintenance burden. Not tracked as an issue on purpose.

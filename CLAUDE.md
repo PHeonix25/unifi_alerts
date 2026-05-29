@@ -22,7 +22,7 @@ This integration covers **UniFi Network** only (System Logs / SIEM events from t
 | `docs/UNIFI.md` | Understand the UniFi API, auth methods, alarm payloads, and event key taxonomy |
 | `docs/TESTING.md` | Run, write, or extend tests |
 | `docs/DEVELOPING.md` | Set up a local dev environment, run tests, contribute changes |
-| `docs/TODO.md` | Find the outstanding-work backlog. Items are removed when they ship; never struck through, never annotated. Historical record lives in `docs/HISTORY.md`; per-release plan lives in `docs/ROADMAP.md`. |
+| GitHub Issues | Find the outstanding-work backlog. Work is tracked in Issues (filter by milestone, sort by `priority:`, pick by `size:`), not in a file. `docs/TODO.md` is a pointer that documents the label and milestone taxonomy. Historical record lives in `docs/HISTORY.md`; per-release plan lives in `docs/ROADMAP.md`. |
 | `docs/ROADMAP.md` | See what's planned next per release (v1.5.0, v1.6.0, v1.7.0, v2.0.0). Open items only; completed releases are removed once they ship. |
 | `docs/HISTORY.md` | Dated record of completed work, newest first. **Updated only at tag time** (pre-release or stable) by the version-bump PR, which adds one date block listing every PR merged since the previous tag. Format: `## YYYY-MM-DD` heading, bullets `- **category**: short description ([#PR] or [SHA]). Short why.` Categories: `feat`, `fix`, `security`, `docs`, `ci`, `chore`, `tests`, `release`. No WHO. No "bundle/cluster/track/session N" framing. PR backlinks via reference-style at the bottom of the file. |
 | `CHANGELOG.md` | User-facing release summary in [common-changelog](https://common-changelog.org) format. Past tense, one line per change, references at the bottom. Update the `[Unreleased]` section as user-visible changes land. |
@@ -137,7 +137,7 @@ Recommended rules:
 - **Move into the working directory at the start of every session** - avoids needing path prefixes on every command.
 - Always run `make check` before committing - never commit broken code. `make check` runs lint, typecheck, HACS preflight, translation drift check, and the full test suite in one shot.
 - Update `docs/HISTORY.md` **only in the version-bump PR** (pre-release or stable), not on every PR. The bump PR adds a single `## YYYY-MM-DD` block (newest first) summarising every PR merged since the previous tag, plus the corresponding `[#PR]` reference links at the bottom. Format: `- **category**: short description ([#PR]). Short why.` Categories: `feat`, `fix`, `security`, `docs`, `ci`, `chore`, `tests`, `release`. No WHO, no multi-paragraph stories, no "bundle/cluster/session" framing. Feature/fix PRs do not touch HISTORY at all.
-- Always update `docs/TODO.md` by **deleting** the line for any completed item in the same PR that ships the change; never strike-through, never annotate "fixed in PR X". `docs/TODO.md` is outstanding work only. The historical record belongs in `docs/HISTORY.md`. Tick or remove items from `docs/ROADMAP.md` in the same PR that ships them, not at release time; once a release ships, drop its section from ROADMAP entirely. Add new items as they surface. Do not rely on memory or Git history alone.
+- **Outstanding work lives in GitHub Issues, not in a file.** Close an item by landing a PR that references it (`Closes #NN` in the PR body); never track completion by deleting prose. File new work with the **Task** template (or Bug / Feature where they fit) and apply a category label, a `size:` label, a `priority:` label, and the target milestone (taxonomy documented in `docs/TODO.md`). `scripts/seed_issues.py` is the idempotent bulk-seeder. When asked to "pick up issue #NN" or "the next one in the `vX.Y.Z` milestone", read the issue, do the work on a `claude/*` branch, and close it via the PR. Tick or remove items from `docs/ROADMAP.md` in the same PR that ships them, not at release time; once a release ships, drop its section from ROADMAP entirely. The historical record belongs in `docs/HISTORY.md`. Do not rely on memory or Git history alone.
 - At the end of the day, make sure there are no commits outstanding, no changes locally that need to be pushed, and that the `auto-memory\dirty-files` file is empty (if it exists on disk). This ensures a clean slate for the next session.
 
 ## Resuming an interrupted session
@@ -146,7 +146,7 @@ Interruptions (timeouts, hibernation, re-login) are common. When a new conversat
 
 1. **Read `docs/HISTORY.md`** - the last entry describes what was most recently completed.
 2. **Run `git status` and `git diff HEAD`** - uncommitted changes show exactly what was in-flight.
-3. **Read `docs/TODO.md`** - the top remaining item is what was probably being worked on.
+3. **Check the open GitHub Issues** for the active milestone (highest `priority:` first) - that is the likely in-flight work. `docs/TODO.md` describes the taxonomy.
 4. **If a version-bump PR is in flight, audit its HISTORY block** - run `git log <prev-tag>..HEAD --merges --oneline` and confirm every merge appears in the new `docs/HISTORY.md` date block. Missing entries are the most common gap left by an interrupted release-prep session. Feature/fix PRs do NOT need HISTORY entries (HISTORY is written at tag time only); skip this step unless a `claude/bump-*` branch is active.
 5. **Check the venv** - on Linux/Mac: `ls .venv/bin/pytest`; on Windows PowerShell: `Test-Path .venv\Scripts\pytest.exe`. If missing, recreate it:
    - **Linux/Mac:** `make setup` (or manually: `python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt --quiet`)
@@ -155,7 +155,7 @@ Interruptions (timeouts, hibernation, re-login) are common. When a new conversat
 
 ## Before making changes
 
-1. Check `docs/TODO.md` for context on what's known to be incomplete or broken.
+1. Check the open GitHub Issues for context on what's known to be incomplete or broken.
 2. Run `make check` to run all local validation in one shot:
    - ruff lint + format check
    - mypy type check
