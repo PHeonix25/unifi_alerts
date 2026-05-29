@@ -1,7 +1,7 @@
 # GitHub Copilot Instructions
 
 > Full project context, hard constraints, conventions, and working style live in [`CLAUDE.md`](../CLAUDE.md). Read it first.
-> Quick-reference links to architecture, HA patterns, UniFi API, testing, and TODO docs are in [`AGENTS.md`](../AGENTS.md).
+> Quick-reference links to architecture, HA patterns, UniFi API, testing, and outstanding work (GitHub Issues) are in [`AGENTS.md`](../AGENTS.md).
 
 ---
 
@@ -63,6 +63,11 @@ See [`CLAUDE.md`](../CLAUDE.md) for the complete list with rationale.
 - Claude cannot push tags; provide the user with the exact `git tag` + `git push origin <tag>` command after a version-bump PR merges.
 
 See [`CLAUDE.md`](../CLAUDE.md) for the full release workflow.
+
+## Ways of working: outstanding work and findings
+
+- **Work is tracked in GitHub Issues**, not in `docs/TODO.md` (now a taxonomy pointer). Pick work by milestone (`v1.8.0`, `v1.9.0`, `v2.0.0`), then `priority:`, then `size:`. Close items by referencing them in the PR (`Closes #NN`).
+- **When you spot something worth tracking** (a bug, a hardening gap, tech debt, a doc gap): confirm with the maintainer before opening an issue. Do not file issues unprompted or in bulk. On approval, use the **Task** issue template (or Bug / Feature where they fit) and apply one category label, one `size: S|M|L`, one `priority: high|medium|low`, and the target milestone. See `docs/TODO.md` for the taxonomy and `scripts/seed_issues.py` for bulk seeding.
 
 ## Maintenance matrix
 

@@ -18,6 +18,7 @@ make check   # lint + typecheck + validate + all tests
 
 ## Checklist
 
+- [ ] Linked the issue this PR resolves (`Closes #NN` in the description), if one exists
 - [ ] `make check` passes locally
 - [ ] `CHANGELOG.md` `[Unreleased]` updated (user-visible changes only; skip for internal/ci/docs)
 - [ ] PR title starts with a Conventional Commit prefix (`feat:`, `fix:`, `docs:`, `ci:`, `tests:`, `security:`, `chore:`, `refactor:`)
