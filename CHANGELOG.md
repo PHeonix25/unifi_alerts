@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Security
+
+- Added explicit `permissions: contents: read` to `ci.yml`, `version-check.yml`, and `copilot-setup-steps.yml`. Closes a CodeQL "Workflow does not contain permissions" finding on `copilot-setup-steps.yml` and pre-emptively scopes the other two read-only workflows to the same minimum. `release.yml` and `pr-labeler.yml` already had explicit blocks. ([#PR])
+
 ## [1.7.0] - 2026-05-29
 
 ### Security
