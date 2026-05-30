@@ -26,6 +26,7 @@ help:
 	@echo "  make typecheck  - mypy"
 	@echo "  make validate   - HACS manifest preflight + docs prose linter"
 	@echo "  make test       - full pytest suite with coverage (fail below 95%)"
+	@echo "  make coverage   - open HTML coverage report in browser after running tests"
 
 setup:
 	$(PY312) -m venv .venv
@@ -37,6 +38,10 @@ setup-lint:
 
 test:
 	$(VENV)/pytest$(EXE) tests/ -v
+
+coverage:
+	$(VENV)/pytest$(EXE) tests/ -v --cov-report=html
+	$(VENV)/python$(EXE) -m webbrowser htmlcov/index.html
 
 lint:
 	$(VENV)/python$(EXE) scripts/run_lint.py

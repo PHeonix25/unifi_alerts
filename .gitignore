@@ -19,6 +19,7 @@ dist/
 # Coverage artifacts
 .coverage
 coverage.xml
+htmlcov/
 
 # Claude Code auto-memory internal state
 .claude/auto-memory/
