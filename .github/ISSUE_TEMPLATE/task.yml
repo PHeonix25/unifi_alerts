@@ -1,0 +1,57 @@
+name: Task
+description: Track engineering work that is not a user-facing bug or feature (hardening, refactor, tests, docs, CI, tech debt)
+title: "[Task] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for tracked engineering work: hardening, refactors, test coverage, docs, CI, or tech debt. Before filing, search open issues to avoid duplicates. Apply a category label (`security`, `fix`, `feat`, `tests`, `ci`, `documentation`), a `size: *` label, a `priority: *` label, and assign the target milestone.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences. What is the work, and where does it live (file or module)?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context / why
+      description: Why is this worth doing now? Link the finding, the risk it addresses, or the quality attribute it improves.
+    validations:
+      required: true
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Scope and approach
+      description: The smallest viable change. Note files to touch and anything explicitly out of scope.
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How we know it is done. Prefer a checklist.
+      placeholder: |
+        - [ ] ...
+        - [ ] Tests cover the change
+        - [ ] CHANGELOG `[Unreleased]` updated if user-visible
+    validations:
+      required: true
+
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      description: Rough effort and review-time guide.
+      options:
+        - "S (small, single-sitting)"
+        - "M (medium)"
+        - "L (large, may need decomposition)"
+    validations:
+      required: false

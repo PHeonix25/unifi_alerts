@@ -75,7 +75,7 @@ X-API-Key: your-key-here
 >
 > **If UniFi changes the endpoint again:** add the new path to the head of `alarm_paths` in `unifi_client.py::fetch_alarms`, update the table above, and add a fallback test in `tests/unit/test_unifi_client.py` (see `TestFetchAlarms::test_falls_back_*`).
 
-Default site name is `default`. Multi-site is configurable via `CONF_SITE` per entry; per-category site selection is not implemented (see `docs/TODO.md`).
+Default site name is `default`. Multi-site is configurable via `CONF_SITE` per entry; per-category site selection is not implemented (see `docs/ROADMAP.md`, Deferred).
 
 ### Response structure
 
@@ -296,7 +296,7 @@ The full mapping from key to category is in `UNIFI_KEY_TO_CATEGORY` in `const.py
 
 ## Expanding the key map
 
-When a user reports an alert that isn't being categorised (look for the DEBUG log from `unifi_client.py`), add the key to `UNIFI_KEY_TO_CATEGORY` in `const.py`. If the key belongs to a new category type not yet in `ALL_CATEGORIES`, that's a larger change; see `docs/TODO.md`.
+When a user reports an alert that isn't being categorised (look for the DEBUG log from `unifi_client.py`), add the key to `UNIFI_KEY_TO_CATEGORY` in `const.py`. If the key belongs to a new category type not yet in `ALL_CATEGORIES`, that's a larger change; track it as a GitHub Issue.
 
 Guidelines:
 
@@ -308,5 +308,5 @@ Guidelines:
 
 - **SSL certificates**: UniFi OS consoles ship with self-signed certificates by default. `verify_ssl` defaults to `True` (secure). Users with self-signed certs must disable verification via the config flow.
 - **Site names**: some controllers use `default`; others use the site ID (a hex string). `CONF_SITE` per entry covers this. Per-category site selection is not implemented.
-- **Timestamp format**: the `datetime` field in legacy alarm records is usually ISO 8601 but some controllers emit epoch milliseconds. `UniFiAlert.from_api_alarm()` falls back to `datetime.now(UTC)` when neither parses; epoch-ms parsing is on the v1.6.0 backlog (see `docs/TODO.md`). The v2 `system-log` API always uses epoch milliseconds in the `timestamp` field.
+- **Timestamp format**: the `datetime` field in legacy alarm records is usually ISO 8601 but some controllers emit epoch milliseconds. `UniFiAlert.from_api_alarm()` falls back to `datetime.now(UTC)` when neither parses. The v2 `system-log` API always uses epoch milliseconds in the `timestamp` field.
 - **`/list/alarm` 3000-record cap**: the legacy alarm endpoint returns at most ~3000 records sorted oldest-first. No query parameter overrides this. On controllers generating more than ~33 alarms per day, recent events are not present in the polled response and `open_count` will always read 0 via the legacy path. The v2 `system-log/all` endpoint (see above) is the correct fix; it supports timestamp-range filtering and pagination. Field-confirmed on Network 10.3.58. Full investigation in `docs/research/alert-endpoints.md`.
