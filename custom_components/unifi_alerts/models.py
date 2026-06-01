@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -208,10 +208,22 @@ class UniFiAlert:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialise this alert to a JSON-safe dict for Store persistence."""
-        d = asdict(self)
-        d["received_at"] = self.received_at.isoformat()
-        return d
+        """Serialise this alert to a JSON-safe dict for Store persistence.
+
+        `raw` is intentionally excluded: it carries unredacted UniFi payload
+        fields (client MACs, IPs, hostnames) and arbitrary values that can
+        defeat Store.async_save's JSON encoder. The restore path only consumes
+        the scalar fields below; from_dict() defaults raw to {} on read.
+        """
+        return {
+            "category": self.category,
+            "message": self.message,
+            "received_at": self.received_at.isoformat(),
+            "key": self.key,
+            "device_name": self.device_name,
+            "site": self.site,
+            "severity": self.severity,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> UniFiAlert:
