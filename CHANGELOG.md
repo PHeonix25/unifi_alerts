@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Security
+
+- `UniFiAlert.to_dict()` no longer persists the `raw` UniFi payload to `.storage`. That payload carried unredacted client MACs, IP addresses, and hostnames, and could contain non-JSON-safe values that would crash `Store.async_save`. Persistence now emits an explicit scalar field list (`category`, `message`, `received_at`, `key`, `device_name`, `site`, `severity`); `from_dict()` still defaults `raw` to `{}` on read so existing stored entries continue to load. Closes #115.
+
 ### Internal
 
 - Added test coverage reporting via Codecov: `pytest-cov` added to dev requirements, 95% floor enforced in CI and locally (`--cov-fail-under=95`), XML report uploaded to Codecov on every push, live badge added to README and info.md. `make coverage` generates an HTML report locally; `.coverage`, `coverage.xml`, and `htmlcov/` added to `.gitignore`.
