@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `make lint`, `make typecheck`, `make validate`, and the `.githooks/pre-push` hook no longer crash on Windows shells whose stdout codec defaults to `cp1252`. Previously, the `✅` success glyph printed by the scripts raised `UnicodeEncodeError` and exited the script non-zero even when the underlying tool (ruff, mypy, the validators) had succeeded. All five affected scripts (`run_lint.py`, `run_typecheck.py`, `validate_hacs.py`, `validate_docs.py`, `check_translations.py`) now reconfigure stdout and stderr to UTF-8 via a shared `scripts/_console.py` helper at startup. Windows contributors no longer need to export `PYTHONIOENCODING=utf-8` to use the standard development workflow. ([#148])
+
 ### Security
 
 - `UniFiAlert.to_dict()` no longer persists the `raw` UniFi payload to `.storage`. That payload carried unredacted client MACs, IP addresses, and hostnames, and could contain non-JSON-safe values that would crash `Store.async_save`. Persistence now emits an explicit scalar field list (`category`, `message`, `received_at`, `key`, `device_name`, `site`, `severity`); `from_dict()` still defaults `raw` to `{}` on read so existing stored entries continue to load. ([#147])
@@ -206,4 +210,5 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#67]: https://github.com/PHeonix25/unifi_alerts/pull/67
 [#68]: https://github.com/PHeonix25/unifi_alerts/pull/68
 [#147]: https://github.com/PHeonix25/unifi_alerts/pull/147
+[#148]: https://github.com/PHeonix25/unifi_alerts/issues/148
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR
