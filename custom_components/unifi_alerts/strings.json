@@ -14,7 +14,7 @@
       },
       "categories": {
         "title": "Configure Alert Categories",
-        "description": "Choose which alert types to monitor. Each enabled category gets its own sensors and a dedicated webhook URL (shown in the next step).\n\n⚠️ **Network: Client connect/disconnect** and **Network: Device offline/online** fire very frequently on active home networks. Leave these OFF unless you specifically need them.\n\n**Polling interval**: how often to fetch open-alarm counts from the controller as a backup to webhooks (lower = more accurate, higher = less load).\n**Auto-clear timeout**: minutes before an active sensor automatically resets to OFF if no further alert arrives.",
+        "description": "Choose which alert types to monitor. Each enabled category gets its own sensors and a dedicated webhook URL (shown in the next step).\n\nWarning: **Network: Client connect/disconnect** and **Network: Device offline/online** fire very frequently on active home networks. Leave these OFF unless you specifically need them.\n\n**Polling interval**: how often to fetch open-alarm counts from the controller as a backup to webhooks (lower = more accurate, higher = less load).\n**Auto-clear timeout**: minutes before an active sensor automatically resets to OFF if no further alert arrives.",
         "data": {
           "cat_network_device": "Network: Device offline/online",
           "cat_network_wan": "Network: WAN offline/latency",
@@ -108,12 +108,12 @@
       "any_alert": {"name": "Any Alert"}
     },
     "sensor": {
-      "last_message": {"name": "{category} — Last Message"},
-      "open_count": {"name": "{category} — Open Count"},
+      "last_message": {"name": "{category}: Last Message"},
+      "open_count": {"name": "{category}: Open Count"},
       "total_open": {"name": "Total Open Alerts"}
     },
     "event": {
-      "event": {"name": "{category} — Event"}
+      "event": {"name": "{category}: Event"}
     },
     "button": {
       "clear_category": {"name": "Clear {category}"},

@@ -239,11 +239,11 @@ class TestUniFiCategoryMessageSensor:
     def test_native_value_default_when_no_alert(self):
         state = make_state()
         entity = self._make(state)
-        assert entity.native_value == "No alerts yet"
+        assert entity.native_value is None
 
     def test_native_value_default_when_state_missing(self):
         entity = self._make(None)
-        assert entity.native_value == "No alerts yet"
+        assert entity.native_value is None
 
     def test_available_true_when_enabled(self):
         state = make_state(enabled=True)
@@ -665,7 +665,7 @@ class TestEntityCategories:
         coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
         entry = make_entry()
         entity = UniFiCategoryMessageSensor(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.native_value == "No alerts yet"
+        assert entity.native_value is None
 
     def test_message_sensor_returns_message_when_alert_present(self):
         from custom_components.unifi_alerts.sensor import UniFiCategoryMessageSensor
