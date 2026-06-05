@@ -61,10 +61,10 @@ class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sens
         self._attr_device_info = _device_info(entry)
 
     @property
-    def native_value(self) -> str:
+    def native_value(self) -> str | None:
         state: CategoryState | None = self.coordinator.get_category_state(self._category)
         if not state or not state.last_alert:
-            return "No alerts yet"
+            return None
         return state.last_alert.message
 
     @property

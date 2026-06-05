@@ -5,6 +5,9 @@
 ### Changed
 
 - Event entities (`event.unifi_alerts_*`) no longer replay the most-recent persisted alert as a fresh `alert_received` event when the integration reloads (for example after an options-flow save). The per-entity counter is now seeded from the restored category state in `async_added_to_hass` instead of resetting to zero. ([#116])
+- The last-message sensor now returns `None` (HA "unknown") instead of the hardcoded English string "No alerts yet" when no alert has been received, eliminating the only remaining hard-coded user-facing string in the platform files. ([#138])
+- Entity display names for last-message, open-count, and event entities now use a colon separator instead of an em-dash (e.g. `{category}: Last Message`). ([#138])
+- The category configuration warning now reads "Warning:" instead of the `⚠️` emoji glyph so meaning is preserved for screen readers and translators. ([#138])
 
 ### Fixed
 
