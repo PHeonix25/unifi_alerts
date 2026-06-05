@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Event entities (`event.unifi_alerts_*`) no longer replay the most-recent persisted alert as a fresh `alert_received` event when the integration reloads (for example after an options-flow save). The per-entity counter is now seeded from the restored category state in `async_added_to_hass` instead of resetting to zero. ([#116])
+
 ### Security
 
 - `UniFiAlert.to_dict()` no longer persists the `raw` UniFi payload to `.storage`. That payload carried unredacted client MACs, IP addresses, and hostnames, and could contain non-JSON-safe values that would crash `Store.async_save`. Persistence now emits an explicit scalar field list (`category`, `message`, `received_at`, `key`, `device_name`, `site`, `severity`); `from_dict()` still defaults `raw` to `{}` on read so existing stored entries continue to load. ([#147])
@@ -205,5 +209,6 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#59]: https://github.com/PHeonix25/unifi_alerts/pull/59
 [#67]: https://github.com/PHeonix25/unifi_alerts/pull/67
 [#68]: https://github.com/PHeonix25/unifi_alerts/pull/68
+[#116]: https://github.com/PHeonix25/unifi_alerts/issues/116
 [#147]: https://github.com/PHeonix25/unifi_alerts/pull/147
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR
