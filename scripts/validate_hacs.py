@@ -20,6 +20,10 @@ import re
 import sys
 from pathlib import Path
 
+from _console import use_utf8_console
+
+use_utf8_console()
+
 # HA core built-in integrations. HACS rejects these in `dependencies` because
 # they ship with HA and cannot be installed separately. Add entries here
 # whenever the HACS action rejects a new one.

@@ -23,6 +23,10 @@ import re
 import sys
 from pathlib import Path
 
+from _console import use_utf8_console
+
+use_utf8_console()
+
 REPO = Path(__file__).resolve().parent.parent
 
 # Every markdown file in the repo is in scope, recursively, so the same rules
