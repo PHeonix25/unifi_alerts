@@ -29,6 +29,13 @@ _LOGGER = logging.getLogger(__name__)
 # UniFi OS consoles (UDM, UCG, etc.) prefix all network API paths
 UNIFI_OS_NETWORK_PREFIX = "/proxy/network"
 
+# After this many consecutive transient probe failures, stop re-probing and
+# fall back to the legacy path. A single network blip should not pin the
+# client to legacy mode, so the threshold is intentionally > 1.
+_PROBE_FAIL_LIMIT = 5
+# How long to wait before attempting another probe after the threshold is hit.
+_PROBE_RETRY_AFTER = timedelta(hours=1)
+
 
 class CannotConnectError(Exception):
     """Raised when the controller is unreachable."""
@@ -72,6 +79,10 @@ class UniFiClient:
         # None = not yet probed. authenticate() detects v2 system-log availability
         # on first connect; fetch_alarms() falls back to legacy /list/alarm if False.
         self._has_system_log: bool | None = None
+        # Consecutive transient probe failures. Resets to 0 on any definitive result.
+        self._probe_fail_count: int = 0
+        # Set when _probe_fail_count reaches _PROBE_FAIL_LIMIT; clears on retry window expiry.
+        self._probe_backoff_until: datetime | None = None
 
     # ── Public interface ──────────────────────────────────────────────────
 
@@ -187,16 +198,29 @@ class UniFiClient:
         Calls POST /proxy/network/v2/api/site/{site}/system-log/count with an
         empty body. A 200 response indicates availability; 404 is the
         controller's definitive "endpoint not implemented" response. Any other
-        4xx/5xx or network error is treated as transient: the current poll
-        falls back to the legacy path, but the next poll re-probes.
+        4xx/5xx or network error is treated as transient.
 
-        Cache semantics: self._has_system_log is set to True or False only on
-        definitive responses (200 / 404). Transient failures leave the cache
-        as None so a capable controller is not pinned to legacy mode by a
-        single network blip.
+        Cache semantics:
+        - 200 sets _has_system_log=True (permanent until re-auth).
+        - 404 sets _has_system_log=False with no retry (_probe_backoff_until=None).
+        - A single transient failure leaves _has_system_log=None (re-probes next poll).
+        - After _PROBE_FAIL_LIMIT consecutive transient failures, _has_system_log is
+          set to False and _probe_backoff_until is set to now + _PROBE_RETRY_AFTER.
+          Once that window expires the probe resets to None and retries.
         """
         if self._has_system_log is not None:
-            return self._has_system_log
+            # For a backoff-triggered False, check whether the retry window has opened.
+            if self._has_system_log is False and self._probe_backoff_until is not None:
+                if datetime.now(UTC) >= self._probe_backoff_until:
+                    _LOGGER.debug("v2 system-log probe backoff expired; will retry")
+                    self._has_system_log = None
+                    self._probe_fail_count = 0
+                    self._probe_backoff_until = None
+                    # Fall through to probe below.
+                else:
+                    return False
+            else:
+                return self._has_system_log
 
         if not self._authenticated:
             await self.authenticate()
@@ -214,23 +238,56 @@ class UniFiClient:
                 if resp.status == 200:
                     _LOGGER.debug("v2 system-log endpoint available")
                     self._has_system_log = True
+                    self._probe_fail_count = 0
+                    self._probe_backoff_until = None
                     return True
                 if resp.status == 404:
                     _LOGGER.debug(
                         "v2 system-log endpoint not implemented (HTTP 404); using legacy path"
                     )
                     self._has_system_log = False
+                    self._probe_fail_count = 0
                     return False
-                _LOGGER.debug(
-                    "v2 system-log probe got HTTP %d (transient); legacy path this poll, will retry next",
-                    resp.status,
-                )
+                self._probe_fail_count += 1
+                if self._probe_fail_count >= _PROBE_FAIL_LIMIT:
+                    self._has_system_log = False
+                    self._probe_backoff_until = datetime.now(UTC) + _PROBE_RETRY_AFTER
+                    _LOGGER.debug(
+                        "v2 system-log probe failed %d consecutive times (HTTP %d); "
+                        "switching to legacy path for %s",
+                        _PROBE_FAIL_LIMIT,
+                        resp.status,
+                        _PROBE_RETRY_AFTER,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "v2 system-log probe got HTTP %d (transient, %d/%d); "
+                        "legacy path this poll, will retry next",
+                        resp.status,
+                        self._probe_fail_count,
+                        _PROBE_FAIL_LIMIT,
+                    )
                 return False
         except aiohttp.ClientError as err:
-            _LOGGER.debug(
-                "v2 system-log probe failed with %s (transient); legacy path this poll, will retry next",
-                type(err).__name__,
-            )
+            self._probe_fail_count += 1
+            if self._probe_fail_count >= _PROBE_FAIL_LIMIT:
+                self._has_system_log = False
+                self._probe_backoff_until = datetime.now(UTC) + _PROBE_RETRY_AFTER
+                _LOGGER.debug(
+                    "v2 system-log probe failed %d consecutive times (%s); "
+                    "switching to legacy path for %s",
+                    _PROBE_FAIL_LIMIT,
+                    type(err).__name__,
+                    _PROBE_RETRY_AFTER,
+                )
+            else:
+                _LOGGER.debug(
+                    "v2 system-log probe failed with %s (transient, %d/%d); "
+                    "legacy path this poll, will retry next",
+                    type(err).__name__,
+                    self._probe_fail_count,
+                    _PROBE_FAIL_LIMIT,
+                )
             return False
 
     async def fetch_system_log_alarms(
