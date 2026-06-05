@@ -62,9 +62,7 @@ class TestUseUtf8Console:
         fake_stdout.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
         fake_stderr.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
 
-    def test_is_noop_when_reconfigure_unavailable(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_is_noop_when_reconfigure_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Streams that don't expose `reconfigure` (e.g. swapped by a test
         harness) must be skipped silently, not crash."""
 
