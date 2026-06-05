@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `scripts/run_lint.py` and `scripts/run_typecheck.py` now force UTF-8 on stdout/stderr at startup, preventing `UnicodeEncodeError` crashes on Windows consoles with a cp1252 default codec when emoji success glyphs are printed. ([#148])
+
 ## [1.7.0] - 2026-05-29
 
 ### Security

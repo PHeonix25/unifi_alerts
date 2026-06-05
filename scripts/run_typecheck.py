@@ -6,6 +6,12 @@ from __future__ import annotations
 import subprocess
 import sys
 
+# Force UTF-8 on Windows consoles whose default codec (cp1252) cannot encode
+# emoji glyphs used in success messages — raises UnicodeEncodeError otherwise.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 
 def _run_step(command: list[str], success_message: str) -> None:
     """Run a typecheck command and stop immediately if it fails."""
