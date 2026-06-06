@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,7 +17,10 @@ from custom_components.unifi_alerts.const import (
     CONF_ENABLED_CATEGORIES,
     CONF_POLL_INTERVAL,
 )
-from custom_components.unifi_alerts.coordinator import UniFiAlertsCoordinator
+from custom_components.unifi_alerts.coordinator import (
+    _PERSIST_DELAY_SECONDS,
+    UniFiAlertsCoordinator,
+)
 from custom_components.unifi_alerts.models import UniFiAlert
 
 
@@ -38,7 +43,15 @@ def make_coordinator(hass=None, enabled=None):
         CONF_POLL_INTERVAL: 60,
         CONF_CLEAR_TIMEOUT: 30,
     }
-    return UniFiAlertsCoordinator(hass, client, config)
+    coord = UniFiAlertsCoordinator(hass, client, config)
+    # Persistence is exercised in dedicated tests; default to a mock Store so
+    # push_alert's debounced async_delay_save is a harmless no-op here (the
+    # real Store needs a live event loop the MagicMock hass does not provide).
+    coord._store = MagicMock()
+    coord._store.async_load = AsyncMock(return_value=None)
+    coord._store.async_save = AsyncMock()
+    coord._store.async_delay_save = MagicMock()
+    return coord
 
 
 def make_alert(category: str, message: str = "test alert", key: str = "") -> UniFiAlert:
@@ -1484,17 +1497,90 @@ class TestCoordinatorUncoveredBranches:
         coord._schedule_clear(CATEGORY_NETWORK_WAN)
         assert coord._clear_tasks[CATEGORY_NETWORK_WAN] is created
 
-    def test_schedule_persist_uses_async_create_task_when_background_missing(self):
-        hass = MagicMock()
-        hass.async_create_background_task = None
-        called = {"create_task": 0}
+    def test_schedule_persist_delegates_to_delay_save(self):
+        """push persist must coalesce via Store.async_delay_save, not per-push tasks."""
+        coord = make_coordinator()
+        coord._store = MagicMock()
+        coord._store.async_delay_save = MagicMock()
 
-        def _create_task(coro):
-            called["create_task"] += 1
-            coro.close()
-            return MagicMock()
-
-        hass.async_create_task = _create_task
-        coord = make_coordinator(hass=hass)
         coord._schedule_persist()
-        assert called["create_task"] == 1
+
+        coord._store.async_delay_save.assert_called_once()
+        data_func, delay = coord._store.async_delay_save.call_args.args
+        assert callable(data_func)
+        assert delay == _PERSIST_DELAY_SECONDS
+        # The data function returns a live snapshot of every category, so the
+        # single coalesced write reflects state captured at write time.
+        snapshot = data_func()
+        assert set(snapshot) == set(ALL_CATEGORIES)
+
+    def test_schedule_persist_burst_coalesces_to_single_delay_save_per_call(self):
+        """A burst of pushes routes every persist through the same debounced sink.
+
+        Store.async_delay_save owns the debounce: repeated calls within the
+        delay window collapse to one durable write. We assert we always hand
+        off to it (never a fire-and-forget async_save), which is what removes
+        the lost-update race.
+        """
+        coord = make_coordinator()
+        coord._store = MagicMock()
+        coord._store.async_delay_save = MagicMock()
+        coord._store.async_save = AsyncMock()
+
+        for _ in range(5):
+            coord._schedule_persist()
+
+        assert coord._store.async_delay_save.call_count == 5
+        coord._store.async_save.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_background_task_exception_is_logged(self, caplog):
+        """A background coroutine that raises must be logged, not swallowed."""
+        hass = MagicMock()
+        hass.async_create_background_task = lambda coro, name=None: asyncio.ensure_future(coro)
+        coord = make_coordinator(hass=hass)
+
+        async def _boom() -> None:
+            raise RuntimeError("kaboom")
+
+        task = coord._run_background(_boom(), name="unifi_alerts_test")
+        with caplog.at_level(logging.ERROR):
+            await asyncio.gather(task, return_exceptions=True)
+            await asyncio.sleep(0)  # let the done-callback run
+
+        assert "kaboom" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_background_persist_save_failure_is_logged(self, caplog):
+        """The save-raises path: a persist exception inside a bg task is logged."""
+        hass = MagicMock()
+        hass.async_create_background_task = lambda coro, name=None: asyncio.ensure_future(coro)
+        coord = make_coordinator(hass=hass)
+        coord._store = MagicMock()
+        coord._store.async_save = AsyncMock(side_effect=OSError("disk full"))
+
+        task = coord._run_background(coord._async_persist_watermarks(), name="persist")
+        with caplog.at_level(logging.ERROR):
+            await asyncio.gather(task, return_exceptions=True)
+            await asyncio.sleep(0)
+
+        assert "disk full" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_background_task_cancellation_is_not_logged(self, caplog):
+        """Cancelling a background task must not log an error."""
+        hass = MagicMock()
+        hass.async_create_background_task = lambda coro, name=None: asyncio.ensure_future(coro)
+        coord = make_coordinator(hass=hass)
+
+        async def _sleep_forever() -> None:
+            await asyncio.sleep(3600)
+
+        task = coord._run_background(_sleep_forever(), name="unifi_alerts_test")
+        await asyncio.sleep(0)
+        task.cancel()
+        with caplog.at_level(logging.ERROR):
+            await asyncio.gather(task, return_exceptions=True)
+            await asyncio.sleep(0)
+
+        assert "failed" not in caplog.text

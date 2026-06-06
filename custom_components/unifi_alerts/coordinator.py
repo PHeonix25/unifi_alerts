@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Coroutine
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -31,6 +32,12 @@ from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
 _LOGGER = logging.getLogger(__name__)
 
 _STORAGE_VERSION = 1
+
+# Debounce window for watermark persistence. push_alert is synchronous and can
+# fire in bursts; routing writes through Store.async_delay_save with this delay
+# coalesces a burst into a single durable write instead of one fire-and-forget
+# save per push.
+_PERSIST_DELAY_SECONDS = 1
 
 
 class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
@@ -344,9 +351,14 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                     except (KeyError, TypeError, ValueError):
                         _LOGGER.warning("Ignoring invalid stored last_alert for %s", cat)
 
-    async def _async_persist_watermarks(self) -> None:
-        """Persist current category state (watermark, alert_count, last_alert) to storage."""
-        data: dict[str, dict[str, Any]] = {}
+    def _build_persist_data(self) -> dict[str, Any]:
+        """Build the JSON-serialisable snapshot of category state to persist.
+
+        Synchronous so it can be handed to ``Store.async_delay_save`` as the
+        data function, which calls it at write time to capture the latest
+        state after a burst of pushes has settled.
+        """
+        data: dict[str, Any] = {}
         for cat, state in self._category_states.items():
             entry: dict[str, Any] = {}
             if state.last_cleared_at is not None:
@@ -356,7 +368,11 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 state.last_alert.to_dict() if state.last_alert is not None else None
             )
             data[cat] = entry
-        await self._store.async_save(data)
+        return data
+
+    async def _async_persist_watermarks(self) -> None:
+        """Persist current category state immediately (awaited explicit-clear path)."""
+        await self._store.async_save(self._build_persist_data())
 
     # ── Clear entry points (called by buttons and services) ───────────────
 
@@ -391,27 +407,46 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             existing.cancel()
 
         delay = self._clear_timeout_minutes * 60
-        coro = self._auto_clear(category, delay)
+        self._clear_tasks[category] = self._run_background(
+            self._auto_clear(category, delay),
+            name=f"unifi_alerts_auto_clear_{category}",
+        )
+
+    def _run_background(self, coro: Coroutine[Any, Any, None], *, name: str) -> asyncio.Task[None]:
+        """Create a background task and surface any exception it raises.
+
+        Centralises background-task creation so a failure in a fire-and-forget
+        coroutine (e.g. the persist awaited inside ``_auto_clear``) is logged
+        via the done-callback instead of being silently swallowed.
+        """
         create_bg = getattr(self.hass, "async_create_background_task", None)
+        task: asyncio.Task[None]
         if create_bg is not None:
-            task = create_bg(coro, name=f"unifi_alerts_auto_clear_{category}")
+            task = create_bg(coro, name=name)
         else:
             create_task = getattr(self.hass, "async_create_task", None)
             task = create_task(coro) if create_task is not None else asyncio.ensure_future(coro)
-        self._clear_tasks[category] = task
+        task.add_done_callback(self._on_background_task_done)
+        return task
+
+    @staticmethod
+    def _on_background_task_done(task: asyncio.Task[Any]) -> None:
+        """Log any non-cancellation exception raised by a background task."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            _LOGGER.error("Background task %s failed: %s", task.get_name(), exc, exc_info=exc)
 
     def _schedule_persist(self) -> None:
-        """Schedule a fire-and-forget persist so push_alert (sync) can trigger a save."""
-        coro = self._async_persist_watermarks()
-        create_bg = getattr(self.hass, "async_create_background_task", None)
-        if create_bg is not None:
-            create_bg(coro, name="unifi_alerts_persist_state")
-        else:
-            create_task = getattr(self.hass, "async_create_task", None)
-            if create_task is not None:
-                create_task(coro)
-            else:
-                asyncio.ensure_future(coro)
+        """Persist category state, coalescing bursts into one delayed write.
+
+        push_alert is synchronous and can fire rapidly. Routing through
+        ``Store.async_delay_save`` debounces a burst into a single durable
+        write (no lost-update race between overlapping fire-and-forget saves)
+        and lets HA's storage layer own the write and log any failure.
+        """
+        self._store.async_delay_save(self._build_persist_data, _PERSIST_DELAY_SECONDS)
 
     def cancel_clear(self, category: str) -> None:
         """Cancel any pending auto-clear task for the given category."""
