@@ -17,11 +17,10 @@ from custom_components.unifi_alerts.const import (
     CATEGORY_SECURITY_THREAT,
 )
 from custom_components.unifi_alerts.unifi_client import (
+    _PROBE_FAIL_LIMIT,
     CannotConnectError,
     InvalidAuthError,
     UniFiClient,
-    _PROBE_FAIL_LIMIT,
-    _PROBE_RETRY_AFTER,
 )
 
 
@@ -1074,7 +1073,6 @@ class TestProbeSystemLogEndpoint:
 
         assert captured_url, "Expected one POST call"
         assert "v2/api/site/mysite/system-log/count" in captured_url[0]
-
 
     @pytest.mark.asyncio
     async def test_probe_backoff_triggers_after_fail_limit(self):

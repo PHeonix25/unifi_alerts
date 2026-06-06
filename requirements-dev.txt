@@ -7,4 +7,4 @@ pytest
 pytest-asyncio
 pytest-cov
 pytest-homeassistant-custom-component
-ruff
+ruff==0.15.16  # pinned: an unpinned ruff silently picks up new lint rules and breaks CI on unrelated files
