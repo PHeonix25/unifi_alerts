@@ -239,11 +239,11 @@ class TestUniFiCategoryMessageSensor:
     def test_native_value_default_when_no_alert(self):
         state = make_state()
         entity = self._make(state)
-        assert entity.native_value == "No alerts yet"
+        assert entity.native_value is None
 
     def test_native_value_default_when_state_missing(self):
         entity = self._make(None)
-        assert entity.native_value == "No alerts yet"
+        assert entity.native_value is None
 
     def test_available_true_when_enabled(self):
         state = make_state(enabled=True)
@@ -452,6 +452,46 @@ class TestUniFiAlertEventEntity:
         ):
             assert key in payload
 
+    @pytest.mark.asyncio
+    async def test_reload_does_not_replay_restored_alert(self):
+        """Regression for #116: options save triggers a full reload; the
+        restored CategoryState carries a non-zero alert_count, and the first
+        coordinator update post-reload must NOT re-fire alert_received.
+        """
+        alert = make_alert()
+        state = make_state(is_alerting=True, alert_count=3, last_alert=alert)
+        entity = self._make(state)
+        # Simulate the reload boundary: __init__ has just set _last_seen_count
+        # to 0; async_added_to_hass must seed from the restored alert_count.
+        assert entity._last_seen_count == 0
+        await entity.async_added_to_hass()
+        assert entity._last_seen_count == 3
+        # First coordinator update after restore — same count, no new alert.
+        entity._handle_coordinator_update()
+        entity._trigger_event.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_new_alert_after_reload_still_fires_once(self):
+        """The seeding fix for #116 must not suppress genuinely new alerts."""
+        alert = make_alert()
+        state = make_state(is_alerting=True, alert_count=3, last_alert=alert)
+        entity = self._make(state)
+        await entity.async_added_to_hass()
+        # A fresh push arrives — coordinator bumps alert_count to 4.
+        state.alert_count = 4
+        entity._handle_coordinator_update()
+        entity._trigger_event.assert_called_once()
+        # And a second identical update (no new push) must not re-fire.
+        entity._handle_coordinator_update()
+        entity._trigger_event.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_added_to_hass_no_state_leaves_seed_zero(self):
+        """Fresh install / unknown category: no restored state → seed stays 0."""
+        entity = self._make(None)
+        await entity.async_added_to_hass()
+        assert entity._last_seen_count == 0
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # button
@@ -625,7 +665,7 @@ class TestEntityCategories:
         coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
         entry = make_entry()
         entity = UniFiCategoryMessageSensor(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.native_value == "No alerts yet"
+        assert entity.native_value is None
 
     def test_message_sensor_returns_message_when_alert_present(self):
         from custom_components.unifi_alerts.sensor import UniFiCategoryMessageSensor

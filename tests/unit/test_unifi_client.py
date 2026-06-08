@@ -20,6 +20,8 @@ from custom_components.unifi_alerts.unifi_client import (
     CannotConnectError,
     InvalidAuthError,
     UniFiClient,
+    _PROBE_FAIL_LIMIT,
+    _PROBE_RETRY_AFTER,
 )
 
 
@@ -1072,6 +1074,115 @@ class TestProbeSystemLogEndpoint:
 
         assert captured_url, "Expected one POST call"
         assert "v2/api/site/mysite/system-log/count" in captured_url[0]
+
+
+    @pytest.mark.asyncio
+    async def test_probe_backoff_triggers_after_fail_limit(self):
+        """After _PROBE_FAIL_LIMIT consecutive transient failures the probe caches False
+        and sets a backoff deadline so subsequent polls skip the network entirely."""
+        client = make_client()
+        client._authenticated = True
+        ctx, _ = _make_post_json_response(503)
+
+        call_count = [0]
+
+        @asynccontextmanager
+        async def _always_503(*args, **kwargs):
+            call_count[0] += 1
+            resp = MagicMock()
+            resp.status = 503
+            resp.json = AsyncMock(return_value={})
+            yield resp
+
+        client._session.post = _always_503
+        for _ in range(_PROBE_FAIL_LIMIT):
+            result = await client.probe_system_log_endpoint()
+            assert result is False
+
+        # After the threshold the cache must be False and a backoff deadline set.
+        assert client._has_system_log is False
+        assert client._probe_backoff_until is not None
+        assert client._probe_fail_count == _PROBE_FAIL_LIMIT
+
+    @pytest.mark.asyncio
+    async def test_probe_during_backoff_skips_network(self):
+        """Once in backoff, probes must return False without making a network call."""
+        from datetime import UTC, datetime, timedelta
+
+        client = make_client()
+        client._authenticated = True
+        client._has_system_log = False
+        client._probe_backoff_until = datetime.now(UTC) + timedelta(hours=1)
+
+        call_count = [0]
+
+        @asynccontextmanager
+        async def _should_not_be_called(*args, **kwargs):
+            call_count[0] += 1
+            yield MagicMock()
+
+        client._session.post = _should_not_be_called
+        result = await client.probe_system_log_endpoint()
+        assert result is False
+        assert call_count[0] == 0, "Network must not be hit during backoff"
+
+    @pytest.mark.asyncio
+    async def test_probe_retries_after_backoff_expires(self):
+        """Once the backoff window expires, the next probe must hit the network
+        and, if successful, set cache=True and clear backoff state."""
+        from datetime import UTC, datetime, timedelta
+
+        client = make_client()
+        client._authenticated = True
+        # Simulate an expired backoff (deadline in the past).
+        client._has_system_log = False
+        client._probe_backoff_until = datetime.now(UTC) - timedelta(seconds=1)
+        client._probe_fail_count = _PROBE_FAIL_LIMIT
+
+        ctx, _ = _make_post_json_response(200, {})
+        client._session.post = ctx
+
+        result = await client.probe_system_log_endpoint()
+        assert result is True
+        assert client._has_system_log is True
+        assert client._probe_backoff_until is None
+        assert client._probe_fail_count == 0
+
+    @pytest.mark.asyncio
+    async def test_probe_404_does_not_set_backoff(self):
+        """A definitive 404 must set cache=False without a backoff deadline
+        (the endpoint will never appear on this controller)."""
+        client = make_client()
+        client._authenticated = True
+        ctx, _ = _make_post_json_response(404)
+        client._session.post = ctx
+
+        result = await client.probe_system_log_endpoint()
+        assert result is False
+        assert client._has_system_log is False
+        assert client._probe_backoff_until is None
+
+    @pytest.mark.asyncio
+    async def test_probe_backoff_via_network_error(self):
+        """Repeated aiohttp.ClientError failures must also trigger the backoff
+        after reaching _PROBE_FAIL_LIMIT."""
+        import aiohttp
+
+        client = make_client()
+        client._authenticated = True
+
+        @asynccontextmanager
+        async def _always_fail(*args, **kwargs):
+            raise aiohttp.ClientConnectionError("unreachable")
+            yield
+
+        client._session.post = _always_fail
+        for _ in range(_PROBE_FAIL_LIMIT):
+            result = await client.probe_system_log_endpoint()
+            assert result is False
+
+        assert client._has_system_log is False
+        assert client._probe_backoff_until is not None
 
 
 class TestFetchSystemLogAlarms:

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to suggest a feature. Before filing, please skim `docs/TODO.md` and `docs/ROADMAP.md` to see whether the idea is already tracked.
+        Thanks for taking the time to suggest a feature. Before filing, please search the open issues and skim `docs/ROADMAP.md` to see whether the idea is already tracked.
 
   - type: textarea
     id: problem

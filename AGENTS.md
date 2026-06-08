@@ -22,7 +22,7 @@ Two data paths run in parallel:
 | Architecture & data flow | `docs/ARCHITECTURE.md` |
 | HA-specific patterns | `docs/HOMEASSISTANT.md` |
 | UniFi API & payloads | `docs/UNIFI.md` |
-| Outstanding work | `docs/TODO.md` |
+| Outstanding work | GitHub Issues (taxonomy in `docs/TODO.md`) |
 | Test guidance | `docs/TESTING.md` |
 | Per-file responsibilities | `docs/REPO_LAYOUT.md` |
 

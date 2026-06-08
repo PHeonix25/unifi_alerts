@@ -21,7 +21,10 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:ui.com)",
       "WebFetch(domain:help.ui.com)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(gh issue *)",
+      "PowerShell(gh issue list --state open --label \"size:small\" --json number,title,labels,milestone --limit 30 | ConvertFrom-Json | ForEach-Object { \"{0,-4} | {1,-20} | {2}\" -f $_.number, \\($_.milestone.title ?? \"\\(no milestone\\)\"\\), $_.title })",
+      "PowerShell(gh issue list --state open --label \"size:small\" --json number,title,labels,milestone --limit 30)"
     ]
   },
   "defaultShell": "powershell"

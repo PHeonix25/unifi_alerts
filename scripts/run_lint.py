@@ -6,6 +6,10 @@ from __future__ import annotations
 import subprocess
 import sys
 
+from _console import use_utf8_console
+
+use_utf8_console()
+
 
 def _run_step(command: list[str], success_message: str) -> None:
     """Run a lint command and stop immediately if it fails."""

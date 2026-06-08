@@ -165,6 +165,19 @@ For every feature request, create:
 2. **GitHub Issues** using the templates above
 3. **User Journey Map**: `docs/product/[feature-name]-journey.md`
 
+## Filing findings as GitHub Issues (this repo)
+
+Outstanding work here is tracked in **GitHub Issues**, not in `docs/TODO.md` (now a taxonomy pointer).
+
+**Repo-specific override:** ignore the generic `component` / `phase` / `team` label scheme in the templates above; this repo uses the taxonomy below. Likewise, the "every code change MUST have an issue" rule is softened here to a **confirm-first** gate.
+
+1. **Confirm before filing.** Frame the opportunity (named user, problem, measurable outcome) and ask the maintainer whether to raise an issue. Never open issues unprompted or in bulk.
+2. **Search existing issues first** to avoid duplicates.
+3. On approval, file with the **Task** template (or Feature where it fits) and apply one category label (`security`, `fix`, `feat`, `tests`, `ci`, `documentation`), one `size: S|M|L`, one `priority: high|medium|low`, and the target milestone (`v1.8.0`, `v1.9.0`, `v2.0.0`). Add `v2.0-gate` if it blocks the HACS default submission.
+4. Reference the issue from the resolving PR (`Closes #NN`).
+
+Taxonomy: `docs/TODO.md`. Bulk seeding: `scripts/seed_issues.py`.
+
 ## Anti-Patterns
 
 - Writing user stories with "the user" as the persona.

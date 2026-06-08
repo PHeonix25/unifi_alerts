@@ -66,6 +66,14 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
         # Track alert_count to detect new alerts on coordinator update
         self._last_seen_count: int = 0
 
+    async def async_added_to_hass(self) -> None:
+        # Seed from restored state so a reload (e.g. after options save) does
+        # not replay the last persisted alert as a fresh alert_received event.
+        state = self.coordinator.get_category_state(self._category)
+        if state is not None:
+            self._last_seen_count = state.alert_count
+        await super().async_added_to_hass()
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """Called whenever the coordinator has new data.

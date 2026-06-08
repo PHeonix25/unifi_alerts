@@ -6,6 +6,7 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 
 - **release**: v1.7.0 tagged. Promotes v1.7.0-pre2 to stable after on-controller validation confirmed byte-identical entity_id, unique_id, and friendly_name snapshots across the pre1 -> pre2 upgrade (the ARCH-2 translation-key migration regression test). Cycle headline: documentation + architecture. Ships SEC-1 (fail-closed webhook auth with schema v3 migration), ARCH-1 (`UniFiClientConfig` TypedDict), CI-1 (`mypy --strict` enabled), ARCH-2 (entity-name translation keys, unlocking localisation), ARCH-3 (config-flow test package split), ARCH-4 (`SensorStateClass.MEASUREMENT` confirmed on count sensors), DOC-A (35-point documentation accuracy reconciliation), DOC-B (new troubleshooting / privacy / tested-controllers / uninstall sections plus README + info.md restructure), QUAL-1 (WHY comments on dedup / watermark / system-log probe), plus off-plan tooling and docs (`scripts/run_lint.py` / `run_typecheck.py`, AGENTS.md rewrite, Copilot agent definitions, 232 lines of coverage tests). Closes all v1.7.0 ROADMAP items.
 - **security**: scope read-only GitHub Actions workflows to `permissions: contents: read` ([#111]). Closes a CodeQL "Workflow does not contain permissions" finding on `.github/workflows/copilot-setup-steps.yml` (shipped in #104) and pre-emptively applies the same minimum scope to `ci.yml` and `version-check.yml`, which were latent CodeQL warnings outside the diff of any individual feature PR. `release.yml` and `pr-labeler.yml` already had explicit permissions blocks.
+- **chore**: start v1.8.0-pre1 development cycle ([#113]). Manifest bumped to `1.8.0-pre1`; no tag pushed. Next bump (`bump_version.py --pre`) produces the `v1.8.0-pre1` tag once the first batch of v1.8 work has merged.
 
 ## 2026-05-18
 
@@ -250,6 +251,7 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 [#106]: https://github.com/PHeonix25/unifi_alerts/pull/106
 [#107]: https://github.com/PHeonix25/unifi_alerts/pull/107
 [#111]: https://github.com/PHeonix25/unifi_alerts/pull/111
+[#113]: https://github.com/PHeonix25/unifi_alerts/pull/113
 
 [0d951b3]: https://github.com/PHeonix25/unifi_alerts/commit/0d951b3
 [0f17afb]: https://github.com/PHeonix25/unifi_alerts/commit/0f17afb

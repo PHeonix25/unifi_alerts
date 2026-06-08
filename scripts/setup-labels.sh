@@ -24,6 +24,16 @@ LABELS=(
   "dependencies|0366d6|Dependency bumps (Dependabot auto-applies this)"
 )
 
+# Process labels: NOT referenced by `.github/release.yml`. These track
+# workflow state, not release-note grouping. `landed-in-dev` marks an issue
+# whose fix has merged to `dev` but not yet shipped to `main`. Our PRs target
+# `dev`, so `Closes #NN` does not fire until the `dev > main` release-merge;
+# this label keeps the milestone view honest in the meantime. Apply it when a
+# PR resolving the issue merges to `dev`; the release-merge then closes it.
+LABELS+=(
+  "landed-in-dev|0e8a16|Fix merged to dev, awaiting the next stable release on main"
+)
+
 # Cache the existing labels once so we don't hit the API per name.
 existing=$(gh label list --repo "$REPO" --limit 200 --json name -q '.[].name')
 

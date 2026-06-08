@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Event entities (`event.unifi_alerts_*`) no longer replay the most-recent persisted alert as a fresh `alert_received` event when the integration reloads (for example after an options-flow save). The per-entity counter is now seeded from the restored category state in `async_added_to_hass` instead of resetting to zero. ([#116])
+- The last-message sensor now returns `None` (HA "unknown") instead of the hardcoded English string "No alerts yet" when no alert has been received, eliminating the only remaining hard-coded user-facing string in the platform files. ([#138])
+- Entity display names for last-message, open-count, and event entities now use a colon separator instead of an em-dash (e.g. `{category}: Last Message`). ([#138])
+- The category configuration warning now reads "Warning:" instead of the `⚠️` emoji glyph so meaning is preserved for screen readers and translators. ([#138])
+
+### Fixed
+
+- `make lint`, `make typecheck`, `make validate`, and the `.githooks/pre-push` hook no longer crash on Windows shells whose stdout codec defaults to `cp1252`. Previously, the `✅` success glyph printed by the scripts raised `UnicodeEncodeError` and exited the script non-zero even when the underlying tool (ruff, mypy, the validators) had succeeded. All five affected scripts (`run_lint.py`, `run_typecheck.py`, `validate_hacs.py`, `validate_docs.py`, `check_translations.py`) now reconfigure stdout and stderr to UTF-8 via a shared `scripts/_console.py` helper at startup. Windows contributors no longer need to export `PYTHONIOENCODING=utf-8` to use the standard development workflow. ([#148])
+- The v2 system-log probe no longer re-fires on every poll when the endpoint returns persistent non-404 errors. After 5 consecutive transient failures the probe caches the legacy path for 1 hour, then retries. A single blip still causes a re-probe on the next poll. ([#137])
+
+### Security
+
+- `UniFiAlert.to_dict()` no longer persists the `raw` UniFi payload to `.storage`. That payload carried unredacted client MACs, IP addresses, and hostnames, and could contain non-JSON-safe values that would crash `Store.async_save`. Persistence now emits an explicit scalar field list (`category`, `message`, `received_at`, `key`, `device_name`, `site`, `severity`); `from_dict()` still defaults `raw` to `{}` on read so existing stored entries continue to load. ([#147])
+
+### Internal
+
+- Added test coverage reporting via Codecov: `pytest-cov` added to dev requirements, 95% floor enforced in CI and locally (`--cov-fail-under=95`), XML report uploaded to Codecov on every push, live badge added to README and info.md. `make coverage` generates an HTML report locally; `.coverage`, `coverage.xml`, and `htmlcov/` added to `.gitignore`.
+
 ## [1.7.0] - 2026-05-29
 
 ### Security
@@ -197,4 +217,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#59]: https://github.com/PHeonix25/unifi_alerts/pull/59
 [#67]: https://github.com/PHeonix25/unifi_alerts/pull/67
 [#68]: https://github.com/PHeonix25/unifi_alerts/pull/68
+[#116]: https://github.com/PHeonix25/unifi_alerts/issues/116
+[#147]: https://github.com/PHeonix25/unifi_alerts/pull/147
+[#148]: https://github.com/PHeonix25/unifi_alerts/issues/148
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR

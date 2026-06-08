@@ -390,3 +390,59 @@ class TestAlertSerialization:
         )
         assert isinstance(restored.received_at, datetime)
         assert restored.received_at.tzinfo == UTC
+
+    def test_to_dict_omits_raw_payload(self):
+        """to_dict() must drop `raw` — it carries client MACs / IPs / hostnames that should not hit disk."""
+        alert = UniFiAlert.from_webhook_payload(
+            CATEGORY_NETWORK_WAN,
+            {
+                "message": "client connected",
+                "client_mac": "aa:bb:cc:dd:ee:ff",
+                "client_ip": "192.0.2.10",
+                "hostname": "my-laptop",
+            },
+        )
+        serialized = alert.to_dict()
+        assert "raw" not in serialized
+        # Scalar fields the restore path consumes must still be present.
+        for field_name in (
+            "category",
+            "message",
+            "received_at",
+            "key",
+            "device_name",
+            "site",
+            "severity",
+        ):
+            assert field_name in serialized
+
+    def test_to_dict_survives_non_json_value_in_raw(self):
+        """A non-JSON-safe value in raw must not be able to break Store.async_save."""
+        import json
+
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": "test"})
+        # Inject a value stdlib json cannot serialise; if `raw` is still in to_dict() this raises.
+        alert.raw = {"weird": object()}
+        json.dumps(alert.to_dict())
+
+    def test_round_trip_resets_raw_to_empty_dict(self):
+        """from_dict(to_dict(alert)) preserves scalar fields and resets raw to {}."""
+        original = UniFiAlert(
+            category=CATEGORY_SECURITY_THREAT,
+            message="intrusion blocked",
+            received_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
+            raw={"client_mac": "aa:bb:cc:dd:ee:ff", "src_ip": "203.0.113.5"},
+            key="THREAT_BLOCKED",
+            device_name="UDM-Pro",
+            site="default",
+            severity="HIGH",
+        )
+        restored = UniFiAlert.from_dict(original.to_dict())
+        assert restored.category == original.category
+        assert restored.message == original.message
+        assert restored.received_at == original.received_at
+        assert restored.key == original.key
+        assert restored.device_name == original.device_name
+        assert restored.site == original.site
+        assert restored.severity == original.severity
+        assert restored.raw == {}
