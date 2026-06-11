@@ -256,6 +256,10 @@ class CategoryState:
     alert_count: int = 0  # incremented by webhooks
     open_count: int = 0  # set by polling (unarchived alarms)
     last_cleared_at: datetime | None = None
+    # Timestamp of the last webhook actually received for this category. Set
+    # only on the push path (never by polling) so it reflects webhook
+    # connectivity specifically, which powers the onboarding/health signal.
+    last_webhook_at: datetime | None = None
 
     def apply_alert(self, alert: UniFiAlert) -> None:
         self.is_alerting = True
@@ -265,6 +269,28 @@ class CategoryState:
     def clear(self) -> None:
         self.is_alerting = False
         self.last_cleared_at = datetime.now(UTC)
+
+    def webhook_health(self, now: datetime | None = None) -> str:
+        """Classify webhook delivery health for this category.
+
+        Returns ``WEBHOOK_HEALTH_NEVER`` when no webhook has ever been
+        received, ``WEBHOOK_HEALTH_HEALTHY`` when the most recent webhook is
+        within ``WEBHOOK_STALE_AFTER_SECONDS``, and ``WEBHOOK_HEALTH_STALE``
+        otherwise. ``now`` is injectable for deterministic tests.
+        """
+        from .const import (
+            WEBHOOK_HEALTH_HEALTHY,
+            WEBHOOK_HEALTH_NEVER,
+            WEBHOOK_HEALTH_STALE,
+            WEBHOOK_STALE_AFTER_SECONDS,
+        )
+
+        if self.last_webhook_at is None:
+            return WEBHOOK_HEALTH_NEVER
+        now = now or datetime.now(UTC)
+        if (now - self.last_webhook_at).total_seconds() <= WEBHOOK_STALE_AFTER_SECONDS:
+            return WEBHOOK_HEALTH_HEALTHY
+        return WEBHOOK_HEALTH_STALE
 
 
 @dataclass

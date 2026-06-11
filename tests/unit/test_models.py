@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from custom_components.unifi_alerts.const import (
     CATEGORY_NETWORK_CLIENT,
@@ -136,6 +136,55 @@ class TestCategoryState:
         state.clear()
         assert state.last_cleared_at is not None
         assert state.last_cleared_at.tzinfo is not None
+
+    def test_last_webhook_at_defaults_to_none(self):
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        assert state.last_webhook_at is None
+
+
+class TestWebhookHealth:
+    """Tests for CategoryState.webhook_health()."""
+
+    def test_never_received_when_no_webhook(self):
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        assert state.webhook_health() == "never_received"
+
+    def test_healthy_when_recent(self):
+        now = datetime(2026, 6, 11, 12, 0, 0, tzinfo=UTC)
+        state = CategoryState(
+            category=CATEGORY_NETWORK_WAN,
+            last_webhook_at=datetime(2026, 6, 11, 10, 0, 0, tzinfo=UTC),
+        )
+        assert state.webhook_health(now=now) == "healthy"
+
+    def test_healthy_at_exact_window_boundary(self):
+        """A webhook exactly WEBHOOK_STALE_AFTER_SECONDS old is still healthy."""
+        from custom_components.unifi_alerts.const import WEBHOOK_STALE_AFTER_SECONDS
+
+        now = datetime(2026, 6, 11, 12, 0, 0, tzinfo=UTC)
+        state = CategoryState(
+            category=CATEGORY_NETWORK_WAN,
+            last_webhook_at=now - timedelta(seconds=WEBHOOK_STALE_AFTER_SECONDS),
+        )
+        assert state.webhook_health(now=now) == "healthy"
+
+    def test_stale_when_past_window(self):
+        from custom_components.unifi_alerts.const import WEBHOOK_STALE_AFTER_SECONDS
+
+        now = datetime(2026, 6, 11, 12, 0, 0, tzinfo=UTC)
+        state = CategoryState(
+            category=CATEGORY_NETWORK_WAN,
+            last_webhook_at=now - timedelta(seconds=WEBHOOK_STALE_AFTER_SECONDS + 1),
+        )
+        assert state.webhook_health(now=now) == "stale"
+
+    def test_defaults_now_to_current_time(self):
+        """Omitting now must not raise and should read healthy for a just-now webhook."""
+        state = CategoryState(
+            category=CATEGORY_NETWORK_WAN,
+            last_webhook_at=datetime.now(UTC),
+        )
+        assert state.webhook_health() == "healthy"
 
 
 class TestRenderMessageRaw:
