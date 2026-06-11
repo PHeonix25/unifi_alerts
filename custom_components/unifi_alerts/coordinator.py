@@ -262,6 +262,11 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._last_push_at[dedup_key] = now
 
         state.apply_alert(alert)
+        # Record webhook receipt for the per-category health signal. Set only
+        # here (the push path), never by polling, so it reflects webhook
+        # connectivity specifically. alert.received_at is the receipt time
+        # stamped by the webhook handler.
+        state.last_webhook_at = alert.received_at
         # Optimistic open_count increment so the count sensor moves with the
         # binary sensor instead of lagging by up to one poll interval. Only
         # count alerts received after the watermark — anything older was
@@ -350,6 +355,14 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                         state.last_alert = UniFiAlert.from_dict(raw_alert)
                     except (KeyError, TypeError, ValueError):
                         _LOGGER.warning("Ignoring invalid stored last_alert for %s", cat)
+                webhook_ts = entry.get("last_webhook_at")
+                if webhook_ts is not None:
+                    try:
+                        state.last_webhook_at = datetime.fromisoformat(webhook_ts)
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Ignoring invalid stored last_webhook_at for %s: %r", cat, webhook_ts
+                        )
 
     def _build_persist_data(self) -> dict[str, Any]:
         """Build the JSON-serialisable snapshot of category state to persist.
@@ -367,6 +380,8 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             entry["last_alert"] = (
                 state.last_alert.to_dict() if state.last_alert is not None else None
             )
+            if state.last_webhook_at is not None:
+                entry["last_webhook_at"] = state.last_webhook_at.isoformat()
             data[cat] = entry
         return data
 

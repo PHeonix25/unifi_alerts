@@ -97,6 +97,24 @@ class TestPushAlert:
             )
         assert coord.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 3
 
+    def test_push_records_last_webhook_at(self):
+        """push_alert must stamp last_webhook_at from the alert's receipt time."""
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+        alert = make_alert(CATEGORY_NETWORK_WAN)
+        coord.push_alert(CATEGORY_NETWORK_WAN, alert)
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.last_webhook_at == alert.received_at
+
+    def test_polling_does_not_set_last_webhook_at(self):
+        """The polling path must never stamp last_webhook_at (webhook-only signal)."""
+        coord = make_coordinator()
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        # Simulate the poll path mutating alert state directly.
+        state.is_alerting = True
+        state.last_alert = make_alert(CATEGORY_NETWORK_WAN)
+        assert state.last_webhook_at is None
+
     def test_push_to_disabled_category_ignored(self):
         coord = make_coordinator(enabled=[CATEGORY_NETWORK_WAN])
         coord.async_set_updated_data = MagicMock()
@@ -1205,6 +1223,37 @@ class TestCounterPersistence:
         assert restored.message == "persistent alert"
         assert restored.category == CATEGORY_NETWORK_WAN
         assert restored.received_at == alert.received_at
+
+    @pytest.mark.asyncio
+    async def test_last_webhook_at_persists_across_reload(self):
+        """last_webhook_at round-trips through the Store so health survives a reload."""
+        coord = self._make_coord_with_mock_store()
+        coord.async_set_updated_data = MagicMock()
+
+        alert = make_alert(CATEGORY_NETWORK_WAN, "health probe", key="EVT_HEALTH")
+        coord.push_alert(CATEGORY_NETWORK_WAN, alert)
+
+        await coord._async_persist_watermarks()
+        saved = coord._store.async_save.await_args.args[0]
+        assert saved[CATEGORY_NETWORK_WAN]["last_webhook_at"] == alert.received_at.isoformat()
+
+        coord2 = self._make_coord_with_mock_store()
+        coord2._store.async_load.return_value = saved
+        await coord2.async_restore_watermarks()
+
+        assert coord2.get_category_state(CATEGORY_NETWORK_WAN).last_webhook_at == alert.received_at
+
+    @pytest.mark.asyncio
+    async def test_restore_skips_invalid_last_webhook_at(self):
+        """A corrupt last_webhook_at must be ignored, not raise."""
+        coord = self._make_coord_with_mock_store()
+        coord._store.async_load.return_value = {
+            CATEGORY_NETWORK_WAN: {"last_webhook_at": "not-a-timestamp", "alert_count": 1}
+        }
+
+        await coord.async_restore_watermarks()  # must not raise
+
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).last_webhook_at is None
 
     @pytest.mark.asyncio
     async def test_restore_handles_legacy_payload_without_counters(self):

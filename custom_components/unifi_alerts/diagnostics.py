@@ -47,6 +47,10 @@ async def async_get_config_entry_diagnostics(
                 "last_cleared_at": (
                     state.last_cleared_at.isoformat() if state.last_cleared_at is not None else None
                 ),
+                "last_webhook_at": (
+                    state.last_webhook_at.isoformat() if state.last_webhook_at is not None else None
+                ),
+                "webhook_health": state.webhook_health(),
             }
         coordinator_info = {
             "any_alerting": coordinator.any_alerting,

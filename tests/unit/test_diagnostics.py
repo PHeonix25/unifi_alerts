@@ -136,6 +136,9 @@ async def test_diagnostics_exposes_per_category_state() -> None:
     cleared_at = datetime(2026, 4, 30, 12, 0, 0, tzinfo=UTC)
     cat = ALL_CATEGORIES[0]
     states = {c: CategoryState(category=c) for c in ALL_CATEGORIES}
+    # Use a current timestamp so webhook_health() reads "healthy" (within the
+    # 7-day window) deterministically regardless of when the suite runs.
+    webhook_at = datetime.now(UTC)
     states[cat] = CategoryState(
         category=cat,
         enabled=True,
@@ -143,6 +146,7 @@ async def test_diagnostics_exposes_per_category_state() -> None:
         alert_count=4,
         open_count=2,
         last_cleared_at=cleared_at,
+        last_webhook_at=webhook_at,
     )
     coordinator = _make_coordinator(category_states=states)
     entry = _make_entry_with_runtime(coordinator)
@@ -158,6 +162,8 @@ async def test_diagnostics_exposes_per_category_state() -> None:
         "open_count": 2,
         "alert_count": 4,
         "last_cleared_at": cleared_at.isoformat(),
+        "last_webhook_at": webhook_at.isoformat(),
+        "webhook_health": "healthy",
     }
 
 
@@ -170,4 +176,7 @@ async def test_diagnostics_per_category_last_cleared_at_none_when_unset() -> Non
     result = await async_get_config_entry_diagnostics(hass, entry)
 
     for cat in ALL_CATEGORIES:
-        assert result["coordinator"]["categories"][cat]["last_cleared_at"] is None
+        entry = result["coordinator"]["categories"][cat]
+        assert entry["last_cleared_at"] is None
+        assert entry["last_webhook_at"] is None
+        assert entry["webhook_health"] == "never_received"

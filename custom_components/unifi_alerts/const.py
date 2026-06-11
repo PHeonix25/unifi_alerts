@@ -38,6 +38,23 @@ WEBHOOK_DEDUP_WINDOW_SECONDS = (
     5.0  # suppress duplicate (category, alert_key) pushes within this window
 )
 
+# ──────────────────────────────────────────────
+# Webhook health signal
+# ──────────────────────────────────────────────
+# A per-category onboarding/health indicator. After pasting webhook URLs into
+# Alarm Manager, a user has no proof the wiring works until a real alert fires;
+# this surfaces "last webhook received" and a coarse healthy/stale/never state.
+# A category is "stale" if its most recent webhook is older than this window.
+# The window is deliberately generous: webhook delivery is event-driven and
+# rarely-firing categories (honeypot, threat) legitimately go quiet for long
+# stretches, so a short window would label healthy setups stale.
+WEBHOOK_STALE_AFTER_SECONDS = 7 * 24 * 60 * 60  # 7 days
+
+# webhook_health() return values (also used as the state-attribute string).
+WEBHOOK_HEALTH_NEVER: Final = "never_received"  # no webhook ever received
+WEBHOOK_HEALTH_HEALTHY: Final = "healthy"  # webhook received within the window
+WEBHOOK_HEALTH_STALE: Final = "stale"  # last webhook older than the window
+
 # v2 system-log polling parameters
 SYSTEM_LOG_PAGE_SIZE = 100  # confirmed observed limit per page
 MAX_SYSTEM_LOG_PAGES = 10  # safety cap: at most 100*10 = 1000 events per poll cycle

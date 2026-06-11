@@ -87,6 +87,13 @@ class UniFiCategoryBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], Binar
             "category": self._category,
             "alert_count": state.alert_count,
             "open_count": state.open_count,
+            # Webhook health signal: confirms the Alarm Manager wiring works
+            # without waiting for a real alert. webhook_health is one of
+            # "never_received", "healthy", or "stale".
+            "webhook_health": state.webhook_health(),
+            "last_webhook_at": (
+                state.last_webhook_at.isoformat() if state.last_webhook_at else None
+            ),
         }
         if state.last_alert:
             attrs["last_message"] = state.last_alert.message

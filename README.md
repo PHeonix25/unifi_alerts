@@ -120,6 +120,15 @@ For each enabled category, create an alarm in **UniFi Network > Settings > Notif
 
 > **Webhook secret rotation:** if you regenerate the secret via the options flow, every existing URL becomes invalid immediately. Re-paste all new URLs into Alarm Manager, or affected alarms will silently fail with HTTP 401.
 
+#### Confirming a category received its first webhook
+
+You do not have to wait for a real alert to know the wiring works. Each per-category binary sensor exposes two attributes:
+
+- `webhook_health`: `never_received` until the first webhook arrives, then `healthy`. It reads `stale` once more than 7 days pass without a webhook (expected for rarely-firing categories such as honeypot or threat).
+- `last_webhook_at`: the UTC timestamp of the most recent webhook received for that category, or `None` if none has arrived.
+
+Fire a **Test Alarm** from Alarm Manager (or trigger the event yourself) and watch `webhook_health` flip to `healthy`. A category still showing `never_received` after a test points to a wrong URL, a missing `?token=`, or an alarm whose trigger does not match the category. The same fields appear per category in the integration's **Download diagnostics** output.
+
 ---
 
 ## Entities

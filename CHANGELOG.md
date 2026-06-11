@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Per-category webhook health signal. Each category binary sensor now exposes a `webhook_health` attribute (`never_received`, `healthy`, or `stale`) and a `last_webhook_at` timestamp, so you can confirm the Alarm Manager wiring works without waiting for a real alert. `healthy` means a webhook arrived within the last 7 days; `stale` means the last one is older than that (expected for rarely-firing categories). Both fields also appear per category in the diagnostics download and survive a config-entry reload. ([#117])
+
 ### Changed
 
 - Event entities (`event.unifi_alerts_*`) no longer replay the most-recent persisted alert as a fresh `alert_received` event when the integration reloads (for example after an options-flow save). The per-entity counter is now seeded from the restored category state in `async_added_to_hass` instead of resetting to zero. ([#116])
@@ -219,6 +223,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#67]: https://github.com/PHeonix25/unifi_alerts/pull/67
 [#68]: https://github.com/PHeonix25/unifi_alerts/pull/68
 [#116]: https://github.com/PHeonix25/unifi_alerts/issues/116
+[#117]: https://github.com/PHeonix25/unifi_alerts/issues/117
 [#118]: https://github.com/PHeonix25/unifi_alerts/issues/118
 [#147]: https://github.com/PHeonix25/unifi_alerts/pull/147
 [#148]: https://github.com/PHeonix25/unifi_alerts/issues/148

@@ -153,6 +153,21 @@ class TestUniFiCategoryBinarySensor:
         entity = self._make(None)
         assert entity.extra_state_attributes == {}
 
+    def test_extra_attrs_webhook_health_never_received(self):
+        state = make_state()
+        entity = self._make(state)
+        attrs = entity.extra_state_attributes
+        assert attrs["webhook_health"] == "never_received"
+        assert attrs["last_webhook_at"] is None
+
+    def test_extra_attrs_webhook_health_healthy(self):
+        state = make_state()
+        state.last_webhook_at = datetime.now(UTC)
+        entity = self._make(state)
+        attrs = entity.extra_state_attributes
+        assert attrs["webhook_health"] == "healthy"
+        assert attrs["last_webhook_at"] == state.last_webhook_at.isoformat()
+
     def test_extra_attrs_includes_last_cleared_at(self):
         alert = make_alert()
         state = make_state(last_alert=alert)
