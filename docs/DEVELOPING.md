@@ -85,8 +85,12 @@ HA requires `strings.json` and `translations/en.json` to match exactly. Edit bot
 | `hacs` | Validates `hacs.json` and repository structure for HACS listing |
 | `lint` | `ruff check` + `ruff format --check` + `mypy` + `strings.json`/`translations/en.json` drift diff |
 | `test` | `pytest` against `tests/unit/` and `tests/integration/` |
+| `codeql` | CodeQL static security analysis (SAST) for Python. Findings appear in the repository Security tab |
+| `pip-audit` | Dependency vulnerability scan against `requirements-dev.txt`. Advisory only (`continue-on-error: true`); it never blocks a merge |
 
-`version-check.yml` enforces the version format per branch (`X.Y.Z` on `main`, `X.Y.Z-preN` on `dev`). `release.yml` triggers on tags and publishes via `gh release create --generate-notes`. All checks must pass before merging.
+`codeql.yml` holds the `codeql` and `pip-audit` jobs. Both run on every push and pull request to `dev` and `main`, plus a weekly Monday 06:00 UTC schedule so newly disclosed vulnerabilities are caught even when the code has not changed. `pip-audit` is intentionally non-blocking: the maintainer reviews its output and bumps `requirements-dev.txt` when a finding warrants it.
+
+`version-check.yml` enforces the version format per branch (`X.Y.Z` on `main`, `X.Y.Z-preN` on `dev`). `release.yml` triggers on tags and publishes via `gh release create --generate-notes`. All checks except `pip-audit` must pass before merging.
 
 ## Branching and PRs
 

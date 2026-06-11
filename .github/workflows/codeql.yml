@@ -1,0 +1,65 @@
+name: Security scanning
+
+# Static security analysis (CodeQL SAST) plus dependency-vulnerability
+# scanning (pip-audit). Runs on every push and pull request to dev and main,
+# and on a weekly schedule so newly disclosed vulnerabilities are caught even
+# when the code has not changed.
+#
+# pip-audit is advisory only (continue-on-error: true). A newly published CVE
+# in a transitive dependency must not block merges; the maintainer reviews the
+# job output and bumps requirements-dev.txt when warranted. CodeQL findings are
+# surfaced in the repository Security tab, not as a hard merge gate here.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  schedule:
+    # Mondays 06:00 UTC, before the weekly Dependabot run (07:00 Brisbane).
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    name: CodeQL analysis (python)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read  # CodeQL reads workflow run metadata on private/internal repos.
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357  # v3.36.2
+        with:
+          languages: python
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357  # v3.36.2
+
+  pip-audit:
+    name: Dependency vulnerability scan (advisory, non-blocking)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Advisory only: a freshly disclosed CVE must not block merges. The job
+    # surfaces findings for the maintainer to triage and bump dependencies.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dev dependencies and pip-audit
+        run: |
+          pip install -r requirements-dev.txt
+          pip install pip-audit
+
+      - name: Run pip-audit
+        run: pip-audit
