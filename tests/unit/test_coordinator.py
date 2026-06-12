@@ -1633,3 +1633,73 @@ class TestCoordinatorUncoveredBranches:
             await asyncio.sleep(0)
 
         assert "failed" not in caplog.text
+
+
+class TestWatermarkPersistFailureRepair:
+    """A failed watermark persist must surface as a self-healing repair issue.
+
+    When Store.async_save raises (disk full, I/O error) the in-memory clear has
+    already happened, so the user sees the alert cleared but the watermark never
+    reaches disk. On the next restart open_count jumps back. The coordinator
+    raises an issue_registry repair so the loss is visible, then deletes it on
+    the next successful save so it self-heals.
+    """
+
+    def _make_coord(self):
+        coord = make_coordinator()
+        coord._entry_id = "abc123"
+        coord._store = MagicMock()
+        coord._store.async_save = AsyncMock()
+        return coord
+
+    @pytest.mark.asyncio
+    async def test_persist_failure_creates_repair_issue(self):
+        coord = self._make_coord()
+        coord._store.async_save = AsyncMock(side_effect=OSError("disk full"))
+
+        with (
+            patch("custom_components.unifi_alerts.coordinator.ir") as mock_ir,
+            pytest.raises(OSError),
+        ):
+            await coord._async_persist_watermarks()
+
+        mock_ir.async_create_issue.assert_called_once()
+        # Issue id is the constant base suffixed with the entry id.
+        _, kwargs = mock_ir.async_create_issue.call_args
+        args = mock_ir.async_create_issue.call_args.args
+        assert "watermark_persist_failed_abc123" in args
+        # is_fixable=False and severity WARNING per the issue spec.
+        assert kwargs["is_fixable"] is False
+        assert kwargs["severity"] is mock_ir.IssueSeverity.WARNING
+        assert kwargs["translation_key"] == "watermark_persist_failed"
+        # No deletion happened on the failure path.
+        mock_ir.async_delete_issue.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_successful_persist_deletes_repair_issue(self):
+        coord = self._make_coord()
+
+        with patch("custom_components.unifi_alerts.coordinator.ir") as mock_ir:
+            await coord._async_persist_watermarks()
+
+        mock_ir.async_delete_issue.assert_called_once()
+        args = mock_ir.async_delete_issue.call_args.args
+        assert "watermark_persist_failed_abc123" in args
+        mock_ir.async_create_issue.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_repair_issue_self_heals_on_next_success(self):
+        """Fail once (issue created), then succeed (issue deleted) - end to end."""
+        coord = self._make_coord()
+
+        with patch("custom_components.unifi_alerts.coordinator.ir") as mock_ir:
+            # First save raises - repair issue created.
+            coord._store.async_save = AsyncMock(side_effect=OSError("disk full"))
+            with pytest.raises(OSError):
+                await coord._async_persist_watermarks()
+            assert mock_ir.async_create_issue.call_count == 1
+
+            # Next save succeeds - repair issue deleted (self-heal).
+            coord._store.async_save = AsyncMock()
+            await coord._async_persist_watermarks()
+            assert mock_ir.async_delete_issue.call_count == 1
