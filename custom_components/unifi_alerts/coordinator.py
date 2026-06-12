@@ -11,6 +11,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -38,6 +39,10 @@ _STORAGE_VERSION = 1
 # coalesces a burst into a single durable write instead of one fire-and-forget
 # save per push.
 _PERSIST_DELAY_SECONDS = 1
+
+# Issue-registry id base for the repair surfaced when a watermark persist fails.
+# Suffixed with the config entry id so multi-entry installs report independently.
+_PERSIST_FAILED_ISSUE_BASE = "watermark_persist_failed"
 
 
 class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
@@ -71,6 +76,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._clear_timeout_minutes: int = config.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT)
         self._enabled_categories: list[str] = config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         self._site: str = config.get(CONF_SITE, DEFAULT_SITE)
+        self._entry_id: str = entry_id
         self._store: Store[dict[str, Any]] = Store(
             hass, _STORAGE_VERSION, f"{DOMAIN}_watermarks_{entry_id}"
         )
@@ -386,8 +392,43 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         return data
 
     async def _async_persist_watermarks(self) -> None:
-        """Persist current category state immediately (awaited explicit-clear path)."""
-        await self._store.async_save(self._build_persist_data())
+        """Persist current category state immediately (awaited explicit-clear path).
+
+        On failure (disk full, I/O error) the in-memory clear has already
+        succeeded, so the user sees the alert cleared but the watermark never
+        reaches disk. On the next HA restart open_count jumps back to the
+        pre-clear value. Surface this as a repair issue so the loss is visible
+        instead of buried in the log, then re-raise so the caller's error path
+        (including the background-task done-callback) still runs. A subsequent
+        successful persist deletes the issue, so it self-heals.
+        """
+        try:
+            await self._store.async_save(self._build_persist_data())
+        except Exception:
+            self._create_persist_failed_issue()
+            raise
+        else:
+            self._delete_persist_failed_issue()
+
+    @property
+    def _persist_failed_issue_id(self) -> str:
+        """Per-entry issue-registry id for the watermark-persist-failed repair."""
+        return f"{_PERSIST_FAILED_ISSUE_BASE}_{self._entry_id}"
+
+    def _create_persist_failed_issue(self) -> None:
+        """Raise a repair issue telling the user a watermark write failed."""
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            self._persist_failed_issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=_PERSIST_FAILED_ISSUE_BASE,
+        )
+
+    def _delete_persist_failed_issue(self) -> None:
+        """Clear the watermark-persist-failed repair once a write succeeds."""
+        ir.async_delete_issue(self.hass, DOMAIN, self._persist_failed_issue_id)
 
     # ── Clear entry points (called by buttons and services) ───────────────
 

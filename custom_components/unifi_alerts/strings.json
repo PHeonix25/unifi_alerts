@@ -74,6 +74,10 @@
           }
         }
       }
+    },
+    "watermark_persist_failed": {
+      "title": "UniFi Alerts: could not save cleared-alert state",
+      "description": "Home Assistant could not write the UniFi Alerts watermark to storage, so cleared alerts may reappear and Open Count may jump back to its previous value after a restart. This usually means the disk is full or there is a storage I/O error. Check available disk space and the Home Assistant logs. This message clears automatically once a save succeeds."
     }
   },
   "services": {
