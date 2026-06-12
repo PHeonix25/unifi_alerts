@@ -2,7 +2,7 @@
 
 What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `main` as `X.Y.Z`. Completed work is removed from this file; the historical record lives in `docs/HISTORY.md`, and the user-visible release summary lives in `CHANGELOG.md`.
 
-> **Status (2026-05-29):** v1.7.0 released; v1.8.0-pre1 in development. Path to v2.0.0: v1.8.0 (Trust and Hardening), v1.9.0 (Localisation and Scale), then v2.0.0 (HACS default catalogue). Item-level work is tracked in GitHub Issues, grouped by milestone: <https://github.com/PHeonix25/unifi_alerts/milestones>.
+> **Status (2026-06-12):** v1.7.0 released; v1.8.0-pre1 tagged from `dev`, further v1.8.0 work in development. Path to v2.0.0: v1.8.0 (Trust and Hardening), v1.9.0 (Localisation and Scale), then v2.0.0 (HACS default catalogue). Item-level work is tracked in GitHub Issues, grouped by milestone: <https://github.com/PHeonix25/unifi_alerts/milestones>.
 
 > **Branching model:** see `CLAUDE.md § Branching strategy and versioning`.
 
@@ -12,9 +12,8 @@ What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `
 
 Correctness, privacy, security, and onboarding-confidence polish. Themes:
 
-- Privacy: stop persisting raw payloads to disk; clarify retention and data handling.
-- Correctness: fix the stale event replay on reload; coalesce watermark persistence and surface its failures.
-- Onboarding: a webhook health signal; complete the Alarm Manager setup docs.
+- Privacy: clarify retention and data handling (raw-payload persistence shipped in pre1).
+- Onboarding: complete the Alarm Manager setup docs.
 - Structure: consolidate the two alert-classification paths; extract controller auth into its own seam.
 
 Item-level detail: the `v1.8.0` [milestone](https://github.com/PHeonix25/unifi_alerts/milestones).

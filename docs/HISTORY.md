@@ -2,6 +2,27 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-06-12
+
+- **release**: v1.8.0-pre1 tagged. First checkpoint of the v1.8.0 "Trust and Hardening" cycle: manifest was set to `1.8.0-pre1` by #113 at cycle start, and this tags it now that the first batch of work has merged. Headline: privacy and persistence hardening (raw payload dropped from storage, watermark persistence coalesced and now self-reporting via a repair issue), dependency and coverage detection in CI (pip-audit, Codecov), per-category webhook health visibility, and the TODO.md -> GitHub Issues workflow migration. No `CHANGELOG.md` change (pre-release).
+- **ci**: add pip-audit dependency scanning, CodeQL via default setup ([#178]). Adds an advisory, non-blocking pip-audit job over `requirements-dev.txt` on every push/PR plus a weekly schedule; static analysis runs through CodeQL default setup after an advanced workflow conflicted with it. Closes the no-SAST, no-dependency-scan gap (#165); the 60 current findings are dev-toolchain only (manifest ships no pinned requirements) and tracked in #180.
+- **feat**: surface watermark persist failures as a repair issue ([#179]). A failed `Store.async_save` after a Clear left the in-memory clear intact but the watermark unwritten, so `open_count` rebounded on restart; the coordinator now raises an `issue_registry` repair that self-heals on the next successful persist (#163).
+- **feat**: per-category webhook health signal ([#177]). Surfaces never_received / healthy / stale health over a 7-day window (set only on the push path) so users can confirm Alarm Manager wiring without waiting for a real alert.
+- **fix**: coalesce watermark persistence and surface background failures ([#160]). Coalesces watermark persists and routes background-task failures through a done-callback that logs non-`CancelledError` exceptions, the logging path #179 later built its repair issue on.
+- **ci**: pin ruff and remove dead test import ([#159]). An unpinned ruff pulled 0.15.16 on fresh installs and flagged lint older ruff accepted, breaking `make check`; pin `ruff==0.15.16` for deterministic lint across CI and local.
+- **docs**: add landed-in-dev label to keep the milestone view honest ([#158]). PRs target `dev` not `main`, so `Closes #NN` does not fire until release; the label distinguishes shipped-to-dev work from not-started in the milestone view.
+- **fix**: transient-failure backoff for probe_system_log_endpoint ([#157]). A persistent non-404 (e.g. a proxy returning 503) made the probe fire every poll, doubling controller request rate; after 5 consecutive transient failures it now caches the legacy path for 1 hour.
+- **feat**: localise remaining inline strings in the sensor platform ([#156]). Removes the last hard-coded user-facing strings (native_value returns None for HA's built-in translated Unknown state) and replaces em-dashes and emoji per the writing-style rule.
+- **docs**: prefer gh issue develop so issue<>PR links register ([#152]). Documents creating branches via `gh issue develop` so the issue/PR link populates the sidebar despite PRs targeting the non-default `dev` branch.
+- **fix**: force scripts/* stdout to UTF-8 on cp1252 Windows consoles ([#151]). The validators print a Unicode check-mark glyph that crashed cp1252 Windows shells with `UnicodeEncodeError` even when the underlying tool passed; force stdout to UTF-8.
+- **fix**: seed event entity counter on add to prevent stale alert replay ([#150]). `_last_seen_count` started at 0, so the first update after an options-flow reload re-fired the most recent alert as a fresh event; seed it from restored `CategoryState.alert_count` in `async_added_to_hass` (#116).
+- **chore**: allow gh issue commands in claude permissions ([#149]). Adds `Bash(gh issue *)` to the settings allowlist so issue triage skips the permission prompt.
+- **security**: drop raw payload from persisted UniFiAlert ([#147]). `to_dict()` serialised the full UniFi payload (unredacted MACs, IPs, hostnames, possibly non-JSON-safe) into `.storage`; the persisted record now drops `raw` (#115).
+- **ci**: bump home-assistant/actions ([#146]). Dependabot bump of `home-assistant/actions` to the current pinned SHA.
+- **ci**: add Codecov coverage reporting with a 95% floor ([#145]). Wires `pytest-cov` and Codecov with a 95% branch-coverage minimum enforced locally and in CI, plus a README and info.md badge.
+- **docs**: align agent instructions with the GitHub Issues workflow ([#144]). Follow-up to the Issues migration: updates copilot-instructions and persona surfaces to track and file work in Issues and drops the stale TODO pointer.
+- **docs**: migrate work tracking from TODO.md to GitHub Issues ([#114]). A six-lens review seeded the v1.8 and v1.9 backlog into Issues and themed v1.8.0 as Trust and Hardening; work tracking moves off `docs/TODO.md`.
+
 ## 2026-05-29
 
 - **release**: v1.7.0 tagged. Promotes v1.7.0-pre2 to stable after on-controller validation confirmed byte-identical entity_id, unique_id, and friendly_name snapshots across the pre1 -> pre2 upgrade (the ARCH-2 translation-key migration regression test). Cycle headline: documentation + architecture. Ships SEC-1 (fail-closed webhook auth with schema v3 migration), ARCH-1 (`UniFiClientConfig` TypedDict), CI-1 (`mypy --strict` enabled), ARCH-2 (entity-name translation keys, unlocking localisation), ARCH-3 (config-flow test package split), ARCH-4 (`SensorStateClass.MEASUREMENT` confirmed on count sensors), DOC-A (35-point documentation accuracy reconciliation), DOC-B (new troubleshooting / privacy / tested-controllers / uninstall sections plus README + info.md restructure), QUAL-1 (WHY comments on dedup / watermark / system-log probe), plus off-plan tooling and docs (`scripts/run_lint.py` / `run_typecheck.py`, AGENTS.md rewrite, Copilot agent definitions, 232 lines of coverage tests). Closes all v1.7.0 ROADMAP items.
@@ -252,6 +273,23 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 [#107]: https://github.com/PHeonix25/unifi_alerts/pull/107
 [#111]: https://github.com/PHeonix25/unifi_alerts/pull/111
 [#113]: https://github.com/PHeonix25/unifi_alerts/pull/113
+[#114]: https://github.com/PHeonix25/unifi_alerts/pull/114
+[#144]: https://github.com/PHeonix25/unifi_alerts/pull/144
+[#145]: https://github.com/PHeonix25/unifi_alerts/pull/145
+[#146]: https://github.com/PHeonix25/unifi_alerts/pull/146
+[#147]: https://github.com/PHeonix25/unifi_alerts/pull/147
+[#149]: https://github.com/PHeonix25/unifi_alerts/pull/149
+[#150]: https://github.com/PHeonix25/unifi_alerts/pull/150
+[#151]: https://github.com/PHeonix25/unifi_alerts/pull/151
+[#152]: https://github.com/PHeonix25/unifi_alerts/pull/152
+[#156]: https://github.com/PHeonix25/unifi_alerts/pull/156
+[#157]: https://github.com/PHeonix25/unifi_alerts/pull/157
+[#158]: https://github.com/PHeonix25/unifi_alerts/pull/158
+[#159]: https://github.com/PHeonix25/unifi_alerts/pull/159
+[#160]: https://github.com/PHeonix25/unifi_alerts/pull/160
+[#177]: https://github.com/PHeonix25/unifi_alerts/pull/177
+[#178]: https://github.com/PHeonix25/unifi_alerts/pull/178
+[#179]: https://github.com/PHeonix25/unifi_alerts/pull/179
 
 [0d951b3]: https://github.com/PHeonix25/unifi_alerts/commit/0d951b3
 [0f17afb]: https://github.com/PHeonix25/unifi_alerts/commit/0f17afb
