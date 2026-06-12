@@ -48,7 +48,9 @@ jobs:
       contents: read
     # Advisory only: a freshly disclosed CVE must not block merges. The job
     # surfaces findings for the maintainer to triage and bump dependencies.
-    continue-on-error: true
+    # continue-on-error sits on the audit step itself (not the job) so the
+    # step failure is swallowed and the check reports green; a job-level flag
+    # only spares the overall run and still surfaces the job as failed.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
@@ -61,5 +63,6 @@ jobs:
           pip install -r requirements-dev.txt
           pip install pip-audit
 
-      - name: Run pip-audit
+      - name: Run pip-audit (advisory)
+        continue-on-error: true
         run: pip-audit
