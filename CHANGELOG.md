@@ -27,6 +27,7 @@
 
 ### Security
 
+- `_render_message_raw` now uses a single-pass `re.sub` instead of sequential `str.replace`. The old approach allowed a parameter value that contained a `{TOKEN}` string to be re-substituted on a later iteration, and was order-dependent for overlapping key names (e.g. `{IP}` vs `{IP_DST}`). Neither could be triggered from outside a valid authenticated session, but the fix closes the ambiguity for future callers. ([#123])
 - `from_webhook_payload`, `from_api_alarm`, and `from_system_log_event` now truncate `key` to 64 characters, `device_name` to 255 characters, and `severity` to 32 characters. Previously only `message` was bounded, so a token-bearing caller could push unbounded strings into HA state and logs via the other fields. ([#128])
 - All authenticated outbound calls to the UniFi controller now pass `allow_redirects=False`. Any 3xx response raises `CannotConnectError` rather than silently resubmitting credentials to the redirect target. ([#127])
 - `UniFiAlert.to_dict()` no longer persists the `raw` UniFi payload to `.storage`. That payload carried unredacted client MACs, IP addresses, and hostnames, and could contain non-JSON-safe values that would crash `Store.async_save`. Persistence now emits an explicit scalar field list (`category`, `message`, `received_at`, `key`, `device_name`, `site`, `severity`); `from_dict()` still defaults `raw` to `{}` on read so existing stored entries continue to load. ([#147])
@@ -241,6 +242,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#147]: https://github.com/PHeonix25/unifi_alerts/pull/147
 [#148]: https://github.com/PHeonix25/unifi_alerts/issues/148
 [#122]: https://github.com/PHeonix25/unifi_alerts/issues/122
+[#123]: https://github.com/PHeonix25/unifi_alerts/issues/123
 [#127]: https://github.com/PHeonix25/unifi_alerts/issues/127
 [#128]: https://github.com/PHeonix25/unifi_alerts/issues/128
 [#138]: https://github.com/PHeonix25/unifi_alerts/issues/138
