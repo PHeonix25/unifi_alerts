@@ -162,6 +162,12 @@ class WebhookManager:
                 )
                 return Response(status=400)
 
+            # Body contract (decided in #124, companion to #173):
+            #   - Unparseable (invalid JSON / invalid UTF-8): HTTP 400, no callback.
+            #   - Empty body ({}): accepted; from_webhook_payload yields "Unknown alert".
+            #   - Body with no recognised fields: accepted; same fallback.
+            # An authenticated empty-body ping is a valid webhook event. Rejecting it
+            # would surface as a false-alarm 400 in the UniFi Alarm Manager logs.
             if _LOGGER.isEnabledFor(logging.DEBUG):
                 # Narrow the payload to known-safe fields before logging so
                 # arbitrary controller fields (client MACs, IPs, future

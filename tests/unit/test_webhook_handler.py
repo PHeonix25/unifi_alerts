@@ -314,6 +314,45 @@ class TestMakeHandler:
         assert alert.category == CATEGORY_NETWORK_WAN
 
 
+# ── empty / no-field body contract (#124) ────────────────────────────────────
+
+
+class TestEmptyBodyContract:
+    """Valid but empty or no-field bodies are accepted and produce 'Unknown alert'."""
+
+    @pytest.mark.asyncio
+    async def test_empty_json_object_calls_push_callback(self):
+        """An authenticated POST with an empty JSON object must call push_callback."""
+        manager, push_cb = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="tok", json_body={})
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is None
+        push_cb.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_json_object_produces_unknown_alert(self):
+        """An empty JSON body must produce an alert with the 'Unknown alert' fallback message."""
+        manager, push_cb = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="tok", json_body={})
+        await handler(manager._hass, "wh-id", req)
+        _, alert = push_cb.call_args[0]
+        assert alert.message == "Unknown alert"
+
+    @pytest.mark.asyncio
+    async def test_no_recognised_fields_calls_push_callback(self):
+        """A body with no recognised alert fields must still call push_callback."""
+        manager, push_cb = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="tok", json_body={"internal_id": "abc123", "ts": 1234567890})
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is None
+        push_cb.assert_called_once()
+        _, alert = push_cb.call_args[0]
+        assert alert.message == "Unknown alert"
+
+
 # ── multi-entry webhook ID isolation (red-green pair for the collision fix) ──
 
 
