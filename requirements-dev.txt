@@ -1,10 +1,21 @@
 # Development dependencies — used by local venv and CI.
 # Install: pip install -r requirements-dev.txt
+#
+# Pinning policy (decision recorded for #142):
+# - Test/lint/typecheck tools are pinned exactly: new releases can introduce
+#   changed behaviour that breaks CI on unrelated files without any code change.
+#   Update them deliberately by bumping the pin, running "make check", then
+#   committing. Dependabot (pip ecosystem) can propose weekly bumps once enabled.
+# - aiohttp uses >= because it is a runtime dependency that HA manages; the
+#   exact version is driven by pytest-homeassistant-custom-component's transitive
+#   requirements.
+# - homeassistant uses >= with a minimum floor so the integration is validated
+#   against the minimum supported HA release rather than whatever pip resolves.
 aiohttp>=3.9.0
-homeassistant
-mypy
-pytest
-pytest-asyncio
-pytest-cov
-pytest-homeassistant-custom-component
-ruff==0.15.16  # pinned: an unpinned ruff silently picks up new lint rules and breaks CI on unrelated files
+homeassistant>=2025.1.3
+mypy==2.1.0
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+pytest-homeassistant-custom-component==0.13.204
+ruff==0.15.16
