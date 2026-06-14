@@ -20,7 +20,7 @@ from .const import (
     DEFAULT_VERIFY_SSL,
     MAX_SYSTEM_LOG_PAGES,
     SYSTEM_LOG_PAGE_SIZE,
-    UNIFI_KEY_TO_CATEGORY,
+    classify_event_key,
 )
 from .models import UniFiAlert, UniFiClientConfig
 
@@ -473,13 +473,11 @@ class UniFiClient:
     def _classify(alarm: dict[str, Any]) -> str | None:
         """Map a raw alarm dict to a category string, or None if unrecognised."""
         key = alarm.get("key", "")
-        for prefix, category in UNIFI_KEY_TO_CATEGORY.items():
-            if key.startswith(prefix):
-                return category
-        if key:
+        category = classify_event_key(key)
+        if not category and key:
             _LOGGER.debug(
                 "Unclassified UniFi event key %r — consider reporting it at "
                 "https://github.com/PHeonix25/unifi_alerts/issues",
                 key,
             )
-        return None
+        return category or None

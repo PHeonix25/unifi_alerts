@@ -11,10 +11,6 @@ from typing import TYPE_CHECKING, Any, TypedDict
 
 _LOGGER = logging.getLogger(__name__)
 
-# Module-level so the classmethod from_system_log_event() can deduplicate
-# "unrecognised key" warnings without instance state.
-_unknown_system_log_keys: set[str] = set()
-
 if TYPE_CHECKING:
     from .coordinator import UniFiAlertsCoordinator
     from .unifi_client import UniFiClient
@@ -138,7 +134,11 @@ class UniFiAlert:
         )
 
     @classmethod
-    def from_system_log_event(cls, payload: dict[str, Any]) -> UniFiAlert:
+    def from_system_log_event(
+        cls,
+        payload: dict[str, Any],
+        seen_keys: set[str] | None = None,
+    ) -> UniFiAlert:
         """Build an alert from a v2 system-log/all event record.
 
         The v2 schema differs substantially from the legacy /list/alarm format:
@@ -148,12 +148,16 @@ class UniFiAlert:
           - key: flat descriptive string with no EVT_ prefix
           - category: explicit enum value (SECURITY, INTERNET_AND_WAN, etc.)
 
-        Category resolution uses SYSTEM_LOG_KEY_TO_CATEGORY (key-level) with
-        SYSTEM_LOG_CATEGORY_FALLBACK (broad enum) as a fallback. If neither
-        matches, category is set to "" to match the existing fall-through
-        behaviour in from_dict / the legacy path.
+        Category resolution delegates to classify_event_key() (the single entry
+        point for all key->category mapping). If neither key nor enum matches,
+        category is set to "" to match the fall-through behaviour in from_dict /
+        the legacy path.
+
+        seen_keys: caller-owned set used to deduplicate "unrecognised key"
+        warnings. Pass the coordinator's instance set for production use; pass
+        None to warn on every call (suitable for tests of individual events).
         """
-        from .const import SYSTEM_LOG_CATEGORY_FALLBACK, SYSTEM_LOG_KEY_TO_CATEGORY
+        from .const import classify_event_key
 
         # Timestamp: always epoch milliseconds in the v2 schema
         ts = payload.get("timestamp")
@@ -170,25 +174,34 @@ class UniFiAlert:
         else:
             message = payload.get("title_raw") or payload.get("key") or "Unknown alert"
 
-        # Category: key-level lookup first, broad enum fallback second
+        # Category: single entry point handles all lookup strategies.
+        # Two-stage resolution so we can emit the correct warning when only
+        # the broad enum fallback is used (meaning the key is undocumented).
         key = payload.get("key", "")
         v2_category_enum = payload.get("category", "")
-        mapped_category = SYSTEM_LOG_KEY_TO_CATEGORY.get(key)
-        fallback_category = SYSTEM_LOG_CATEGORY_FALLBACK.get(v2_category_enum, "")
-        category = mapped_category or fallback_category
+        key_category = classify_event_key(key)  # exact + legacy prefix only
+        enum_category = classify_event_key("", v2_category_enum)  # enum fallback only
 
-        # Warn once per unmapped key so production map gaps are discoverable.
-        if mapped_category is None and key and key not in _unknown_system_log_keys:
-            _unknown_system_log_keys.add(key)
-            if fallback_category:
+        if key_category:
+            category = key_category
+        elif enum_category:
+            category = enum_category
+            # Key was not in the map; warn once per key so gaps are discoverable.
+            if key and (seen_keys is None or key not in seen_keys):
+                if seen_keys is not None:
+                    seen_keys.add(key)
                 _LOGGER.warning(
                     "Unrecognised v2 system-log key %r (enum=%s); using coarse fallback category %s. "
                     "Add this key to SYSTEM_LOG_KEY_TO_CATEGORY in const.py.",
                     key,
                     v2_category_enum,
-                    fallback_category,
+                    enum_category,
                 )
-            else:
+        else:
+            category = ""
+            if key and (seen_keys is None or key not in seen_keys):
+                if seen_keys is not None:
+                    seen_keys.add(key)
                 _LOGGER.warning(
                     "Unrecognised v2 system-log key %r (enum=%s); no category fallback, event skipped. "
                     "Add this key to SYSTEM_LOG_KEY_TO_CATEGORY in const.py.",
