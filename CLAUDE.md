@@ -35,7 +35,7 @@ Per-file annotations and load-bearing details live in [`docs/REPO_LAYOUT.md`](do
 
 ## Non-negotiable constraints
 
-- **Python 3.12+ only.** Use modern type hints (`list[str]` not `List[str]`, `X | None` not `Optional[X]`).
+- **Python 3.12 only (matching the HA baseline).** Use modern type hints (`list[str]` not `List[str]`, `X | None` not `Optional[X]`).
 - **All I/O is async.** No blocking calls anywhere. Use `aiohttp` for HTTP, never `requests`.
 - **No YAML configuration.** Everything goes through the config flow. Do not add `async_setup` or `configuration.yaml` support.
 - **`iot_class: local_push`** must stay in `manifest.json` - this is accurate and affects HA's energy/performance classification.
