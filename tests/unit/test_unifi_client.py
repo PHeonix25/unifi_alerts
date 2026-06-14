@@ -1422,3 +1422,13 @@ class TestFetchSystemLogAlarms:
         client._session.post = _raise
         with pytest.raises(CannotConnectError):
             await client.fetch_system_log_alarms()
+
+    @pytest.mark.asyncio
+    async def test_redirect_raises_cannot_connect(self):
+        """3xx from the system-log endpoint must raise CannotConnectError."""
+        client = make_client()
+        client._authenticated = True
+        ctx, _ = _make_post_json_response(301)
+        client._session.post = ctx
+        with pytest.raises(CannotConnectError, match="redirect"):
+            await client.fetch_system_log_alarms()
