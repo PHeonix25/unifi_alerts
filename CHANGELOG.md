@@ -5,6 +5,7 @@
 ### Added
 
 - Per-category webhook health signal. Each category binary sensor now exposes a `webhook_health` attribute (`never_received`, `healthy`, or `stale`) and a `last_webhook_at` timestamp, so you can confirm the Alarm Manager wiring works without waiting for a real alert. `healthy` means a webhook arrived within the last 7 days; `stale` means the last one is older than that (expected for rarely-firing categories). Both fields also appear per category in the diagnostics download and survive a config-entry reload. ([#117])
+- The diagnostics download now includes an `unmapped_system_log_keys` field listing any v2 system-log event keys seen since HA startup that are not yet in the integration's category map. A non-empty list means the map has gaps; copy the key names into a GitHub issue so they can be added to `const.py`. ([#134])
 - A failed watermark save now raises a repair issue in Settings > Repairs warning that cleared alerts may reappear after a restart and to check disk space. The issue clears itself on the next successful save. ([#163])
 
 ### Changed

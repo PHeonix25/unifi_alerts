@@ -14,6 +14,7 @@ from .const import (
     CONF_USERNAME,
     CONF_WEBHOOK_SECRET,
 )
+from .models import get_unknown_system_log_keys
 
 _TO_REDACT: set[str] = {CONF_PASSWORD, CONF_API_KEY, CONF_USERNAME, CONF_WEBHOOK_SECRET}
 
@@ -61,9 +62,16 @@ async def async_get_config_entry_diagnostics(
     else:
         coordinator_info = {}
 
+    # v2 system-log keys seen since HA startup that are not in
+    # SYSTEM_LOG_KEY_TO_CATEGORY. Non-empty means the key map has gaps; report
+    # these keys at https://github.com/PHeonix25/unifi_alerts/issues so they
+    # can be added to const.py.
+    unknown_keys = sorted(get_unknown_system_log_keys())
+
     return {
         "config_entry": async_redact_data(dict(entry.data), _TO_REDACT),
         "options": async_redact_data(dict(entry.options), _TO_REDACT),
         "webhook_urls": webhook_urls,
         "coordinator": coordinator_info,
+        "unmapped_system_log_keys": unknown_keys,
     }

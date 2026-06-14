@@ -15,6 +15,17 @@ _LOGGER = logging.getLogger(__name__)
 # "unrecognised key" warnings without instance state.
 _unknown_system_log_keys: set[str] = set()
 
+
+def get_unknown_system_log_keys() -> frozenset[str]:
+    """Return the set of v2 system-log keys seen since startup that have no entry
+    in SYSTEM_LOG_KEY_TO_CATEGORY.  Exposed for diagnostics; the caller should
+    sort the result for deterministic output.  Report unknown keys by opening an
+    issue at https://github.com/PHeonix25/unifi_alerts/issues/new and including
+    the key names and the category they belong to.
+    """
+    return frozenset(_unknown_system_log_keys)
+
+
 if TYPE_CHECKING:
     from .coordinator import UniFiAlertsCoordinator
     from .unifi_client import UniFiClient

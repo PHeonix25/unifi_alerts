@@ -180,3 +180,47 @@ async def test_diagnostics_per_category_last_cleared_at_none_when_unset() -> Non
         assert entry["last_cleared_at"] is None
         assert entry["last_webhook_at"] is None
         assert entry["webhook_health"] == "never_received"
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_exposes_unmapped_system_log_keys() -> None:
+    """unmapped_system_log_keys must appear in diagnostics and be sorted."""
+    import custom_components.unifi_alerts.models as models_module
+
+    original = set(models_module._unknown_system_log_keys)
+    try:
+        models_module._unknown_system_log_keys.clear()
+        models_module._unknown_system_log_keys.update({"EVT_UNKNOWN_Z", "EVT_UNKNOWN_A"})
+
+        coordinator = _make_coordinator()
+        entry = _make_entry_with_runtime(coordinator)
+        hass = MagicMock()
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        assert "unmapped_system_log_keys" in result
+        assert result["unmapped_system_log_keys"] == ["EVT_UNKNOWN_A", "EVT_UNKNOWN_Z"]
+    finally:
+        models_module._unknown_system_log_keys.clear()
+        models_module._unknown_system_log_keys.update(original)
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_unmapped_system_log_keys_empty_when_all_mapped() -> None:
+    """unmapped_system_log_keys must be an empty list when no keys are unknown."""
+    import custom_components.unifi_alerts.models as models_module
+
+    original = set(models_module._unknown_system_log_keys)
+    try:
+        models_module._unknown_system_log_keys.clear()
+
+        coordinator = _make_coordinator()
+        entry = _make_entry_with_runtime(coordinator)
+        hass = MagicMock()
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        assert result["unmapped_system_log_keys"] == []
+    finally:
+        models_module._unknown_system_log_keys.clear()
+        models_module._unknown_system_log_keys.update(original)
