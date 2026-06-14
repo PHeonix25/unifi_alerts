@@ -110,13 +110,27 @@ The key is shown only once at creation - copy it immediately.
 For each enabled category, create an alarm in **UniFi Network > Settings > Notifications > Alarm Manager**:
 
 1. Click **Create Alarm**
-2. Set the trigger matching the category (see [Alert categories](#alert-categories))
+2. Set the **trigger** matching your category (see table below)
 3. Set scope (specific devices or network-wide)
 4. Under **Action**, choose **Webhook > Custom Webhook > POST**
-5. Paste the webhook URL from the HA integration page
+5. Paste the webhook URL for that category from the HA integration page
 6. Click **Create**
 
 > **Test Alarm** in UniFi verifies the webhook reaches HA before you save.
+
+#### Trigger reference
+
+| Integration category | UniFi Alarm Manager trigger | Notes |
+|---|---|---|
+| Network: Device offline/online | **UniFi Devices** (or "Network Device" on older firmware) | APs, switches, gateways going offline or reconnecting |
+| Network: WAN offline/latency | **Internet & WAN** | WAN failover, internet transitions |
+| Network: Client connect/disconnect | **Client Devices** (or "Wireless Client" on older firmware) | Wireless and wired clients joining or leaving |
+| Security: Threat / IDS detected | **Security** | IPS/IDS alerts, rogue AP detection |
+| Security: Honeypot triggered | **Security** | Honeypot hit events; same trigger as the other Security categories |
+| Security: Firewall block | **Security** | GeoIP filtered traffic, firewall deny events |
+| Power: PoE / power loss | **Power** | PoE disconnect/overload, UPS events, power loss |
+
+> **Security categories share a trigger.** All three Security categories (Threat, Honeypot, Firewall) use the same "Security" trigger type in Alarm Manager. If you enable more than one, create a separate alarm for each using the same trigger but paste each category's distinct webhook URL. When a security event fires, UniFi will call all three URLs; each receives the event and the integration routes it to the correct category based on the event key. To avoid this, enable only the security categories you actively use.
 
 > **Webhook secret rotation:** if you regenerate the secret via the options flow, every existing URL becomes invalid immediately. Re-paste all new URLs into Alarm Manager, or affected alarms will silently fail with HTTP 401.
 
