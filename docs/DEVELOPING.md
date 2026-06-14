@@ -97,11 +97,13 @@ Skip `make setup` for a doc-only branch on a fresh clone. The full setup install
 | `hacs` | Validates `hacs.json` and repository structure for HACS listing |
 | `lint` | `ruff check` + `ruff format --check` + `mypy` + `strings.json`/`translations/en.json` drift diff |
 | `test` | `pytest` against `tests/unit/` and `tests/integration/` |
-| `pip-audit` | Dependency vulnerability scan against `requirements-dev.txt`. Advisory only (`continue-on-error` on the audit step); it never blocks a merge |
+| `pip-audit` | Dependency vulnerability scan. Advisory only (`continue-on-error` on the audit step); currently non-blocking - see note below |
 
 Static security analysis (CodeQL SAST) for Python runs through GitHub's CodeQL **default setup**, configured in Settings > Code security and analysis, with findings in the repository Security tab. It is not a workflow in this repository: an advanced workflow-based CodeQL config cannot coexist with default setup (GitHub rejects the SARIF upload), so SAST lives in default setup and the workflow below owns dependency auditing only.
 
-`dependency-audit.yml` holds the `pip-audit` job. It runs on every push and pull request to `dev` and `main`, plus a weekly Monday 06:00 UTC schedule so newly disclosed vulnerabilities are caught even when the code has not changed. `pip-audit` is intentionally non-blocking: the maintainer reviews its output and bumps `requirements-dev.txt` when a finding warrants it. `continue-on-error` sits on the audit step (not the job) so a finding leaves the check green while the report still appears in the log.
+`dependency-audit.yml` holds the `pip-audit` job. It runs on every push and pull request to `dev` and `main`, plus a weekly Monday 06:00 UTC schedule so newly disclosed vulnerabilities are caught even when the code has not changed. `pip-audit` is currently advisory: `continue-on-error` sits on the audit step (not the job) so a finding leaves the check green while the report still appears in the log.
+
+**Why advisory and not blocking:** as of mid-2026, most findings are in transitive dependencies pinned by `pytest-homeassistant-custom-component` (which sets `homeassistant==2025.1.4`). The fix versions require `homeassistant 2025.8+` or `2026.1`, which are not yet on PyPI. When `pytest-homeassistant-custom-component` is bumped to a version that pulls in a fixed HA release, re-run `pip-audit` locally, verify zero findings, then flip `continue-on-error: true` to `false` on the audit step in `dependency-audit.yml` to make the scan blocking.
 
 `version-check.yml` enforces the version format per branch (`X.Y.Z` on `main`, `X.Y.Z-preN` on `dev`). `release.yml` triggers on tags and publishes via `gh release create --generate-notes`. All checks except `pip-audit` must pass before merging.
 
