@@ -27,6 +27,7 @@
 ### Internal
 
 - Added test coverage reporting via Codecov: `pytest-cov` added to dev requirements, 95% floor enforced in CI and locally (`--cov-fail-under=95`), XML report uploaded to Codecov on every push, live badge added to README and info.md. `make coverage` generates an HTML report locally; `.coverage`, `coverage.xml`, and `htmlcov/` added to `.gitignore`.
+- Added end-to-end integration tests for webhook secret rotation: confirms the old token is rejected (401) after reload and the new token is accepted (200), covering the full rotation cycle from entry-data update through webhook re-registration. ([#121])
 
 ## [1.7.0] - 2026-05-29
 
