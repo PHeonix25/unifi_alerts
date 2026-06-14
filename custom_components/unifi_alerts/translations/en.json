@@ -78,6 +78,10 @@
     "watermark_persist_failed": {
       "title": "UniFi Alerts: could not save cleared-alert state",
       "description": "Home Assistant could not write the UniFi Alerts watermark to storage, so cleared alerts may reappear and Open Count may jump back to its previous value after a restart. This usually means the disk is full or there is a storage I/O error. Check available disk space and the Home Assistant logs. This message clears automatically once a save succeeds."
+    },
+    "webhook_secret_rotated": {
+      "title": "UniFi Alerts: webhook URLs have changed for {name}",
+      "description": "The webhook secret was rotated. All previously configured URLs in UniFi Alarm Manager are now invalid.\n\nUpdate each category URL in UniFi Network: **Settings > Notifications > Alarm Manager**. The new URLs are shown in **Settings > Devices and Services > UniFi Alerts > Configure**.\n\nThis notice clears automatically when the first webhook is received after the update."
     }
   },
   "services": {

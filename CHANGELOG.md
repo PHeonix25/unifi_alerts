@@ -6,6 +6,7 @@
 
 - Per-category webhook health signal. Each category binary sensor now exposes a `webhook_health` attribute (`never_received`, `healthy`, or `stale`) and a `last_webhook_at` timestamp, so you can confirm the Alarm Manager wiring works without waiting for a real alert. `healthy` means a webhook arrived within the last 7 days; `stale` means the last one is older than that (expected for rarely-firing categories). Both fields also appear per category in the diagnostics download and survive a config-entry reload. ([#117])
 - A failed watermark save now raises a repair issue in Settings > Repairs warning that cleared alerts may reappear after a restart and to check disk space. The issue clears itself on the next successful save. ([#163])
+- Rotating the webhook secret in the options flow now creates a repair issue in Settings > Repairs reminding the user to update all category URLs in UniFi Alarm Manager. The issue clears automatically when the first authenticated webhook is received after the update. ([#167])
 
 ### Changed
 

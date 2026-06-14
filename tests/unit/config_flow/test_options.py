@@ -852,6 +852,110 @@ class TestWebhookSecretRotation:
             )
 
 
+class TestWebhookSecretRotationRepairIssue:
+    """The finish step must create a repair issue when the secret was rotated,
+    and must NOT create one when the secret is unchanged."""
+
+    @pytest.mark.asyncio
+    async def test_finish_submit_with_rotation_creates_repair_issue(self) -> None:
+        """Submitting finish after a secret rotation creates the repair issue."""
+        from custom_components.unifi_alerts.const import CONF_REGENERATE_WEBHOOK_SECRET
+
+        flow = make_options_flow()
+        flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+        flow.async_show_form = MagicMock(
+            side_effect=lambda **kwargs: {"type": "form", "step_id": kwargs["step_id"]}
+        )
+
+        # Stage a rotation via the credentials step
+        await flow.async_step_credentials(
+            {
+                CONF_CONTROLLER_URL: "",
+                CONF_USERNAME: "",
+                CONF_PASSWORD: "",
+                CONF_API_KEY: "",
+                CONF_VERIFY_SSL: True,
+                CONF_REGENERATE_WEBHOOK_SECRET: True,
+            }
+        )
+        new_secret = flow._pending_data[CONF_WEBHOOK_SECRET]
+        assert new_secret != "fixed-secret"
+
+        # Advance to categories, then submit finish
+        cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+        with patch(
+            "custom_components.unifi_alerts.config_flow.async_generate_url",
+            side_effect=lambda hass, wid: f"http://ha.local/api/webhook/{wid}",
+        ):
+            await flow.async_step_categories(cat_input)
+
+        with patch("custom_components.unifi_alerts.config_flow.ir") as mock_ir:
+            result = await flow.async_step_finish(user_input={})
+
+        assert result["type"] == "create_entry"
+        mock_ir.async_create_issue.assert_called_once()
+        call_kwargs = mock_ir.async_create_issue.call_args.kwargs
+        assert call_kwargs["translation_key"] == "webhook_secret_rotated"
+        assert "webhook_secret_rotated_" in mock_ir.async_create_issue.call_args.args[2]
+
+    @pytest.mark.asyncio
+    async def test_finish_submit_without_rotation_does_not_create_repair_issue(self) -> None:
+        """Submitting finish without a secret rotation must NOT create the repair issue."""
+        from custom_components.unifi_alerts.const import (
+            CONF_CLEAR_TIMEOUT,
+            CONF_POLL_INTERVAL,
+            CONF_SITE,
+        )
+
+        flow = make_options_flow()
+        flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+        flow._pending_options = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 5,
+            CONF_SITE: "default",
+        }
+        # _pending_data is empty: no credential/secret changes staged
+        flow._pending_data = {}
+
+        with patch("custom_components.unifi_alerts.config_flow.ir") as mock_ir:
+            result = await flow.async_step_finish(user_input={})
+
+        assert result["type"] == "create_entry"
+        mock_ir.async_create_issue.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_finish_submit_with_non_secret_data_change_does_not_create_repair_issue(
+        self,
+    ) -> None:
+        """Changing credentials without rotating the secret must NOT create the repair issue."""
+        from custom_components.unifi_alerts.const import (
+            CONF_CLEAR_TIMEOUT,
+            CONF_POLL_INTERVAL,
+            CONF_SITE,
+        )
+
+        flow = make_options_flow()
+        flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+        flow._pending_options = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 5,
+            CONF_SITE: "default",
+        }
+        # _pending_data has a new username but the SAME secret
+        flow._pending_data = {
+            CONF_USERNAME: "new-admin",
+            CONF_WEBHOOK_SECRET: "fixed-secret",
+        }
+
+        with patch("custom_components.unifi_alerts.config_flow.ir") as mock_ir:
+            result = await flow.async_step_finish(user_input={})
+
+        assert result["type"] == "create_entry"
+        mock_ir.async_create_issue.assert_not_called()
+
+
 class TestOptionsCredentialsErrorsAndStaging:
     @pytest.mark.asyncio
     async def test_credentials_cannot_connect_shows_error(self) -> None:

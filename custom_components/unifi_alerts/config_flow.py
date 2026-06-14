@@ -504,6 +504,21 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             # the options entry. If the user abandoned the flow before reaching
             # this step, _pending_data is empty and entry.data is untouched.
             if self._pending_data:
+                old_secret = self._config_entry.data.get(CONF_WEBHOOK_SECRET, "")
+                new_secret = self._pending_data.get(CONF_WEBHOOK_SECRET, old_secret)
+                if new_secret != old_secret:
+                    # Secret was rotated — every URL pasted into Alarm Manager is
+                    # now invalid. Create a repair issue that clears automatically
+                    # when the first authenticated webhook arrives after the update.
+                    ir.async_create_issue(
+                        self.hass,
+                        DOMAIN,
+                        f"webhook_secret_rotated_{self._config_entry.entry_id}",
+                        is_fixable=False,
+                        severity=ir.IssueSeverity.WARNING,
+                        translation_key="webhook_secret_rotated",
+                        translation_placeholders={"name": self._config_entry.title},
+                    )
                 self.hass.config_entries.async_update_entry(
                     self._config_entry, data=self._pending_data
                 )
