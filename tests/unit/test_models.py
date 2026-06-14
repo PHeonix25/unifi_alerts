@@ -49,6 +49,18 @@ class TestUniFiAlert:
         alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
         assert len(alert.message) == 255
 
+    def test_raw_not_retained_after_webhook_construction(self):
+        """Raw payload must not be retained in memory after building from a webhook."""
+        payload = {"message": "test", "client_mac": "aa:bb:cc:dd:ee:ff", "src_ip": "10.0.0.1"}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert alert.raw == {}
+
+    def test_raw_not_retained_after_api_alarm_construction(self):
+        """Raw alarm dict must not be retained in memory after building from a poll."""
+        alarm = {"msg": "threat", "key": "EVT_IPS_ThreatDetected", "client_mac": "aa:bb:cc:dd:ee:ff"}
+        alert = UniFiAlert.from_api_alarm(CATEGORY_NETWORK_WAN, alarm)
+        assert alert.raw == {}
+
     def test_from_api_alarm(self):
         alarm = {
             "key": "EVT_IPS_ThreatDetected",
@@ -328,10 +340,11 @@ class TestFromSystemLogEvent:
         alert = UniFiAlert.from_system_log_event(dict(self._BASE_EVENT))
         assert alert.severity == "HIGH"
 
-    def test_raw_dict_preserved(self):
+    def test_raw_not_retained_after_construction(self):
+        """Raw payload must be empty after construction; no in-memory privacy exposure."""
         event = dict(self._BASE_EVENT)
         alert = UniFiAlert.from_system_log_event(event)
-        assert alert.raw == event
+        assert alert.raw == {}
 
     def test_firewall_key_maps_to_security_firewall(self):
         event = dict(self._BASE_EVENT, key="FIREWALL_BLOCK", category="SECURITY")

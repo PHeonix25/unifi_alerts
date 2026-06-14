@@ -22,6 +22,7 @@
 
 ### Security
 
+- `UniFiAlert` no longer retains the raw controller payload in its `raw` field after construction. Previously `from_webhook_payload`, `from_api_alarm`, and `from_system_log_event` all stored the full unredacted payload (client MACs, IPs, hostnames) in `last_alert.raw` for the lifetime of the `CategoryState`. Now `raw` defaults to `{}` after construction. `from_dict` is unchanged for backward storage compatibility. ([#164])
 - `UniFiAlert.to_dict()` no longer persists the `raw` UniFi payload to `.storage`. That payload carried unredacted client MACs, IP addresses, and hostnames, and could contain non-JSON-safe values that would crash `Store.async_save`. Persistence now emits an explicit scalar field list (`category`, `message`, `received_at`, `key`, `device_name`, `site`, `severity`); `from_dict()` still defaults `raw` to `{}` on read so existing stored entries continue to load. ([#147])
 
 ### Internal

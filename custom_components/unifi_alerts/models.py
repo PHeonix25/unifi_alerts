@@ -95,7 +95,6 @@ class UniFiAlert:
             category=category,
             message=str(message)[:255],
             received_at=datetime.now(UTC),
-            raw=payload,
             key=payload.get("key", ""),
             device_name=payload.get("device_name")
             or payload.get("ap_name")
@@ -130,7 +129,6 @@ class UniFiAlert:
             category=category,
             message=str(message)[:255],
             received_at=received_at,
-            raw=alarm,
             key=alarm.get("key", ""),
             device_name=alarm.get("device_name") or alarm.get("ap_name") or "",
             site=alarm.get("site_name") or "",
@@ -200,7 +198,6 @@ class UniFiAlert:
             category=category,
             message=str(message)[:255],
             received_at=received_at,
-            raw=payload,
             key=key,
             device_name=payload.get("device_name") or "",
             site=payload.get("site_name") or payload.get("site") or "",
