@@ -249,6 +249,15 @@ class TestLoginUserpass:
         # Should not raise
         await client._login_userpass()
 
+    @pytest.mark.asyncio
+    async def test_redirect_raises_cannot_connect(self):
+        """3xx from the login endpoint must raise CannotConnectError, not follow the redirect."""
+        client = make_client()
+        ctx = _make_response(302)
+        client._session.post = ctx
+        with pytest.raises(CannotConnectError, match="redirect"):
+            await client._login_userpass()
+
 
 class TestVerifyApiKey:
     """Tests for _verify_api_key — API key authentication and endpoint selection."""
@@ -295,6 +304,16 @@ class TestVerifyApiKey:
         client._session.get = ctx
 
         with pytest.raises(InvalidAuthError):
+            await client._verify_api_key()
+
+    @pytest.mark.asyncio
+    async def test_redirect_raises_cannot_connect(self):
+        """A 3xx from the API key endpoint must raise CannotConnectError (no redirect)."""
+        client = make_client({"api_key": "my-key", "verify_ssl": False})
+        ctx = _make_response(302)
+        client._session.get = ctx
+
+        with pytest.raises(CannotConnectError, match="redirect"):
             await client._verify_api_key()
 
 
@@ -682,6 +701,16 @@ class TestFetchAlarms:
         client.authenticate = _mock_authenticate
         await client.fetch_alarms()
         assert len(authenticated_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_redirect_raises_cannot_connect(self):
+        """A 3xx on an authenticated alarm fetch must raise CannotConnectError (no redirect)."""
+        client = make_client()
+        client._authenticated = True
+        ctx = _make_response(301)
+        client._session.get = ctx
+        with pytest.raises(CannotConnectError, match="redirect"):
+            await client.fetch_alarms()
 
 
 class TestCategoriseAlarms:

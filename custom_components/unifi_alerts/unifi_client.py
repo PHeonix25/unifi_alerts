@@ -145,7 +145,13 @@ class UniFiClient:
                 headers=self._headers(),
                 ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                 timeout=aiohttp.ClientTimeout(total=10),
+                allow_redirects=False,
             ) as resp:
+                if 300 <= resp.status < 400:
+                    raise CannotConnectError(
+                        f"Controller issued a redirect (HTTP {resp.status}) on an authenticated "
+                        "request; refusing to follow to protect credentials"
+                    )
                 if resp.status == 401:
                     self._authenticated = False
                     raise InvalidAuthError("Session expired")
@@ -234,6 +240,7 @@ class UniFiClient:
                 headers=self._headers(),
                 ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                 timeout=aiohttp.ClientTimeout(total=10),
+                allow_redirects=False,
             ) as resp:
                 if resp.status == 200:
                     _LOGGER.debug("v2 system-log endpoint available")
@@ -339,7 +346,13 @@ class UniFiClient:
                     headers=self._headers(),
                     ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                     timeout=aiohttp.ClientTimeout(total=15),
+                    allow_redirects=False,
                 ) as resp:
+                    if 300 <= resp.status < 400:
+                        raise CannotConnectError(
+                            f"Controller issued a redirect (HTTP {resp.status}) on an authenticated "
+                            "request; refusing to follow to protect credentials"
+                        )
                     if resp.status == 401:
                         self._authenticated = False
                         raise InvalidAuthError("Session expired during system-log fetch")
@@ -388,6 +401,7 @@ class UniFiClient:
                     f"{self._base}/api/auth/logout",
                     ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                     timeout=aiohttp.ClientTimeout(total=5),
+                    allow_redirects=False,
                 )
             except Exception as err:  # noqa: BLE001
                 _LOGGER.warning("UniFi logout failed: %s", type(err).__name__)
@@ -404,7 +418,13 @@ class UniFiClient:
             headers={"X-API-Key": api_key, "Accept": "application/json"},
             ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
             timeout=aiohttp.ClientTimeout(total=8),
+            allow_redirects=False,
         ) as resp:
+            if 300 <= resp.status < 400:
+                raise CannotConnectError(
+                    f"Controller issued a redirect (HTTP {resp.status}) on an authenticated "
+                    "request; refusing to follow to protect credentials"
+                )
             if resp.status == 404:
                 raise CannotConnectError(
                     "API key endpoint not found — check the controller URL "
@@ -432,7 +452,13 @@ class UniFiClient:
                     json=payload,
                     ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                     timeout=aiohttp.ClientTimeout(total=10),
+                    allow_redirects=False,
                 ) as resp:
+                    if 300 <= resp.status < 400:
+                        raise CannotConnectError(
+                            f"Controller login endpoint issued a redirect (HTTP {resp.status}); "
+                            "check the controller URL"
+                        )
                     if resp.status == 400:
                         _LOGGER.warning(
                             "Controller rejected login request at %s (HTTP 400). "
