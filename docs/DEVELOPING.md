@@ -66,6 +66,15 @@ When a user reports an unrecognised alert key, add it to `UNIFI_KEY_TO_CATEGORY`
 
 HA requires `strings.json` and `translations/en.json` to match exactly. Edit both files together; the CI `lint` job and the pre-push hook diff the two files and fail on drift.
 
+## Doc-only PRs (lighter path)
+
+If a PR only touches `*.md`, `docs/**`, `CHANGELOG.md`, `CLAUDE.md`, `README.md`, or `SECURITY.md`, skip the full `make check` cycle:
+
+1. Run `make doc-check`. This runs `scripts/validate_docs.py` (prose linter, HISTORY h2 format) plus the `strings.json` / `translations/en.json` drift check. No venv required for either step.
+2. `python3 scripts/validate_docs.py` works standalone without `make`. It is pure stdlib.
+3. Skip `make setup` for a doc-only branch on a fresh clone. The full setup installs Home Assistant and ~200 packages just to give you `pytest`/`ruff`/`mypy`, none of which inspect docs.
+4. CI still runs the full suite on push. Treat that as the safety net rather than a local gate.
+
 ## Testing manually in Home Assistant
 
 1. Copy `custom_components/unifi_alerts/` into your HA `config/custom_components/` directory.
