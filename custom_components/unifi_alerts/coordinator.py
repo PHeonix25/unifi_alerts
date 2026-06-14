@@ -128,6 +128,12 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 ) from reauth_err
             try:
                 categorised = await self._fetch_categorised()
+            except InvalidAuthError as retry_err:
+                # Credentials still rejected after a fresh authenticate(); surface to HA
+                # so it can prompt the user rather than silently retrying forever.
+                raise ConfigEntryAuthFailed(
+                    f"Still unauthorized after re-authentication; credentials may be invalid: {retry_err}"
+                ) from retry_err
             except CannotConnectError as retry_err:
                 raise UpdateFailed(
                     f"Cannot reach UniFi controller after re-authentication: {retry_err}"
