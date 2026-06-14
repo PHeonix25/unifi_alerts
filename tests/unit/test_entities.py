@@ -140,6 +140,7 @@ class TestUniFiCategoryBinarySensor:
         assert attrs["last_message"] == "WAN offline"
         assert attrs["last_device"] == "UDM-Pro"
         assert attrs["last_key"] == "EVT_GW_WANTransition"
+        assert attrs["last_severity"] == "critical"
         assert "last_alert_at" in attrs
 
     def test_extra_attrs_without_alert(self):
@@ -223,6 +224,7 @@ class TestUniFiRollupBinarySensor:
         assert attrs["total_open_count"] == 2
         assert attrs["last_message"] == "WAN offline"
         assert attrs["last_category"] == CATEGORY_NETWORK_WAN
+        assert attrs["last_severity"] == "critical"
 
     def test_extra_attrs_without_last_alert(self):
         states = {CATEGORY_NETWORK_WAN: make_state()}
