@@ -17,6 +17,8 @@ custom_components/unifi_alerts/   # integration source
   sensor.py                       # message, count, and rollup count sensors
   event.py                        # event entities, fire per alert
   button.py                       # manual clear buttons
+  services.py                     # service handlers for `unifi_alerts.clear_category` and `unifi_alerts.clear_all`; registered in `__init__.py` on entry setup
+  services.yaml                   # HA service schema definitions for `clear_category` and `clear_all`; loaded by HA to generate UI cards and validate service calls
   strings.json                    # UI copy for config flow; must be identical to translations/en.json - CI enforces this
   translations/en.json            # runtime translation file loaded by HA; must be identical to strings.json - CI enforces this
 tests/
@@ -63,6 +65,8 @@ scripts/
   validate_docs.py                # pure-Python docs prose linter; bans em-dash, unicode arrows, and 'bundle/cluster/track/session N' framing; enforces HISTORY.md '## YYYY-MM-DD' h2 format. Wired into make validate, make doc-check, pre-push hook, and CI hacs-preflight job.
   check_translations.py           # pure-Python byte-identical check between strings.json and translations/en.json. Replaces the previous `diff` shell command so the check works on Windows (cmd / PowerShell) as well as Unix. Wired into make doc-check and CI lint job.
   bump_version.py                 # release-prep helper. Modes: --pre (1.5.0-pre1 -> 1.5.0-pre2), --stable (1.5.0-pre3 -> 1.5.0; also rewrites CHANGELOG.md), --next-cycle (1.5.0 -> 1.6.0-pre1). Verifies clean tree, fetches dev, creates claude/bump-<new>, updates manifest.json (+ CHANGELOG for stable), stages, prints merge list since previous tag for the docs/HISTORY.md block. Pure stdlib.
+  run_lint.py                     # thin wrapper invoked by `make lint`; runs `ruff check` then `ruff format --check` in sequence and exits non-zero on first failure. Imported via the Makefile rather than called directly.
+  run_typecheck.py                # thin wrapper invoked by `make typecheck`; runs `mypy` over the integration source. Imported via the Makefile rather than called directly.
   setup-labels.sh                 # one-shot script that creates the non-default labels referenced in `.github/release.yml` (`security`, `feat`, `fix`, `tests`, `ci`, `github-actions`, `dependencies`). Run once per fork via `./scripts/setup-labels.sh`. Idempotent - existing labels skipped. The `bug`, `enhancement`, and `documentation` labels are GitHub defaults; the rest do not exist on a fresh fork and the categories file is inert without them. `feat` and `fix` are Conventional-Commits aliases for `enhancement` and `bug` respectively - either label works for those categories.
 Makefile                          # convenience targets: setup, setup-lint, lint, typecheck, validate, doc-check, test, check, help (default = help). Cross-platform: detects Windows vs Unix and uses .venv/Scripts/*.exe or .venv/bin/* accordingly. `py -3.12` on Windows, `python3.12` on Unix.
 requirements-dev.txt              # full dev dependencies (Home Assistant + test stack); used by make setup and CI test/lint jobs
