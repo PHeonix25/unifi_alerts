@@ -96,13 +96,17 @@ class UniFiAlert:
             message=str(message)[:255],
             received_at=datetime.now(UTC),
             raw=payload,
-            key=payload.get("key", ""),
-            device_name=payload.get("device_name")
-            or payload.get("ap_name")
-            or payload.get("sw_name")
-            or "",
+            key=str(payload.get("key", ""))[:64],
+            device_name=(
+                payload.get("device_name")
+                or payload.get("ap_name")
+                or payload.get("sw_name")
+                or ""
+            )[:255],
             site=payload.get("site_name") or payload.get("site") or "",
-            severity=payload.get("severity") or payload.get("subsystem") or "",
+            severity=str(
+                payload.get("severity") or payload.get("subsystem") or ""
+            )[:32],
         )
 
     @classmethod
@@ -131,10 +135,10 @@ class UniFiAlert:
             message=str(message)[:255],
             received_at=received_at,
             raw=alarm,
-            key=alarm.get("key", ""),
-            device_name=alarm.get("device_name") or alarm.get("ap_name") or "",
+            key=str(alarm.get("key", ""))[:64],
+            device_name=(alarm.get("device_name") or alarm.get("ap_name") or "")[:255],
             site=alarm.get("site_name") or "",
-            severity=alarm.get("severity") or alarm.get("subsystem") or "",
+            severity=str(alarm.get("severity") or alarm.get("subsystem") or "")[:32],
         )
 
     @classmethod
@@ -201,10 +205,10 @@ class UniFiAlert:
             message=str(message)[:255],
             received_at=received_at,
             raw=payload,
-            key=key,
-            device_name=payload.get("device_name") or "",
+            key=key[:64],
+            device_name=(payload.get("device_name") or "")[:255],
             site=payload.get("site_name") or payload.get("site") or "",
-            severity=payload.get("severity") or "",
+            severity=str(payload.get("severity") or "")[:32],
         )
 
     def to_dict(self) -> dict[str, Any]:
