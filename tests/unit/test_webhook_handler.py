@@ -247,17 +247,38 @@ class TestMakeHandler:
         push_cb.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_malformed_json_uses_empty_dict_fallback(self):
-        """If the body can't be parsed as JSON, push_callback is still called with empty payload."""
+    async def test_invalid_json_returns_400(self):
+        """A body that fails JSON parsing must be rejected with HTTP 400; push_callback not called."""
         manager, push_cb = make_manager(secret="tok")
         handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
         req = make_request(token="tok")
         req.content.read = AsyncMock(return_value=b"not valid json {{")
-        await handler(manager._hass, "wh-id", req)
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is not None
+        assert response.status == 400
+        push_cb.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_invalid_utf8_returns_400(self):
+        """A body that fails UTF-8 decoding must be rejected with HTTP 400; push_callback not called."""
+        manager, push_cb = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="tok")
+        req.content.read = AsyncMock(return_value=b"\xff\xfe invalid utf-8")
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is not None
+        assert response.status == 400
+        push_cb.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_valid_json_accepted(self):
+        """A well-formed JSON body must be accepted (200/None) and push_callback called."""
+        manager, push_cb = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="tok", json_body={"message": "WAN down"})
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is None
         push_cb.assert_called_once()
-        # Alert should have fallback message
-        call_category, call_alert = push_cb.call_args[0]
-        assert call_alert.message == "Unknown alert"
 
     @pytest.mark.asyncio
     async def test_oversized_body_returns_413(self):
@@ -396,8 +417,8 @@ class TestDecodeErrorLogging:
         warning_args = mock_logger.warning.call_args[0][1:]
         assert "Malformed webhook body" in warning_msg
         assert "JSONDecodeError" in warning_args
-        # push_callback is still invoked with the empty-payload fallback
-        push_cb.assert_called_once()
+        # push_callback must NOT be called — we return 400 instead
+        push_cb.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_invalid_utf8_logs_warning(self):
@@ -409,7 +430,8 @@ class TestDecodeErrorLogging:
         with patch("custom_components.unifi_alerts.webhook_handler._LOGGER") as mock_logger:
             await handler(manager._hass, "wh-id", req)
         assert mock_logger.warning.called
-        push_cb.assert_called_once()
+        # push_callback must NOT be called — we return 400 instead
+        push_cb.assert_not_called()
 
 
 # ── DEBUG payload narrowing ──────────────────────────────────────────────────
