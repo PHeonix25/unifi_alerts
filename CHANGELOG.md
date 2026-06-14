@@ -6,6 +6,7 @@
 
 - Per-category webhook health signal. Each category binary sensor now exposes a `webhook_health` attribute (`never_received`, `healthy`, or `stale`) and a `last_webhook_at` timestamp, so you can confirm the Alarm Manager wiring works without waiting for a real alert. `healthy` means a webhook arrived within the last 7 days; `stale` means the last one is older than that (expected for rarely-firing categories). Both fields also appear per category in the diagnostics download and survive a config-entry reload. ([#117])
 - A failed watermark save now raises a repair issue in Settings > Repairs warning that cleared alerts may reappear after a restart and to check disk space. The issue clears itself on the next successful save. ([#163])
+- SSL certificate verification failures in the config flow now show a dedicated, actionable error instead of the generic cannot-connect message. The `verify_ssl` field now carries an inline warning about man-in-the-middle risk. ([#166])
 
 ### Changed
 

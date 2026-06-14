@@ -39,7 +39,7 @@ from .const import (
     webhook_id_for_category,
 )
 from .models import UniFiClientConfig
-from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
+from .unifi_client import CannotConnectError, InvalidAuthError, SslCertificateError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,6 +89,8 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                     await client.fetch_alarms()  # validate alarm endpoint reachable
                 except InvalidAuthError:
                     errors["base"] = "invalid_auth"
+                except SslCertificateError:
+                    errors[CONF_CONTROLLER_URL] = "invalid_ssl_cert"
                 except CannotConnectError as err:
                     _LOGGER.error("Cannot reach alarm endpoint: %s", err)
                     errors["base"] = "cannot_connect"
@@ -251,6 +253,8 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 auth_method = await client.authenticate()
             except InvalidAuthError:
                 errors["base"] = "invalid_auth"
+            except SslCertificateError:
+                errors["base"] = "invalid_ssl_cert"
             except CannotConnectError as err:
                 _LOGGER.error("Cannot reach controller during reauth: %s", err)
                 errors["base"] = "cannot_connect"
@@ -384,6 +388,8 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                     await client.fetch_alarms()
                 except InvalidAuthError:
                     errors["base"] = "invalid_auth"
+                except SslCertificateError:
+                    errors["base"] = "invalid_ssl_cert"
                 except CannotConnectError as err:
                     _LOGGER.error("Cannot reach controller during options update: %s", err)
                     errors["base"] = "cannot_connect"
