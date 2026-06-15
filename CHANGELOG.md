@@ -7,6 +7,7 @@
 - Per-category webhook health signal. Each category binary sensor now exposes a `webhook_health` attribute (`never_received`, `healthy`, or `stale`) and a `last_webhook_at` timestamp, so you can confirm the Alarm Manager wiring works without waiting for a real alert. `healthy` means a webhook arrived within the last 7 days; `stale` means the last one is older than that (expected for rarely-firing categories). Both fields also appear per category in the diagnostics download and survive a config-entry reload. ([#117])
 - A failed watermark save now raises a repair issue in Settings > Repairs warning that cleared alerts may reappear after a restart and to check disk space. The issue clears itself on the next successful save. ([#163])
 - Rotating the webhook secret in the options flow now creates a repair issue in Settings > Repairs reminding the user to update all category URLs in UniFi Alarm Manager. The issue clears automatically when the first authenticated webhook is received after the update. ([#167])
+- SSL certificate verification failures in the config flow now show a dedicated, actionable error instead of the generic cannot-connect message. The `verify_ssl` field now carries an inline warning about man-in-the-middle risk. ([#166])
 
 ### Changed
 
@@ -17,17 +18,32 @@
 
 ### Fixed
 
+- Successful re-authentication now immediately clears the system-log probe backoff. Previously, if the probe had been forced onto the legacy path by consecutive transient failures (hit `_PROBE_FAIL_LIMIT`), re-auth would leave the backoff timer intact and the integration would stay on the legacy path for up to 1 hour even after the controller became reachable. The fix resets `_probe_backoff_until`, `_probe_fail_count`, and `_has_system_log` (to `None`, triggering a fresh probe on the next poll) inside `authenticate()` on every success path. ([#168])
+- Authenticated webhook POSTs whose body is not valid JSON or not valid UTF-8 now return HTTP 400 and are discarded rather than synthesizing an "Unknown alert" entity state update. A token-bearing sender could previously spam meaningless "Unknown alert" events via malformed bodies. ([#173])
+- `UniFiClearCategoryButton` and `UniFiClearAllButton` now override `_handle_coordinator_update()` to call `async_write_ha_state()`, so the `available` property is re-evaluated when coordinator state changes (e.g. after a category is disabled via the options flow without a full reload). Previously the button entities could remain stale between polls. ([#170])
+- A second 401 response from the controller after a successful re-authentication now raises `ConfigEntryAuthFailed` (triggering HA's re-auth repair flow) instead of propagating as an unhandled `InvalidAuthError`. Previously the coordinator only caught `CannotConnectError` on the retried fetch, so a persistent authentication failure after credential rotation silently broke polling. ([#122])
 - `make lint`, `make typecheck`, `make validate`, and the `.githooks/pre-push` hook no longer crash on Windows shells whose stdout codec defaults to `cp1252`. Previously, the `✅` success glyph printed by the scripts raised `UnicodeEncodeError` and exited the script non-zero even when the underlying tool (ruff, mypy, the validators) had succeeded. All five affected scripts (`run_lint.py`, `run_typecheck.py`, `validate_hacs.py`, `validate_docs.py`, `check_translations.py`) now reconfigure stdout and stderr to UTF-8 via a shared `scripts/_console.py` helper at startup. Windows contributors no longer need to export `PYTHONIOENCODING=utf-8` to use the standard development workflow. ([#148])
 - The v2 system-log probe no longer re-fires on every poll when the endpoint returns persistent non-404 errors. After 5 consecutive transient failures the probe caches the legacy path for 1 hour, then retries. A single blip still causes a re-probe on the next poll. ([#137])
 - Watermark/alert-count persistence triggered by a webhook push now coalesces a burst of pushes into a single debounced write via `Store.async_delay_save`, removing a lost-update race between overlapping fire-and-forget saves. Background-task failures (including a persist raised inside an auto-clear) are now logged via a shared done-callback instead of being silently swallowed. ([#118])
+- Webhook body contract is now documented and tested: unparseable bodies (invalid JSON/UTF-8) return HTTP 400 and do not mutate state; valid empty bodies (`{}`) and bodies with no recognised fields are accepted and produce an "Unknown alert" event. ([#124])
 
 ### Security
 
+- `UniFiAlert` no longer retains the raw controller payload in its `raw` field after construction. Previously `from_webhook_payload`, `from_api_alarm`, and `from_system_log_event` all stored the full unredacted payload (client MACs, IPs, hostnames) in `last_alert.raw` for the lifetime of the `CategoryState`. Now `raw` defaults to `{}` after construction. `from_dict` is unchanged for backward storage compatibility. ([#164])
+- `_render_message_raw` now uses a single-pass `re.sub` instead of sequential `str.replace`. The old approach allowed a parameter value that contained a `{TOKEN}` string to be re-substituted on a later iteration, and was order-dependent for overlapping key names (e.g. `{IP}` vs `{IP_DST}`). Neither could be triggered from outside a valid authenticated session, but the fix closes the ambiguity for future callers. ([#123])
+- `from_webhook_payload`, `from_api_alarm`, and `from_system_log_event` now truncate `key` to 64 characters, `device_name` to 255 characters, and `severity` to 32 characters. Previously only `message` was bounded, so a token-bearing caller could push unbounded strings into HA state and logs via the other fields. ([#128])
+- All authenticated outbound calls to the UniFi controller now pass `allow_redirects=False`. Any 3xx response raises `CannotConnectError` rather than silently resubmitting credentials to the redirect target. ([#127])
 - `UniFiAlert.to_dict()` no longer persists the `raw` UniFi payload to `.storage`. That payload carried unredacted client MACs, IP addresses, and hostnames, and could contain non-JSON-safe values that would crash `Store.async_save`. Persistence now emits an explicit scalar field list (`category`, `message`, `received_at`, `key`, `device_name`, `site`, `severity`); `from_dict()` still defaults `raw` to `{}` on read so existing stored entries continue to load. ([#147])
+
+### Documentation
+
+- README now explains multi-controller and multi-site setup: run one integration instance per controller URL or per UniFi site, and clarifies the site name field (default `"default"`, changed only when you renamed the site or monitor a non-default site). ([#139])
 
 ### Internal
 
 - Added test coverage reporting via Codecov: `pytest-cov` added to dev requirements, 95% floor enforced in CI and locally (`--cov-fail-under=95`), XML report uploaded to Codecov on every push, live badge added to README and info.md. `make coverage` generates an HTML report locally; `.coverage`, `coverage.xml`, and `htmlcov/` added to `.gitignore`.
+- Added end-to-end integration tests for webhook secret rotation: confirms the old token is rejected (401) after reload and the new token is accepted (200), covering the full rotation cycle from entry-data update through webhook re-registration. ([#121])
+- `ci.yml` and `version-check.yml` now include a `concurrency` block so redundant runs for the same branch/PR are cancelled when a new commit is pushed. `release.yml` is intentionally excluded. ([#175])
 
 ## [1.7.0] - 2026-05-29
 
@@ -229,5 +245,19 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#118]: https://github.com/PHeonix25/unifi_alerts/issues/118
 [#147]: https://github.com/PHeonix25/unifi_alerts/pull/147
 [#148]: https://github.com/PHeonix25/unifi_alerts/issues/148
+[#121]: https://github.com/PHeonix25/unifi_alerts/issues/121
+[#122]: https://github.com/PHeonix25/unifi_alerts/issues/122
+[#123]: https://github.com/PHeonix25/unifi_alerts/issues/123
+[#127]: https://github.com/PHeonix25/unifi_alerts/issues/127
+[#128]: https://github.com/PHeonix25/unifi_alerts/issues/128
+[#138]: https://github.com/PHeonix25/unifi_alerts/issues/138
+[#139]: https://github.com/PHeonix25/unifi_alerts/issues/139
 [#163]: https://github.com/PHeonix25/unifi_alerts/issues/163
+[#164]: https://github.com/PHeonix25/unifi_alerts/issues/164
+[#166]: https://github.com/PHeonix25/unifi_alerts/issues/166
+[#167]: https://github.com/PHeonix25/unifi_alerts/issues/167
+[#168]: https://github.com/PHeonix25/unifi_alerts/issues/168
+[#170]: https://github.com/PHeonix25/unifi_alerts/issues/170
+[#173]: https://github.com/PHeonix25/unifi_alerts/issues/173
+[#175]: https://github.com/PHeonix25/unifi_alerts/issues/175
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR

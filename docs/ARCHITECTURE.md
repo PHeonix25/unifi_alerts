@@ -104,7 +104,7 @@ Three-step setup flow:
 
 ### Platform files (`binary_sensor.py`, `sensor.py`, `event.py`, `button.py`)
 
-All entity classes extend `CoordinatorEntity[UniFiAlertsCoordinator]` (except `ButtonEntity`, which currently does not subscribe to coordinator updates; see TODO). They read exclusively from `self.coordinator.get_category_state(category)`; no local caching.
+All entity classes extend `CoordinatorEntity[UniFiAlertsCoordinator]` and override `_handle_coordinator_update()` to call `self.async_write_ha_state()`. They read exclusively from `self.coordinator.get_category_state(category)`; no local caching.
 
 **Event entities** (`event.py`) detect new alerts by comparing `state.alert_count` to `self._last_seen_count` in `_handle_coordinator_update`. Event entities fire on change, not on state. Polling does not increment `alert_count`, so events fire only on real webhook pushes.
 
