@@ -49,6 +49,21 @@ class TestUniFiAlert:
         alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
         assert len(alert.message) == 255
 
+    def test_key_truncated_at_64(self):
+        payload = {"message": "test", "key": "K" * 100}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert len(alert.key) == 64
+
+    def test_device_name_truncated_at_255(self):
+        payload = {"message": "test", "device_name": "D" * 300}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert len(alert.device_name) == 255
+
+    def test_severity_truncated_at_32(self):
+        payload = {"message": "test", "severity": "S" * 100}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert len(alert.severity) == 32
+
     def test_from_api_alarm(self):
         alarm = {
             "key": "EVT_IPS_ThreatDetected",
