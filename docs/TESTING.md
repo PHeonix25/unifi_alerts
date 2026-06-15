@@ -125,6 +125,7 @@ Key conventions:
 - `make_hass()` and `make_entry()` in `tests/unit/conftest.py` are helpers for setup/unload tests.
 - Use `pytest.mark.asyncio` (or the `asyncio_mode = auto` setting in `pytest.ini`) for async tests.
 - Mock `hass.async_create_task` AND `hass.async_create_background_task` together wherever the coordinator's `_schedule_clear` path is exercised.
+- Group tests into `Test` classes by the flow step or functional area they cover (e.g. `TestUserStep`, `TestCategoriesStep`, `TestDiagnosticsRedaction`). Each test method takes `self` and keeps its `@pytest.mark.asyncio` decorator. Integration tests stay as flat functions. The `python_classes = Test*` setting in `pytest.ini` picks up these classes automatically.
 
 ### What's tested
 
