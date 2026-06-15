@@ -10,9 +10,14 @@ name: Dependency audit
 # default setup (GitHub rejects the SARIF upload), so SAST lives there and this
 # workflow owns dependency auditing only.
 #
-# pip-audit is advisory only (continue-on-error on the audit step). A newly
-# published CVE in a transitive dependency must not block merges; the maintainer
-# reviews the job output and bumps requirements-dev.txt when warranted.
+# pip-audit is advisory only (continue-on-error on the audit step). As of
+# 2026-06, most findings are in transitive dependencies pinned by
+# pytest-homeassistant-custom-component (which sets homeassistant==2025.1.4).
+# The fix versions require homeassistant 2025.8+ or 2026.1, which are not
+# yet available on PyPI. When Dependabot bumps pytest-homeassistant-custom-
+# component to a version that pulls in a fixed homeassistant release, re-run
+# pip-audit locally, verify zero findings, then flip continue-on-error to
+# false on the audit step below to make the scan blocking.
 
 on:
   push:
