@@ -41,6 +41,7 @@
 ### Internal
 
 - Added test coverage reporting via Codecov: `pytest-cov` added to dev requirements, 95% floor enforced in CI and locally (`--cov-fail-under=95`), XML report uploaded to Codecov on every push, live badge added to README and info.md. `make coverage` generates an HTML report locally; `.coverage`, `coverage.xml`, and `htmlcov/` added to `.gitignore`.
+- Added end-to-end integration tests for webhook secret rotation: confirms the old token is rejected (401) after reload and the new token is accepted (200), covering the full rotation cycle from entry-data update through webhook re-registration. ([#121])
 - `ci.yml` and `version-check.yml` now include a `concurrency` block so redundant runs for the same branch/PR are cancelled when a new commit is pushed. `release.yml` is intentionally excluded. ([#175])
 
 ## [1.7.0] - 2026-05-29
@@ -243,6 +244,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#118]: https://github.com/PHeonix25/unifi_alerts/issues/118
 [#147]: https://github.com/PHeonix25/unifi_alerts/pull/147
 [#148]: https://github.com/PHeonix25/unifi_alerts/issues/148
+[#121]: https://github.com/PHeonix25/unifi_alerts/issues/121
 [#122]: https://github.com/PHeonix25/unifi_alerts/issues/122
 [#123]: https://github.com/PHeonix25/unifi_alerts/issues/123
 [#127]: https://github.com/PHeonix25/unifi_alerts/issues/127
