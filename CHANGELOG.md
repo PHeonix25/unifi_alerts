@@ -26,6 +26,7 @@
 
 ### Security
 
+- All authenticated outbound calls to the UniFi controller now pass `allow_redirects=False`. Any 3xx response raises `CannotConnectError` rather than silently resubmitting credentials to the redirect target. ([#127])
 - `UniFiAlert.to_dict()` no longer persists the `raw` UniFi payload to `.storage`. That payload carried unredacted client MACs, IP addresses, and hostnames, and could contain non-JSON-safe values that would crash `Store.async_save`. Persistence now emits an explicit scalar field list (`category`, `message`, `received_at`, `key`, `device_name`, `site`, `severity`); `from_dict()` still defaults `raw` to `{}` on read so existing stored entries continue to load. ([#147])
 
 ### Documentation
