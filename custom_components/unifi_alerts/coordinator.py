@@ -90,6 +90,10 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         # Tracks pending auto-clear tasks keyed by category
         self._clear_tasks: dict[str, asyncio.Task[None]] = {}
 
+        # Deduplicates "unrecognised v2 system-log key" warnings per coordinator
+        # instance. Instance-scoped rather than module-global so tests stay isolated.
+        self._seen_unknown_keys: set[str] = set()
+
         # Per-(category, alert_key) monotonic timestamps of the last webhook
         # push that was actually applied. Subsequent pushes for the same pair
         # within WEBHOOK_DEDUP_WINDOW_SECONDS are dropped to prevent a noisy
@@ -213,16 +217,8 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         categorised: dict[str, list[UniFiAlert]] = {}
         for event in raw_events:
-            alert = UniFiAlert.from_system_log_event(event)
+            alert = UniFiAlert.from_system_log_event(event, self._seen_unknown_keys)
             if not alert.category:
-                # Unknown key and no broad enum fallback — skip, same as legacy behaviour
-                key = event.get("key", "")
-                if key:
-                    _LOGGER.debug(
-                        "Unclassified v2 system-log event key %r — consider reporting it at "
-                        "https://github.com/PHeonix25/unifi_alerts/issues",
-                        key,
-                    )
                 continue
             categorised.setdefault(alert.category, []).append(alert)
 

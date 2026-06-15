@@ -290,3 +290,21 @@ def webhook_id_for_category(category: str, suffix: str = "") -> str:
     if suffix:
         return f"{WEBHOOK_ID_PREFIX}{suffix}_{category}"
     return f"{WEBHOOK_ID_PREFIX}{category}"
+
+
+def classify_event_key(key: str, v2_category_enum: str = "") -> str:
+    """Map a UniFi event key to an integration category string.
+
+    Checks (in order):
+    1. Exact match in SYSTEM_LOG_KEY_TO_CATEGORY (v2 system-log flat keys)
+    2. Prefix match in UNIFI_KEY_TO_CATEGORY (legacy EVT_* keys)
+    3. Broad enum fallback via SYSTEM_LOG_CATEGORY_FALLBACK (v2 category field)
+
+    Returns "" when no match is found.
+    """
+    if result := SYSTEM_LOG_KEY_TO_CATEGORY.get(key):
+        return result
+    for prefix, category in UNIFI_KEY_TO_CATEGORY.items():
+        if key.startswith(prefix):
+            return category
+    return SYSTEM_LOG_CATEGORY_FALLBACK.get(v2_category_enum, "")
