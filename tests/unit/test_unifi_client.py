@@ -1341,8 +1341,6 @@ class TestProbeSystemLogEndpoint:
     async def test_reauth_does_not_reset_confirmed_true(self):
         """If _has_system_log is True (v2 endpoint confirmed), re-auth must not
         reset it to None - there's nothing to re-probe."""
-        from datetime import timedelta
-
         client = make_client()
         client._has_system_log = True
         client._probe_fail_count = 0
