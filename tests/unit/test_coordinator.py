@@ -562,6 +562,38 @@ class TestPollingErrorPaths:
         assert "after re-authentication" in str(exc_info.value)
 
     @pytest.mark.asyncio
+    async def test_reauth_succeeds_but_retry_still_401_raises_config_entry_auth_failed(self):
+        """Re-auth succeeds but the retried fetch still returns 401 → ConfigEntryAuthFailed."""
+        from homeassistant.exceptions import ConfigEntryAuthFailed
+
+        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
+
+        hass = MagicMock()
+
+        def _create_task(coro, **kwargs):
+            coro.close()
+            return MagicMock()
+
+        hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
+        client = MagicMock()
+        client.categorise_alarms = AsyncMock(
+            side_effect=[InvalidAuthError("expired"), InvalidAuthError("still 401")]
+        )
+        client.authenticate = AsyncMock()  # re-auth itself succeeds
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        with pytest.raises(ConfigEntryAuthFailed):
+            await coord._async_update_data()
+
+        client.authenticate.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_cannot_connect_raises_update_failed(self):
         """CannotConnectError must be wrapped in UpdateFailed."""
         from homeassistant.helpers.update_coordinator import UpdateFailed
