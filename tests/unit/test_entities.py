@@ -547,6 +547,26 @@ class TestUniFiClearCategoryButton:
         entity = self._make(None)
         assert entity.available is False
 
+    def test_handle_coordinator_update_writes_ha_state(self):
+        """Coordinator update must re-evaluate available without a reload."""
+        state = make_state(enabled=True)
+        entity = self._make(state)
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        entity._handle_coordinator_update()
+        entity.async_write_ha_state.assert_called_once()
+
+    def test_availability_updates_after_coordinator_change(self):
+        """available reflects coordinator state after _handle_coordinator_update."""
+        state = make_state(enabled=True)
+        entity = self._make(state)
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        assert entity.available is True
+        state.enabled = False
+        entity._handle_coordinator_update()
+        assert entity.available is False
+
 
 class TestUniFiClearAllButton:
     def _make(self, states: dict[str, CategoryState]):
@@ -582,6 +602,27 @@ class TestUniFiClearAllButton:
 
     def test_available_false_when_no_categories(self):
         entity = self._make({})
+        assert entity.available is False
+
+    def test_handle_coordinator_update_writes_ha_state(self):
+        """Coordinator update must re-evaluate available without a reload."""
+        states = {CATEGORY_NETWORK_WAN: make_state(enabled=True)}
+        entity = self._make(states)
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        entity._handle_coordinator_update()
+        entity.async_write_ha_state.assert_called_once()
+
+    def test_availability_updates_after_coordinator_change(self):
+        """available reflects coordinator state after _handle_coordinator_update."""
+        wan_state = make_state(category=CATEGORY_NETWORK_WAN, enabled=True)
+        states = {CATEGORY_NETWORK_WAN: wan_state}
+        entity = self._make(states)
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        assert entity.available is True
+        wan_state.enabled = False
+        entity._handle_coordinator_update()
         assert entity.available is False
 
 
