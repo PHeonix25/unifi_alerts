@@ -561,3 +561,39 @@ class TestRegisterAllRollback:
             urls = manager.register_all()
         assert manager._registered == []
         assert urls == {}
+
+
+class TestWebhookSecretRotatedRepairIssue:
+    """Repair issue lifecycle: created on rotation, cleared on first successful webhook."""
+
+    @pytest.mark.asyncio
+    async def test_valid_webhook_deletes_rotation_repair_issue(self):
+        """A successfully authenticated webhook must delete the webhook_secret_rotated issue."""
+        manager, _ = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="tok")
+
+        with patch(
+            "custom_components.unifi_alerts.webhook_handler.ir.async_delete_issue"
+        ) as mock_del:
+            await handler(manager._hass, "wh-id", req)
+
+        mock_del.assert_called_once_with(
+            manager._hass,
+            "unifi_alerts",
+            "webhook_secret_rotated_entry-123",
+        )
+
+    @pytest.mark.asyncio
+    async def test_rejected_webhook_does_not_delete_rotation_issue(self):
+        """A rejected webhook (wrong token) must NOT delete the repair issue."""
+        manager, _ = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="wrong-token")
+
+        with patch(
+            "custom_components.unifi_alerts.webhook_handler.ir.async_delete_issue"
+        ) as mock_del:
+            await handler(manager._hass, "wh-id", req)
+
+        mock_del.assert_not_called()

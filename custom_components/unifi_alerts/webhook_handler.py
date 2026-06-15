@@ -15,6 +15,7 @@ from homeassistant.components.webhook import (
     async_unregister,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 
 from .const import (
     ALL_CATEGORIES,
@@ -176,6 +177,9 @@ class WebhookManager:
                 _LOGGER.debug("Webhook received for category %s: %s", category, safe)
             alert = UniFiAlert.from_webhook_payload(category, payload)
             self._push_callback(category, alert)
+            # First valid webhook after a secret rotation proves Alarm Manager
+            # was updated with the new URLs. Clear the rotation repair issue.
+            ir.async_delete_issue(hass, DOMAIN, f"webhook_secret_rotated_{self._entry_id}")
             return None
 
         return handle_webhook
