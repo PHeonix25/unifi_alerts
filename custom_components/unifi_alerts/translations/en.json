@@ -10,6 +10,9 @@
           "password": "Password",
           "api_key": "API Key (UniFi OS only — leave blank if using username/password)",
           "verify_ssl": "Verify SSL certificate"
+        },
+        "data_description": {
+          "verify_ssl": "Disable only if the controller uses a self-signed certificate. Disabling verification exposes the connection to man-in-the-middle attacks on the local network."
         }
       },
       "categories": {
@@ -54,6 +57,7 @@
     "error": {
       "cannot_connect": "Cannot reach the controller. Check the URL, port, and SSL settings. See Home Assistant logs for details.",
       "invalid_auth": "Invalid credentials. Check your username/password or API key.",
+      "invalid_ssl_cert": "SSL certificate verification failed. If this controller uses a self-signed certificate, untick \"Verify SSL certificate\" and try again.",
       "invalid_url_scheme": "Controller URL must start with http:// or https://.",
       "at_least_one_category": "Please enable at least one alert category.",
       "unknown": "An unexpected error occurred. Check the Home Assistant logs."
@@ -78,6 +82,10 @@
     "watermark_persist_failed": {
       "title": "UniFi Alerts: could not save cleared-alert state",
       "description": "Home Assistant could not write the UniFi Alerts watermark to storage, so cleared alerts may reappear and Open Count may jump back to its previous value after a restart. This usually means the disk is full or there is a storage I/O error. Check available disk space and the Home Assistant logs. This message clears automatically once a save succeeds."
+    },
+    "webhook_secret_rotated": {
+      "title": "UniFi Alerts: webhook URLs have changed for {name}",
+      "description": "The webhook secret was rotated. All previously configured URLs in UniFi Alarm Manager are now invalid.\n\nUpdate each category URL in UniFi Network: **Settings > Notifications > Alarm Manager**. The new URLs are shown in **Settings > Devices and Services > UniFi Alerts > Configure**.\n\nThis notice clears automatically when the first webhook is received after the update."
     }
   },
   "services": {
@@ -136,6 +144,9 @@
           "api_key": "New API Key (leave blank to keep current)",
           "verify_ssl": "Verify SSL certificate",
           "regenerate_webhook_secret": "Regenerate webhook secret"
+        },
+        "data_description": {
+          "verify_ssl": "Disable only if the controller uses a self-signed certificate. Disabling verification exposes the connection to man-in-the-middle attacks on the local network."
         }
       },
       "categories": {

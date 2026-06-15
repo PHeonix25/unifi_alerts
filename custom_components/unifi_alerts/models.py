@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -47,19 +48,24 @@ def _render_message_raw(message_raw: str, parameters: dict[str, Any]) -> str:
     The v2 system-log schema uses a template string (message_raw) with
     {PARAM_NAME} placeholders and a parameters object whose values are dicts
     with at least a 'name' field (and sometimes an 'id' and other metadata).
-    Simple substitution is sufficient; do not over-engineer.
+
+    Uses a single-pass re.sub so parameter values that contain {TOKEN} strings
+    are never re-substituted, and overlapping key names (e.g. {IP} vs {IP_DST})
+    are resolved correctly regardless of iteration order.
     """
-    result = message_raw
+    # Build the display-value map once before the regex pass.
+    display: dict[str, str] = {}
     for key, value in parameters.items():
-        placeholder = "{" + key + "}"
-        if placeholder in result:
-            # Prefer 'name', fall back to 'id', then the key itself
-            if isinstance(value, dict):
-                display = value.get("name") or value.get("id") or key
-            else:
-                display = str(value)
-            result = result.replace(placeholder, str(display))
-    return result
+        if isinstance(value, dict):
+            display[key] = str(value.get("name") or value.get("id") or key)
+        else:
+            display[key] = str(value)
+
+    def _replace(match: re.Match[str]) -> str:
+        token = match.group(1)
+        return display.get(token, match.group(0))
+
+    return re.sub(r"\{([^{}]+)\}", _replace, message_raw)
 
 
 @dataclass
@@ -91,14 +97,12 @@ class UniFiAlert:
             category=category,
             message=str(message)[:255],
             received_at=datetime.now(UTC),
-            raw=payload,
-            key=payload.get("key", ""),
-            device_name=payload.get("device_name")
-            or payload.get("ap_name")
-            or payload.get("sw_name")
-            or "",
+            key=str(payload.get("key", ""))[:64],
+            device_name=(
+                payload.get("device_name") or payload.get("ap_name") or payload.get("sw_name") or ""
+            )[:255],
             site=payload.get("site_name") or payload.get("site") or "",
-            severity=payload.get("severity") or payload.get("subsystem") or "",
+            severity=str(payload.get("severity") or payload.get("subsystem") or "")[:32],
         )
 
     @classmethod
@@ -126,11 +130,10 @@ class UniFiAlert:
             category=category,
             message=str(message)[:255],
             received_at=received_at,
-            raw=alarm,
-            key=alarm.get("key", ""),
-            device_name=alarm.get("device_name") or alarm.get("ap_name") or "",
+            key=str(alarm.get("key", ""))[:64],
+            device_name=(alarm.get("device_name") or alarm.get("ap_name") or "")[:255],
             site=alarm.get("site_name") or "",
-            severity=alarm.get("severity") or alarm.get("subsystem") or "",
+            severity=str(alarm.get("severity") or alarm.get("subsystem") or "")[:32],
         )
 
     @classmethod
@@ -213,11 +216,10 @@ class UniFiAlert:
             category=category,
             message=str(message)[:255],
             received_at=received_at,
-            raw=payload,
-            key=key,
-            device_name=payload.get("device_name") or "",
+            key=key[:64],
+            device_name=(payload.get("device_name") or "")[:255],
             site=payload.get("site_name") or payload.get("site") or "",
-            severity=payload.get("severity") or "",
+            severity=str(payload.get("severity") or "")[:32],
         )
 
     def to_dict(self) -> dict[str, Any]:

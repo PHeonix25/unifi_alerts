@@ -110,13 +110,27 @@ The key is shown only once at creation - copy it immediately.
 For each enabled category, create an alarm in **UniFi Network > Settings > Notifications > Alarm Manager**:
 
 1. Click **Create Alarm**
-2. Set the trigger matching the category (see [Alert categories](#alert-categories))
+2. Set the **trigger** matching your category (see table below)
 3. Set scope (specific devices or network-wide)
 4. Under **Action**, choose **Webhook > Custom Webhook > POST**
-5. Paste the webhook URL from the HA integration page
+5. Paste the webhook URL for that category from the HA integration page
 6. Click **Create**
 
 > **Test Alarm** in UniFi verifies the webhook reaches HA before you save.
+
+#### Trigger reference
+
+| Integration category | UniFi Alarm Manager trigger | Notes |
+|---|---|---|
+| Network: Device offline/online | **UniFi Devices** (or "Network Device" on older firmware) | APs, switches, gateways going offline or reconnecting |
+| Network: WAN offline/latency | **Internet & WAN** | WAN failover, internet transitions |
+| Network: Client connect/disconnect | **Client Devices** (or "Wireless Client" on older firmware) | Wireless and wired clients joining or leaving |
+| Security: Threat / IDS detected | **Security** | IPS/IDS alerts, rogue AP detection |
+| Security: Honeypot triggered | **Security** | Honeypot hit events; same trigger as the other Security categories |
+| Security: Firewall block | **Security** | GeoIP filtered traffic, firewall deny events |
+| Power: PoE / power loss | **Power** | PoE disconnect/overload, UPS events, power loss |
+
+> **Security categories share a trigger.** All three Security categories (Threat, Honeypot, Firewall) use the same "Security" trigger type in Alarm Manager. If you enable more than one, create a separate alarm for each using the same trigger but paste each category's distinct webhook URL. When a security event fires, UniFi will call all three URLs; each receives the event and the integration routes it to the correct category based on the event key. To avoid this, enable only the security categories you actively use.
 
 > **Webhook secret rotation:** if you regenerate the secret via the options flow, every existing URL becomes invalid immediately. Re-paste all new URLs into Alarm Manager, or affected alarms will silently fail with HTTP 401.
 
@@ -128,6 +142,17 @@ You do not have to wait for a real alert to know the wiring works. Each per-cate
 - `last_webhook_at`: the UTC timestamp of the most recent webhook received for that category, or `None` if none has arrived.
 
 Fire a **Test Alarm** from Alarm Manager (or trigger the event yourself) and watch `webhook_health` flip to `healthy`. A category still showing `never_received` after a test points to a wrong URL, a missing `?token=`, or an alarm whose trigger does not match the category. The same fields appear per category in the integration's **Download diagnostics** output.
+
+### Multiple controllers or sites
+
+You can add the integration more than once. Each instance has its own set of entities, webhook URLs, and config:
+
+- **Multiple physical controllers** (e.g. a UDM Pro at one site plus a UCG Ultra at another): add the integration twice, once per controller URL. Each instance is independent.
+- **Single controller, multiple UniFi sites**: still add the integration once per site you want to monitor. Use the same controller URL for each instance, but set a different **UniFi site name** in the "Configure Alert Categories" step. The site name appears in UniFi Network's URL (e.g. `https://192.168.1.1/network/site-name/`) and in the admin UI under **Settings > System > Sites**.
+
+The **site name** field defaults to `default`, which is correct for controllers with a single site or controllers that have never been renamed. If you renamed your site in UniFi Network, enter the slug shown in the URL, not the human-readable display name.
+
+> **Webhook URLs are per integration instance.** Each instance generates its own set of webhook URLs. If you add two instances for two sites on the same controller, configure separate alarms in each site's Alarm Manager pointing to the correct instance's URLs.
 
 ---
 
@@ -161,9 +186,11 @@ See [docs/EXAMPLES.md](docs/EXAMPLES.md) for a Lovelace dashboard card and an au
 
 All data stays on your local network; the integration does not communicate with any external service.
 
-Stored per alert: `message` (truncated to 255 characters), `category`, `device_name`, `alert_key`, `severity`, `site`, and `received_at` (UTC timestamp).
+**What is stored:** each alert records `message` (truncated to 255 characters), `category`, `device_name`, `alert_key`, `severity`, `site`, and `received_at` (UTC timestamp). The most recent alert per category is kept in memory and persisted to `.storage/unifi_alerts` so it survives HA restarts.
 
-Auto-clear removes `is_alerting` and `last_alert` after the configured clear timeout (default 30 seconds). The acknowledgement watermark (`last_cleared_at`) persists across HA restarts so `open_count` reflects "since last Clear", not a lifetime total.
+**What clearing does:** pressing Clear (or letting auto-clear fire) marks the category as acknowledged (`is_alerting = False`) and advances the watermark (`last_cleared_at`). It does NOT delete `last_alert` - the most recent alert details remain visible in entity attributes. This is intentional: dashboards and automations can still reference the last seen event after acknowledging it.
+
+**How to purge stored data:** delete the integration entry via Settings > Devices & Services > UniFi Alerts > three-dot menu > Delete. This removes all persisted state including every `last_alert`.
 
 ---
 

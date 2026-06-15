@@ -163,6 +163,32 @@ class TestReauthFlow:
         assert call_kwargs["errors"] == {"base": "cannot_connect"}
 
     @pytest.mark.asyncio
+    async def test_reauth_confirm_ssl_cert_error_shows_invalid_ssl_cert(self) -> None:
+        """SslCertificateError during reauth must show invalid_ssl_cert base error."""
+        from custom_components.unifi_alerts.unifi_client import SslCertificateError
+
+        flow = make_reauth_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "reauth_confirm"})
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+                return_value=make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(side_effect=SslCertificateError("cert"))
+
+            result = await flow.async_step_reauth_confirm(
+                user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "pass"}
+            )
+
+        assert result["step_id"] == "reauth_confirm"
+        call_kwargs = flow.async_show_form.call_args.kwargs
+        assert call_kwargs["errors"] == {"base": "invalid_ssl_cert"}
+
+    @pytest.mark.asyncio
     async def test_reauth_confirm_does_not_delete_issue_on_failure(self) -> None:
         """async_delete_issue must NOT be called when reauth fails."""
         from custom_components.unifi_alerts.unifi_client import InvalidAuthError

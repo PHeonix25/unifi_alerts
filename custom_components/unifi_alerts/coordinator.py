@@ -132,6 +132,10 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 ) from reauth_err
             try:
                 categorised = await self._fetch_categorised()
+            except InvalidAuthError as retry_err:
+                raise ConfigEntryAuthFailed(
+                    f"Re-authentication succeeded but the controller still returned 401: {retry_err}"
+                ) from retry_err
             except CannotConnectError as retry_err:
                 raise UpdateFailed(
                     f"Cannot reach UniFi controller after re-authentication: {retry_err}"
