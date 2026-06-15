@@ -249,6 +249,15 @@ class TestLoginUserpass:
         # Should not raise
         await client._login_userpass()
 
+    @pytest.mark.asyncio
+    async def test_redirect_raises_cannot_connect(self):
+        """3xx from the login endpoint must raise CannotConnectError, not follow the redirect."""
+        client = make_client()
+        ctx = _make_response(302)
+        client._session.post = ctx
+        with pytest.raises(CannotConnectError, match="redirect"):
+            await client._login_userpass()
+
 
 class TestVerifyApiKey:
     """Tests for _verify_api_key — API key authentication and endpoint selection."""
@@ -295,6 +304,16 @@ class TestVerifyApiKey:
         client._session.get = ctx
 
         with pytest.raises(InvalidAuthError):
+            await client._verify_api_key()
+
+    @pytest.mark.asyncio
+    async def test_redirect_raises_cannot_connect(self):
+        """A 3xx from the API key endpoint must raise CannotConnectError (no redirect)."""
+        client = make_client({"api_key": "my-key", "verify_ssl": False})
+        ctx = _make_response(302)
+        client._session.get = ctx
+
+        with pytest.raises(CannotConnectError, match="redirect"):
             await client._verify_api_key()
 
 
@@ -682,6 +701,16 @@ class TestFetchAlarms:
         client.authenticate = _mock_authenticate
         await client.fetch_alarms()
         assert len(authenticated_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_redirect_raises_cannot_connect(self):
+        """A 3xx on an authenticated alarm fetch must raise CannotConnectError (no redirect)."""
+        client = make_client()
+        client._authenticated = True
+        ctx = _make_response(301)
+        client._session.get = ctx
+        with pytest.raises(CannotConnectError, match="redirect"):
+            await client.fetch_alarms()
 
 
 class TestCategoriseAlarms:
@@ -1182,6 +1211,46 @@ class TestProbeSystemLogEndpoint:
         assert client._has_system_log is False
         assert client._probe_backoff_until is not None
 
+    @pytest.mark.asyncio
+    async def test_reauth_clears_probe_backoff(self):
+        """A successful authenticate() must clear the probe-backoff state so the
+        next probe call actually hits the network instead of returning the cached
+        False from backoff."""
+        from datetime import UTC, datetime, timedelta
+
+        client = make_client()
+        # Simulate an active backoff (e.g. credentials were bad, probe kept failing)
+        client._has_system_log = False
+        client._probe_fail_count = _PROBE_FAIL_LIMIT
+        client._probe_backoff_until = datetime.now(UTC) + timedelta(hours=1)
+
+        # Authenticate succeeds (200 from the login endpoint)
+        login_ctx = _make_response(200)
+        client._session.post = login_ctx
+        await client.authenticate()
+
+        # Backoff state must be cleared
+        assert client._probe_backoff_until is None
+        assert client._probe_fail_count == 0
+        assert client._has_system_log is None  # re-probed on next poll
+
+    @pytest.mark.asyncio
+    async def test_reauth_does_not_reset_confirmed_true(self):
+        """If _has_system_log is True (v2 endpoint confirmed), re-auth must not
+        reset it to None - there's nothing to re-probe."""
+        from datetime import timedelta
+
+        client = make_client()
+        client._has_system_log = True
+        client._probe_fail_count = 0
+        client._probe_backoff_until = None
+
+        login_ctx = _make_response(200)
+        client._session.post = login_ctx
+        await client.authenticate()
+
+        assert client._has_system_log is True
+
 
 class TestFetchSystemLogAlarms:
     """Tests for UniFiClient.fetch_system_log_alarms."""
@@ -1392,4 +1461,14 @@ class TestFetchSystemLogAlarms:
 
         client._session.post = _raise
         with pytest.raises(CannotConnectError):
+            await client.fetch_system_log_alarms()
+
+    @pytest.mark.asyncio
+    async def test_redirect_raises_cannot_connect(self):
+        """3xx from the system-log endpoint must raise CannotConnectError."""
+        client = make_client()
+        client._authenticated = True
+        ctx, _ = _make_post_json_response(301)
+        client._session.post = ctx
+        with pytest.raises(CannotConnectError, match="redirect"):
             await client.fetch_system_log_alarms()
