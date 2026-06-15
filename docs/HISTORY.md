@@ -4,6 +4,13 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 
 ## 2026-06-15
 
+- **release**: v1.8.0-pre3 tagged. Final checkpoint of the v1.8.0 "Trust and Hardening" cycle. Closes the last remaining structural item (#119): alert classification is now a single `classify_event_key()` entry point in `const.py` used by both polling and webhook paths. UniFiAuth extraction (#120) deferred to v1.9.0. v1.8.0 is feature-complete and ready for stable promotion.
+- **refactor**: consolidate alert classification into a single `classify_event_key()` function in `const.py`; remove the `_unknown_system_log_keys` module-global from `models.py` and scope warn-dedup to the coordinator instance via a `seen_keys` parameter, so warnings dedup per coordinator instance rather than per process (fixes test isolation) ([#217]). Closes #119.
+- **tests**: reorganise three flat unit test files into `Test*` classes grouped by flow step or functional area (`TestUserStep`, `TestCategoriesStep`, `TestDiagnosticsRedaction`, etc.); document the convention in `docs/TESTING.md` ([#235]). Closes #233.
+- **chore**: add `scripts/seed_issues.py` to bulk-seed GitHub Issues from the backlog; run idempotently to populate v1.8.0 and v1.9.0 milestones ([#234]).
+
+## 2026-06-15
+
 - **release**: v1.8.0-pre2 tagged. Second checkpoint of the v1.8.0 "Trust and Hardening" cycle. Headline: security hardening of the alert construction and authentication paths (redirect-blocking, raw-payload drop from in-memory state, bounded field lengths, single-pass template substitution), operational reliability fixes (probe-backoff reset after re-auth, button availability propagation, unparseable webhook rejection, post-reauth retry error handling), two user-visible features (SSL cert failure surfaces a dedicated config-flow error; webhook secret rotation creates a HA repair issue), and CI/docs infrastructure (pr-guards workflow, concurrency groups, pinned dev dependencies, pip Dependabot, per-category Alarm Manager trigger table). The two remaining v1.8.0 structural items (classify-consolidation #119 and UniFiAuth extraction #120) carry forward to pre3.
 - **feat**: rotating the webhook secret in the options flow now creates a HA repair issue until the first authenticated webhook is received after the update ([#200]). Closes #167.
 - **feat**: SSL certificate verification failures in the config flow now surface a dedicated, actionable error; `verify_ssl` field carries an inline MITM-risk warning ([#199]). Closes #166.
@@ -341,7 +348,10 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 [#213]: https://github.com/PHeonix25/unifi_alerts/pull/213
 [#214]: https://github.com/PHeonix25/unifi_alerts/pull/214
 [#215]: https://github.com/PHeonix25/unifi_alerts/pull/215
+[#217]: https://github.com/PHeonix25/unifi_alerts/pull/217
 [#224]: https://github.com/PHeonix25/unifi_alerts/pull/224
+[#234]: https://github.com/PHeonix25/unifi_alerts/pull/234
+[#235]: https://github.com/PHeonix25/unifi_alerts/pull/235
 
 [0d951b3]: https://github.com/PHeonix25/unifi_alerts/commit/0d951b3
 [0f17afb]: https://github.com/PHeonix25/unifi_alerts/commit/0f17afb
