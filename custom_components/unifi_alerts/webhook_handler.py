@@ -147,9 +147,12 @@ class WebhookManager:
                     return Response(status=413)
                 payload = json.loads(raw.decode()) if raw else {}
             except (json.JSONDecodeError, UnicodeDecodeError, TypeError) as err:
-                # Decode failures previously fell through silently to an empty
-                # payload, hiding misconfigured controllers and truncated
-                # bodies. Log enough to diagnose without dumping the full body.
+                # Contract: bodies that fail JSON or UTF-8 decoding are rejected
+                # with HTTP 400 rather than falling through to an empty payload.
+                # Empty-but-valid bodies ({}) and bodies with no recognisable
+                # fields are accepted (400 is reserved for parse failures only).
+                # This prevents a token-bearing sender from spamming "Unknown
+                # alert" state via malformed bodies.
                 preview = raw[:80].decode("utf-8", errors="replace") if raw else ""
                 _LOGGER.warning(
                     "Malformed webhook body from controller for category %s (%s): %r",
@@ -157,7 +160,7 @@ class WebhookManager:
                     type(err).__name__,
                     preview,
                 )
-                payload = {}
+                return Response(status=400)
 
             if _LOGGER.isEnabledFor(logging.DEBUG):
                 # Narrow the payload to known-safe fields before logging so

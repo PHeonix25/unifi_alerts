@@ -16,6 +16,7 @@
 
 ### Fixed
 
+- Authenticated webhook POSTs whose body is not valid JSON or not valid UTF-8 now return HTTP 400 and are discarded rather than synthesizing an "Unknown alert" entity state update. A token-bearing sender could previously spam meaningless "Unknown alert" events via malformed bodies. ([#173])
 - `UniFiClearCategoryButton` and `UniFiClearAllButton` now override `_handle_coordinator_update()` to call `async_write_ha_state()`, so the `available` property is re-evaluated when coordinator state changes (e.g. after a category is disabled via the options flow without a full reload). Previously the button entities could remain stale between polls. ([#170])
 - A second 401 response from the controller after a successful re-authentication now raises `ConfigEntryAuthFailed` (triggering HA's re-auth repair flow) instead of propagating as an unhandled `InvalidAuthError`. Previously the coordinator only caught `CannotConnectError` on the retried fetch, so a persistent authentication failure after credential rotation silently broke polling. ([#122])
 - `make lint`, `make typecheck`, `make validate`, and the `.githooks/pre-push` hook no longer crash on Windows shells whose stdout codec defaults to `cp1252`. Previously, the `✅` success glyph printed by the scripts raised `UnicodeEncodeError` and exited the script non-zero even when the underlying tool (ruff, mypy, the validators) had succeeded. All five affected scripts (`run_lint.py`, `run_typecheck.py`, `validate_hacs.py`, `validate_docs.py`, `check_translations.py`) now reconfigure stdout and stderr to UTF-8 via a shared `scripts/_console.py` helper at startup. Windows contributors no longer need to export `PYTHONIOENCODING=utf-8` to use the standard development workflow. ([#148])
@@ -240,5 +241,6 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#139]: https://github.com/PHeonix25/unifi_alerts/issues/139
 [#163]: https://github.com/PHeonix25/unifi_alerts/issues/163
 [#170]: https://github.com/PHeonix25/unifi_alerts/issues/170
+[#173]: https://github.com/PHeonix25/unifi_alerts/issues/173
 [#175]: https://github.com/PHeonix25/unifi_alerts/issues/175
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR
