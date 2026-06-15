@@ -129,6 +129,17 @@ You do not have to wait for a real alert to know the wiring works. Each per-cate
 
 Fire a **Test Alarm** from Alarm Manager (or trigger the event yourself) and watch `webhook_health` flip to `healthy`. A category still showing `never_received` after a test points to a wrong URL, a missing `?token=`, or an alarm whose trigger does not match the category. The same fields appear per category in the integration's **Download diagnostics** output.
 
+### Multiple controllers or sites
+
+You can add the integration more than once. Each instance has its own set of entities, webhook URLs, and config:
+
+- **Multiple physical controllers** (e.g. a UDM Pro at one site plus a UCG Ultra at another): add the integration twice, once per controller URL. Each instance is independent.
+- **Single controller, multiple UniFi sites**: still add the integration once per site you want to monitor. Use the same controller URL for each instance, but set a different **UniFi site name** in the "Configure Alert Categories" step. The site name appears in UniFi Network's URL (e.g. `https://192.168.1.1/network/site-name/`) and in the admin UI under **Settings > System > Sites**.
+
+The **site name** field defaults to `default`, which is correct for controllers with a single site or controllers that have never been renamed. If you renamed your site in UniFi Network, enter the slug shown in the URL, not the human-readable display name.
+
+> **Webhook URLs are per integration instance.** Each instance generates its own set of webhook URLs. If you add two instances for two sites on the same controller, configure separate alarms in each site's Alarm Manager pointing to the correct instance's URLs.
+
 ---
 
 ## Entities
