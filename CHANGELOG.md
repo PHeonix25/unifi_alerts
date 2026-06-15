@@ -45,6 +45,7 @@
 - Added end-to-end integration tests for webhook secret rotation: confirms the old token is rejected (401) after reload and the new token is accepted (200), covering the full rotation cycle from entry-data update through webhook re-registration. ([#121])
 - `ci.yml` and `version-check.yml` now include a `concurrency` block so redundant runs for the same branch/PR are cancelled when a new commit is pushed. `release.yml` is intentionally excluded. ([#175])
 - Unit test files now use a consistent class-based layout: tests are grouped into `Test*` classes by flow step or functional area (`TestUserStep`, `TestCategoriesStep`, `TestDiagnosticsRedaction`, etc.) matching the `python_classes = Test*` convention already set in `pytest.ini`. `test_setup.py`, `test_diagnostics.py`, and `test_reauth.py` were converted from flat functions; `docs/TESTING.md` now documents the convention. ([#233])
+- Alert classification is now handled by a single `classify_event_key()` function in `const.py`, replacing two separate prefix-match loops that lived in `unifi_client.py` and `models.py`. The `_unknown_system_log_keys` module-global set is removed from `models.py`; deduplication of unknown-key warnings is now scoped to the coordinator instance via a `seen_keys` parameter, so tests no longer share global state between runs. ([#119])
 
 ## [1.7.0] - 2026-05-29
 
@@ -246,6 +247,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#118]: https://github.com/PHeonix25/unifi_alerts/issues/118
 [#147]: https://github.com/PHeonix25/unifi_alerts/pull/147
 [#148]: https://github.com/PHeonix25/unifi_alerts/issues/148
+[#119]: https://github.com/PHeonix25/unifi_alerts/issues/119
 [#121]: https://github.com/PHeonix25/unifi_alerts/issues/121
 [#122]: https://github.com/PHeonix25/unifi_alerts/issues/122
 [#123]: https://github.com/PHeonix25/unifi_alerts/issues/123
