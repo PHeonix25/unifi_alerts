@@ -2,6 +2,34 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-06-15
+
+- **release**: v1.8.0-pre2 tagged. Second checkpoint of the v1.8.0 "Trust and Hardening" cycle. Headline: security hardening of the alert construction and authentication paths (redirect-blocking, raw-payload drop from in-memory state, bounded field lengths, single-pass template substitution), operational reliability fixes (probe-backoff reset after re-auth, button availability propagation, unparseable webhook rejection, post-reauth retry error handling), two user-visible features (SSL cert failure surfaces a dedicated config-flow error; webhook secret rotation creates a HA repair issue), and CI/docs infrastructure (pr-guards workflow, concurrency groups, pinned dev dependencies, pip Dependabot, per-category Alarm Manager trigger table). The two remaining v1.8.0 structural items (classify-consolidation #119 and UniFiAuth extraction #120) carry forward to pre3.
+- **feat**: rotating the webhook secret in the options flow now creates a HA repair issue until the first authenticated webhook is received after the update ([#200]). Closes #167.
+- **feat**: SSL certificate verification failures in the config flow now surface a dedicated, actionable error; `verify_ssl` field carries an inline MITM-risk warning ([#199]). Closes #166.
+- **security**: stop retaining the raw controller payload in `UniFiAlert` after construction; `from_webhook_payload`, `from_api_alarm`, and `from_system_log_event` no longer store the full unredacted payload (client MACs, IPs, hostnames) in `last_alert.raw` for the lifetime of `CategoryState` ([#192]). Closes #164.
+- **security**: `_render_message_raw` now uses a single-pass `re.sub` instead of sequential `str.replace`; the old approach allowed a parameter value containing `{TOKEN}` to be re-substituted on a later iteration and was order-dependent for overlapping key names ([#191]). Closes #123.
+- **security**: `from_webhook_payload`, `from_api_alarm`, and `from_system_log_event` now truncate `key` to 64 chars, `device_name` to 255, and `severity` to 32; previously only `message` was bounded ([#189]). Closes #128.
+- **security**: all authenticated outbound calls now pass `allow_redirects=False`; any 3xx response raises `CannotConnectError` rather than silently resubmitting credentials to the redirect target ([#188]). Closes #127.
+- **fix**: re-authentication now resets `_probe_backoff_until`, `_probe_fail_count`, and `_has_system_log` so the integration re-probes the system-log endpoint immediately instead of staying on the legacy path for up to 1 hour after the controller becomes reachable ([#190]). Closes #168.
+- **fix**: authenticated webhook POSTs with unparseable or non-UTF-8 bodies now return HTTP 400 and are discarded rather than synthesising an "Unknown alert" event; empty or field-less bodies are accepted and produce an "Unknown alert" ([#187]). Closes #173.
+- **fix**: `UniFiClearCategoryButton` and `UniFiClearAllButton` now override `_handle_coordinator_update()` to call `async_write_ha_state()`, so the `available` property is re-evaluated when coordinator state changes ([#186]). Closes #170.
+- **fix**: a second 401 after successful re-authentication now raises `ConfigEntryAuthFailed` instead of propagating as an unhandled `InvalidAuthError` ([#185]). Closes #122.
+- **fix**: webhook body contract documented and tested: empty bodies and bodies with no recognised fields are accepted and produce an "Unknown alert"; only malformed bodies are rejected ([#197]). Closes #124.
+- **tests**: end-to-end integration tests for webhook secret rotation covering the full rotation cycle from entry-data update through webhook re-registration ([#201]). Closes #121.
+- **ci**: `pr-guards.yml` workflow enforces three process rules: `changelog-guard` (custom_components/ changes must accompany a CHANGELOG update), `label-guard` (every PR must carry a recognised release-notes label), `history-guard` (HISTORY.md only modifiable on bump branches) ([#206]).
+- **ci**: bump `actions/checkout` to v6.0.3, hassfest and hacs/action to 2026-06-14 tips ([#224]).
+- **ci**: add pip Dependabot; bump hacc to 0.13.205; document advisory scan rationale ([#215]).
+- **ci**: pin dev dependencies for reproducible CI ([#211]). Closes #142.
+- **ci**: add concurrency groups to `ci.yml` and `version-check.yml` to cancel redundant runs on new pushes ([#193]). Closes #175.
+- **ci**: fix stale version comments in `copilot-setup-steps.yml` and `ci.yml` ([#184]). Closes #132.
+- **docs**: add per-category Alarm Manager trigger table to the setup guide ([#214]).
+- **docs**: clarify retention semantics: clearing is acknowledgement (the watermark advances), not deletion; alerts remain in the UniFi controller UI ([#213]).
+- **docs**: document multi-controller and multi-site setup in README; clarifies the site name field and when to change from the default ([#203]). Closes #139.
+- **docs**: add guardrail comment in `diagnostics.py` documenting which alert content fields are excluded and why ([#195]). Closes #129.
+- **docs**: add missing files to `REPO_LAYOUT.md` ([#183]). Closes #131.
+- **docs**: refresh stale CLAUDE.md references; add doc-only fast path to DEVELOPING.md ([#182]). Closes #169.
+
 ## 2026-06-12
 
 - **release**: v1.8.0-pre1 tagged. First checkpoint of the v1.8.0 "Trust and Hardening" cycle: manifest was set to `1.8.0-pre1` by #113 at cycle start, and this tags it now that the first batch of work has merged. Headline: privacy and persistence hardening (raw payload dropped from storage, watermark persistence coalesced and now self-reporting via a repair issue), dependency and coverage detection in CI (pip-audit, Codecov), per-category webhook health visibility, and the TODO.md -> GitHub Issues workflow migration. No `CHANGELOG.md` change (pre-release).
@@ -290,6 +318,30 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 [#177]: https://github.com/PHeonix25/unifi_alerts/pull/177
 [#178]: https://github.com/PHeonix25/unifi_alerts/pull/178
 [#179]: https://github.com/PHeonix25/unifi_alerts/pull/179
+[#182]: https://github.com/PHeonix25/unifi_alerts/pull/182
+[#183]: https://github.com/PHeonix25/unifi_alerts/pull/183
+[#184]: https://github.com/PHeonix25/unifi_alerts/pull/184
+[#185]: https://github.com/PHeonix25/unifi_alerts/pull/185
+[#186]: https://github.com/PHeonix25/unifi_alerts/pull/186
+[#187]: https://github.com/PHeonix25/unifi_alerts/pull/187
+[#188]: https://github.com/PHeonix25/unifi_alerts/pull/188
+[#189]: https://github.com/PHeonix25/unifi_alerts/pull/189
+[#190]: https://github.com/PHeonix25/unifi_alerts/pull/190
+[#191]: https://github.com/PHeonix25/unifi_alerts/pull/191
+[#192]: https://github.com/PHeonix25/unifi_alerts/pull/192
+[#193]: https://github.com/PHeonix25/unifi_alerts/pull/193
+[#195]: https://github.com/PHeonix25/unifi_alerts/pull/195
+[#197]: https://github.com/PHeonix25/unifi_alerts/pull/197
+[#199]: https://github.com/PHeonix25/unifi_alerts/pull/199
+[#200]: https://github.com/PHeonix25/unifi_alerts/pull/200
+[#201]: https://github.com/PHeonix25/unifi_alerts/pull/201
+[#203]: https://github.com/PHeonix25/unifi_alerts/pull/203
+[#206]: https://github.com/PHeonix25/unifi_alerts/pull/206
+[#211]: https://github.com/PHeonix25/unifi_alerts/pull/211
+[#213]: https://github.com/PHeonix25/unifi_alerts/pull/213
+[#214]: https://github.com/PHeonix25/unifi_alerts/pull/214
+[#215]: https://github.com/PHeonix25/unifi_alerts/pull/215
+[#224]: https://github.com/PHeonix25/unifi_alerts/pull/224
 
 [0d951b3]: https://github.com/PHeonix25/unifi_alerts/commit/0d951b3
 [0f17afb]: https://github.com/PHeonix25/unifi_alerts/commit/0f17afb

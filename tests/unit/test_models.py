@@ -56,7 +56,11 @@ class TestUniFiAlert:
 
     def test_raw_not_retained_after_api_alarm_construction(self):
         """Raw alarm dict must not be retained in memory after building from a poll."""
-        alarm = {"msg": "threat", "key": "EVT_IPS_ThreatDetected", "client_mac": "aa:bb:cc:dd:ee:ff"}
+        alarm = {
+            "msg": "threat",
+            "key": "EVT_IPS_ThreatDetected",
+            "client_mac": "aa:bb:cc:dd:ee:ff",
+        }
         alert = UniFiAlert.from_api_alarm(CATEGORY_NETWORK_WAN, alarm)
         assert alert.raw == {}
 
