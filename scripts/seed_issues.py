@@ -384,6 +384,41 @@ ISSUES: list[Issue] = [
             "- [ ] Comments match the resolved tags for the pinned SHAs"
         ),
     ),
+    Issue(
+        title="Adopt one test-layout convention across the unit suite",
+        milestone="v1.8.0",
+        labels=["tests", "size: M", "priority: low"],
+        body=(
+            "Unit test files mix class-grouped (`class Test*`) and flat "
+            "function layouts, and the inconsistency appears even within a "
+            "single directory. In `tests/unit/config_flow/`: `test_options.py` "
+            "uses 4 classes, `test_reauth.py` uses 1, and `test_setup.py` is "
+            "fully flat. Most unit files are class-grouped "
+            "(`test_coordinator.py` 19, `test_unifi_client.py` 12, "
+            "`test_entities.py` 11, `test_webhook_handler.py` 10, "
+            "`test_models.py`/`test_services.py` 7 each, `test_init.py` 6), "
+            "while `test_setup.py` and `test_diagnostics.py` are flat. "
+            "Integration tests are uniformly flat, which is fine.\n\n"
+            "**Approach**\n"
+            "- Codify the convention in `docs/TESTING.md`: unit tests are "
+            "grouped into `Test<BehaviourArea>` classes (the existing "
+            "majority style); integration tests stay flat functions.\n"
+            "- Align the outliers to match: group the flat unit files "
+            "(`tests/unit/config_flow/test_setup.py`, "
+            "`tests/unit/test_diagnostics.py`) into behaviour classes, and "
+            "even out `config_flow/test_reauth.py` so the directory is "
+            "internally consistent.\n"
+            "- Pure reorganisation: do not rename, merge, or drop any test. "
+            "Test count and coverage must be identical before and after.\n\n"
+            "**Out of scope:** integration tests (leave flat); any behavioural "
+            "change.\n\n"
+            "**Acceptance**\n"
+            "- [ ] Convention written down in `docs/TESTING.md`\n"
+            "- [ ] No unit-test directory mixes class-grouped and flat layouts\n"
+            "- [ ] Integration tests unchanged (still flat)\n"
+            "- [ ] Collected test count and coverage identical to before"
+        ),
+    ),
     # ----- v1.9.0: High value -----------------------------------------------
     Issue(
         title="Make category labels translatable",
@@ -416,6 +451,81 @@ ISSUES: list[Issue] = [
             "**Acceptance**\n"
             "- [ ] Unclassified keys are visible without DEBUG logging\n"
             "- [ ] Documented how to report them"
+        ),
+    ),
+    Issue(
+        title="Target Python 3.14 across tooling and CI",
+        milestone="v1.9.0",
+        labels=["ci", "size: S", "priority: high"],
+        body=(
+            "Tooling targets a Python runtime no current Home Assistant user "
+            "runs. `pyproject.toml` sets `[tool.ruff] target-version = "
+            '"py312"` and `[tool.mypy] python_version = "3.12"`, and every '
+            "`setup-python` step in `.github/workflows/ci.yml` (the "
+            "`hacs-preflight`, `lint`, and `test` jobs) pins `3.12`. Current "
+            "Home Assistant (2026.6.x) requires Python >= 3.14, and HA "
+            "supports only a single Python minor at a time, so lint, "
+            "type-check, and tests should run on the version HA actually "
+            "ships.\n\n"
+            "**Approach**\n"
+            '- `pyproject.toml`: set `[tool.ruff] target-version = "py314"` '
+            'and `[tool.mypy] python_version = "3.14"`.\n'
+            '- `.github/workflows/ci.yml`: change `python-version: "3.12"` to '
+            '`"3.14"` in the `hacs-preflight`, `lint`, and `test` jobs.\n'
+            "- Check `.github/workflows/copilot-setup-steps.yml` and "
+            "`version-check.yml` for hard-coded `3.12` and bump to match.\n"
+            "- Run `ruff check`, `ruff format --check`, `mypy`, and `pytest` "
+            "on 3.14 and fix any newly surfaced lint/typing findings directly "
+            "(do NOT silence them with new `# type: ignore` / `# noqa`).\n\n"
+            "**Out of scope:** the `hacs.json` `homeassistant` minimum "
+            "(2024.5.0) — that is the minimum HA version, not the dev Python.\n\n"
+            "**Acceptance**\n"
+            "- [ ] ruff `target-version = \"py314\"` and mypy "
+            '`python_version = "3.14"`\n'
+            "- [ ] All three CI jobs run on Python 3.14\n"
+            "- [ ] No new `# type: ignore` or `# noqa` added to pass\n"
+            "- [ ] Lint, typecheck, and full test suite green on 3.14"
+        ),
+    ),
+    Issue(
+        title="Test the UniFi HTTP client at the wire with aioresponses",
+        milestone="v1.9.0",
+        labels=["tests", "size: M", "priority: high"],
+        body=(
+            "`tests/unit/test_unifi_client.py` injects a bare `MagicMock()` as "
+            "the aiohttp session and hand-builds response objects "
+            "(`resp.json = AsyncMock(...)`, `resp.raise_for_status = "
+            "MagicMock()`). Those doubles assert against a fabricated aiohttp "
+            "surface, so they cannot catch real `ClientResponse` behaviour "
+            "(status -> `raise_for_status`, content-type handling, redirects) "
+            "and they couple the tests to the client's exact internal call "
+            "sequence rather than to the HTTP it actually sends.\n\n"
+            "**Approach**\n"
+            "- Add `aioresponses` to `requirements-dev.txt`.\n"
+            "- In the `make_client` helper, pass a real `aiohttp.ClientSession` "
+            "instead of `MagicMock()`. The constructor already takes the "
+            "session by injection: `UniFiClient(session, base_url, config)`.\n"
+            "- Wrap each test body in `with aioresponses() as m:` and register "
+            "the expected call, e.g. `m.get(url, status=200, payload={...})`; "
+            "for auth-failure cases use `status=401` and let the client's real "
+            "`raise_for_status` raise `InvalidAuthError`.\n"
+            "- Assert on the request the client MADE (URL, method, headers such "
+            "as `X-API-Key`, JSON body) via the aioresponses request history, "
+            "not on mock call args.\n"
+            "- Note: aioresponses patches `ClientSession._request`, so no real "
+            "socket is opened — this stays compatible with the pytest-socket "
+            "loopback guard already active in the suite.\n\n"
+            "**Scope:** `test_unifi_client.py` only. The integration suite's "
+            "existing HTTP stubbing in `tests/integration/conftest.py` is out "
+            "of scope.\n\n"
+            "**Acceptance**\n"
+            "- [ ] `make_client` uses a real `ClientSession`; no MagicMock "
+            "session remains in this file\n"
+            "- [ ] Success, 401, 404, and malformed-body paths are driven by "
+            "aioresponses `status`/`payload`\n"
+            "- [ ] At least one test asserts the outbound URL, method, and "
+            "auth header\n"
+            "- [ ] Coverage of `unifi_client.py` does not drop"
         ),
     ),
     # ----- v1.9.0: Medium value ---------------------------------------------
@@ -494,6 +604,38 @@ ISSUES: list[Issue] = [
             "- [ ] README explains multi-controller setup and the site field"
         ),
     ),
+    Issue(
+        title="Lint, format-check, and type the tests/ tree in CI",
+        milestone="v1.9.0",
+        labels=["ci", "tests", "size: S", "priority: medium"],
+        body=(
+            "CI enforces style and types on `custom_components/` only. The "
+            "`lint` job runs `ruff check custom_components/`, "
+            "`ruff format --check custom_components/`, and "
+            "`mypy custom_components/unifi_alerts`; `pytest` runs the tests but "
+            "nothing holds the `tests/` tree to the same bar. `pyproject.toml` "
+            "already defines a `[tool.ruff.lint.per-file-ignores]` entry for "
+            "`tests/*` (allowing `assert`), so the intent to lint tests "
+            "exists — CI just never acts on it. This is the root cause of "
+            "style/structure drift across test files.\n\n"
+            "**Approach**\n"
+            "- In `.github/workflows/ci.yml` `lint` job, widen the ruff steps "
+            "to cover tests: `ruff check custom_components/ tests/` and "
+            "`ruff format --check custom_components/ tests/` (or just `.`).\n"
+            "- Run `ruff check`/`ruff format` over `tests/` locally first and "
+            "commit the fixups in the same PR so CI starts green.\n"
+            "- mypy on tests is optional and often low-value (heavy mock usage "
+            "fights strict typing). If added, scope it loosely — do NOT extend "
+            "`strict = true` to tests; a separate relaxed override or simply "
+            "leaving tests untyped is acceptable. Record the decision in the "
+            "PR.\n\n"
+            "**Acceptance**\n"
+            "- [ ] `ruff check` and `ruff format --check` run over `tests/` in "
+            "CI\n"
+            "- [ ] Existing tests reformatted/fixed so the job passes\n"
+            "- [ ] mypy-on-tests decision made and recorded (in or out)"
+        ),
+    ),
     # ----- v1.9.0: Low value ------------------------------------------------
     Issue(
         title="Add unicode and large-volume round-trip tests",
@@ -533,6 +675,64 @@ ISSUES: list[Issue] = [
             "ecosystem.\n\n"
             "**Acceptance**\n"
             "- [ ] Decision recorded; pinning added if adopted"
+        ),
+    ),
+    Issue(
+        title="Fold pytest.ini into pyproject [tool.pytest.ini_options]",
+        milestone="v1.9.0",
+        labels=["ci", "size: S", "priority: low"],
+        body=(
+            "Pytest config lives in a standalone `pytest.ini` while ruff, "
+            "mypy, and coverage config live in `pyproject.toml`. Moving to a "
+            "single source of truth removes one root file and the chance of "
+            "the two drifting.\n\n"
+            "**Approach**\n"
+            "- Recreate every key from `pytest.ini` under a new "
+            "`[tool.pytest.ini_options]` table in `pyproject.toml`: "
+            "`asyncio_mode`, `asyncio_default_fixture_loop_scope`, `testpaths`, "
+            "`pythonpath`, `python_files`, `python_classes`, "
+            "`python_functions`, `addopts`, `filterwarnings`, `markers`. "
+            "`filterwarnings` and `markers` become TOML arrays of strings.\n"
+            "- Delete `pytest.ini`.\n"
+            "- Confirm pytest discovers the same tests and the `integration` "
+            "marker still resolves.\n\n"
+            "**Leave as-is:** the split `requirements-dev.txt` / "
+            "`requirements-lint.txt`. A lint-only env that skips the HA stack "
+            "is a deliberate speed win, not drift.\n\n"
+            "**Acceptance**\n"
+            "- [ ] All pytest config lives in `pyproject.toml`\n"
+            "- [ ] `pytest.ini` removed\n"
+            "- [ ] Same collected test count as before; `-m integration` still "
+            "selects the integration tests"
+        ),
+    ),
+    Issue(
+        title="Collapse repetitive test bodies with parametrize",
+        milestone="v1.9.0",
+        labels=["tests", "size: M", "priority: low"],
+        body=(
+            "Parametrize is used well where it counts (the `_classify` mapping "
+            "table in `test_unifi_client.py`) and the factory helpers "
+            "(`make_client`, `make_coordinator`, `make_alert`) keep setup DRY, "
+            "but the two largest files — `test_coordinator.py` (~84 tests) and "
+            "`test_entities.py` (~80 tests) — still carry near-duplicate test "
+            "bodies that differ only by input and expected value.\n\n"
+            "**Approach**\n"
+            "- Find clusters of tests that share a body and vary only in "
+            "inputs/expectations; fold each cluster into one "
+            "`@pytest.mark.parametrize` with an `ids=` list so failures stay "
+            "readable.\n"
+            "- Do NOT merge tests that assert genuinely different behaviour or "
+            "that would need an `if` inside the body — splitting beats a "
+            "parametrize with branching.\n"
+            "- Pure refactor: the number of logical assertions and the "
+            "coverage figure should be unchanged.\n\n"
+            "**Acceptance**\n"
+            "- [ ] Duplicate bodies in the two files collapsed where it "
+            "improves clarity\n"
+            "- [ ] Every parametrized case has a readable `ids` entry\n"
+            "- [ ] Coverage of the affected modules is unchanged\n"
+            "- [ ] No behavioural test was silently dropped"
         ),
     ),
     # ----- v2.0.0 -----------------------------------------------------------
