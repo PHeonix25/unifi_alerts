@@ -74,6 +74,11 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             url = user_input[CONF_CONTROLLER_URL].rstrip("/")
+            # Trust model: the controller URL is supplied by the HA administrator
+            # (a local-admin role). Loopback (127.x, ::1) and link-local (169.254.x,
+            # fe80::) addresses are valid UniFi OS console locations (e.g. UDM running
+            # on the same host as HA, or direct-connect adapters), so we do not
+            # reject them. Scheme validation is the appropriate boundary here.
             if URL(url).scheme not in ("http", "https"):
                 errors[CONF_CONTROLLER_URL] = "invalid_url_scheme"
             else:
@@ -361,6 +366,8 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                 else self._config_entry.data[CONF_CONTROLLER_URL]
             )
 
+            # Same trust model as the initial config step: scheme-only validation;
+            # loopback/link-local hosts are accepted (see comment in async_step_user).
             if URL(effective_url).scheme not in ("http", "https"):
                 errors[CONF_CONTROLLER_URL] = "invalid_url_scheme"
             else:
