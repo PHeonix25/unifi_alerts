@@ -1211,6 +1211,46 @@ class TestProbeSystemLogEndpoint:
         assert client._has_system_log is False
         assert client._probe_backoff_until is not None
 
+    @pytest.mark.asyncio
+    async def test_reauth_clears_probe_backoff(self):
+        """A successful authenticate() must clear the probe-backoff state so the
+        next probe call actually hits the network instead of returning the cached
+        False from backoff."""
+        from datetime import UTC, datetime, timedelta
+
+        client = make_client()
+        # Simulate an active backoff (e.g. credentials were bad, probe kept failing)
+        client._has_system_log = False
+        client._probe_fail_count = _PROBE_FAIL_LIMIT
+        client._probe_backoff_until = datetime.now(UTC) + timedelta(hours=1)
+
+        # Authenticate succeeds (200 from the login endpoint)
+        login_ctx = _make_response(200)
+        client._session.post = login_ctx
+        await client.authenticate()
+
+        # Backoff state must be cleared
+        assert client._probe_backoff_until is None
+        assert client._probe_fail_count == 0
+        assert client._has_system_log is None  # re-probed on next poll
+
+    @pytest.mark.asyncio
+    async def test_reauth_does_not_reset_confirmed_true(self):
+        """If _has_system_log is True (v2 endpoint confirmed), re-auth must not
+        reset it to None - there's nothing to re-probe."""
+        from datetime import timedelta
+
+        client = make_client()
+        client._has_system_log = True
+        client._probe_fail_count = 0
+        client._probe_backoff_until = None
+
+        login_ctx = _make_response(200)
+        client._session.post = login_ctx
+        await client.authenticate()
+
+        assert client._has_system_log is True
+
 
 class TestFetchSystemLogAlarms:
     """Tests for UniFiClient.fetch_system_log_alarms."""

@@ -95,6 +95,7 @@ class UniFiClient:
                 await self._verify_api_key()
                 self._auth_method = AUTH_METHOD_APIKEY
                 self._authenticated = True
+                self._clear_probe_backoff()
                 _LOGGER.debug("Authenticated via API key")
                 return AUTH_METHOD_APIKEY
             except InvalidAuthError:
@@ -106,8 +107,22 @@ class UniFiClient:
         await self._login_userpass()
         self._auth_method = AUTH_METHOD_USERPASS
         self._authenticated = True
+        self._clear_probe_backoff()
         _LOGGER.debug("Authenticated via username/password")
         return AUTH_METHOD_USERPASS
+
+    def _clear_probe_backoff(self) -> None:
+        """Reset probe-backoff state after successful authentication.
+
+        Clears the transient-failure counter and backoff timer so the next
+        poll re-probes the system-log endpoint immediately. Only resets
+        _has_system_log when in backoff (i.e. the False came from hitting the
+        fail limit, not from a clean 404); a confirmed-True value is left alone.
+        """
+        self._probe_fail_count = 0
+        self._probe_backoff_until = None
+        if self._has_system_log is False:
+            self._has_system_log = None
 
     async def fetch_alarms(self, site: str = "default") -> list[dict[str, Any]]:
         """Return all unarchived alarms from the controller."""

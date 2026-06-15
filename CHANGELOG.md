@@ -16,6 +16,7 @@
 
 ### Fixed
 
+- Successful re-authentication now immediately clears the system-log probe backoff. Previously, if the probe had been forced onto the legacy path by consecutive transient failures (hit `_PROBE_FAIL_LIMIT`), re-auth would leave the backoff timer intact and the integration would stay on the legacy path for up to 1 hour even after the controller became reachable. The fix resets `_probe_backoff_until`, `_probe_fail_count`, and `_has_system_log` (to `None`, triggering a fresh probe on the next poll) inside `authenticate()` on every success path. ([#168])
 - Authenticated webhook POSTs whose body is not valid JSON or not valid UTF-8 now return HTTP 400 and are discarded rather than synthesizing an "Unknown alert" entity state update. A token-bearing sender could previously spam meaningless "Unknown alert" events via malformed bodies. ([#173])
 - `UniFiClearCategoryButton` and `UniFiClearAllButton` now override `_handle_coordinator_update()` to call `async_write_ha_state()`, so the `available` property is re-evaluated when coordinator state changes (e.g. after a category is disabled via the options flow without a full reload). Previously the button entities could remain stale between polls. ([#170])
 - A second 401 response from the controller after a successful re-authentication now raises `ConfigEntryAuthFailed` (triggering HA's re-auth repair flow) instead of propagating as an unhandled `InvalidAuthError`. Previously the coordinator only caught `CannotConnectError` on the retried fetch, so a persistent authentication failure after credential rotation silently broke polling. ([#122])
@@ -245,6 +246,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#138]: https://github.com/PHeonix25/unifi_alerts/issues/138
 [#139]: https://github.com/PHeonix25/unifi_alerts/issues/139
 [#163]: https://github.com/PHeonix25/unifi_alerts/issues/163
+[#168]: https://github.com/PHeonix25/unifi_alerts/issues/168
 [#170]: https://github.com/PHeonix25/unifi_alerts/issues/170
 [#173]: https://github.com/PHeonix25/unifi_alerts/issues/173
 [#175]: https://github.com/PHeonix25/unifi_alerts/issues/175
