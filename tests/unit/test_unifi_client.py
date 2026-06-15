@@ -947,6 +947,109 @@ def _make_post_json_response(status: int, body: dict | None = None):
     return _ctx, resp
 
 
+class TestSslCertificateError:
+    """SslCertificateError is raised on TLS certificate failures, not CannotConnectError."""
+
+    @pytest.mark.asyncio
+    async def test_verify_api_key_raises_ssl_cert_error(self):
+        """aiohttp.ClientConnectorCertificateError in _verify_api_key must raise SslCertificateError."""
+        import aiohttp
+
+        from custom_components.unifi_alerts.unifi_client import SslCertificateError
+
+        client = make_client({"api_key": "test-key", "verify_ssl": True})
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock())
+            yield  # type: ignore[misc]
+
+        client._session.get = _raise
+        with pytest.raises(SslCertificateError):
+            await client._verify_api_key()
+
+    @pytest.mark.asyncio
+    async def test_login_userpass_raises_ssl_cert_error(self):
+        """aiohttp.ClientConnectorCertificateError in _login_userpass must raise SslCertificateError."""
+        import aiohttp
+
+        from custom_components.unifi_alerts.unifi_client import SslCertificateError
+
+        client = make_client()
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock())
+            yield  # type: ignore[misc]
+
+        client._session.post = _raise
+        with pytest.raises(SslCertificateError):
+            await client._login_userpass()
+
+    @pytest.mark.asyncio
+    async def test_try_fetch_alarms_raises_ssl_cert_error(self):
+        """aiohttp.ClientConnectorCertificateError in _try_fetch_alarms must raise SslCertificateError."""
+        import aiohttp
+
+        from custom_components.unifi_alerts.unifi_client import SslCertificateError
+
+        client = make_client()
+        client._authenticated = True
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock())
+            yield  # type: ignore[misc]
+
+        client._session.get = _raise
+        with pytest.raises(SslCertificateError):
+            await client._try_fetch_alarms("https://192.168.1.1/api/alarm", "default")
+
+    @pytest.mark.asyncio
+    async def test_fetch_system_log_alarms_raises_ssl_cert_error(self):
+        """aiohttp.ClientConnectorCertificateError in fetch_system_log_alarms must raise SslCertificateError."""
+        import aiohttp
+
+        from custom_components.unifi_alerts.unifi_client import SslCertificateError
+
+        client = make_client()
+        client._authenticated = True
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock())
+            yield  # type: ignore[misc]
+
+        client._session.post = _raise
+        with pytest.raises(SslCertificateError):
+            await client.fetch_system_log_alarms()
+
+    @pytest.mark.asyncio
+    async def test_verify_api_key_generic_client_error_raises_cannot_connect(self):
+        """A generic aiohttp.ClientError in _verify_api_key must raise CannotConnectError."""
+        import aiohttp
+
+        client = make_client({"api_key": "test-key", "verify_ssl": True})
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectionError("connection refused")
+            yield  # type: ignore[misc]
+
+        client._session.get = _raise
+        with pytest.raises(CannotConnectError):
+            await client._verify_api_key()
+
+    @pytest.mark.asyncio
+    async def test_ssl_cert_error_is_subclass_of_cannot_connect(self):
+        from custom_components.unifi_alerts.unifi_client import (
+            CannotConnectError,
+            SslCertificateError,
+        )
+
+        assert issubclass(SslCertificateError, CannotConnectError)
+
+
 class TestProbeSystemLogEndpoint:
     """Tests for UniFiClient.probe_system_log_endpoint."""
 

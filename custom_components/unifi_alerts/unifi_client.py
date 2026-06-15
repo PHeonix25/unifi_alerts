@@ -41,6 +41,15 @@ class CannotConnectError(Exception):
     """Raised when the controller is unreachable."""
 
 
+class SslCertificateError(CannotConnectError):
+    """Raised when TLS certificate verification fails.
+
+    Subclass of CannotConnectError so coordinator/integration code that only
+    catches CannotConnectError continues to work. The config flow catches this
+    subclass first to surface a dedicated, actionable error message.
+    """
+
+
 class InvalidAuthError(Exception):
     """Raised on 401/403 responses.
 
@@ -206,6 +215,8 @@ class UniFiClient:
                     msg = data.get("meta", {}).get("msg", "unknown error")
                     raise CannotConnectError(f"UniFi API error: {msg}")
                 return [a for a in data.get("data", []) if not a.get("archived", False)]
+        except aiohttp.ClientConnectorCertificateError as err:
+            raise SslCertificateError(type(err).__name__) from err
         except aiohttp.ClientResponseError as err:
             # Include HTTP status so users (and logs) can tell a 404 from a 500.
             # Status-only — no URL — to avoid leaking creds that may be embedded in a URL.
@@ -373,6 +384,8 @@ class UniFiClient:
                         raise InvalidAuthError("Session expired during system-log fetch")
                     resp.raise_for_status()
                     data = await resp.json()
+            except aiohttp.ClientConnectorCertificateError as err:
+                raise SslCertificateError(type(err).__name__) from err
             except aiohttp.ClientResponseError as err:
                 raise CannotConnectError(f"{type(err).__name__} {err.status}") from err
             except aiohttp.ClientError as err:
@@ -428,29 +441,36 @@ class UniFiClient:
         if not api_key:
             raise InvalidAuthError("No API key provided")
         endpoint = f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/s/default/self"
-        async with self._session.get(
-            endpoint,
-            headers={"X-API-Key": api_key, "Accept": "application/json"},
-            ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
-            timeout=aiohttp.ClientTimeout(total=8),
-            allow_redirects=False,
-        ) as resp:
-            if 300 <= resp.status < 400:
-                raise CannotConnectError(
-                    f"Controller issued a redirect (HTTP {resp.status}) on an authenticated "
-                    "request; refusing to follow to protect credentials"
-                )
-            if resp.status == 404:
-                raise CannotConnectError(
-                    "API key endpoint not found — check the controller URL "
-                    "and that UniFi OS is accessible at this address"
-                )
-            if resp.status in (401, 403):
-                _LOGGER.warning(
-                    "API key authentication failed for %s (HTTP %d)", endpoint, resp.status
-                )
-                raise InvalidAuthError("Invalid API key", login_url=endpoint)
-            resp.raise_for_status()
+        try:
+            async with self._session.get(
+                endpoint,
+                headers={"X-API-Key": api_key, "Accept": "application/json"},
+                ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+                timeout=aiohttp.ClientTimeout(total=8),
+                allow_redirects=False,
+            ) as resp:
+                if 300 <= resp.status < 400:
+                    raise CannotConnectError(
+                        f"Controller issued a redirect (HTTP {resp.status}) on an authenticated "
+                        "request; refusing to follow to protect credentials"
+                    )
+                if resp.status == 404:
+                    raise CannotConnectError(
+                        "API key endpoint not found — check the controller URL "
+                        "and that UniFi OS is accessible at this address"
+                    )
+                if resp.status in (401, 403):
+                    _LOGGER.warning(
+                        "API key authentication failed for %s (HTTP %d)", endpoint, resp.status
+                    )
+                    raise InvalidAuthError("Invalid API key", login_url=endpoint)
+                resp.raise_for_status()
+        except (CannotConnectError, InvalidAuthError):
+            raise
+        except aiohttp.ClientConnectorCertificateError as err:
+            raise SslCertificateError(type(err).__name__) from err
+        except aiohttp.ClientError as err:
+            raise CannotConnectError(type(err).__name__) from err
 
     async def _login_userpass(self) -> None:
         """Attempt username/password login via the UniFi OS path."""
@@ -499,6 +519,8 @@ class UniFiClient:
             last_url = paths[-1]
             _LOGGER.warning("Authentication failed at login path (last: %s)", last_url)
             raise InvalidAuthError("Invalid username or password", login_url=last_url)
+        except aiohttp.ClientConnectorCertificateError as err:
+            raise SslCertificateError(type(err).__name__) from err
         except aiohttp.ClientResponseError as err:
             raise CannotConnectError(f"{type(err).__name__} {err.status}") from err
         except aiohttp.ClientError as err:
