@@ -389,6 +389,65 @@ async def test_step_user_fetch_alarms_failure_shows_cannot_connect() -> None:
 
 
 @pytest.mark.asyncio
+async def test_step_user_ssl_cert_error_on_authenticate_shows_invalid_ssl_cert() -> None:
+    """SslCertificateError from authenticate() must map to the invalid_ssl_cert field error."""
+    from custom_components.unifi_alerts.unifi_client import SslCertificateError
+
+    flow = make_flow()
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "user"})
+
+    with (
+        patch(
+            "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+            return_value=make_session_mock(),
+        ),
+        patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+    ):
+        instance = mock_cls.return_value
+        instance.authenticate = AsyncMock(side_effect=SslCertificateError("cert error"))
+
+        result = await flow.async_step_user(_VALID_INPUT)
+
+    assert result["step_id"] == "user"
+    call_kwargs = flow.async_show_form.call_args.kwargs
+    assert call_kwargs["errors"] == {CONF_CONTROLLER_URL: "invalid_ssl_cert"}
+
+
+@pytest.mark.asyncio
+async def test_step_user_ssl_cert_error_on_fetch_alarms_shows_invalid_ssl_cert() -> None:
+    """SslCertificateError from fetch_alarms() must map to the invalid_ssl_cert field error."""
+    from custom_components.unifi_alerts.unifi_client import SslCertificateError
+
+    flow = make_flow()
+    flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "user"})
+
+    with (
+        patch(
+            "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+            return_value=make_session_mock(),
+        ),
+        patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+    ):
+        instance = mock_cls.return_value
+        instance.authenticate = AsyncMock(return_value="userpass")
+        instance.fetch_alarms = AsyncMock(side_effect=SslCertificateError("cert error"))
+
+        result = await flow.async_step_user(_VALID_INPUT)
+
+    assert result["step_id"] == "user"
+    call_kwargs = flow.async_show_form.call_args.kwargs
+    assert call_kwargs["errors"] == {CONF_CONTROLLER_URL: "invalid_ssl_cert"}
+
+
+@pytest.mark.asyncio
+async def test_ssl_cert_error_is_subclass_of_cannot_connect() -> None:
+    """SslCertificateError must be a subclass of CannotConnectError."""
+    from custom_components.unifi_alerts.unifi_client import CannotConnectError, SslCertificateError
+
+    assert issubclass(SslCertificateError, CannotConnectError)
+
+
+@pytest.mark.asyncio
 async def test_async_migrate_entry_strips_conf_is_unifi_os() -> None:
     """async_migrate_entry must remove is_unifi_os and ultimately reach version 3.
 

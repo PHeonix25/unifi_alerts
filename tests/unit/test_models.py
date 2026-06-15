@@ -49,6 +49,33 @@ class TestUniFiAlert:
         alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
         assert len(alert.message) == 255
 
+    def test_raw_not_retained_after_webhook_construction(self):
+        """Raw payload must not be retained in memory after building from a webhook."""
+        payload = {"message": "test", "client_mac": "aa:bb:cc:dd:ee:ff", "src_ip": "10.0.0.1"}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert alert.raw == {}
+
+    def test_raw_not_retained_after_api_alarm_construction(self):
+        """Raw alarm dict must not be retained in memory after building from a poll."""
+        alarm = {"msg": "threat", "key": "EVT_IPS_ThreatDetected", "client_mac": "aa:bb:cc:dd:ee:ff"}
+        alert = UniFiAlert.from_api_alarm(CATEGORY_NETWORK_WAN, alarm)
+        assert alert.raw == {}
+
+    def test_key_truncated_at_64(self):
+        payload = {"message": "test", "key": "K" * 100}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert len(alert.key) == 64
+
+    def test_device_name_truncated_at_255(self):
+        payload = {"message": "test", "device_name": "D" * 300}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert len(alert.device_name) == 255
+
+    def test_severity_truncated_at_32(self):
+        payload = {"message": "test", "severity": "S" * 100}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert len(alert.severity) == 32
+
     def test_from_api_alarm(self):
         alarm = {
             "key": "EVT_IPS_ThreatDetected",
@@ -227,6 +254,32 @@ class TestRenderMessageRaw:
         result = _render_message_raw("", {})
         assert result == ""
 
+    def test_parameter_value_containing_token_is_not_re_substituted(self):
+        """A param value that looks like {TOKEN} must not trigger a second pass."""
+        raw = "Source: {SRC}."
+        params = {"SRC": {"name": "{DST}"}, "DST": {"name": "secret"}}
+        result = _render_message_raw(raw, params)
+        # Single-pass: {SRC} -> "{DST}" and then the substitution stops.
+        # If double-pass were allowed, the result would be "Source: secret."
+        assert result == "Source: {DST}."
+
+    def test_overlapping_prefix_keys_resolve_independently(self):
+        """{IP} and {IP_DST} must each be replaced with their own value."""
+        raw = "From {IP} to {IP_DST}."
+        params = {
+            "IP": {"name": "1.2.3.4"},
+            "IP_DST": {"name": "5.6.7.8"},
+        }
+        result = _render_message_raw(raw, params)
+        assert result == "From 1.2.3.4 to 5.6.7.8."
+
+    def test_non_string_parameter_values_converted(self):
+        """Non-string param values (int, bool, None) must be stringified."""
+        raw = "Count={COUNT} active={ACTIVE} extra={EXTRA}."
+        params = {"COUNT": 7, "ACTIVE": True, "EXTRA": None}
+        result = _render_message_raw(raw, params)
+        assert result == "Count=7 active=True extra=None."
+
 
 class TestFromSystemLogEvent:
     """Tests for UniFiAlert.from_system_log_event() — v2 system-log parser."""
@@ -328,10 +381,11 @@ class TestFromSystemLogEvent:
         alert = UniFiAlert.from_system_log_event(dict(self._BASE_EVENT))
         assert alert.severity == "HIGH"
 
-    def test_raw_dict_preserved(self):
+    def test_raw_not_retained_after_construction(self):
+        """Raw payload must be empty after construction; no in-memory privacy exposure."""
         event = dict(self._BASE_EVENT)
         alert = UniFiAlert.from_system_log_event(event)
-        assert alert.raw == event
+        assert alert.raw == {}
 
     def test_firewall_key_maps_to_security_firewall(self):
         event = dict(self._BASE_EVENT, key="FIREWALL_BLOCK", category="SECURITY")

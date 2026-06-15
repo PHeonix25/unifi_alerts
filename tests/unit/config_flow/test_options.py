@@ -882,6 +882,34 @@ class TestOptionsCredentialsErrorsAndStaging:
         assert flow.async_show_form.call_args.kwargs["errors"] == {"base": "cannot_connect"}
 
     @pytest.mark.asyncio
+    async def test_credentials_ssl_cert_error_shows_invalid_ssl_cert(self) -> None:
+        from custom_components.unifi_alerts.unifi_client import SslCertificateError
+
+        flow = make_options_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "credentials"})
+        user_input = {
+            CONF_CONTROLLER_URL: "https://10.0.0.1",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "newpass",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+        }
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+                return_value=make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(side_effect=SslCertificateError("cert"))
+            result = await flow.async_step_credentials(user_input)
+
+        assert result["step_id"] == "credentials"
+        assert flow.async_show_form.call_args.kwargs["errors"] == {"base": "invalid_ssl_cert"}
+
+    @pytest.mark.asyncio
     async def test_credentials_unexpected_error_shows_unknown(self) -> None:
         flow = make_options_flow()
         flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "credentials"})

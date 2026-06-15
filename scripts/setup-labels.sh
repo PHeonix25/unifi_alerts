@@ -30,8 +30,15 @@ LABELS=(
 # `dev`, so `Closes #NN` does not fire until the `dev > main` release-merge;
 # this label keeps the milestone view honest in the meantime. Apply it when a
 # PR resolving the issue merges to `dev`; the release-merge then closes it.
+#
+# `skip-changelog` opts a PR out of the changelog-guard check in
+# `pr-guards.yml`. Use it for custom_components/ changes that are internal
+# refactors with no user-visible effect and therefore do not warrant a
+# CHANGELOG entry (e.g. test-only changes that touch production code,
+# or coverage-only commits).
 LABELS+=(
   "landed-in-dev|0e8a16|Fix merged to dev, awaiting the next stable release on main"
+  "skip-changelog|e4e669|Exempt from the CHANGELOG guard (no user-visible effect)"
 )
 
 # Cache the existing labels once so we don't hit the API per name.

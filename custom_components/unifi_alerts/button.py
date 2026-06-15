@@ -5,7 +5,7 @@ from __future__ import annotations
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -55,6 +55,10 @@ class UniFiClearCategoryButton(CoordinatorEntity[UniFiAlertsCoordinator], Button
         self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
         self._attr_device_info = _device_info(entry)
 
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()
+
     @property
     def available(self) -> bool:
         state = self.coordinator.get_category_state(self._category)
@@ -82,6 +86,10 @@ class UniFiClearAllButton(CoordinatorEntity[UniFiAlertsCoordinator], ButtonEntit
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_clear_all"
         self._attr_device_info = _device_info(entry)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
