@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -51,19 +52,24 @@ def _render_message_raw(message_raw: str, parameters: dict[str, Any]) -> str:
     The v2 system-log schema uses a template string (message_raw) with
     {PARAM_NAME} placeholders and a parameters object whose values are dicts
     with at least a 'name' field (and sometimes an 'id' and other metadata).
-    Simple substitution is sufficient; do not over-engineer.
+
+    Uses a single-pass re.sub so parameter values that contain {TOKEN} strings
+    are never re-substituted, and overlapping key names (e.g. {IP} vs {IP_DST})
+    are resolved correctly regardless of iteration order.
     """
-    result = message_raw
+    # Build the display-value map once before the regex pass.
+    display: dict[str, str] = {}
     for key, value in parameters.items():
-        placeholder = "{" + key + "}"
-        if placeholder in result:
-            # Prefer 'name', fall back to 'id', then the key itself
-            if isinstance(value, dict):
-                display = value.get("name") or value.get("id") or key
-            else:
-                display = str(value)
-            result = result.replace(placeholder, str(display))
-    return result
+        if isinstance(value, dict):
+            display[key] = str(value.get("name") or value.get("id") or key)
+        else:
+            display[key] = str(value)
+
+    def _replace(match: re.Match[str]) -> str:
+        token = match.group(1)
+        return display.get(token, match.group(0))
+
+    return re.sub(r"\{([^{}]+)\}", _replace, message_raw)
 
 
 @dataclass

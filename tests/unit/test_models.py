@@ -242,6 +242,32 @@ class TestRenderMessageRaw:
         result = _render_message_raw("", {})
         assert result == ""
 
+    def test_parameter_value_containing_token_is_not_re_substituted(self):
+        """A param value that looks like {TOKEN} must not trigger a second pass."""
+        raw = "Source: {SRC}."
+        params = {"SRC": {"name": "{DST}"}, "DST": {"name": "secret"}}
+        result = _render_message_raw(raw, params)
+        # Single-pass: {SRC} -> "{DST}" and then the substitution stops.
+        # If double-pass were allowed, the result would be "Source: secret."
+        assert result == "Source: {DST}."
+
+    def test_overlapping_prefix_keys_resolve_independently(self):
+        """{IP} and {IP_DST} must each be replaced with their own value."""
+        raw = "From {IP} to {IP_DST}."
+        params = {
+            "IP": {"name": "1.2.3.4"},
+            "IP_DST": {"name": "5.6.7.8"},
+        }
+        result = _render_message_raw(raw, params)
+        assert result == "From 1.2.3.4 to 5.6.7.8."
+
+    def test_non_string_parameter_values_converted(self):
+        """Non-string param values (int, bool, None) must be stringified."""
+        raw = "Count={COUNT} active={ACTIVE} extra={EXTRA}."
+        params = {"COUNT": 7, "ACTIVE": True, "EXTRA": None}
+        result = _render_message_raw(raw, params)
+        assert result == "Count=7 active=True extra=None."
+
 
 class TestFromSystemLogEvent:
     """Tests for UniFiAlert.from_system_log_event() — v2 system-log parser."""
