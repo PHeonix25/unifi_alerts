@@ -18,6 +18,7 @@
 
 ### Fixed
 
+- Upgrading from a pre-v1.4.0 install no longer silently breaks webhook delivery. The schema v2-to-v3 migration now surfaces a Repair issue in Settings > Repairs when webhook URLs change due to the `webhook_id_suffix` being backfilled, giving a clear call to action to re-paste the new URLs into Alarm Manager. The previous INFO log was downgraded to DEBUG. ([#241])
 - Successful re-authentication now immediately clears the system-log probe backoff. Previously, if the probe had been forced onto the legacy path by consecutive transient failures (hit `_PROBE_FAIL_LIMIT`), re-auth would leave the backoff timer intact and the integration would stay on the legacy path for up to 1 hour even after the controller became reachable. The fix resets `_probe_backoff_until`, `_probe_fail_count`, and `_has_system_log` (to `None`, triggering a fresh probe on the next poll) inside `authenticate()` on every success path. ([#168])
 - Authenticated webhook POSTs whose body is not valid JSON or not valid UTF-8 now return HTTP 400 and are discarded rather than synthesizing an "Unknown alert" entity state update. A token-bearing sender could previously spam meaningless "Unknown alert" events via malformed bodies. ([#173])
 - `UniFiClearCategoryButton` and `UniFiClearAllButton` now override `_handle_coordinator_update()` to call `async_write_ha_state()`, so the `available` property is re-evaluated when coordinator state changes (e.g. after a category is disabled via the options flow without a full reload). Previously the button entities could remain stale between polls. ([#170])
@@ -264,4 +265,5 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#173]: https://github.com/PHeonix25/unifi_alerts/issues/173
 [#175]: https://github.com/PHeonix25/unifi_alerts/issues/175
 [#233]: https://github.com/PHeonix25/unifi_alerts/issues/233
+[#241]: https://github.com/PHeonix25/unifi_alerts/issues/241
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR
