@@ -39,7 +39,7 @@ from .const import (
     webhook_id_for_category,
 )
 from .models import UniFiClientConfig
-from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
+from .unifi_client import CannotConnectError, InvalidAuthError, SslCertificateError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,6 +74,11 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             url = user_input[CONF_CONTROLLER_URL].rstrip("/")
+            # Trust model: the controller URL is supplied by the HA administrator
+            # (a local-admin role). Loopback (127.x, ::1) and link-local (169.254.x,
+            # fe80::) addresses are valid UniFi OS console locations (e.g. UDM running
+            # on the same host as HA, or direct-connect adapters), so we do not
+            # reject them. Scheme validation is the appropriate boundary here.
             if URL(url).scheme not in ("http", "https"):
                 errors[CONF_CONTROLLER_URL] = "invalid_url_scheme"
             else:
@@ -89,6 +94,8 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                     await client.fetch_alarms()  # validate alarm endpoint reachable
                 except InvalidAuthError:
                     errors["base"] = "invalid_auth"
+                except SslCertificateError:
+                    errors[CONF_CONTROLLER_URL] = "invalid_ssl_cert"
                 except CannotConnectError as err:
                     _LOGGER.error("Cannot reach alarm endpoint: %s", err)
                     errors["base"] = "cannot_connect"
@@ -251,6 +258,8 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 auth_method = await client.authenticate()
             except InvalidAuthError:
                 errors["base"] = "invalid_auth"
+            except SslCertificateError:
+                errors["base"] = "invalid_ssl_cert"
             except CannotConnectError as err:
                 _LOGGER.error("Cannot reach controller during reauth: %s", err)
                 errors["base"] = "cannot_connect"
@@ -361,6 +370,8 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                 else self._config_entry.data[CONF_CONTROLLER_URL]
             )
 
+            # Same trust model as the initial config step: scheme-only validation;
+            # loopback/link-local hosts are accepted (see comment in async_step_user).
             if URL(effective_url).scheme not in ("http", "https"):
                 errors[CONF_CONTROLLER_URL] = "invalid_url_scheme"
             else:
@@ -384,6 +395,8 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                     await client.fetch_alarms()
                 except InvalidAuthError:
                     errors["base"] = "invalid_auth"
+                except SslCertificateError:
+                    errors["base"] = "invalid_ssl_cert"
                 except CannotConnectError as err:
                     _LOGGER.error("Cannot reach controller during options update: %s", err)
                     errors["base"] = "cannot_connect"
@@ -504,6 +517,21 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             # the options entry. If the user abandoned the flow before reaching
             # this step, _pending_data is empty and entry.data is untouched.
             if self._pending_data:
+                old_secret = self._config_entry.data.get(CONF_WEBHOOK_SECRET, "")
+                new_secret = self._pending_data.get(CONF_WEBHOOK_SECRET, old_secret)
+                if new_secret != old_secret:
+                    # Secret was rotated — every URL pasted into Alarm Manager is
+                    # now invalid. Create a repair issue that clears automatically
+                    # when the first authenticated webhook arrives after the update.
+                    ir.async_create_issue(
+                        self.hass,
+                        DOMAIN,
+                        f"webhook_secret_rotated_{self._config_entry.entry_id}",
+                        is_fixable=False,
+                        severity=ir.IssueSeverity.WARNING,
+                        translation_key="webhook_secret_rotated",
+                        translation_placeholders={"name": self._config_entry.title},
+                    )
                 self.hass.config_entries.async_update_entry(
                     self._config_entry, data=self._pending_data
                 )

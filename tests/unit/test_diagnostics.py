@@ -59,115 +59,130 @@ def _make_coordinator(
     return coordinator
 
 
-@pytest.mark.asyncio
-async def test_diagnostics_redacts_password() -> None:
-    entry = _make_entry_with_runtime(_make_coordinator())
-    hass = MagicMock()
+class TestDiagnosticsRedaction:
+    """Tests that sensitive config fields are redacted and non-sensitive fields are preserved."""
 
-    result = await async_get_config_entry_diagnostics(hass, entry)
+    @pytest.mark.asyncio
+    async def test_redacts_password(self) -> None:
+        entry = _make_entry_with_runtime(_make_coordinator())
+        hass = MagicMock()
 
-    assert result["config_entry"][CONF_PASSWORD] == "**REDACTED**"
+        result = await async_get_config_entry_diagnostics(hass, entry)
 
+        assert result["config_entry"][CONF_PASSWORD] == "**REDACTED**"
 
-@pytest.mark.asyncio
-async def test_diagnostics_redacts_api_key() -> None:
-    entry = _make_entry_with_runtime(
-        _make_coordinator(), extra_data={CONF_API_KEY: "super-secret-key"}
-    )
-    hass = MagicMock()
+    @pytest.mark.asyncio
+    async def test_redacts_api_key(self) -> None:
+        entry = _make_entry_with_runtime(
+            _make_coordinator(), extra_data={CONF_API_KEY: "super-secret-key"}
+        )
+        hass = MagicMock()
 
-    result = await async_get_config_entry_diagnostics(hass, entry)
+        result = await async_get_config_entry_diagnostics(hass, entry)
 
-    assert result["config_entry"][CONF_API_KEY] == "**REDACTED**"
+        assert result["config_entry"][CONF_API_KEY] == "**REDACTED**"
 
+    @pytest.mark.asyncio
+    async def test_preserves_non_sensitive_config(self) -> None:
+        entry = _make_entry_with_runtime(_make_coordinator())
+        hass = MagicMock()
 
-@pytest.mark.asyncio
-async def test_diagnostics_exposes_all_webhook_urls() -> None:
-    entry = _make_entry_with_runtime(_make_coordinator())
-    hass = MagicMock()
+        result = await async_get_config_entry_diagnostics(hass, entry)
 
-    result = await async_get_config_entry_diagnostics(hass, entry)
-
-    assert result["webhook_urls"] == _SAMPLE_WEBHOOK_URLS
-    for cat in ALL_CATEGORIES:
-        assert cat in result["webhook_urls"]
-
-
-@pytest.mark.asyncio
-async def test_diagnostics_includes_coordinator_state() -> None:
-    coordinator = _make_coordinator(any_alerting=True, rollup_alert_count=3, rollup_open_count=5)
-    entry = _make_entry_with_runtime(coordinator)
-    hass = MagicMock()
-
-    result = await async_get_config_entry_diagnostics(hass, entry)
-
-    assert result["coordinator"]["any_alerting"] is True
-    assert result["coordinator"]["rollup_alert_count"] == 3
-    assert result["coordinator"]["rollup_open_count"] == 5
+        assert result["config_entry"]["controller_url"] == "https://192.168.1.1"
+        assert result["config_entry"]["username"] == "**REDACTED**"
 
 
-@pytest.mark.asyncio
-async def test_diagnostics_handles_missing_entry_data() -> None:
-    """Diagnostics should not raise if runtime_data is absent (e.g. during setup failure)."""
-    entry = _make_entry()
-    # Ensure runtime_data is not set (simulates a failed setup)
-    del entry.runtime_data
-    hass = MagicMock()
+class TestDiagnosticsContent:
+    """Tests that diagnostics expose the expected coordinator state and webhook URLs."""
 
-    result = await async_get_config_entry_diagnostics(hass, entry)
+    @pytest.mark.asyncio
+    async def test_exposes_all_webhook_urls(self) -> None:
+        entry = _make_entry_with_runtime(_make_coordinator())
+        hass = MagicMock()
 
-    assert result["webhook_urls"] == {}
-    assert result["coordinator"] == {}
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        assert result["webhook_urls"] == _SAMPLE_WEBHOOK_URLS
+        for cat in ALL_CATEGORIES:
+            assert cat in result["webhook_urls"]
+
+    @pytest.mark.asyncio
+    async def test_includes_coordinator_state(self) -> None:
+        coordinator = _make_coordinator(
+            any_alerting=True, rollup_alert_count=3, rollup_open_count=5
+        )
+        entry = _make_entry_with_runtime(coordinator)
+        hass = MagicMock()
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        assert result["coordinator"]["any_alerting"] is True
+        assert result["coordinator"]["rollup_alert_count"] == 3
+        assert result["coordinator"]["rollup_open_count"] == 5
+
+    @pytest.mark.asyncio
+    async def test_exposes_per_category_state(self) -> None:
+        cleared_at = datetime(2026, 4, 30, 12, 0, 0, tzinfo=UTC)
+        cat = ALL_CATEGORIES[0]
+        states = {c: CategoryState(category=c) for c in ALL_CATEGORIES}
+        # Use a current timestamp so webhook_health() reads "healthy" (within the
+        # 7-day window) deterministically regardless of when the suite runs.
+        webhook_at = datetime.now(UTC)
+        states[cat] = CategoryState(
+            category=cat,
+            enabled=True,
+            is_alerting=True,
+            alert_count=4,
+            open_count=2,
+            last_cleared_at=cleared_at,
+            last_webhook_at=webhook_at,
+        )
+        coordinator = _make_coordinator(category_states=states)
+        entry = _make_entry_with_runtime(coordinator)
+        hass = MagicMock()
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        categories = result["coordinator"]["categories"]
+        assert set(categories.keys()) == set(ALL_CATEGORIES)
+        assert categories[cat] == {
+            "enabled": True,
+            "is_alerting": True,
+            "open_count": 2,
+            "alert_count": 4,
+            "last_cleared_at": cleared_at.isoformat(),
+            "last_webhook_at": webhook_at.isoformat(),
+            "webhook_health": "healthy",
+        }
+
+    @pytest.mark.asyncio
+    async def test_per_category_last_cleared_at_none_when_unset(self) -> None:
+        coordinator = _make_coordinator()
+        entry = _make_entry_with_runtime(coordinator)
+        hass = MagicMock()
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        for cat in ALL_CATEGORIES:
+            cat_entry = result["coordinator"]["categories"][cat]
+            assert cat_entry["last_cleared_at"] is None
+            assert cat_entry["last_webhook_at"] is None
+            assert cat_entry["webhook_health"] == "never_received"
 
 
-@pytest.mark.asyncio
-async def test_diagnostics_preserves_non_sensitive_config() -> None:
-    entry = _make_entry_with_runtime(_make_coordinator())
-    hass = MagicMock()
+class TestDiagnosticsEdgeCases:
+    """Tests for diagnostics behaviour under unusual or incomplete entry state."""
 
-    result = await async_get_config_entry_diagnostics(hass, entry)
+    @pytest.mark.asyncio
+    async def test_handles_missing_entry_data(self) -> None:
+        """Diagnostics should not raise if runtime_data is absent (e.g. during setup failure)."""
+        entry = _make_entry()
+        # Ensure runtime_data is not set (simulates a failed setup)
+        del entry.runtime_data
+        hass = MagicMock()
 
-    assert result["config_entry"]["controller_url"] == "https://192.168.1.1"
-    assert result["config_entry"]["username"] == "**REDACTED**"
+        result = await async_get_config_entry_diagnostics(hass, entry)
 
-
-@pytest.mark.asyncio
-async def test_diagnostics_exposes_per_category_state() -> None:
-    cleared_at = datetime(2026, 4, 30, 12, 0, 0, tzinfo=UTC)
-    cat = ALL_CATEGORIES[0]
-    states = {c: CategoryState(category=c) for c in ALL_CATEGORIES}
-    states[cat] = CategoryState(
-        category=cat,
-        enabled=True,
-        is_alerting=True,
-        alert_count=4,
-        open_count=2,
-        last_cleared_at=cleared_at,
-    )
-    coordinator = _make_coordinator(category_states=states)
-    entry = _make_entry_with_runtime(coordinator)
-    hass = MagicMock()
-
-    result = await async_get_config_entry_diagnostics(hass, entry)
-
-    categories = result["coordinator"]["categories"]
-    assert set(categories.keys()) == set(ALL_CATEGORIES)
-    assert categories[cat] == {
-        "enabled": True,
-        "is_alerting": True,
-        "open_count": 2,
-        "alert_count": 4,
-        "last_cleared_at": cleared_at.isoformat(),
-    }
-
-
-@pytest.mark.asyncio
-async def test_diagnostics_per_category_last_cleared_at_none_when_unset() -> None:
-    coordinator = _make_coordinator()
-    entry = _make_entry_with_runtime(coordinator)
-    hass = MagicMock()
-
-    result = await async_get_config_entry_diagnostics(hass, entry)
-
-    for cat in ALL_CATEGORIES:
-        assert result["coordinator"]["categories"][cat]["last_cleared_at"] is None
+        assert result["webhook_urls"] == {}
+        assert result["coordinator"] == {}

@@ -20,7 +20,7 @@ from .const import (
     DEFAULT_VERIFY_SSL,
     MAX_SYSTEM_LOG_PAGES,
     SYSTEM_LOG_PAGE_SIZE,
-    UNIFI_KEY_TO_CATEGORY,
+    classify_event_key,
 )
 from .models import UniFiAlert, UniFiClientConfig
 
@@ -29,9 +29,25 @@ _LOGGER = logging.getLogger(__name__)
 # UniFi OS consoles (UDM, UCG, etc.) prefix all network API paths
 UNIFI_OS_NETWORK_PREFIX = "/proxy/network"
 
+# After this many consecutive transient probe failures, stop re-probing and
+# fall back to the legacy path. A single network blip should not pin the
+# client to legacy mode, so the threshold is intentionally > 1.
+_PROBE_FAIL_LIMIT = 5
+# How long to wait before attempting another probe after the threshold is hit.
+_PROBE_RETRY_AFTER = timedelta(hours=1)
+
 
 class CannotConnectError(Exception):
     """Raised when the controller is unreachable."""
+
+
+class SslCertificateError(CannotConnectError):
+    """Raised when TLS certificate verification fails.
+
+    Subclass of CannotConnectError so coordinator/integration code that only
+    catches CannotConnectError continues to work. The config flow catches this
+    subclass first to surface a dedicated, actionable error message.
+    """
 
 
 class InvalidAuthError(Exception):
@@ -72,6 +88,10 @@ class UniFiClient:
         # None = not yet probed. authenticate() detects v2 system-log availability
         # on first connect; fetch_alarms() falls back to legacy /list/alarm if False.
         self._has_system_log: bool | None = None
+        # Consecutive transient probe failures. Resets to 0 on any definitive result.
+        self._probe_fail_count: int = 0
+        # Set when _probe_fail_count reaches _PROBE_FAIL_LIMIT; clears on retry window expiry.
+        self._probe_backoff_until: datetime | None = None
 
     # ── Public interface ──────────────────────────────────────────────────
 
@@ -84,6 +104,7 @@ class UniFiClient:
                 await self._verify_api_key()
                 self._auth_method = AUTH_METHOD_APIKEY
                 self._authenticated = True
+                self._clear_probe_backoff()
                 _LOGGER.debug("Authenticated via API key")
                 return AUTH_METHOD_APIKEY
             except InvalidAuthError:
@@ -95,8 +116,22 @@ class UniFiClient:
         await self._login_userpass()
         self._auth_method = AUTH_METHOD_USERPASS
         self._authenticated = True
+        self._clear_probe_backoff()
         _LOGGER.debug("Authenticated via username/password")
         return AUTH_METHOD_USERPASS
+
+    def _clear_probe_backoff(self) -> None:
+        """Reset probe-backoff state after successful authentication.
+
+        Clears the transient-failure counter and backoff timer so the next
+        poll re-probes the system-log endpoint immediately. Only resets
+        _has_system_log when in backoff (i.e. the False came from hitting the
+        fail limit, not from a clean 404); a confirmed-True value is left alone.
+        """
+        self._probe_fail_count = 0
+        self._probe_backoff_until = None
+        if self._has_system_log is False:
+            self._has_system_log = None
 
     async def fetch_alarms(self, site: str = "default") -> list[dict[str, Any]]:
         """Return all unarchived alarms from the controller."""
@@ -134,7 +169,13 @@ class UniFiClient:
                 headers=self._headers(),
                 ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                 timeout=aiohttp.ClientTimeout(total=10),
+                allow_redirects=False,
             ) as resp:
+                if 300 <= resp.status < 400:
+                    raise CannotConnectError(
+                        f"Controller issued a redirect (HTTP {resp.status}) on an authenticated "
+                        "request; refusing to follow to protect credentials"
+                    )
                 if resp.status == 401:
                     self._authenticated = False
                     raise InvalidAuthError("Session expired")
@@ -174,6 +215,8 @@ class UniFiClient:
                     msg = data.get("meta", {}).get("msg", "unknown error")
                     raise CannotConnectError(f"UniFi API error: {msg}")
                 return [a for a in data.get("data", []) if not a.get("archived", False)]
+        except aiohttp.ClientConnectorCertificateError as err:
+            raise SslCertificateError(type(err).__name__) from err
         except aiohttp.ClientResponseError as err:
             # Include HTTP status so users (and logs) can tell a 404 from a 500.
             # Status-only — no URL — to avoid leaking creds that may be embedded in a URL.
@@ -187,16 +230,29 @@ class UniFiClient:
         Calls POST /proxy/network/v2/api/site/{site}/system-log/count with an
         empty body. A 200 response indicates availability; 404 is the
         controller's definitive "endpoint not implemented" response. Any other
-        4xx/5xx or network error is treated as transient: the current poll
-        falls back to the legacy path, but the next poll re-probes.
+        4xx/5xx or network error is treated as transient.
 
-        Cache semantics: self._has_system_log is set to True or False only on
-        definitive responses (200 / 404). Transient failures leave the cache
-        as None so a capable controller is not pinned to legacy mode by a
-        single network blip.
+        Cache semantics:
+        - 200 sets _has_system_log=True (permanent until re-auth).
+        - 404 sets _has_system_log=False with no retry (_probe_backoff_until=None).
+        - A single transient failure leaves _has_system_log=None (re-probes next poll).
+        - After _PROBE_FAIL_LIMIT consecutive transient failures, _has_system_log is
+          set to False and _probe_backoff_until is set to now + _PROBE_RETRY_AFTER.
+          Once that window expires the probe resets to None and retries.
         """
         if self._has_system_log is not None:
-            return self._has_system_log
+            # For a backoff-triggered False, check whether the retry window has opened.
+            if self._has_system_log is False and self._probe_backoff_until is not None:
+                if datetime.now(UTC) >= self._probe_backoff_until:
+                    _LOGGER.debug("v2 system-log probe backoff expired; will retry")
+                    self._has_system_log = None
+                    self._probe_fail_count = 0
+                    self._probe_backoff_until = None
+                    # Fall through to probe below.
+                else:
+                    return False
+            else:
+                return self._has_system_log
 
         if not self._authenticated:
             await self.authenticate()
@@ -210,27 +266,61 @@ class UniFiClient:
                 headers=self._headers(),
                 ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                 timeout=aiohttp.ClientTimeout(total=10),
+                allow_redirects=False,
             ) as resp:
                 if resp.status == 200:
                     _LOGGER.debug("v2 system-log endpoint available")
                     self._has_system_log = True
+                    self._probe_fail_count = 0
+                    self._probe_backoff_until = None
                     return True
                 if resp.status == 404:
                     _LOGGER.debug(
                         "v2 system-log endpoint not implemented (HTTP 404); using legacy path"
                     )
                     self._has_system_log = False
+                    self._probe_fail_count = 0
                     return False
-                _LOGGER.debug(
-                    "v2 system-log probe got HTTP %d (transient); legacy path this poll, will retry next",
-                    resp.status,
-                )
+                self._probe_fail_count += 1
+                if self._probe_fail_count >= _PROBE_FAIL_LIMIT:
+                    self._has_system_log = False
+                    self._probe_backoff_until = datetime.now(UTC) + _PROBE_RETRY_AFTER
+                    _LOGGER.debug(
+                        "v2 system-log probe failed %d consecutive times (HTTP %d); "
+                        "switching to legacy path for %s",
+                        _PROBE_FAIL_LIMIT,
+                        resp.status,
+                        _PROBE_RETRY_AFTER,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "v2 system-log probe got HTTP %d (transient, %d/%d); "
+                        "legacy path this poll, will retry next",
+                        resp.status,
+                        self._probe_fail_count,
+                        _PROBE_FAIL_LIMIT,
+                    )
                 return False
         except aiohttp.ClientError as err:
-            _LOGGER.debug(
-                "v2 system-log probe failed with %s (transient); legacy path this poll, will retry next",
-                type(err).__name__,
-            )
+            self._probe_fail_count += 1
+            if self._probe_fail_count >= _PROBE_FAIL_LIMIT:
+                self._has_system_log = False
+                self._probe_backoff_until = datetime.now(UTC) + _PROBE_RETRY_AFTER
+                _LOGGER.debug(
+                    "v2 system-log probe failed %d consecutive times (%s); "
+                    "switching to legacy path for %s",
+                    _PROBE_FAIL_LIMIT,
+                    type(err).__name__,
+                    _PROBE_RETRY_AFTER,
+                )
+            else:
+                _LOGGER.debug(
+                    "v2 system-log probe failed with %s (transient, %d/%d); "
+                    "legacy path this poll, will retry next",
+                    type(err).__name__,
+                    self._probe_fail_count,
+                    _PROBE_FAIL_LIMIT,
+                )
             return False
 
     async def fetch_system_log_alarms(
@@ -282,12 +372,20 @@ class UniFiClient:
                     headers=self._headers(),
                     ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                     timeout=aiohttp.ClientTimeout(total=15),
+                    allow_redirects=False,
                 ) as resp:
+                    if 300 <= resp.status < 400:
+                        raise CannotConnectError(
+                            f"Controller issued a redirect (HTTP {resp.status}) on an authenticated "
+                            "request; refusing to follow to protect credentials"
+                        )
                     if resp.status == 401:
                         self._authenticated = False
                         raise InvalidAuthError("Session expired during system-log fetch")
                     resp.raise_for_status()
                     data = await resp.json()
+            except aiohttp.ClientConnectorCertificateError as err:
+                raise SslCertificateError(type(err).__name__) from err
             except aiohttp.ClientResponseError as err:
                 raise CannotConnectError(f"{type(err).__name__} {err.status}") from err
             except aiohttp.ClientError as err:
@@ -331,6 +429,7 @@ class UniFiClient:
                     f"{self._base}/api/auth/logout",
                     ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                     timeout=aiohttp.ClientTimeout(total=5),
+                    allow_redirects=False,
                 )
             except Exception as err:  # noqa: BLE001
                 _LOGGER.warning("UniFi logout failed: %s", type(err).__name__)
@@ -342,23 +441,36 @@ class UniFiClient:
         if not api_key:
             raise InvalidAuthError("No API key provided")
         endpoint = f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/s/default/self"
-        async with self._session.get(
-            endpoint,
-            headers={"X-API-Key": api_key, "Accept": "application/json"},
-            ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
-            timeout=aiohttp.ClientTimeout(total=8),
-        ) as resp:
-            if resp.status == 404:
-                raise CannotConnectError(
-                    "API key endpoint not found — check the controller URL "
-                    "and that UniFi OS is accessible at this address"
-                )
-            if resp.status in (401, 403):
-                _LOGGER.warning(
-                    "API key authentication failed for %s (HTTP %d)", endpoint, resp.status
-                )
-                raise InvalidAuthError("Invalid API key", login_url=endpoint)
-            resp.raise_for_status()
+        try:
+            async with self._session.get(
+                endpoint,
+                headers={"X-API-Key": api_key, "Accept": "application/json"},
+                ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+                timeout=aiohttp.ClientTimeout(total=8),
+                allow_redirects=False,
+            ) as resp:
+                if 300 <= resp.status < 400:
+                    raise CannotConnectError(
+                        f"Controller issued a redirect (HTTP {resp.status}) on an authenticated "
+                        "request; refusing to follow to protect credentials"
+                    )
+                if resp.status == 404:
+                    raise CannotConnectError(
+                        "API key endpoint not found — check the controller URL "
+                        "and that UniFi OS is accessible at this address"
+                    )
+                if resp.status in (401, 403):
+                    _LOGGER.warning(
+                        "API key authentication failed for %s (HTTP %d)", endpoint, resp.status
+                    )
+                    raise InvalidAuthError("Invalid API key", login_url=endpoint)
+                resp.raise_for_status()
+        except (CannotConnectError, InvalidAuthError):
+            raise
+        except aiohttp.ClientConnectorCertificateError as err:
+            raise SslCertificateError(type(err).__name__) from err
+        except aiohttp.ClientError as err:
+            raise CannotConnectError(type(err).__name__) from err
 
     async def _login_userpass(self) -> None:
         """Attempt username/password login via the UniFi OS path."""
@@ -375,7 +487,13 @@ class UniFiClient:
                     json=payload,
                     ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
                     timeout=aiohttp.ClientTimeout(total=10),
+                    allow_redirects=False,
                 ) as resp:
+                    if 300 <= resp.status < 400:
+                        raise CannotConnectError(
+                            f"Controller login endpoint issued a redirect (HTTP {resp.status}); "
+                            "check the controller URL"
+                        )
                     if resp.status == 400:
                         _LOGGER.warning(
                             "Controller rejected login request at %s (HTTP 400). "
@@ -401,6 +519,8 @@ class UniFiClient:
             last_url = paths[-1]
             _LOGGER.warning("Authentication failed at login path (last: %s)", last_url)
             raise InvalidAuthError("Invalid username or password", login_url=last_url)
+        except aiohttp.ClientConnectorCertificateError as err:
+            raise SslCertificateError(type(err).__name__) from err
         except aiohttp.ClientResponseError as err:
             raise CannotConnectError(f"{type(err).__name__} {err.status}") from err
         except aiohttp.ClientError as err:
@@ -416,13 +536,11 @@ class UniFiClient:
     def _classify(alarm: dict[str, Any]) -> str | None:
         """Map a raw alarm dict to a category string, or None if unrecognised."""
         key = alarm.get("key", "")
-        for prefix, category in UNIFI_KEY_TO_CATEGORY.items():
-            if key.startswith(prefix):
-                return category
-        if key:
+        category = classify_event_key(key)
+        if not category and key:
             _LOGGER.debug(
                 "Unclassified UniFi event key %r — consider reporting it at "
                 "https://github.com/PHeonix25/unifi_alerts/issues",
                 key,
             )
-        return None
+        return category or None

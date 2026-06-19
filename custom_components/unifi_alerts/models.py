@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypedDict
 
 _LOGGER = logging.getLogger(__name__)
-
-# Module-level so the classmethod from_system_log_event() can deduplicate
-# "unrecognised key" warnings without instance state.
-_unknown_system_log_keys: set[str] = set()
 
 if TYPE_CHECKING:
     from .coordinator import UniFiAlertsCoordinator
@@ -51,19 +48,24 @@ def _render_message_raw(message_raw: str, parameters: dict[str, Any]) -> str:
     The v2 system-log schema uses a template string (message_raw) with
     {PARAM_NAME} placeholders and a parameters object whose values are dicts
     with at least a 'name' field (and sometimes an 'id' and other metadata).
-    Simple substitution is sufficient; do not over-engineer.
+
+    Uses a single-pass re.sub so parameter values that contain {TOKEN} strings
+    are never re-substituted, and overlapping key names (e.g. {IP} vs {IP_DST})
+    are resolved correctly regardless of iteration order.
     """
-    result = message_raw
+    # Build the display-value map once before the regex pass.
+    display: dict[str, str] = {}
     for key, value in parameters.items():
-        placeholder = "{" + key + "}"
-        if placeholder in result:
-            # Prefer 'name', fall back to 'id', then the key itself
-            if isinstance(value, dict):
-                display = value.get("name") or value.get("id") or key
-            else:
-                display = str(value)
-            result = result.replace(placeholder, str(display))
-    return result
+        if isinstance(value, dict):
+            display[key] = str(value.get("name") or value.get("id") or key)
+        else:
+            display[key] = str(value)
+
+    def _replace(match: re.Match[str]) -> str:
+        token = match.group(1)
+        return display.get(token, match.group(0))
+
+    return re.sub(r"\{([^{}]+)\}", _replace, message_raw)
 
 
 @dataclass
@@ -95,14 +97,12 @@ class UniFiAlert:
             category=category,
             message=str(message)[:255],
             received_at=datetime.now(UTC),
-            raw=payload,
-            key=payload.get("key", ""),
-            device_name=payload.get("device_name")
-            or payload.get("ap_name")
-            or payload.get("sw_name")
-            or "",
+            key=str(payload.get("key", ""))[:64],
+            device_name=(
+                payload.get("device_name") or payload.get("ap_name") or payload.get("sw_name") or ""
+            )[:255],
             site=payload.get("site_name") or payload.get("site") or "",
-            severity=payload.get("severity") or payload.get("subsystem") or "",
+            severity=str(payload.get("severity") or payload.get("subsystem") or "")[:32],
         )
 
     @classmethod
@@ -130,15 +130,18 @@ class UniFiAlert:
             category=category,
             message=str(message)[:255],
             received_at=received_at,
-            raw=alarm,
-            key=alarm.get("key", ""),
-            device_name=alarm.get("device_name") or alarm.get("ap_name") or "",
+            key=str(alarm.get("key", ""))[:64],
+            device_name=(alarm.get("device_name") or alarm.get("ap_name") or "")[:255],
             site=alarm.get("site_name") or "",
-            severity=alarm.get("severity") or alarm.get("subsystem") or "",
+            severity=str(alarm.get("severity") or alarm.get("subsystem") or "")[:32],
         )
 
     @classmethod
-    def from_system_log_event(cls, payload: dict[str, Any]) -> UniFiAlert:
+    def from_system_log_event(
+        cls,
+        payload: dict[str, Any],
+        seen_keys: set[str] | None = None,
+    ) -> UniFiAlert:
         """Build an alert from a v2 system-log/all event record.
 
         The v2 schema differs substantially from the legacy /list/alarm format:
@@ -148,12 +151,16 @@ class UniFiAlert:
           - key: flat descriptive string with no EVT_ prefix
           - category: explicit enum value (SECURITY, INTERNET_AND_WAN, etc.)
 
-        Category resolution uses SYSTEM_LOG_KEY_TO_CATEGORY (key-level) with
-        SYSTEM_LOG_CATEGORY_FALLBACK (broad enum) as a fallback. If neither
-        matches, category is set to "" to match the existing fall-through
-        behaviour in from_dict / the legacy path.
+        Category resolution delegates to classify_event_key() (the single entry
+        point for all key->category mapping). If neither key nor enum matches,
+        category is set to "" to match the fall-through behaviour in from_dict /
+        the legacy path.
+
+        seen_keys: caller-owned set used to deduplicate "unrecognised key"
+        warnings. Pass the coordinator's instance set for production use; pass
+        None to warn on every call (suitable for tests of individual events).
         """
-        from .const import SYSTEM_LOG_CATEGORY_FALLBACK, SYSTEM_LOG_KEY_TO_CATEGORY
+        from .const import classify_event_key
 
         # Timestamp: always epoch milliseconds in the v2 schema
         ts = payload.get("timestamp")
@@ -170,25 +177,34 @@ class UniFiAlert:
         else:
             message = payload.get("title_raw") or payload.get("key") or "Unknown alert"
 
-        # Category: key-level lookup first, broad enum fallback second
+        # Category: single entry point handles all lookup strategies.
+        # Two-stage resolution so we can emit the correct warning when only
+        # the broad enum fallback is used (meaning the key is undocumented).
         key = payload.get("key", "")
         v2_category_enum = payload.get("category", "")
-        mapped_category = SYSTEM_LOG_KEY_TO_CATEGORY.get(key)
-        fallback_category = SYSTEM_LOG_CATEGORY_FALLBACK.get(v2_category_enum, "")
-        category = mapped_category or fallback_category
+        key_category = classify_event_key(key)  # exact + legacy prefix only
+        enum_category = classify_event_key("", v2_category_enum)  # enum fallback only
 
-        # Warn once per unmapped key so production map gaps are discoverable.
-        if mapped_category is None and key and key not in _unknown_system_log_keys:
-            _unknown_system_log_keys.add(key)
-            if fallback_category:
+        if key_category:
+            category = key_category
+        elif enum_category:
+            category = enum_category
+            # Key was not in the map; warn once per key so gaps are discoverable.
+            if key and (seen_keys is None or key not in seen_keys):
+                if seen_keys is not None:
+                    seen_keys.add(key)
                 _LOGGER.warning(
                     "Unrecognised v2 system-log key %r (enum=%s); using coarse fallback category %s. "
                     "Add this key to SYSTEM_LOG_KEY_TO_CATEGORY in const.py.",
                     key,
                     v2_category_enum,
-                    fallback_category,
+                    enum_category,
                 )
-            else:
+        else:
+            category = ""
+            if key and (seen_keys is None or key not in seen_keys):
+                if seen_keys is not None:
+                    seen_keys.add(key)
                 _LOGGER.warning(
                     "Unrecognised v2 system-log key %r (enum=%s); no category fallback, event skipped. "
                     "Add this key to SYSTEM_LOG_KEY_TO_CATEGORY in const.py.",
@@ -200,18 +216,29 @@ class UniFiAlert:
             category=category,
             message=str(message)[:255],
             received_at=received_at,
-            raw=payload,
-            key=key,
-            device_name=payload.get("device_name") or "",
+            key=key[:64],
+            device_name=(payload.get("device_name") or "")[:255],
             site=payload.get("site_name") or payload.get("site") or "",
-            severity=payload.get("severity") or "",
+            severity=str(payload.get("severity") or "")[:32],
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialise this alert to a JSON-safe dict for Store persistence."""
-        d = asdict(self)
-        d["received_at"] = self.received_at.isoformat()
-        return d
+        """Serialise this alert to a JSON-safe dict for Store persistence.
+
+        `raw` is intentionally excluded: it carries unredacted UniFi payload
+        fields (client MACs, IPs, hostnames) and arbitrary values that can
+        defeat Store.async_save's JSON encoder. The restore path only consumes
+        the scalar fields below; from_dict() defaults raw to {} on read.
+        """
+        return {
+            "category": self.category,
+            "message": self.message,
+            "received_at": self.received_at.isoformat(),
+            "key": self.key,
+            "device_name": self.device_name,
+            "site": self.site,
+            "severity": self.severity,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> UniFiAlert:
@@ -244,6 +271,10 @@ class CategoryState:
     alert_count: int = 0  # incremented by webhooks
     open_count: int = 0  # set by polling (unarchived alarms)
     last_cleared_at: datetime | None = None
+    # Timestamp of the last webhook actually received for this category. Set
+    # only on the push path (never by polling) so it reflects webhook
+    # connectivity specifically, which powers the onboarding/health signal.
+    last_webhook_at: datetime | None = None
 
     def apply_alert(self, alert: UniFiAlert) -> None:
         self.is_alerting = True
@@ -253,6 +284,28 @@ class CategoryState:
     def clear(self) -> None:
         self.is_alerting = False
         self.last_cleared_at = datetime.now(UTC)
+
+    def webhook_health(self, now: datetime | None = None) -> str:
+        """Classify webhook delivery health for this category.
+
+        Returns ``WEBHOOK_HEALTH_NEVER`` when no webhook has ever been
+        received, ``WEBHOOK_HEALTH_HEALTHY`` when the most recent webhook is
+        within ``WEBHOOK_STALE_AFTER_SECONDS``, and ``WEBHOOK_HEALTH_STALE``
+        otherwise. ``now`` is injectable for deterministic tests.
+        """
+        from .const import (
+            WEBHOOK_HEALTH_HEALTHY,
+            WEBHOOK_HEALTH_NEVER,
+            WEBHOOK_HEALTH_STALE,
+            WEBHOOK_STALE_AFTER_SECONDS,
+        )
+
+        if self.last_webhook_at is None:
+            return WEBHOOK_HEALTH_NEVER
+        now = now or datetime.now(UTC)
+        if (now - self.last_webhook_at).total_seconds() <= WEBHOOK_STALE_AFTER_SECONDS:
+            return WEBHOOK_HEALTH_HEALTHY
+        return WEBHOOK_HEALTH_STALE
 
 
 @dataclass

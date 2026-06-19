@@ -34,7 +34,7 @@ Generate comprehensive, actionable technical-debt remediation plans for code, te
 4. **Write the plan**
    - Summary table, then a detailed plan per the required sections.
 5. **File the work**
-   - Apply `/.github/ISSUE_TEMPLATE/chore_request.yml` for remediation tasks.
+   - File remediation tasks with the **Task** issue template (`.github/ISSUE_TEMPLATE/task.yml`), after confirming with the maintainer (see "Filing findings" below).
 
 ## Analysis Framework
 
@@ -94,6 +94,17 @@ Generate comprehensive, actionable technical-debt remediation plans for code, te
 ## Related Issues
 - #XX [existing tracking issue, if any]
 ```
+
+## Filing findings as GitHub Issues
+
+Outstanding work in this repo is tracked in **GitHub Issues**, not in `docs/TODO.md` (now a taxonomy pointer). When your remediation plan identifies debt worth tracking:
+
+1. **Confirm before filing.** Summarise the item (with your Ease / Impact / Risk scores) and ask the maintainer whether to raise an issue. Never open issues unprompted or in bulk.
+2. **Search existing issues first** to avoid duplicates (you already do this in Step 3).
+3. On approval, file with the **Task** template and apply one category label (`security`, `fix`, `feat`, `tests`, `ci`, `documentation`), one `size: S|M|L`, one `priority: high|medium|low`, and the target milestone. Add `v2.0-gate` if it blocks the HACS default submission.
+4. Reference the issue from the resolving PR (`Closes #NN`).
+
+Taxonomy: `docs/TODO.md`. Bulk seeding: `scripts/seed_issues.py`.
 
 ## Anti-Patterns
 

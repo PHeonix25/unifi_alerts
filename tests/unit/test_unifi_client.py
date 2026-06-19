@@ -17,6 +17,7 @@ from custom_components.unifi_alerts.const import (
     CATEGORY_SECURITY_THREAT,
 )
 from custom_components.unifi_alerts.unifi_client import (
+    _PROBE_FAIL_LIMIT,
     CannotConnectError,
     InvalidAuthError,
     UniFiClient,
@@ -248,6 +249,15 @@ class TestLoginUserpass:
         # Should not raise
         await client._login_userpass()
 
+    @pytest.mark.asyncio
+    async def test_redirect_raises_cannot_connect(self):
+        """3xx from the login endpoint must raise CannotConnectError, not follow the redirect."""
+        client = make_client()
+        ctx = _make_response(302)
+        client._session.post = ctx
+        with pytest.raises(CannotConnectError, match="redirect"):
+            await client._login_userpass()
+
 
 class TestVerifyApiKey:
     """Tests for _verify_api_key — API key authentication and endpoint selection."""
@@ -294,6 +304,16 @@ class TestVerifyApiKey:
         client._session.get = ctx
 
         with pytest.raises(InvalidAuthError):
+            await client._verify_api_key()
+
+    @pytest.mark.asyncio
+    async def test_redirect_raises_cannot_connect(self):
+        """A 3xx from the API key endpoint must raise CannotConnectError (no redirect)."""
+        client = make_client({"api_key": "my-key", "verify_ssl": False})
+        ctx = _make_response(302)
+        client._session.get = ctx
+
+        with pytest.raises(CannotConnectError, match="redirect"):
             await client._verify_api_key()
 
 
@@ -682,6 +702,16 @@ class TestFetchAlarms:
         await client.fetch_alarms()
         assert len(authenticated_calls) == 1
 
+    @pytest.mark.asyncio
+    async def test_redirect_raises_cannot_connect(self):
+        """A 3xx on an authenticated alarm fetch must raise CannotConnectError (no redirect)."""
+        client = make_client()
+        client._authenticated = True
+        ctx = _make_response(301)
+        client._session.get = ctx
+        with pytest.raises(CannotConnectError, match="redirect"):
+            await client.fetch_alarms()
+
 
 class TestCategoriseAlarms:
     """Tests for UniFiClient.categorise_alarms."""
@@ -917,6 +947,109 @@ def _make_post_json_response(status: int, body: dict | None = None):
     return _ctx, resp
 
 
+class TestSslCertificateError:
+    """SslCertificateError is raised on TLS certificate failures, not CannotConnectError."""
+
+    @pytest.mark.asyncio
+    async def test_verify_api_key_raises_ssl_cert_error(self):
+        """aiohttp.ClientConnectorCertificateError in _verify_api_key must raise SslCertificateError."""
+        import aiohttp
+
+        from custom_components.unifi_alerts.unifi_client import SslCertificateError
+
+        client = make_client({"api_key": "test-key", "verify_ssl": True})
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock())
+            yield  # type: ignore[misc]
+
+        client._session.get = _raise
+        with pytest.raises(SslCertificateError):
+            await client._verify_api_key()
+
+    @pytest.mark.asyncio
+    async def test_login_userpass_raises_ssl_cert_error(self):
+        """aiohttp.ClientConnectorCertificateError in _login_userpass must raise SslCertificateError."""
+        import aiohttp
+
+        from custom_components.unifi_alerts.unifi_client import SslCertificateError
+
+        client = make_client()
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock())
+            yield  # type: ignore[misc]
+
+        client._session.post = _raise
+        with pytest.raises(SslCertificateError):
+            await client._login_userpass()
+
+    @pytest.mark.asyncio
+    async def test_try_fetch_alarms_raises_ssl_cert_error(self):
+        """aiohttp.ClientConnectorCertificateError in _try_fetch_alarms must raise SslCertificateError."""
+        import aiohttp
+
+        from custom_components.unifi_alerts.unifi_client import SslCertificateError
+
+        client = make_client()
+        client._authenticated = True
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock())
+            yield  # type: ignore[misc]
+
+        client._session.get = _raise
+        with pytest.raises(SslCertificateError):
+            await client._try_fetch_alarms("https://192.168.1.1/api/alarm", "default")
+
+    @pytest.mark.asyncio
+    async def test_fetch_system_log_alarms_raises_ssl_cert_error(self):
+        """aiohttp.ClientConnectorCertificateError in fetch_system_log_alarms must raise SslCertificateError."""
+        import aiohttp
+
+        from custom_components.unifi_alerts.unifi_client import SslCertificateError
+
+        client = make_client()
+        client._authenticated = True
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock())
+            yield  # type: ignore[misc]
+
+        client._session.post = _raise
+        with pytest.raises(SslCertificateError):
+            await client.fetch_system_log_alarms()
+
+    @pytest.mark.asyncio
+    async def test_verify_api_key_generic_client_error_raises_cannot_connect(self):
+        """A generic aiohttp.ClientError in _verify_api_key must raise CannotConnectError."""
+        import aiohttp
+
+        client = make_client({"api_key": "test-key", "verify_ssl": True})
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise aiohttp.ClientConnectionError("connection refused")
+            yield  # type: ignore[misc]
+
+        client._session.get = _raise
+        with pytest.raises(CannotConnectError):
+            await client._verify_api_key()
+
+    @pytest.mark.asyncio
+    async def test_ssl_cert_error_is_subclass_of_cannot_connect(self):
+        from custom_components.unifi_alerts.unifi_client import (
+            CannotConnectError,
+            SslCertificateError,
+        )
+
+        assert issubclass(SslCertificateError, CannotConnectError)
+
+
 class TestProbeSystemLogEndpoint:
     """Tests for UniFiClient.probe_system_log_endpoint."""
 
@@ -1072,6 +1205,152 @@ class TestProbeSystemLogEndpoint:
 
         assert captured_url, "Expected one POST call"
         assert "v2/api/site/mysite/system-log/count" in captured_url[0]
+
+    @pytest.mark.asyncio
+    async def test_probe_backoff_triggers_after_fail_limit(self):
+        """After _PROBE_FAIL_LIMIT consecutive transient failures the probe caches False
+        and sets a backoff deadline so subsequent polls skip the network entirely."""
+        client = make_client()
+        client._authenticated = True
+        ctx, _ = _make_post_json_response(503)
+
+        call_count = [0]
+
+        @asynccontextmanager
+        async def _always_503(*args, **kwargs):
+            call_count[0] += 1
+            resp = MagicMock()
+            resp.status = 503
+            resp.json = AsyncMock(return_value={})
+            yield resp
+
+        client._session.post = _always_503
+        for _ in range(_PROBE_FAIL_LIMIT):
+            result = await client.probe_system_log_endpoint()
+            assert result is False
+
+        # After the threshold the cache must be False and a backoff deadline set.
+        assert client._has_system_log is False
+        assert client._probe_backoff_until is not None
+        assert client._probe_fail_count == _PROBE_FAIL_LIMIT
+
+    @pytest.mark.asyncio
+    async def test_probe_during_backoff_skips_network(self):
+        """Once in backoff, probes must return False without making a network call."""
+        from datetime import UTC, datetime, timedelta
+
+        client = make_client()
+        client._authenticated = True
+        client._has_system_log = False
+        client._probe_backoff_until = datetime.now(UTC) + timedelta(hours=1)
+
+        call_count = [0]
+
+        @asynccontextmanager
+        async def _should_not_be_called(*args, **kwargs):
+            call_count[0] += 1
+            yield MagicMock()
+
+        client._session.post = _should_not_be_called
+        result = await client.probe_system_log_endpoint()
+        assert result is False
+        assert call_count[0] == 0, "Network must not be hit during backoff"
+
+    @pytest.mark.asyncio
+    async def test_probe_retries_after_backoff_expires(self):
+        """Once the backoff window expires, the next probe must hit the network
+        and, if successful, set cache=True and clear backoff state."""
+        from datetime import UTC, datetime, timedelta
+
+        client = make_client()
+        client._authenticated = True
+        # Simulate an expired backoff (deadline in the past).
+        client._has_system_log = False
+        client._probe_backoff_until = datetime.now(UTC) - timedelta(seconds=1)
+        client._probe_fail_count = _PROBE_FAIL_LIMIT
+
+        ctx, _ = _make_post_json_response(200, {})
+        client._session.post = ctx
+
+        result = await client.probe_system_log_endpoint()
+        assert result is True
+        assert client._has_system_log is True
+        assert client._probe_backoff_until is None
+        assert client._probe_fail_count == 0
+
+    @pytest.mark.asyncio
+    async def test_probe_404_does_not_set_backoff(self):
+        """A definitive 404 must set cache=False without a backoff deadline
+        (the endpoint will never appear on this controller)."""
+        client = make_client()
+        client._authenticated = True
+        ctx, _ = _make_post_json_response(404)
+        client._session.post = ctx
+
+        result = await client.probe_system_log_endpoint()
+        assert result is False
+        assert client._has_system_log is False
+        assert client._probe_backoff_until is None
+
+    @pytest.mark.asyncio
+    async def test_probe_backoff_via_network_error(self):
+        """Repeated aiohttp.ClientError failures must also trigger the backoff
+        after reaching _PROBE_FAIL_LIMIT."""
+        import aiohttp
+
+        client = make_client()
+        client._authenticated = True
+
+        @asynccontextmanager
+        async def _always_fail(*args, **kwargs):
+            raise aiohttp.ClientConnectionError("unreachable")
+            yield
+
+        client._session.post = _always_fail
+        for _ in range(_PROBE_FAIL_LIMIT):
+            result = await client.probe_system_log_endpoint()
+            assert result is False
+
+        assert client._has_system_log is False
+        assert client._probe_backoff_until is not None
+
+    @pytest.mark.asyncio
+    async def test_reauth_clears_probe_backoff(self):
+        """A successful authenticate() must clear the probe-backoff state so the
+        next probe call actually hits the network instead of returning the cached
+        False from backoff."""
+        from datetime import UTC, datetime, timedelta
+
+        client = make_client()
+        # Simulate an active backoff (e.g. credentials were bad, probe kept failing)
+        client._has_system_log = False
+        client._probe_fail_count = _PROBE_FAIL_LIMIT
+        client._probe_backoff_until = datetime.now(UTC) + timedelta(hours=1)
+
+        # Authenticate succeeds (200 from the login endpoint)
+        login_ctx = _make_response(200)
+        client._session.post = login_ctx
+        await client.authenticate()
+
+        # Backoff state must be cleared
+        assert client._probe_backoff_until is None
+        assert client._probe_fail_count == 0
+        assert client._has_system_log is None  # re-probed on next poll
+
+    @pytest.mark.asyncio
+    async def test_reauth_does_not_reset_confirmed_true(self):
+        """If _has_system_log is True (v2 endpoint confirmed), re-auth must not
+        reset it to None - there's nothing to re-probe."""
+        client = make_client()
+        client._has_system_log = True
+        client._probe_fail_count = 0
+        client._probe_backoff_until = None
+
+        login_ctx = _make_response(200)
+        client._session.post = login_ctx
+        await client.authenticate()
+
+        assert client._has_system_log is True
 
 
 class TestFetchSystemLogAlarms:
@@ -1283,4 +1562,14 @@ class TestFetchSystemLogAlarms:
 
         client._session.post = _raise
         with pytest.raises(CannotConnectError):
+            await client.fetch_system_log_alarms()
+
+    @pytest.mark.asyncio
+    async def test_redirect_raises_cannot_connect(self):
+        """3xx from the system-log endpoint must raise CannotConnectError."""
+        client = make_client()
+        client._authenticated = True
+        ctx, _ = _make_post_json_response(301)
+        client._session.post = ctx
+        with pytest.raises(CannotConnectError, match="redirect"):
             await client.fetch_system_log_alarms()

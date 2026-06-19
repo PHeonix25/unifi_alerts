@@ -641,6 +641,113 @@ class TestAsyncMigrateEntry:
         assert second["data"][CONF_WEBHOOK_SECRET]  # non-empty
 
 
+class TestAsyncMigrateEntryRepairIssue:
+    """Repair issue is created when webhook_id_suffix is backfilled during v2->v3 migration."""
+
+    @pytest.mark.asyncio
+    async def test_repair_issue_created_when_suffix_backfilled(self):
+        """A v2 entry missing webhook_id_suffix must create a Repair issue after migration."""
+        from unittest.mock import patch
+
+        from custom_components.unifi_alerts import async_migrate_entry
+        from custom_components.unifi_alerts.const import DOMAIN
+
+        hass = make_hass()
+        entry = make_entry(
+            data={
+                CONF_CONTROLLER_URL: "https://192.168.1.1",
+                CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            }
+        )
+        entry.version = 2
+
+        def capture_update(cfg_entry, **kwargs):
+            if "data" in kwargs:
+                cfg_entry.data = kwargs["data"]
+            if "version" in kwargs:
+                cfg_entry.version = kwargs["version"]
+
+        hass.config_entries.async_update_entry = capture_update
+
+        with patch("custom_components.unifi_alerts.ir.async_create_issue") as mock_create_issue:
+            result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        mock_create_issue.assert_called_once()
+        call_args = mock_create_issue.call_args
+        # hass, domain, issue_id are positional; the rest are keyword args
+        assert call_args.args[1] == DOMAIN
+        assert call_args.args[2].startswith("webhook_urls_changed_")
+        assert call_args.kwargs["translation_key"] == "webhook_urls_changed"
+        assert call_args.kwargs["is_fixable"] is False
+
+    @pytest.mark.asyncio
+    async def test_repair_issue_not_created_when_suffix_already_present(self):
+        """A v2 entry that already has webhook_id_suffix must NOT create a Repair issue."""
+        from unittest.mock import patch
+
+        from custom_components.unifi_alerts import async_migrate_entry
+
+        hass = make_hass()
+        entry = make_entry(
+            data={
+                CONF_CONTROLLER_URL: "https://192.168.1.1",
+                CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+                CONF_WEBHOOK_SECRET: "existing-secret",
+                CONF_WEBHOOK_ID_SUFFIX: "deadbeef",
+            }
+        )
+        entry.version = 2
+
+        def capture_update(cfg_entry, **kwargs):
+            if "version" in kwargs:
+                cfg_entry.version = kwargs["version"]
+
+        hass.config_entries.async_update_entry = capture_update
+
+        with patch("custom_components.unifi_alerts.ir.async_create_issue") as mock_create_issue:
+            result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        mock_create_issue.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_repair_issue_not_created_when_only_secret_missing(self):
+        """A v2 entry missing only webhook_secret (suffix present) must NOT create a Repair issue.
+
+        The URL structure is unchanged when only the secret is backfilled; the suffix
+        determines the URL path, not the secret token.
+        """
+        from unittest.mock import patch
+
+        from custom_components.unifi_alerts import async_migrate_entry
+
+        hass = make_hass()
+        entry = make_entry(
+            data={
+                CONF_CONTROLLER_URL: "https://192.168.1.1",
+                CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+                CONF_WEBHOOK_ID_SUFFIX: "deadbeef",
+                # No webhook_secret
+            }
+        )
+        entry.version = 2
+
+        def capture_update(cfg_entry, **kwargs):
+            if "data" in kwargs:
+                cfg_entry.data = kwargs["data"]
+            if "version" in kwargs:
+                cfg_entry.version = kwargs["version"]
+
+        hass.config_entries.async_update_entry = capture_update
+
+        with patch("custom_components.unifi_alerts.ir.async_create_issue") as mock_create_issue:
+            result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        mock_create_issue.assert_not_called()
+
+
 class TestRedactWebhookToken:
     """`?token=<secret>` must be stripped from URLs before they hit DEBUG logs."""
 

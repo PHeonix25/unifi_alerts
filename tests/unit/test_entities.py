@@ -153,6 +153,21 @@ class TestUniFiCategoryBinarySensor:
         entity = self._make(None)
         assert entity.extra_state_attributes == {}
 
+    def test_extra_attrs_webhook_health_never_received(self):
+        state = make_state()
+        entity = self._make(state)
+        attrs = entity.extra_state_attributes
+        assert attrs["webhook_health"] == "never_received"
+        assert attrs["last_webhook_at"] is None
+
+    def test_extra_attrs_webhook_health_healthy(self):
+        state = make_state()
+        state.last_webhook_at = datetime.now(UTC)
+        entity = self._make(state)
+        attrs = entity.extra_state_attributes
+        assert attrs["webhook_health"] == "healthy"
+        assert attrs["last_webhook_at"] == state.last_webhook_at.isoformat()
+
     def test_extra_attrs_includes_last_cleared_at(self):
         alert = make_alert()
         state = make_state(last_alert=alert)
@@ -239,11 +254,11 @@ class TestUniFiCategoryMessageSensor:
     def test_native_value_default_when_no_alert(self):
         state = make_state()
         entity = self._make(state)
-        assert entity.native_value == "No alerts yet"
+        assert entity.native_value is None
 
     def test_native_value_default_when_state_missing(self):
         entity = self._make(None)
-        assert entity.native_value == "No alerts yet"
+        assert entity.native_value is None
 
     def test_available_true_when_enabled(self):
         state = make_state(enabled=True)
@@ -452,6 +467,46 @@ class TestUniFiAlertEventEntity:
         ):
             assert key in payload
 
+    @pytest.mark.asyncio
+    async def test_reload_does_not_replay_restored_alert(self):
+        """Regression for #116: options save triggers a full reload; the
+        restored CategoryState carries a non-zero alert_count, and the first
+        coordinator update post-reload must NOT re-fire alert_received.
+        """
+        alert = make_alert()
+        state = make_state(is_alerting=True, alert_count=3, last_alert=alert)
+        entity = self._make(state)
+        # Simulate the reload boundary: __init__ has just set _last_seen_count
+        # to 0; async_added_to_hass must seed from the restored alert_count.
+        assert entity._last_seen_count == 0
+        await entity.async_added_to_hass()
+        assert entity._last_seen_count == 3
+        # First coordinator update after restore — same count, no new alert.
+        entity._handle_coordinator_update()
+        entity._trigger_event.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_new_alert_after_reload_still_fires_once(self):
+        """The seeding fix for #116 must not suppress genuinely new alerts."""
+        alert = make_alert()
+        state = make_state(is_alerting=True, alert_count=3, last_alert=alert)
+        entity = self._make(state)
+        await entity.async_added_to_hass()
+        # A fresh push arrives — coordinator bumps alert_count to 4.
+        state.alert_count = 4
+        entity._handle_coordinator_update()
+        entity._trigger_event.assert_called_once()
+        # And a second identical update (no new push) must not re-fire.
+        entity._handle_coordinator_update()
+        entity._trigger_event.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_added_to_hass_no_state_leaves_seed_zero(self):
+        """Fresh install / unknown category: no restored state → seed stays 0."""
+        entity = self._make(None)
+        await entity.async_added_to_hass()
+        assert entity._last_seen_count == 0
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # button
@@ -492,6 +547,26 @@ class TestUniFiClearCategoryButton:
         entity = self._make(None)
         assert entity.available is False
 
+    def test_handle_coordinator_update_writes_ha_state(self):
+        """Coordinator update must re-evaluate available without a reload."""
+        state = make_state(enabled=True)
+        entity = self._make(state)
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        entity._handle_coordinator_update()
+        entity.async_write_ha_state.assert_called_once()
+
+    def test_availability_updates_after_coordinator_change(self):
+        """available reflects coordinator state after _handle_coordinator_update."""
+        state = make_state(enabled=True)
+        entity = self._make(state)
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        assert entity.available is True
+        state.enabled = False
+        entity._handle_coordinator_update()
+        assert entity.available is False
+
 
 class TestUniFiClearAllButton:
     def _make(self, states: dict[str, CategoryState]):
@@ -527,6 +602,27 @@ class TestUniFiClearAllButton:
 
     def test_available_false_when_no_categories(self):
         entity = self._make({})
+        assert entity.available is False
+
+    def test_handle_coordinator_update_writes_ha_state(self):
+        """Coordinator update must re-evaluate available without a reload."""
+        states = {CATEGORY_NETWORK_WAN: make_state(enabled=True)}
+        entity = self._make(states)
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        entity._handle_coordinator_update()
+        entity.async_write_ha_state.assert_called_once()
+
+    def test_availability_updates_after_coordinator_change(self):
+        """available reflects coordinator state after _handle_coordinator_update."""
+        wan_state = make_state(category=CATEGORY_NETWORK_WAN, enabled=True)
+        states = {CATEGORY_NETWORK_WAN: wan_state}
+        entity = self._make(states)
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        assert entity.available is True
+        wan_state.enabled = False
+        entity._handle_coordinator_update()
         assert entity.available is False
 
 
@@ -625,7 +721,7 @@ class TestEntityCategories:
         coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
         entry = make_entry()
         entity = UniFiCategoryMessageSensor(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.native_value == "No alerts yet"
+        assert entity.native_value is None
 
     def test_message_sensor_returns_message_when_alert_present(self):
         from custom_components.unifi_alerts.sensor import UniFiCategoryMessageSensor

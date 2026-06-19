@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from custom_components.unifi_alerts.const import (
     CATEGORY_NETWORK_CLIENT,
@@ -16,7 +16,6 @@ from custom_components.unifi_alerts.models import (
     CategoryState,
     UniFiAlert,
     _render_message_raw,
-    _unknown_system_log_keys,
 )
 
 
@@ -48,6 +47,37 @@ class TestUniFiAlert:
         payload = {"message": "x" * 300}
         alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
         assert len(alert.message) == 255
+
+    def test_raw_not_retained_after_webhook_construction(self):
+        """Raw payload must not be retained in memory after building from a webhook."""
+        payload = {"message": "test", "client_mac": "aa:bb:cc:dd:ee:ff", "src_ip": "10.0.0.1"}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert alert.raw == {}
+
+    def test_raw_not_retained_after_api_alarm_construction(self):
+        """Raw alarm dict must not be retained in memory after building from a poll."""
+        alarm = {
+            "msg": "threat",
+            "key": "EVT_IPS_ThreatDetected",
+            "client_mac": "aa:bb:cc:dd:ee:ff",
+        }
+        alert = UniFiAlert.from_api_alarm(CATEGORY_NETWORK_WAN, alarm)
+        assert alert.raw == {}
+
+    def test_key_truncated_at_64(self):
+        payload = {"message": "test", "key": "K" * 100}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert len(alert.key) == 64
+
+    def test_device_name_truncated_at_255(self):
+        payload = {"message": "test", "device_name": "D" * 300}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert len(alert.device_name) == 255
+
+    def test_severity_truncated_at_32(self):
+        payload = {"message": "test", "severity": "S" * 100}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert len(alert.severity) == 32
 
     def test_from_api_alarm(self):
         alarm = {
@@ -137,6 +167,55 @@ class TestCategoryState:
         assert state.last_cleared_at is not None
         assert state.last_cleared_at.tzinfo is not None
 
+    def test_last_webhook_at_defaults_to_none(self):
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        assert state.last_webhook_at is None
+
+
+class TestWebhookHealth:
+    """Tests for CategoryState.webhook_health()."""
+
+    def test_never_received_when_no_webhook(self):
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        assert state.webhook_health() == "never_received"
+
+    def test_healthy_when_recent(self):
+        now = datetime(2026, 6, 11, 12, 0, 0, tzinfo=UTC)
+        state = CategoryState(
+            category=CATEGORY_NETWORK_WAN,
+            last_webhook_at=datetime(2026, 6, 11, 10, 0, 0, tzinfo=UTC),
+        )
+        assert state.webhook_health(now=now) == "healthy"
+
+    def test_healthy_at_exact_window_boundary(self):
+        """A webhook exactly WEBHOOK_STALE_AFTER_SECONDS old is still healthy."""
+        from custom_components.unifi_alerts.const import WEBHOOK_STALE_AFTER_SECONDS
+
+        now = datetime(2026, 6, 11, 12, 0, 0, tzinfo=UTC)
+        state = CategoryState(
+            category=CATEGORY_NETWORK_WAN,
+            last_webhook_at=now - timedelta(seconds=WEBHOOK_STALE_AFTER_SECONDS),
+        )
+        assert state.webhook_health(now=now) == "healthy"
+
+    def test_stale_when_past_window(self):
+        from custom_components.unifi_alerts.const import WEBHOOK_STALE_AFTER_SECONDS
+
+        now = datetime(2026, 6, 11, 12, 0, 0, tzinfo=UTC)
+        state = CategoryState(
+            category=CATEGORY_NETWORK_WAN,
+            last_webhook_at=now - timedelta(seconds=WEBHOOK_STALE_AFTER_SECONDS + 1),
+        )
+        assert state.webhook_health(now=now) == "stale"
+
+    def test_defaults_now_to_current_time(self):
+        """Omitting now must not raise and should read healthy for a just-now webhook."""
+        state = CategoryState(
+            category=CATEGORY_NETWORK_WAN,
+            last_webhook_at=datetime.now(UTC),
+        )
+        assert state.webhook_health() == "healthy"
+
 
 class TestRenderMessageRaw:
     """Tests for the _render_message_raw helper."""
@@ -177,6 +256,32 @@ class TestRenderMessageRaw:
     def test_empty_message_raw_returns_empty(self):
         result = _render_message_raw("", {})
         assert result == ""
+
+    def test_parameter_value_containing_token_is_not_re_substituted(self):
+        """A param value that looks like {TOKEN} must not trigger a second pass."""
+        raw = "Source: {SRC}."
+        params = {"SRC": {"name": "{DST}"}, "DST": {"name": "secret"}}
+        result = _render_message_raw(raw, params)
+        # Single-pass: {SRC} -> "{DST}" and then the substitution stops.
+        # If double-pass were allowed, the result would be "Source: secret."
+        assert result == "Source: {DST}."
+
+    def test_overlapping_prefix_keys_resolve_independently(self):
+        """{IP} and {IP_DST} must each be replaced with their own value."""
+        raw = "From {IP} to {IP_DST}."
+        params = {
+            "IP": {"name": "1.2.3.4"},
+            "IP_DST": {"name": "5.6.7.8"},
+        }
+        result = _render_message_raw(raw, params)
+        assert result == "From 1.2.3.4 to 5.6.7.8."
+
+    def test_non_string_parameter_values_converted(self):
+        """Non-string param values (int, bool, None) must be stringified."""
+        raw = "Count={COUNT} active={ACTIVE} extra={EXTRA}."
+        params = {"COUNT": 7, "ACTIVE": True, "EXTRA": None}
+        result = _render_message_raw(raw, params)
+        assert result == "Count=7 active=True extra=None."
 
 
 class TestFromSystemLogEvent:
@@ -279,10 +384,11 @@ class TestFromSystemLogEvent:
         alert = UniFiAlert.from_system_log_event(dict(self._BASE_EVENT))
         assert alert.severity == "HIGH"
 
-    def test_raw_dict_preserved(self):
+    def test_raw_not_retained_after_construction(self):
+        """Raw payload must be empty after construction; no in-memory privacy exposure."""
         event = dict(self._BASE_EVENT)
         alert = UniFiAlert.from_system_log_event(event)
-        assert alert.raw == event
+        assert alert.raw == {}
 
     def test_firewall_key_maps_to_security_firewall(self):
         event = dict(self._BASE_EVENT, key="FIREWALL_BLOCK", category="SECURITY")
@@ -304,7 +410,11 @@ class TestFromSystemLogEvent:
 
 
 class TestUnknownSystemLogKeyObservability:
-    """Tests for warn-once-per-unknown-key behaviour in from_system_log_event."""
+    """Tests for warn-once-per-unknown-key behaviour in from_system_log_event.
+
+    Deduplication is now caller-scoped: pass a shared set[str] as seen_keys to
+    get warn-once behaviour; pass None to warn on every call.
+    """
 
     _BASE_EVENT = {
         "id": "x",
@@ -314,20 +424,15 @@ class TestUnknownSystemLogKeyObservability:
         "status": "NEW",
     }
 
-    def setup_method(self):
-        _unknown_system_log_keys.clear()
-
-    def teardown_method(self):
-        _unknown_system_log_keys.clear()
-
     def test_unknown_key_with_enum_fallback_warns_once_per_key(self, caplog):
-        """Unmapped key whose enum has a coarse fallback warns once, then stays quiet."""
+        """Unmapped key whose enum has a coarse fallback warns once per seen_keys set."""
         import logging
 
+        seen: set[str] = set()
         caplog.set_level(logging.WARNING, logger="custom_components.unifi_alerts.models")
-        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT))
-        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT))
-        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT))
+        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT), seen)
+        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT), seen)
+        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT), seen)
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert len(warnings) == 1
         assert "UNMAPPED_BUT_HAS_ENUM_FALLBACK" in warnings[0].getMessage()
@@ -337,25 +442,27 @@ class TestUnknownSystemLogKeyObservability:
         """Unmapped key whose enum is also unknown warns once with the 'event skipped' phrasing."""
         import logging
 
+        seen: set[str] = set()
         caplog.set_level(logging.WARNING, logger="custom_components.unifi_alerts.models")
         event = dict(self._BASE_EVENT, key="FULLY_UNMAPPED", category="UNRECOGNISED_ENUM")
-        UniFiAlert.from_system_log_event(event)
-        UniFiAlert.from_system_log_event(event)
+        UniFiAlert.from_system_log_event(event, seen)
+        UniFiAlert.from_system_log_event(event, seen)
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert len(warnings) == 1
         assert "FULLY_UNMAPPED" in warnings[0].getMessage()
         assert "event skipped" in warnings[0].getMessage()
-        alert = UniFiAlert.from_system_log_event(event)
+        alert = UniFiAlert.from_system_log_event(event, seen)
         assert alert.category == ""
 
     def test_known_key_does_not_warn(self, caplog):
         """A mapped key produces no observability warning."""
         import logging
 
+        seen: set[str] = set()
         caplog.set_level(logging.WARNING, logger="custom_components.unifi_alerts.models")
         # FIREWALL_BLOCK is in SYSTEM_LOG_KEY_TO_CATEGORY per existing tests above.
         event = dict(self._BASE_EVENT, key="FIREWALL_BLOCK")
-        UniFiAlert.from_system_log_event(event)
+        UniFiAlert.from_system_log_event(event, seen)
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert warnings == []
 
@@ -363,15 +470,27 @@ class TestUnknownSystemLogKeyObservability:
         """Each new unknown key produces its own warning; the dedupe is per-key, not global."""
         import logging
 
+        seen: set[str] = set()
         caplog.set_level(logging.WARNING, logger="custom_components.unifi_alerts.models")
-        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT, key="UNMAPPED_A"))
-        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT, key="UNMAPPED_B"))
-        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT, key="UNMAPPED_A"))  # repeat
+        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT, key="UNMAPPED_A"), seen)
+        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT, key="UNMAPPED_B"), seen)
+        UniFiAlert.from_system_log_event(dict(self._BASE_EVENT, key="UNMAPPED_A"), seen)  # repeat
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert len(warnings) == 2
         messages = [r.getMessage() for r in warnings]
         assert any("UNMAPPED_A" in m for m in messages)
         assert any("UNMAPPED_B" in m for m in messages)
+
+    def test_no_seen_keys_warns_every_call(self, caplog):
+        """When seen_keys=None, each call warns independently (no dedup)."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="custom_components.unifi_alerts.models")
+        event = dict(self._BASE_EVENT, key="FULLY_UNMAPPED", category="UNRECOGNISED_ENUM")
+        UniFiAlert.from_system_log_event(event, None)
+        UniFiAlert.from_system_log_event(event, None)
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 2
 
 
 class TestAlertSerialization:
@@ -390,3 +509,59 @@ class TestAlertSerialization:
         )
         assert isinstance(restored.received_at, datetime)
         assert restored.received_at.tzinfo == UTC
+
+    def test_to_dict_omits_raw_payload(self):
+        """to_dict() must drop `raw` — it carries client MACs / IPs / hostnames that should not hit disk."""
+        alert = UniFiAlert.from_webhook_payload(
+            CATEGORY_NETWORK_WAN,
+            {
+                "message": "client connected",
+                "client_mac": "aa:bb:cc:dd:ee:ff",
+                "client_ip": "192.0.2.10",
+                "hostname": "my-laptop",
+            },
+        )
+        serialized = alert.to_dict()
+        assert "raw" not in serialized
+        # Scalar fields the restore path consumes must still be present.
+        for field_name in (
+            "category",
+            "message",
+            "received_at",
+            "key",
+            "device_name",
+            "site",
+            "severity",
+        ):
+            assert field_name in serialized
+
+    def test_to_dict_survives_non_json_value_in_raw(self):
+        """A non-JSON-safe value in raw must not be able to break Store.async_save."""
+        import json
+
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": "test"})
+        # Inject a value stdlib json cannot serialise; if `raw` is still in to_dict() this raises.
+        alert.raw = {"weird": object()}
+        json.dumps(alert.to_dict())
+
+    def test_round_trip_resets_raw_to_empty_dict(self):
+        """from_dict(to_dict(alert)) preserves scalar fields and resets raw to {}."""
+        original = UniFiAlert(
+            category=CATEGORY_SECURITY_THREAT,
+            message="intrusion blocked",
+            received_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
+            raw={"client_mac": "aa:bb:cc:dd:ee:ff", "src_ip": "203.0.113.5"},
+            key="THREAT_BLOCKED",
+            device_name="UDM-Pro",
+            site="default",
+            severity="HIGH",
+        )
+        restored = UniFiAlert.from_dict(original.to_dict())
+        assert restored.category == original.category
+        assert restored.message == original.message
+        assert restored.received_at == original.received_at
+        assert restored.key == original.key
+        assert restored.device_name == original.device_name
+        assert restored.site == original.site
+        assert restored.severity == original.severity
+        assert restored.raw == {}

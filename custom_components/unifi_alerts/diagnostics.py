@@ -47,12 +47,22 @@ async def async_get_config_entry_diagnostics(
                 "last_cleared_at": (
                     state.last_cleared_at.isoformat() if state.last_cleared_at is not None else None
                 ),
+                "last_webhook_at": (
+                    state.last_webhook_at.isoformat() if state.last_webhook_at is not None else None
+                ),
+                "webhook_health": state.webhook_health(),
             }
         coordinator_info = {
             "any_alerting": coordinator.any_alerting,
             "rollup_alert_count": coordinator.rollup_alert_count,
             "rollup_open_count": coordinator.rollup_open_count,
             "categories": categories,
+            # Per-category alert content (message, device_name, last_alert.raw) is
+            # intentionally excluded. Those fields carry controller-supplied strings
+            # that may contain client hostnames, MAC addresses, or IP addresses and
+            # would be shared verbatim in support reports. If alert detail is ever
+            # added here, route it through async_redact_data with an appropriate
+            # field list rather than including it directly.
         }
     else:
         coordinator_info = {}

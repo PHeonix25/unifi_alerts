@@ -11,6 +11,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntryType
 
@@ -46,19 +47,31 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     if config_entry.version == 2:
         new_data = dict(config_entry.data)
         changed = False
+        suffix_backfilled = False
         if not new_data.get("webhook_secret"):
             new_data["webhook_secret"] = secrets.token_urlsafe(32)
             changed = True
         if not new_data.get("webhook_id_suffix"):
             new_data["webhook_id_suffix"] = secrets.token_hex(4)
             changed = True
+            suffix_backfilled = True
         if changed:
             hass.config_entries.async_update_entry(config_entry, data=new_data, version=3)
-            _LOGGER.info(
-                "Migrated config entry %s to version 3: backfilled webhook secret. "
+            _LOGGER.debug(
+                "Migrated config entry %s to version 3: backfilled webhook secret/suffix. "
                 "Re-paste webhook URLs from Settings > Devices & Services > UniFi Alerts > Configure.",
                 config_entry.entry_id,
             )
+            if suffix_backfilled:
+                ir.async_create_issue(
+                    hass,
+                    DOMAIN,
+                    f"webhook_urls_changed_{config_entry.entry_id}",
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key="webhook_urls_changed",
+                    translation_placeholders={"name": config_entry.title},
+                )
         else:
             hass.config_entries.async_update_entry(config_entry, version=3)
         return True

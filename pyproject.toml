@@ -14,3 +14,14 @@ python_version = "3.12"
 strict = true
 ignore_missing_imports = true
 warn_unused_ignores = true
+
+[tool.coverage.run]
+source = ["custom_components/unifi_alerts"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

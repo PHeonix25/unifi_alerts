@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Coroutine
 from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -31,6 +33,16 @@ from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
 _LOGGER = logging.getLogger(__name__)
 
 _STORAGE_VERSION = 1
+
+# Debounce window for watermark persistence. push_alert is synchronous and can
+# fire in bursts; routing writes through Store.async_delay_save with this delay
+# coalesces a burst into a single durable write instead of one fire-and-forget
+# save per push.
+_PERSIST_DELAY_SECONDS = 1
+
+# Issue-registry id base for the repair surfaced when a watermark persist fails.
+# Suffixed with the config entry id so multi-entry installs report independently.
+_PERSIST_FAILED_ISSUE_BASE = "watermark_persist_failed"
 
 
 class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
@@ -64,6 +76,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._clear_timeout_minutes: int = config.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT)
         self._enabled_categories: list[str] = config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         self._site: str = config.get(CONF_SITE, DEFAULT_SITE)
+        self._entry_id: str = entry_id
         self._store: Store[dict[str, Any]] = Store(
             hass, _STORAGE_VERSION, f"{DOMAIN}_watermarks_{entry_id}"
         )
@@ -76,6 +89,10 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         # Tracks pending auto-clear tasks keyed by category
         self._clear_tasks: dict[str, asyncio.Task[None]] = {}
+
+        # Deduplicates "unrecognised v2 system-log key" warnings per coordinator
+        # instance. Instance-scoped rather than module-global so tests stay isolated.
+        self._seen_unknown_keys: set[str] = set()
 
         # Per-(category, alert_key) monotonic timestamps of the last webhook
         # push that was actually applied. Subsequent pushes for the same pair
@@ -115,6 +132,10 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 ) from reauth_err
             try:
                 categorised = await self._fetch_categorised()
+            except InvalidAuthError as retry_err:
+                raise ConfigEntryAuthFailed(
+                    f"Re-authentication succeeded but the controller still returned 401: {retry_err}"
+                ) from retry_err
             except CannotConnectError as retry_err:
                 raise UpdateFailed(
                     f"Cannot reach UniFi controller after re-authentication: {retry_err}"
@@ -196,16 +217,8 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         categorised: dict[str, list[UniFiAlert]] = {}
         for event in raw_events:
-            alert = UniFiAlert.from_system_log_event(event)
+            alert = UniFiAlert.from_system_log_event(event, self._seen_unknown_keys)
             if not alert.category:
-                # Unknown key and no broad enum fallback — skip, same as legacy behaviour
-                key = event.get("key", "")
-                if key:
-                    _LOGGER.debug(
-                        "Unclassified v2 system-log event key %r — consider reporting it at "
-                        "https://github.com/PHeonix25/unifi_alerts/issues",
-                        key,
-                    )
                 continue
             categorised.setdefault(alert.category, []).append(alert)
 
@@ -255,6 +268,11 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._last_push_at[dedup_key] = now
 
         state.apply_alert(alert)
+        # Record webhook receipt for the per-category health signal. Set only
+        # here (the push path), never by polling, so it reflects webhook
+        # connectivity specifically. alert.received_at is the receipt time
+        # stamped by the webhook handler.
+        state.last_webhook_at = alert.received_at
         # Optimistic open_count increment so the count sensor moves with the
         # binary sensor instead of lagging by up to one poll interval. Only
         # count alerts received after the watermark — anything older was
@@ -343,10 +361,23 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                         state.last_alert = UniFiAlert.from_dict(raw_alert)
                     except (KeyError, TypeError, ValueError):
                         _LOGGER.warning("Ignoring invalid stored last_alert for %s", cat)
+                webhook_ts = entry.get("last_webhook_at")
+                if webhook_ts is not None:
+                    try:
+                        state.last_webhook_at = datetime.fromisoformat(webhook_ts)
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Ignoring invalid stored last_webhook_at for %s: %r", cat, webhook_ts
+                        )
 
-    async def _async_persist_watermarks(self) -> None:
-        """Persist current category state (watermark, alert_count, last_alert) to storage."""
-        data: dict[str, dict[str, Any]] = {}
+    def _build_persist_data(self) -> dict[str, Any]:
+        """Build the JSON-serialisable snapshot of category state to persist.
+
+        Synchronous so it can be handed to ``Store.async_delay_save`` as the
+        data function, which calls it at write time to capture the latest
+        state after a burst of pushes has settled.
+        """
+        data: dict[str, Any] = {}
         for cat, state in self._category_states.items():
             entry: dict[str, Any] = {}
             if state.last_cleared_at is not None:
@@ -355,8 +386,49 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             entry["last_alert"] = (
                 state.last_alert.to_dict() if state.last_alert is not None else None
             )
+            if state.last_webhook_at is not None:
+                entry["last_webhook_at"] = state.last_webhook_at.isoformat()
             data[cat] = entry
-        await self._store.async_save(data)
+        return data
+
+    async def _async_persist_watermarks(self) -> None:
+        """Persist current category state immediately (awaited explicit-clear path).
+
+        On failure (disk full, I/O error) the in-memory clear has already
+        succeeded, so the user sees the alert cleared but the watermark never
+        reaches disk. On the next HA restart open_count jumps back to the
+        pre-clear value. Surface this as a repair issue so the loss is visible
+        instead of buried in the log, then re-raise so the caller's error path
+        (including the background-task done-callback) still runs. A subsequent
+        successful persist deletes the issue, so it self-heals.
+        """
+        try:
+            await self._store.async_save(self._build_persist_data())
+        except Exception:
+            self._create_persist_failed_issue()
+            raise
+        else:
+            self._delete_persist_failed_issue()
+
+    @property
+    def _persist_failed_issue_id(self) -> str:
+        """Per-entry issue-registry id for the watermark-persist-failed repair."""
+        return f"{_PERSIST_FAILED_ISSUE_BASE}_{self._entry_id}"
+
+    def _create_persist_failed_issue(self) -> None:
+        """Raise a repair issue telling the user a watermark write failed."""
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            self._persist_failed_issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=_PERSIST_FAILED_ISSUE_BASE,
+        )
+
+    def _delete_persist_failed_issue(self) -> None:
+        """Clear the watermark-persist-failed repair once a write succeeds."""
+        ir.async_delete_issue(self.hass, DOMAIN, self._persist_failed_issue_id)
 
     # ── Clear entry points (called by buttons and services) ───────────────
 
@@ -391,27 +463,46 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             existing.cancel()
 
         delay = self._clear_timeout_minutes * 60
-        coro = self._auto_clear(category, delay)
+        self._clear_tasks[category] = self._run_background(
+            self._auto_clear(category, delay),
+            name=f"unifi_alerts_auto_clear_{category}",
+        )
+
+    def _run_background(self, coro: Coroutine[Any, Any, None], *, name: str) -> asyncio.Task[None]:
+        """Create a background task and surface any exception it raises.
+
+        Centralises background-task creation so a failure in a fire-and-forget
+        coroutine (e.g. the persist awaited inside ``_auto_clear``) is logged
+        via the done-callback instead of being silently swallowed.
+        """
         create_bg = getattr(self.hass, "async_create_background_task", None)
+        task: asyncio.Task[None]
         if create_bg is not None:
-            task = create_bg(coro, name=f"unifi_alerts_auto_clear_{category}")
+            task = create_bg(coro, name=name)
         else:
             create_task = getattr(self.hass, "async_create_task", None)
             task = create_task(coro) if create_task is not None else asyncio.ensure_future(coro)
-        self._clear_tasks[category] = task
+        task.add_done_callback(self._on_background_task_done)
+        return task
+
+    @staticmethod
+    def _on_background_task_done(task: asyncio.Task[Any]) -> None:
+        """Log any non-cancellation exception raised by a background task."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            _LOGGER.error("Background task %s failed: %s", task.get_name(), exc, exc_info=exc)
 
     def _schedule_persist(self) -> None:
-        """Schedule a fire-and-forget persist so push_alert (sync) can trigger a save."""
-        coro = self._async_persist_watermarks()
-        create_bg = getattr(self.hass, "async_create_background_task", None)
-        if create_bg is not None:
-            create_bg(coro, name="unifi_alerts_persist_state")
-        else:
-            create_task = getattr(self.hass, "async_create_task", None)
-            if create_task is not None:
-                create_task(coro)
-            else:
-                asyncio.ensure_future(coro)
+        """Persist category state, coalescing bursts into one delayed write.
+
+        push_alert is synchronous and can fire rapidly. Routing through
+        ``Store.async_delay_save`` debounces a burst into a single durable
+        write (no lost-update race between overlapping fire-and-forget saves)
+        and lets HA's storage layer own the write and log any failure.
+        """
+        self._store.async_delay_save(self._build_persist_data, _PERSIST_DELAY_SECONDS)
 
     def cancel_clear(self, category: str) -> None:
         """Cancel any pending auto-clear task for the given category."""

@@ -66,6 +66,18 @@ When a user reports an unrecognised alert key, add it to `UNIFI_KEY_TO_CATEGORY`
 
 HA requires `strings.json` and `translations/en.json` to match exactly. Edit both files together; the CI `lint` job and the pre-push hook diff the two files and fail on drift.
 
+## Doc-only changes (lighter path)
+
+If a PR only touches `*.md`, `docs/**`, `CHANGELOG.md`, `CLAUDE.md`, `README.md`, or `SECURITY.md`, skip the full `make check` cycle:
+
+```bash
+make doc-check   # runs scripts/validate_docs.py + strings.json drift check; no venv required
+```
+
+`python3 scripts/validate_docs.py` works standalone if you do not have `make` available. It is pure stdlib.
+
+Skip `make setup` for a doc-only branch on a fresh clone. The full setup installs Home Assistant and ~200 packages just to give you `pytest`/`ruff`/`mypy`, none of which inspect docs. CI still runs the full suite on push; treat that as the safety net rather than a local gate.
+
 ## Testing manually in Home Assistant
 
 1. Copy `custom_components/unifi_alerts/` into your HA `config/custom_components/` directory.
@@ -85,17 +97,38 @@ HA requires `strings.json` and `translations/en.json` to match exactly. Edit bot
 | `hacs` | Validates `hacs.json` and repository structure for HACS listing |
 | `lint` | `ruff check` + `ruff format --check` + `mypy` + `strings.json`/`translations/en.json` drift diff |
 | `test` | `pytest` against `tests/unit/` and `tests/integration/` |
+| `pip-audit` | Dependency vulnerability scan. Advisory only (`continue-on-error` on the audit step); currently non-blocking - see note below |
 
-`version-check.yml` enforces the version format per branch (`X.Y.Z` on `main`, `X.Y.Z-preN` on `dev`). `release.yml` triggers on tags and publishes via `gh release create --generate-notes`. All checks must pass before merging.
+Static security analysis (CodeQL SAST) for Python runs through GitHub's CodeQL **default setup**, configured in Settings > Code security and analysis, with findings in the repository Security tab. It is not a workflow in this repository: an advanced workflow-based CodeQL config cannot coexist with default setup (GitHub rejects the SARIF upload), so SAST lives in default setup and the workflow below owns dependency auditing only.
+
+`dependency-audit.yml` holds the `pip-audit` job. It runs on every push and pull request to `dev` and `main`, plus a weekly Monday 06:00 UTC schedule so newly disclosed vulnerabilities are caught even when the code has not changed. `pip-audit` is currently advisory: `continue-on-error` sits on the audit step (not the job) so a finding leaves the check green while the report still appears in the log.
+
+**Why advisory and not blocking:** as of mid-2026, most findings are in transitive dependencies pinned by `pytest-homeassistant-custom-component` (which sets `homeassistant==2025.1.4`). The fix versions require `homeassistant 2025.8+` or `2026.1`, which are not yet on PyPI. When `pytest-homeassistant-custom-component` is bumped to a version that pulls in a fixed HA release, re-run `pip-audit` locally, verify zero findings, then flip `continue-on-error: true` to `false` on the audit step in `dependency-audit.yml` to make the scan blocking.
+
+`version-check.yml` enforces the version format per branch (`X.Y.Z` on `main`, `X.Y.Z-preN` on `dev`). `release.yml` triggers on tags and publishes via `gh release create --generate-notes`. All checks except `pip-audit` must pass before merging.
+
+### PR guards (`pr-guards.yml`)
+
+Three additional checks run on every pull request to `dev` or `main`:
+
+| Check | What it enforces |
+|---|---|
+| `changelog-guard` | `custom_components/` edits must be accompanied by a `CHANGELOG.md` update. Fails if code changes but the changelog does not. |
+| `label-guard` | The PR must carry at least one label recognised by `.github/release.yml` (`security`, `bug`/`fix`, `enhancement`/`feat`, `documentation`, `tests`, `ci`, `github-actions`, `dependencies`). `pr-labeler.yml` auto-applies labels for PRs with Conventional Commit prefixes; for others, apply manually. |
+| `history-guard` | `docs/HISTORY.md` may only be modified on `claude/bump-*` branches (version-bump PRs). Feature and fix PRs must not touch it. |
+
+**Escaping the changelog guard:** apply the `skip-changelog` label if a code change genuinely has no user-visible effect (e.g. a coverage-only test change that incidentally touches a production file). The `ci`, `tests`, `documentation`, `dependencies`, and `github-actions` labels also bypass the guard automatically, since those categories of work rarely need a user-facing changelog entry.
+
+**Label timing:** `pr-labeler.yml` and `label-guard` run concurrently on PR open. If the auto-labeller wins first, both pass in a single round. If `label-guard` fires before the label is applied, it fails on the first run but re-runs on the `labeled` event and passes once the label is present. This is expected behaviour; the status check clears without any manual intervention.
 
 ## Branching and PRs
 
 - Work on a `feature/...`, `fix/...`, or `claude/...` branch off `dev`.
 - Keep PRs focused: one logical change per PR.
 - Every PR that adds functionality must include tests.
-- Apply a label recognised by `.github/release.yml` (`security`, `feat`/`enhancement`, `fix`/`bug`, `documentation`, `tests`, `ci`, `dependencies`) so auto-generated release notes group the PR correctly.
-- `docs/HISTORY.md` is updated only in version-bump PRs (`scripts/bump_version.py --pre` or `--stable`), not in individual feature or fix PRs. The bump PR adds a single `## YYYY-MM-DD` block summarising every PR merged since the previous tag.
-- For user-visible changes, add a bullet under `[Unreleased]` in `CHANGELOG.md`.
+- Apply a label recognised by `.github/release.yml` (`security`, `feat`/`enhancement`, `fix`/`bug`, `documentation`, `tests`, `ci`, `dependencies`) so auto-generated release notes group the PR correctly. The `label-guard` CI check enforces this mechanically.
+- `docs/HISTORY.md` is updated only in version-bump PRs (`scripts/bump_version.py --pre` or `--stable`), not in individual feature or fix PRs. The bump PR adds a single `## YYYY-MM-DD` block summarising every PR merged since the previous tag. The `history-guard` CI check enforces this mechanically.
+- For user-visible changes, add a bullet under `[Unreleased]` in `CHANGELOG.md`. The `changelog-guard` CI check enforces this mechanically for `custom_components/` edits.
 
 ## Release process
 

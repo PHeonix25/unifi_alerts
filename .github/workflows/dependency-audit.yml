@@ -1,0 +1,59 @@
+name: Dependency audit
+
+# Dependency-vulnerability scanning (pip-audit). Runs on every push and pull
+# request to dev and main, and on a weekly schedule so newly disclosed
+# vulnerabilities are caught even when the code has not changed.
+#
+# Static analysis (CodeQL SAST) is handled by GitHub's CodeQL default setup,
+# configured in Settings > Code security and analysis, not by a workflow in
+# this repository. An advanced workflow-based CodeQL config cannot coexist with
+# default setup (GitHub rejects the SARIF upload), so SAST lives there and this
+# workflow owns dependency auditing only.
+#
+# pip-audit is advisory only (continue-on-error on the audit step). As of
+# 2026-06, most findings are in transitive dependencies pinned by
+# pytest-homeassistant-custom-component (which sets homeassistant==2025.1.4).
+# The fix versions require homeassistant 2025.8+ or 2026.1, which are not
+# yet available on PyPI. When Dependabot bumps pytest-homeassistant-custom-
+# component to a version that pulls in a fixed homeassistant release, re-run
+# pip-audit locally, verify zero findings, then flip continue-on-error to
+# false on the audit step below to make the scan blocking.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  schedule:
+    # Mondays 06:00 UTC, before the weekly Dependabot run (07:00 Brisbane).
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    name: Dependency vulnerability scan (advisory, non-blocking)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Advisory only: a freshly disclosed CVE must not block merges. The job
+    # surfaces findings for the maintainer to triage and bump dependencies.
+    # continue-on-error sits on the audit step itself (not the job) so the
+    # step failure is swallowed and the check reports green; a job-level flag
+    # only spares the overall run and still surfaces the job as failed.
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dev dependencies and pip-audit
+        run: |
+          pip install -r requirements-dev.txt
+          pip install pip-audit
+
+      - name: Run pip-audit (advisory)
+        continue-on-error: true
+        run: pip-audit

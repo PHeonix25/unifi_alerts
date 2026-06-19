@@ -13,6 +13,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from _console import use_utf8_console
+
+use_utf8_console()
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STRINGS = REPO_ROOT / "custom_components" / "unifi_alerts" / "strings.json"
 EN = REPO_ROOT / "custom_components" / "unifi_alerts" / "translations" / "en.json"

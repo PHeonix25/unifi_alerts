@@ -64,6 +64,17 @@ Provide expert-level engineering guidance that lifts the design quality of every
 - [issue title and proposed labels, ready to file]
 ```
 
+## Filing findings as GitHub Issues
+
+Outstanding work in this repo is tracked in **GitHub Issues**, not in `docs/TODO.md` (now a taxonomy pointer). When you discover or incur technical debt, or surface a risk worth tracking:
+
+1. **Confirm before filing.** Summarise the item and ask the maintainer whether to raise an issue. Never open issues unprompted or in bulk.
+2. **Search existing issues first** to avoid duplicates.
+3. On approval, file with the **Task** template (or Bug / Feature where they fit) and apply one category label (`security`, `fix`, `feat`, `tests`, `ci`, `documentation`), one `size: S|M|L`, one `priority: high|medium|low`, and the target milestone. Add `v2.0-gate` if it blocks the HACS default submission.
+4. Reference the issue from the resolving PR (`Closes #NN`). This replaces the older "create_issue" guidance in the workflow above: same intent, with the confirm-first gate and this repo's taxonomy.
+
+Taxonomy: `docs/TODO.md`. Bulk seeding: `scripts/seed_issues.py`.
+
 ## Anti-Patterns
 
 - Drive-by nitpicks with no rationale.
