@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-06-19
+
 ### Added
 
 - Per-category webhook health signal. Each category binary sensor now exposes a `webhook_health` attribute (`never_received`, `healthy`, or `stale`) and a `last_webhook_at` timestamp, so you can confirm the Alarm Manager wiring works without waiting for a real alert. `healthy` means a webhook arrived within the last 7 days; `stale` means the last one is older than that (expected for rarely-firing categories). Both fields also appear per category in the diagnostics download and survive a config-entry reload. ([#117])
@@ -215,7 +217,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.8.0
 [1.7.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.7.0
 [1.6.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.6.0
 [1.5.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.5.0

@@ -2,6 +2,13 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-06-19
+
+- **release**: v1.8.0 stable. Promotes the "Trust and Hardening" cycle to main. All pre1-pre3 items shipped; one additional fix (#242) landed after pre3.
+- **fix**: schema v2-to-v3 migration now raises a HA Repair issue when `webhook_id_suffix` is backfilled, surfacing the URL change to users instead of silently breaking webhook delivery; migrated `_LOGGER.info` to `_LOGGER.debug` ([#242]). Closes #241.
+
+[#242]: https://github.com/PHeonix25/unifi_alerts/pull/242
+
 ## 2026-06-15
 
 - **release**: v1.8.0-pre3 tagged. Final checkpoint of the v1.8.0 "Trust and Hardening" cycle. Closes the last remaining structural item (#119): alert classification is now a single `classify_event_key()` entry point in `const.py` used by both polling and webhook paths. UniFiAuth extraction (#120) deferred to v1.9.0. v1.8.0 is feature-complete and ready for stable promotion.
