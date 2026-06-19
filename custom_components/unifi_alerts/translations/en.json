@@ -86,6 +86,10 @@
     "webhook_secret_rotated": {
       "title": "UniFi Alerts: webhook URLs have changed for {name}",
       "description": "The webhook secret was rotated. All previously configured URLs in UniFi Alarm Manager are now invalid.\n\nUpdate each category URL in UniFi Network: **Settings > Notifications > Alarm Manager**. The new URLs are shown in **Settings > Devices and Services > UniFi Alerts > Configure**.\n\nThis notice clears automatically when the first webhook is received after the update."
+    },
+    "webhook_urls_changed": {
+      "title": "UniFi Alerts: webhook URLs have changed for {name} — action required",
+      "description": "**Action required after upgrade.**\n\nThe integration was upgraded from a version that did not assign a unique suffix to webhook URLs. The webhook URLs for **{name}** have changed and the old URLs in UniFi Alarm Manager will no longer work.\n\nRe-paste all category webhook URLs: open **Settings > Devices and Services > UniFi Alerts > Configure** to see the new URLs, then update each one in **UniFi Network > Settings > Notifications > Alarm Manager**.\n\nWebhook event delivery will not resume until this is done."
     }
   },
   "services": {
