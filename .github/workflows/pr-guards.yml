@@ -104,6 +104,13 @@ jobs:
             echo "Bump branch; HISTORY.md changes are allowed."
             exit 0
           fi
+          # Allow the stable release merge (dev -> main): HISTORY.md flows from
+          # the bump PR that already landed on dev; the guard has already run
+          # and passed on that bump PR.
+          if [ "$HEAD_REF" = "dev" ] && [ "$BASE_REF" = "main" ]; then
+            echo "Release merge (dev -> main); HISTORY.md changes are allowed."
+            exit 0
+          fi
           HISTORY_CHANGED=$(git diff --name-only "origin/${BASE_REF}..." \
             | grep "^docs/HISTORY\.md$" || true)
           if [ -n "$HISTORY_CHANGED" ]; then
