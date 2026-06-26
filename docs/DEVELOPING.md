@@ -119,7 +119,7 @@ Three additional checks run on every pull request to `dev` or `main`:
 
 **Escaping the changelog guard:** apply the `skip-changelog` label if a code change genuinely has no user-visible effect (e.g. a coverage-only test change that incidentally touches a production file). The `ci`, `tests`, `documentation`, `dependencies`, and `github-actions` labels also bypass the guard automatically, since those categories of work rarely need a user-facing changelog entry.
 
-**Label timing:** `pr-labeler.yml` and `label-guard` run concurrently on PR open. If the auto-labeller wins first, both pass in a single round. If `label-guard` fires before the label is applied, it fails on the first run but re-runs on the `labeled` event and passes once the label is present. This is expected behaviour; the status check clears without any manual intervention.
+**Label timing:** `pr-labeler.yml` and `label-guard` run concurrently on PR open. If the auto-labeller wins first, both pass in a single round. If `label-guard` fires before the label is applied, it fails on the first run but re-runs on the `labeled` event and passes once the label is present. This is expected behaviour; the status check clears without any manual intervention. The self-heal flow depends on `pr-labeler.yml` having write access to apply the label, which is why that workflow uses the `pull_request_target` trigger: a plain `pull_request` trigger gets a read-only token on PRs from forks and cannot label them, leaving `label-guard` stuck red.
 
 ## Branching and PRs
 
