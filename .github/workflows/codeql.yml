@@ -1,0 +1,64 @@
+name: CodeQL
+
+# Advanced CodeQL setup (replaces GitHub's default setup).
+#
+# Why this file exists: `CodeQL` is a required status check on `dev` and `main`.
+# Default setup runs diff-informed analysis and posts NO result for a PR whose
+# diff contains no analysed-language files. A config-only or docs-only PR (e.g.
+# one that only edits pyproject.toml) therefore left the required check stuck at
+# "waiting for results from CodeQL", blocking merge forever (see PR #249).
+#
+# This workflow runs on EVERY push and PR to dev/main with no `paths` filter, so
+# CodeQL always reports a result and the required check can always resolve, even
+# for PRs that touch no Python or workflow files.
+#
+# IMPORTANT: GitHub's CodeQL default setup must be DISABLED in repo Settings
+# (Settings > Code security > Code scanning) before this workflow takes effect.
+# Default setup and an advanced workflow cannot both be active; while default
+# setup is on, runs of this workflow fail with a configuration error.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  schedule:
+    # Weekly full scan, off the :00 mark to avoid the cron rush.
+    - cron: "27 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      # Needed by CodeQL to read the Actions workflows it analyses.
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: python
+            build-mode: none
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
+        with:
+          category: "/language:${{ matrix.language }}"
