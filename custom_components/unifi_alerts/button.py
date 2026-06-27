@@ -12,7 +12,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     ALL_CATEGORIES,
-    CATEGORY_LABELS,
     CONF_CONTROLLER_URL,
     DOMAIN,
 )
@@ -51,8 +50,7 @@ class UniFiClearCategoryButton(CoordinatorEntity[UniFiAlertsCoordinator], Button
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_clear"
-        self._attr_translation_key = "clear_category"
-        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
+        self._attr_translation_key = f"clear_{category}"
         self._attr_device_info = _device_info(entry)
 
     @callback

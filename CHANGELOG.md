@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Category labels in entity names (e.g. "Network: WAN offline/latency") are now defined in `translations/en.json` instead of being hard-coded English strings, so translators can provide locale-specific versions without rebuilding the integration. Each entity now carries a per-category translation key rather than a generic key with a hard-coded English placeholder. ([#133])
+
 ### Fixed
 
 - The v2 system-log fetch window is now clamped to `DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS` (24 hours). Previously, a rarely-cleared category could hold the oldest watermark to an arbitrarily old timestamp, causing every poll to paginate from that date forward and silently miss recent alarms once the 10-page cap was reached. The clamp ensures all categories are always within the paged window. A WARNING is now logged when the page cap is reached, indicating some events may have been missed. ([#136])
@@ -265,6 +269,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#123]: https://github.com/PHeonix25/unifi_alerts/issues/123
 [#127]: https://github.com/PHeonix25/unifi_alerts/issues/127
 [#128]: https://github.com/PHeonix25/unifi_alerts/issues/128
+[#133]: https://github.com/PHeonix25/unifi_alerts/issues/133
 [#136]: https://github.com/PHeonix25/unifi_alerts/issues/136
 [#138]: https://github.com/PHeonix25/unifi_alerts/issues/138
 [#139]: https://github.com/PHeonix25/unifi_alerts/issues/139
