@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- A typo'd site name during setup now shows a dedicated error ("Site not found on the controller") on the categories step instead of creating a broken config entry stuck in "Not Ready". The default site (`default`) still proceeds without an extra network round-trip since reachability was already confirmed in the credentials step. The same validation runs in the options flow when changing to a non-default site. ([#171])
+
 ## [1.8.0] - 2026-06-19
 
 ### Added
@@ -265,6 +269,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#167]: https://github.com/PHeonix25/unifi_alerts/issues/167
 [#168]: https://github.com/PHeonix25/unifi_alerts/issues/168
 [#170]: https://github.com/PHeonix25/unifi_alerts/issues/170
+[#171]: https://github.com/PHeonix25/unifi_alerts/issues/171
 [#173]: https://github.com/PHeonix25/unifi_alerts/issues/173
 [#175]: https://github.com/PHeonix25/unifi_alerts/issues/175
 [#233]: https://github.com/PHeonix25/unifi_alerts/issues/233

@@ -60,6 +60,7 @@
       "invalid_ssl_cert": "SSL certificate verification failed. If this controller uses a self-signed certificate, untick \"Verify SSL certificate\" and try again.",
       "invalid_url_scheme": "Controller URL must start with http:// or https://.",
       "at_least_one_category": "Please enable at least one alert category.",
+      "invalid_site": "Site not found on the controller. Check the site name (the URL slug, not the display name). The default single-site name is 'default'.",
       "unknown": "An unexpected error occurred. Check the Home Assistant logs."
     },
     "abort": {
@@ -137,6 +138,9 @@
     }
   },
   "options": {
+    "error": {
+      "invalid_site": "Site not found on the controller. Check the site name (the URL slug, not the display name). The default single-site name is 'default'."
+    },
     "step": {
       "credentials": {
         "title": "Update Controller Credentials",
