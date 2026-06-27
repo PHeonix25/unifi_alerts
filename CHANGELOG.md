@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Unclassified event keys seen during polling are now collected and exposed under `unrecognised_keys` in the integration diagnostics (Settings > Devices & Services > UniFi Alerts > Download diagnostics). This makes previously-invisible unmapped events visible without enabling DEBUG logging, so users can identify and report missing keys to the issue tracker. ([#134])
+
 ## [1.8.0] - 2026-06-19
 
 ### Added
@@ -257,6 +261,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#123]: https://github.com/PHeonix25/unifi_alerts/issues/123
 [#127]: https://github.com/PHeonix25/unifi_alerts/issues/127
 [#128]: https://github.com/PHeonix25/unifi_alerts/issues/128
+[#134]: https://github.com/PHeonix25/unifi_alerts/issues/134
 [#138]: https://github.com/PHeonix25/unifi_alerts/issues/138
 [#139]: https://github.com/PHeonix25/unifi_alerts/issues/139
 [#163]: https://github.com/PHeonix25/unifi_alerts/issues/163
