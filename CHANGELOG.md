@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Internal
+
+- Added unicode round-trip tests for `UniFiAlert` serialisation: emoji, CJK, and RTL text survive `to_dict`/`from_dict` without mangling, and 300-character unicode messages are clamped to 255 characters. Added large-batch determinism tests: 500-alert `CategoryState` count is exact, watermark filtering passes precisely the expected subset, and all 500 messages survive serialisation round-trip. ([#140])
+
 ## [1.8.0] - 2026-06-19
 
 ### Added
@@ -259,6 +263,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#128]: https://github.com/PHeonix25/unifi_alerts/issues/128
 [#138]: https://github.com/PHeonix25/unifi_alerts/issues/138
 [#139]: https://github.com/PHeonix25/unifi_alerts/issues/139
+[#140]: https://github.com/PHeonix25/unifi_alerts/issues/140
 [#163]: https://github.com/PHeonix25/unifi_alerts/issues/163
 [#164]: https://github.com/PHeonix25/unifi_alerts/issues/164
 [#166]: https://github.com/PHeonix25/unifi_alerts/issues/166
