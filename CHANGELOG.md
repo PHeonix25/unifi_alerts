@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Category labels in entity names (e.g. "Network: WAN offline/latency") are now defined in `translations/en.json` instead of being hard-coded English strings, so translators can provide locale-specific versions without rebuilding the integration. Each entity now carries a per-category translation key rather than a generic key with a hard-coded English placeholder. ([#133])
+
 ## [1.8.0] - 2026-06-19
 
 ### Added
@@ -257,6 +261,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#123]: https://github.com/PHeonix25/unifi_alerts/issues/123
 [#127]: https://github.com/PHeonix25/unifi_alerts/issues/127
 [#128]: https://github.com/PHeonix25/unifi_alerts/issues/128
+[#133]: https://github.com/PHeonix25/unifi_alerts/issues/133
 [#138]: https://github.com/PHeonix25/unifi_alerts/issues/138
 [#139]: https://github.com/PHeonix25/unifi_alerts/issues/139
 [#163]: https://github.com/PHeonix25/unifi_alerts/issues/163
