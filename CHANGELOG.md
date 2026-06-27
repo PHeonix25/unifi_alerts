@@ -20,6 +20,7 @@
 ### Internal
 
 - Added unicode round-trip tests for `UniFiAlert` serialisation: emoji, CJK, and RTL text survive `to_dict`/`from_dict` without mangling, and 300-character unicode messages are clamped to 255 characters. Added large-batch determinism tests: 500-alert `CategoryState` count is exact, watermark filtering passes precisely the expected subset, and all 500 messages survive serialisation round-trip. ([#140])
+- Authentication concerns (`authenticate`, API-key verification, username/password login, request headers, and auth state) are extracted from `UniFiClient` into a dedicated `UniFiAuth` class in a new `unifi_auth.py` module, so auth can be unit-tested in isolation without the full client. `UniFiClient` composes a `UniFiAuth` instance and still owns the probe-backoff reset on every successful authentication. No behaviour change. ([#120])
 
 ## [1.8.0] - 2026-06-19
 
@@ -271,6 +272,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#147]: https://github.com/PHeonix25/unifi_alerts/pull/147
 [#148]: https://github.com/PHeonix25/unifi_alerts/issues/148
 [#119]: https://github.com/PHeonix25/unifi_alerts/issues/119
+[#120]: https://github.com/PHeonix25/unifi_alerts/issues/120
 [#121]: https://github.com/PHeonix25/unifi_alerts/issues/121
 [#122]: https://github.com/PHeonix25/unifi_alerts/issues/122
 [#123]: https://github.com/PHeonix25/unifi_alerts/issues/123

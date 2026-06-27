@@ -20,6 +20,7 @@ from custom_components.unifi_alerts.unifi_client import (
     _PROBE_FAIL_LIMIT,
     CannotConnectError,
     InvalidAuthError,
+    UniFiAuth,
     UniFiClient,
 )
 
@@ -32,6 +33,17 @@ def make_client(config: dict | None = None) -> UniFiClient:
         "verify_ssl": False,
     }
     return UniFiClient(session, "https://192.168.1.1", cfg)
+
+
+def make_auth(config: dict | None = None) -> UniFiAuth:
+    """Create a standalone UniFiAuth for unit-testing auth logic in isolation."""
+    session = MagicMock()
+    cfg = config or {
+        "username": "admin",
+        "password": "password",
+        "verify_ssl": False,
+    }
+    return UniFiAuth(session, "https://192.168.1.1", cfg)
 
 
 class TestClassify:
@@ -146,16 +158,18 @@ class TestClassify:
 
 
 class TestHeaders:
+    """Tests for UniFiAuth.headers() — auth header construction in isolation."""
+
     def test_userpass_auth_no_api_key_header(self):
-        client = make_client()
-        client._auth_method = "userpass"
-        headers = client._headers()
+        auth = make_auth()
+        auth._method = "userpass"
+        headers = auth.headers()
         assert "X-API-Key" not in headers
 
     def test_apikey_auth_adds_header(self):
-        client = make_client({"api_key": "test-key-123", "verify_ssl": False})
-        client._auth_method = "apikey"
-        headers = client._headers()
+        auth = make_auth({"api_key": "test-key-123", "verify_ssl": False})
+        auth._method = "apikey"
+        headers = auth.headers()
         assert headers.get("X-API-Key") == "test-key-123"
 
 
@@ -174,7 +188,7 @@ def _make_response(status: int, headers: dict | None = None):
 
 
 class TestLoginUserpass:
-    """Tests for _login_userpass error handling."""
+    """Tests for UniFiAuth._login_userpass - tested in isolation via make_auth()."""
 
     @pytest.mark.asyncio
     async def test_http_400_raises_cannot_connect(self):
@@ -183,11 +197,11 @@ class TestLoginUserpass:
         UCG-Ultra returns 400 for request format / endpoint mismatch — this is
         NOT a credentials problem, so we must not show 'invalid credentials'.
         """
-        client = make_client()
+        auth = make_auth()
         ctx = _make_response(400)
-        client._session.post = ctx
+        auth._session.post = ctx
         with pytest.raises(CannotConnectError):
-            await client._login_userpass()
+            await auth._login_userpass()
 
     @pytest.mark.asyncio
     async def test_login_client_error_message_is_class_name_not_url(self):
@@ -198,56 +212,56 @@ class TestLoginUserpass:
         """
         import aiohttp
 
-        client = make_client()
+        auth = make_auth()
 
         @asynccontextmanager
         async def _raise(*args, **kwargs):
             raise aiohttp.ClientConnectionError("https://admin:hunter2@192.168.1.1/api/login")
             yield
 
-        client._session.post = _raise
+        auth._session.post = _raise
         with pytest.raises(CannotConnectError) as exc_info:
-            await client._login_userpass()
+            await auth._login_userpass()
         assert "hunter2" not in str(exc_info.value)
         assert exc_info.value.args[0] == "ClientConnectionError"
 
     @pytest.mark.asyncio
     async def test_http_401_raises_invalid_auth(self):
         """HTTP 401 should still raise InvalidAuthError (bad credentials)."""
-        client = make_client()
+        auth = make_auth()
         ctx = _make_response(401)
-        client._session.post = ctx
+        auth._session.post = ctx
         with pytest.raises(InvalidAuthError):
-            await client._login_userpass()
+            await auth._login_userpass()
 
     @pytest.mark.asyncio
     async def test_http_403_raises_invalid_auth(self):
         """HTTP 403 should still raise InvalidAuthError (bad credentials)."""
-        client = make_client()
+        auth = make_auth()
         ctx = _make_response(403)
-        client._session.post = ctx
+        auth._session.post = ctx
         with pytest.raises(InvalidAuthError):
-            await client._login_userpass()
+            await auth._login_userpass()
 
     @pytest.mark.asyncio
     async def test_invalid_auth_error_carries_login_url(self):
         """InvalidAuthError raised must carry login_url attribute pointing to /api/auth/login."""
-        client = make_client()
+        auth = make_auth()
         ctx = _make_response(401)
-        client._session.post = ctx
+        auth._session.post = ctx
         with pytest.raises(InvalidAuthError) as exc_info:
-            await client._login_userpass()
+            await auth._login_userpass()
         # UniFi OS path is the only path now.
         assert exc_info.value.login_url.endswith("/api/auth/login")
 
     @pytest.mark.asyncio
     async def test_success_returns_without_error(self):
         """HTTP 200 from the UniFi OS login path must succeed without raising."""
-        client = make_client()
+        auth = make_auth()
         ctx = _make_response(200)
-        client._session.post = ctx
+        auth._session.post = ctx
         # Should not raise
-        await client._login_userpass()
+        await auth._login_userpass()
 
     @pytest.mark.asyncio
     async def test_redirect_raises_cannot_connect(self):
@@ -256,16 +270,16 @@ class TestLoginUserpass:
         ctx = _make_response(302)
         client._session.post = ctx
         with pytest.raises(CannotConnectError, match="redirect"):
-            await client._login_userpass()
+            await client._auth._login_userpass()
 
 
 class TestVerifyApiKey:
-    """Tests for _verify_api_key — API key authentication and endpoint selection."""
+    """Tests for UniFiAuth._verify_api_key - tested in isolation via make_auth()."""
 
     @pytest.mark.asyncio
     async def test_always_uses_proxy_network_prefix(self):
         """_verify_api_key must always use /proxy/network prefix."""
-        client = make_client({"api_key": "my-key", "verify_ssl": False})
+        auth = make_auth({"api_key": "my-key", "verify_ssl": False})
 
         captured_url: list[str] = []
 
@@ -278,8 +292,8 @@ class TestVerifyApiKey:
             resp.raise_for_status = MagicMock()
             yield resp
 
-        client._session.get = _ctx
-        await client._verify_api_key()
+        auth._session.get = _ctx
+        await auth._verify_api_key()
 
         assert captured_url, "Expected at least one GET call"
         assert "/proxy/network" in captured_url[0], (
@@ -289,22 +303,22 @@ class TestVerifyApiKey:
     @pytest.mark.asyncio
     async def test_404_raises_cannot_connect(self):
         """HTTP 404 from the API key endpoint must raise CannotConnectError, not bubble up."""
-        client = make_client({"api_key": "my-key", "verify_ssl": False})
+        auth = make_auth({"api_key": "my-key", "verify_ssl": False})
         ctx = _make_response(404)
-        client._session.get = ctx
+        auth._session.get = ctx
 
         with pytest.raises(CannotConnectError, match="API key endpoint not found"):
-            await client._verify_api_key()
+            await auth._verify_api_key()
 
     @pytest.mark.asyncio
     async def test_401_raises_invalid_auth(self):
         """HTTP 401 from the API key endpoint must raise InvalidAuthError."""
-        client = make_client({"api_key": "bad-key", "verify_ssl": False})
+        auth = make_auth({"api_key": "bad-key", "verify_ssl": False})
         ctx = _make_response(401)
-        client._session.get = ctx
+        auth._session.get = ctx
 
         with pytest.raises(InvalidAuthError):
-            await client._verify_api_key()
+            await auth._verify_api_key()
 
     @pytest.mark.asyncio
     async def test_redirect_raises_cannot_connect(self):
@@ -314,7 +328,7 @@ class TestVerifyApiKey:
         client._session.get = ctx
 
         with pytest.raises(CannotConnectError, match="redirect"):
-            await client._verify_api_key()
+            await client._auth._verify_api_key()
 
 
 def _make_json_response(status: int, body: dict | None = None):
@@ -838,7 +852,7 @@ class TestCategoriseAlarms:
 
 
 class TestAuthenticate:
-    """Tests for UniFiClient.authenticate — auth method selection and fallback."""
+    """Tests for UniFiClient.authenticate — delegates to UniFiAuth.authenticate()."""
 
     @pytest.mark.asyncio
     async def test_apikey_method_used_when_configured(self):
@@ -849,7 +863,7 @@ class TestAuthenticate:
         async def _mock_verify():
             verify_calls.append(1)
 
-        client._verify_api_key = _mock_verify
+        client._auth._verify_api_key = _mock_verify
         result = await client.authenticate()
         assert result == "apikey"
         assert len(verify_calls) == 1
@@ -867,8 +881,8 @@ class TestAuthenticate:
         async def _mock_login():
             userpass_calls.append(1)
 
-        client._verify_api_key = _bad_verify
-        client._login_userpass = _mock_login
+        client._auth._verify_api_key = _bad_verify
+        client._auth._login_userpass = _mock_login
         result = await client.authenticate()
         assert result == "userpass"
         assert len(userpass_calls) == 1
@@ -881,7 +895,7 @@ class TestAuthenticate:
         async def _bad_verify():
             raise InvalidAuthError("bad key")
 
-        client._verify_api_key = _bad_verify
+        client._auth._verify_api_key = _bad_verify
         with pytest.raises(InvalidAuthError):
             await client.authenticate()
 
@@ -1038,7 +1052,7 @@ class TestSslCertificateError:
 
         client._session.get = _raise
         with pytest.raises(SslCertificateError):
-            await client._verify_api_key()
+            await client._auth._verify_api_key()
 
     @pytest.mark.asyncio
     async def test_login_userpass_raises_ssl_cert_error(self):
@@ -1056,7 +1070,7 @@ class TestSslCertificateError:
 
         client._session.post = _raise
         with pytest.raises(SslCertificateError):
-            await client._login_userpass()
+            await client._auth._login_userpass()
 
     @pytest.mark.asyncio
     async def test_try_fetch_alarms_raises_ssl_cert_error(self):
@@ -1110,7 +1124,7 @@ class TestSslCertificateError:
 
         client._session.get = _raise
         with pytest.raises(CannotConnectError):
-            await client._verify_api_key()
+            await client._auth._verify_api_key()
 
     @pytest.mark.asyncio
     async def test_ssl_cert_error_is_subclass_of_cannot_connect(self):
