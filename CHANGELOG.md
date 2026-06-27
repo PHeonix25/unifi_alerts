@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- UniFi OS consoles (UDM, UDM Pro, UDM SE, UDM Pro Max) are now discovered automatically via SSDP. When one is found on the local network it appears in Settings > Integrations > Discovered, with the controller URL pre-filled. Credentials still need to be entered manually. ([#172])
+
 ## [1.8.0] - 2026-06-19
 
 ### Added
@@ -265,6 +269,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#167]: https://github.com/PHeonix25/unifi_alerts/issues/167
 [#168]: https://github.com/PHeonix25/unifi_alerts/issues/168
 [#170]: https://github.com/PHeonix25/unifi_alerts/issues/170
+[#172]: https://github.com/PHeonix25/unifi_alerts/issues/172
 [#173]: https://github.com/PHeonix25/unifi_alerts/issues/173
 [#175]: https://github.com/PHeonix25/unifi_alerts/issues/175
 [#233]: https://github.com/PHeonix25/unifi_alerts/issues/233
