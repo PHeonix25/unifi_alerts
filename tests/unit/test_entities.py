@@ -735,10 +735,10 @@ class TestEntityCategories:
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Translation keys (ARCH-2): every entity routes its display name through
-# `strings.json` via `_attr_translation_key` (and `_attr_translation_placeholders`
-# for per-category entities). This locks the contract for localisation; the
-# rendered English string lives in `strings.json` / `translations/en.json` and
-# is verified for byte-parity by `scripts/check_translations.py`.
+# `strings.json` via a per-category `_attr_translation_key` (e.g. `last_message_network_wan`).
+# This locks the contract for localisation; the rendered English string lives in
+# `strings.json` / `translations/en.json` and is verified for byte-parity by
+# `scripts/check_translations.py`.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
