@@ -60,6 +60,7 @@
       "invalid_ssl_cert": "SSL certificate verification failed. If this controller uses a self-signed certificate, untick \"Verify SSL certificate\" and try again.",
       "invalid_url_scheme": "Controller URL must start with http:// or https://.",
       "at_least_one_category": "Please enable at least one alert category.",
+      "invalid_site": "Site not found on the controller. Check the site name (the URL slug, not the display name). The default single-site name is 'default'.",
       "unknown": "An unexpected error occurred. Check the Home Assistant logs."
     },
     "abort": {
@@ -120,23 +121,56 @@
   },
   "entity": {
     "binary_sensor": {
-      "category_binary": {"name": "{category}"},
+      "network_device": {"name": "Network: Device offline/online"},
+      "network_wan": {"name": "Network: WAN offline/latency"},
+      "network_client": {"name": "Network: Client connect/disconnect"},
+      "security_threat": {"name": "Security: Threat / IDS detected"},
+      "security_honeypot": {"name": "Security: Honeypot triggered"},
+      "security_firewall": {"name": "Security: Firewall block"},
+      "power": {"name": "Power: PoE / power loss"},
       "any_alert": {"name": "Any Alert"}
     },
     "sensor": {
-      "last_message": {"name": "{category}: Last Message"},
-      "open_count": {"name": "{category}: Open Count"},
+      "last_message_network_device": {"name": "Network: Device offline/online: Last Message"},
+      "last_message_network_wan": {"name": "Network: WAN offline/latency: Last Message"},
+      "last_message_network_client": {"name": "Network: Client connect/disconnect: Last Message"},
+      "last_message_security_threat": {"name": "Security: Threat / IDS detected: Last Message"},
+      "last_message_security_honeypot": {"name": "Security: Honeypot triggered: Last Message"},
+      "last_message_security_firewall": {"name": "Security: Firewall block: Last Message"},
+      "last_message_power": {"name": "Power: PoE / power loss: Last Message"},
+      "open_count_network_device": {"name": "Network: Device offline/online: Open Count"},
+      "open_count_network_wan": {"name": "Network: WAN offline/latency: Open Count"},
+      "open_count_network_client": {"name": "Network: Client connect/disconnect: Open Count"},
+      "open_count_security_threat": {"name": "Security: Threat / IDS detected: Open Count"},
+      "open_count_security_honeypot": {"name": "Security: Honeypot triggered: Open Count"},
+      "open_count_security_firewall": {"name": "Security: Firewall block: Open Count"},
+      "open_count_power": {"name": "Power: PoE / power loss: Open Count"},
       "total_open": {"name": "Total Open Alerts"}
     },
     "event": {
-      "event": {"name": "{category}: Event"}
+      "event_network_device": {"name": "Network: Device offline/online: Event"},
+      "event_network_wan": {"name": "Network: WAN offline/latency: Event"},
+      "event_network_client": {"name": "Network: Client connect/disconnect: Event"},
+      "event_security_threat": {"name": "Security: Threat / IDS detected: Event"},
+      "event_security_honeypot": {"name": "Security: Honeypot triggered: Event"},
+      "event_security_firewall": {"name": "Security: Firewall block: Event"},
+      "event_power": {"name": "Power: PoE / power loss: Event"}
     },
     "button": {
-      "clear_category": {"name": "Clear {category}"},
+      "clear_network_device": {"name": "Clear Network: Device offline/online"},
+      "clear_network_wan": {"name": "Clear Network: WAN offline/latency"},
+      "clear_network_client": {"name": "Clear Network: Client connect/disconnect"},
+      "clear_security_threat": {"name": "Clear Security: Threat / IDS detected"},
+      "clear_security_honeypot": {"name": "Clear Security: Honeypot triggered"},
+      "clear_security_firewall": {"name": "Clear Security: Firewall block"},
+      "clear_power": {"name": "Clear Power: PoE / power loss"},
       "clear_all": {"name": "Clear All Alerts"}
     }
   },
   "options": {
+    "error": {
+      "invalid_site": "Site not found on the controller. Check the site name (the URL slug, not the display name). The default single-site name is 'default'."
+    },
     "step": {
       "credentials": {
         "title": "Update Controller Credentials",

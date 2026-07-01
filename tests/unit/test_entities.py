@@ -737,10 +737,10 @@ class TestEntityCategories:
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Translation keys (ARCH-2): every entity routes its display name through
-# `strings.json` via `_attr_translation_key` (and `_attr_translation_placeholders`
-# for per-category entities). This locks the contract for localisation; the
-# rendered English string lives in `strings.json` / `translations/en.json` and
-# is verified for byte-parity by `scripts/check_translations.py`.
+# `strings.json` via a per-category `_attr_translation_key` (e.g. `last_message_network_wan`).
+# This locks the contract for localisation; the rendered English string lives in
+# `strings.json` / `translations/en.json` and is verified for byte-parity by
+# `scripts/check_translations.py`.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
@@ -749,15 +749,12 @@ class TestTranslationKeys:
 
     def test_category_binary_sensor_translation(self):
         from custom_components.unifi_alerts.binary_sensor import UniFiCategoryBinarySensor
-        from custom_components.unifi_alerts.const import CATEGORY_LABELS
 
         coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
         entry = make_entry()
         entity = UniFiCategoryBinarySensor(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.translation_key == "category_binary"
-        assert entity.translation_placeholders == {
-            "category": CATEGORY_LABELS[CATEGORY_NETWORK_WAN]
-        }
+        assert entity.translation_key == CATEGORY_NETWORK_WAN
+        assert entity.translation_placeholders == {}
 
     def test_rollup_binary_sensor_translation(self):
         from custom_components.unifi_alerts.binary_sensor import UniFiRollupBinarySensor
@@ -768,28 +765,22 @@ class TestTranslationKeys:
         assert entity.translation_key == "any_alert"
 
     def test_message_sensor_translation(self):
-        from custom_components.unifi_alerts.const import CATEGORY_LABELS
         from custom_components.unifi_alerts.sensor import UniFiCategoryMessageSensor
 
         coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
         entry = make_entry()
         entity = UniFiCategoryMessageSensor(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.translation_key == "last_message"
-        assert entity.translation_placeholders == {
-            "category": CATEGORY_LABELS[CATEGORY_NETWORK_WAN]
-        }
+        assert entity.translation_key == f"last_message_{CATEGORY_NETWORK_WAN}"
+        assert entity.translation_placeholders == {}
 
     def test_count_sensor_translation(self):
-        from custom_components.unifi_alerts.const import CATEGORY_LABELS
         from custom_components.unifi_alerts.sensor import UniFiCategoryCountSensor
 
         coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
         entry = make_entry()
         entity = UniFiCategoryCountSensor(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.translation_key == "open_count"
-        assert entity.translation_placeholders == {
-            "category": CATEGORY_LABELS[CATEGORY_NETWORK_WAN]
-        }
+        assert entity.translation_key == f"open_count_{CATEGORY_NETWORK_WAN}"
+        assert entity.translation_placeholders == {}
 
     def test_rollup_count_sensor_translation(self):
         from custom_components.unifi_alerts.sensor import UniFiRollupCountSensor
@@ -800,28 +791,22 @@ class TestTranslationKeys:
         assert entity.translation_key == "total_open"
 
     def test_event_entity_translation(self):
-        from custom_components.unifi_alerts.const import CATEGORY_LABELS
         from custom_components.unifi_alerts.event import UniFiAlertEventEntity
 
         coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
         entry = make_entry()
         entity = UniFiAlertEventEntity(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.translation_key == "event"
-        assert entity.translation_placeholders == {
-            "category": CATEGORY_LABELS[CATEGORY_NETWORK_WAN]
-        }
+        assert entity.translation_key == f"event_{CATEGORY_NETWORK_WAN}"
+        assert entity.translation_placeholders == {}
 
     def test_clear_category_button_translation(self):
         from custom_components.unifi_alerts.button import UniFiClearCategoryButton
-        from custom_components.unifi_alerts.const import CATEGORY_LABELS
 
         coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
         entry = make_entry()
         entity = UniFiClearCategoryButton(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.translation_key == "clear_category"
-        assert entity.translation_placeholders == {
-            "category": CATEGORY_LABELS[CATEGORY_NETWORK_WAN]
-        }
+        assert entity.translation_key == f"clear_{CATEGORY_NETWORK_WAN}"
+        assert entity.translation_placeholders == {}
 
     def test_clear_all_button_translation(self):
         from custom_components.unifi_alerts.button import UniFiClearAllButton

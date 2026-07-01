@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Coroutine
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -24,6 +24,7 @@ from .const import (
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_SITE,
+    DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS,
     DOMAIN,
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
@@ -99,6 +100,11 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         # within WEBHOOK_DEDUP_WINDOW_SECONDS are dropped to prevent a noisy
         # controller from generating unbounded state updates and event fires.
         self._last_push_at: dict[tuple[str, str], float] = {}
+
+        # Accumulates event keys seen during polling that could not be mapped to
+        # any category. Exposed via diagnostics so users can report missing keys
+        # without needing DEBUG logging. Never reset; grows until the entry reloads.
+        self._unrecognised_keys: dict[str, int] = {}
 
     # ── DataUpdateCoordinator override ───────────────────────────────────
 
@@ -202,16 +208,27 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             has_v2 = False
 
         if not has_v2:
-            return await self._client.categorise_alarms(self._site)
+            result = await self._client.categorise_alarms(self._site)
+            for key, count in self._client.unrecognised_keys.items():
+                self._unrecognised_keys[key] = self._unrecognised_keys.get(key, 0) + count
+            return result
 
         # v2 path: compute the oldest watermark across enabled categories so we
-        # fetch everything since the oldest unacknowledged window.
+        # fetch everything since the oldest unacknowledged window. Clamp to
+        # DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS so a rarely-cleared category cannot
+        # grow the fetch window without bound and push recent events past
+        # MAX_SYSTEM_LOG_PAGES.
         watermarks = [
             state.last_cleared_at
             for state in self._category_states.values()
             if state.enabled and state.last_cleared_at is not None
         ]
-        since: datetime | None = min(watermarks) if watermarks else None
+        since: datetime | None
+        if watermarks:
+            lookback_floor = datetime.now(UTC) - timedelta(hours=DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS)
+            since = max(min(watermarks), lookback_floor)
+        else:
+            since = None
 
         raw_events = await self._client.fetch_system_log_alarms(self._site, since=since)
 
@@ -219,6 +236,15 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         for event in raw_events:
             alert = UniFiAlert.from_system_log_event(event, self._seen_unknown_keys)
             if not alert.category:
+                # Unknown key and no broad enum fallback — skip, same as legacy behaviour
+                key = event.get("key", "")
+                if key:
+                    self._unrecognised_keys[key] = self._unrecognised_keys.get(key, 0) + 1
+                    _LOGGER.debug(
+                        "Unclassified v2 system-log event key %r — consider reporting it at "
+                        "https://github.com/PHeonix25/unifi_alerts/issues",
+                        key,
+                    )
                 continue
             categorised.setdefault(alert.category, []).append(alert)
 
@@ -311,6 +337,15 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     @property
     def rollup_open_count(self) -> int:
         return sum(s.open_count for s in self._category_states.values() if s.enabled)
+
+    @property
+    def unrecognised_keys(self) -> dict[str, int]:
+        """Event keys seen during polling that could not be mapped to any category.
+
+        Keys accumulate across all polls since the config entry was loaded. Exposed
+        via diagnostics so users can report missing keys without enabling DEBUG logging.
+        """
+        return self._unrecognised_keys
 
     @property
     def rollup_last_alert(self) -> UniFiAlert | None:

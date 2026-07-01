@@ -50,6 +50,10 @@ class SslCertificateError(CannotConnectError):
     """
 
 
+class InvalidSiteError(CannotConnectError):
+    """Raised when the site name does not exist on the controller."""
+
+
 class InvalidAuthError(Exception):
     """Raised on 401/403 responses.
 
@@ -92,6 +96,9 @@ class UniFiClient:
         self._probe_fail_count: int = 0
         # Set when _probe_fail_count reaches _PROBE_FAIL_LIMIT; clears on retry window expiry.
         self._probe_backoff_until: datetime | None = None
+        # Keys seen during the most recent categorise_alarms() call that could not
+        # be matched to any category. Reset each call; callers accumulate as needed.
+        self._unrecognised_keys: dict[str, int] = {}
 
     # ── Public interface ──────────────────────────────────────────────────
 
@@ -156,8 +163,8 @@ class UniFiClient:
             if result is not None:
                 return result
             # None means path not found (404 or api.err.InvalidObject) — try next
-        raise CannotConnectError(
-            f"Could not find the alarm endpoint for site '{site}'. Tried: {', '.join(alarm_paths)}"
+        raise InvalidSiteError(
+            f"Site '{site}' not found on the controller. Tried: {', '.join(alarm_paths)}"
         )
 
     async def _try_fetch_alarms(self, url: str, site: str) -> list[dict[str, Any]] | None:
@@ -407,16 +414,35 @@ class UniFiClient:
             )
             if page + 1 >= total_pages or not page_data:
                 break
+        else:
+            # for-loop exhausted range(MAX_SYSTEM_LOG_PAGES) without breaking:
+            # the page cap was reached before all events were fetched.
+            _LOGGER.warning(
+                "v2 system-log page cap reached (%d pages / %d events); "
+                "some recent alarms may have been missed. "
+                "Clear categories more frequently or reduce the polling window.",
+                MAX_SYSTEM_LOG_PAGES,
+                len(results),
+            )
 
         return results
+
+    @property
+    def unrecognised_keys(self) -> dict[str, int]:
+        """Keys seen in the most recent categorise_alarms() call with no category mapping."""
+        return self._unrecognised_keys
 
     async def categorise_alarms(self, site: str = "default") -> dict[str, list[UniFiAlert]]:
         """Fetch alarms and group them by category."""
         raw = await self.fetch_alarms(site)
+        self._unrecognised_keys = {}
         result: dict[str, list[UniFiAlert]] = {}
         for alarm in raw:
             category = self._classify(alarm)
             if category is None:
+                key = alarm.get("key", "")
+                if key:
+                    self._unrecognised_keys[key] = self._unrecognised_keys.get(key, 0) + 1
                 continue
             alert = UniFiAlert.from_api_alarm(category, alarm)
             result.setdefault(category, []).append(alert)

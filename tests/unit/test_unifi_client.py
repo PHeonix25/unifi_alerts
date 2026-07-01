@@ -622,14 +622,16 @@ class TestFetchAlarms:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_all_paths_404_raises_cannot_connect(self):
-        """When all alarm paths return 404, raise CannotConnectError with the tried paths."""
+    async def test_all_paths_404_raises_invalid_site_error(self):
+        """When all alarm paths return 404, raise InvalidSiteError (subclass of CannotConnectError)."""
+        from custom_components.unifi_alerts.unifi_client import InvalidSiteError
+
         client = make_client()
         client._authenticated = True
         ctx = _make_response(404)
         client._session.get = ctx
 
-        with pytest.raises(CannotConnectError, match="Could not find the alarm endpoint"):
+        with pytest.raises(InvalidSiteError, match="not found on the controller"):
             await client.fetch_alarms()
 
     @pytest.mark.asyncio
@@ -763,6 +765,76 @@ class TestCategoriseAlarms:
         client._session.get = ctx
         result = await client.categorise_alarms()
         assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_unrecognised_keys_tracked_on_unclassified_alarm(self):
+        """categorise_alarms() must record unclassified alarm keys in unrecognised_keys."""
+        client = make_client()
+        client._authenticated = True
+        body = {
+            "meta": {"rc": "ok"},
+            "data": [
+                {"key": "EVT_MYSTERY_DEVICE_FELL_OVER", "msg": "wat", "archived": False},
+                {"key": "EVT_MYSTERY_DEVICE_FELL_OVER", "msg": "again", "archived": False},
+                {"key": "EVT_ANOTHER_UNKNOWN", "msg": "hmm", "archived": False},
+            ],
+        }
+        ctx, _ = _make_json_response(200, body)
+        client._session.get = ctx
+
+        await client.categorise_alarms()
+
+        assert client.unrecognised_keys == {
+            "EVT_MYSTERY_DEVICE_FELL_OVER": 2,
+            "EVT_ANOTHER_UNKNOWN": 1,
+        }
+
+    @pytest.mark.asyncio
+    async def test_unrecognised_keys_reset_between_calls(self):
+        """unrecognised_keys reflects only the most recent categorise_alarms() call."""
+        client = make_client()
+        client._authenticated = True
+
+        # First call: unknown key
+        body1 = {
+            "meta": {"rc": "ok"},
+            "data": [{"key": "EVT_UNKNOWN_FIRST", "msg": ".", "archived": False}],
+        }
+        ctx1, _ = _make_json_response(200, body1)
+        client._session.get = ctx1
+        await client.categorise_alarms()
+        assert "EVT_UNKNOWN_FIRST" in client.unrecognised_keys
+
+        # Second call: different unknown key
+        body2 = {
+            "meta": {"rc": "ok"},
+            "data": [{"key": "EVT_UNKNOWN_SECOND", "msg": ".", "archived": False}],
+        }
+        ctx2, _ = _make_json_response(200, body2)
+        client._session.get = ctx2
+        await client.categorise_alarms()
+
+        # Only the second call's keys remain
+        assert "EVT_UNKNOWN_SECOND" in client.unrecognised_keys
+        assert "EVT_UNKNOWN_FIRST" not in client.unrecognised_keys
+
+    @pytest.mark.asyncio
+    async def test_unrecognised_keys_empty_when_all_classified(self):
+        """unrecognised_keys is empty when all alarms map to a category."""
+        client = make_client()
+        client._authenticated = True
+        body = {
+            "meta": {"rc": "ok"},
+            "data": [
+                {"key": "EVT_GW_WANTransition", "msg": "WAN down", "archived": False},
+            ],
+        }
+        ctx, _ = _make_json_response(200, body)
+        client._session.get = ctx
+
+        await client.categorise_alarms()
+
+        assert client.unrecognised_keys == {}
 
 
 class TestAuthenticate:
