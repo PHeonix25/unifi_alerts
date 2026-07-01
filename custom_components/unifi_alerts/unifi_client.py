@@ -411,6 +411,16 @@ class UniFiClient:
             )
             if page + 1 >= total_pages or not page_data:
                 break
+        else:
+            # for-loop exhausted range(MAX_SYSTEM_LOG_PAGES) without breaking:
+            # the page cap was reached before all events were fetched.
+            _LOGGER.warning(
+                "v2 system-log page cap reached (%d pages / %d events); "
+                "some recent alarms may have been missed. "
+                "Clear categories more frequently or reduce the polling window.",
+                MAX_SYSTEM_LOG_PAGES,
+                len(results),
+            )
 
         return results
 

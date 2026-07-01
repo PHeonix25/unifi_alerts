@@ -10,8 +10,7 @@ What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `
 
 ## v1.9.0: Localisation and Scale
 
-- Localisation: translatable category labels and the remaining inline strings.
-- Scale and efficiency: clamp the watermark fetch window; add probe backoff.
+- Localisation: the remaining inline strings.
 - Capability: severity filtering for noisy categories; a self-healing key map.
 - Process: GitHub Issues is now the work tracker (see `docs/TODO.md` for the taxonomy).
 

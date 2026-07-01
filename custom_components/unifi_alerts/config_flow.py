@@ -17,7 +17,6 @@ from yarl import URL
 
 from .const import (
     ALL_CATEGORIES,
-    CATEGORY_LABELS,
     CONF_API_KEY,
     CONF_AUTH_METHOD,
     CONF_CLEAR_TIMEOUT,
@@ -232,7 +231,6 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="categories",
             data_schema=schema,
             errors=errors,
-            description_placeholders={cat: CATEGORY_LABELS[cat] for cat in ALL_CATEGORIES},
         )
 
     async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -567,7 +565,6 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             step_id="categories",
             data_schema=vol.Schema(fields),
             errors=errors,
-            description_placeholders={cat: CATEGORY_LABELS[cat] for cat in ALL_CATEGORIES},
         )
 
     async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

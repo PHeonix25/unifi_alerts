@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Coroutine
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -24,6 +24,7 @@ from .const import (
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_SITE,
+    DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS,
     DOMAIN,
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
@@ -205,13 +206,21 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             return await self._client.categorise_alarms(self._site)
 
         # v2 path: compute the oldest watermark across enabled categories so we
-        # fetch everything since the oldest unacknowledged window.
+        # fetch everything since the oldest unacknowledged window. Clamp to
+        # DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS so a rarely-cleared category cannot
+        # grow the fetch window without bound and push recent events past
+        # MAX_SYSTEM_LOG_PAGES.
         watermarks = [
             state.last_cleared_at
             for state in self._category_states.values()
             if state.enabled and state.last_cleared_at is not None
         ]
-        since: datetime | None = min(watermarks) if watermarks else None
+        since: datetime | None
+        if watermarks:
+            lookback_floor = datetime.now(UTC) - timedelta(hours=DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS)
+            since = max(min(watermarks), lookback_floor)
+        else:
+            since = None
 
         raw_events = await self._client.fetch_system_log_alarms(self._site, since=since)
 
