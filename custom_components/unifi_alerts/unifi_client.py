@@ -50,6 +50,10 @@ class SslCertificateError(CannotConnectError):
     """
 
 
+class InvalidSiteError(CannotConnectError):
+    """Raised when the site name does not exist on the controller."""
+
+
 class InvalidAuthError(Exception):
     """Raised on 401/403 responses.
 
@@ -156,8 +160,8 @@ class UniFiClient:
             if result is not None:
                 return result
             # None means path not found (404 or api.err.InvalidObject) — try next
-        raise CannotConnectError(
-            f"Could not find the alarm endpoint for site '{site}'. Tried: {', '.join(alarm_paths)}"
+        raise InvalidSiteError(
+            f"Site '{site}' not found on the controller. Tried: {', '.join(alarm_paths)}"
         )
 
     async def _try_fetch_alarms(self, url: str, site: str) -> list[dict[str, Any]] | None:
