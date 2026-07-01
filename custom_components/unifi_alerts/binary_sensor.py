@@ -18,7 +18,6 @@ from .const import (
     ALL_CATEGORIES,
     CATEGORY_ICONS,
     CATEGORY_ICONS_OK,
-    CATEGORY_LABELS,
     CONF_CONTROLLER_URL,
     DOMAIN,
 )
@@ -58,8 +57,7 @@ class UniFiCategoryBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], Binar
         self._category = category
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{category}_binary"
-        self._attr_translation_key = "category_binary"
-        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
+        self._attr_translation_key = category
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -100,6 +98,7 @@ class UniFiCategoryBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], Binar
             attrs["last_alert_at"] = state.last_alert.received_at.isoformat()
             attrs["last_device"] = state.last_alert.device_name
             attrs["last_key"] = state.last_alert.key
+            attrs["last_severity"] = state.last_alert.severity
         if state.last_cleared_at:
             attrs["last_cleared_at"] = state.last_cleared_at.isoformat()
         return attrs
@@ -141,6 +140,7 @@ class UniFiRollupBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], BinaryS
             attrs["last_message"] = last.message
             attrs["last_alert_at"] = last.received_at.isoformat()
             attrs["last_category"] = last.category
+            attrs["last_severity"] = last.severity
         return attrs
 
 

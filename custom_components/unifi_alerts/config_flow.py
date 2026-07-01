@@ -20,7 +20,6 @@ from yarl import URL
 
 from .const import (
     ALL_CATEGORIES,
-    CATEGORY_LABELS,
     CONF_API_KEY,
     CONF_AUTH_METHOD,
     CONF_CLEAR_TIMEOUT,
@@ -42,7 +41,13 @@ from .const import (
     webhook_id_for_category,
 )
 from .models import UniFiClientConfig
-from .unifi_client import CannotConnectError, InvalidAuthError, SslCertificateError, UniFiClient
+from .unifi_client import (
+    CannotConnectError,
+    InvalidAuthError,
+    InvalidSiteError,
+    SslCertificateError,
+    UniFiClient,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -195,15 +200,42 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             if not enabled:
                 errors["base"] = "at_least_one_category"
             else:
-                self._entry_data = {
-                    **self._credentials,
-                    CONF_ENABLED_CATEGORIES: enabled,
-                    CONF_POLL_INTERVAL: user_input.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
-                    CONF_CLEAR_TIMEOUT: user_input.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT),
-                    CONF_SITE: user_input.get(CONF_SITE, DEFAULT_SITE),
-                    CONF_AUTH_METHOD: self._detected_auth_method,
-                }
-                return await self.async_step_finish()
+                site = user_input.get(CONF_SITE, DEFAULT_SITE)
+                if site != DEFAULT_SITE:
+                    creds_with_method = {
+                        **self._credentials,
+                        CONF_AUTH_METHOD: self._detected_auth_method,
+                    }
+                    verify_ssl = self._credentials.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+                    session = async_get_clientsession(self.hass, verify_ssl=verify_ssl)
+                    client = UniFiClient(
+                        session, self._controller_url, cast(UniFiClientConfig, creds_with_method)
+                    )
+                    try:
+                        await client.authenticate()
+                        await client.fetch_alarms(site)
+                    except InvalidSiteError:
+                        errors[CONF_SITE] = "invalid_site"
+                    except (InvalidAuthError, CannotConnectError) as err:
+                        _LOGGER.error("Cannot validate site %r during setup: %s", site, err)
+                        errors["base"] = "cannot_connect"
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.exception("Unexpected error validating site %r during setup", site)
+                        errors["base"] = "unknown"
+                if not errors:
+                    self._entry_data = {
+                        **self._credentials,
+                        CONF_ENABLED_CATEGORIES: enabled,
+                        CONF_POLL_INTERVAL: user_input.get(
+                            CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL
+                        ),
+                        CONF_CLEAR_TIMEOUT: user_input.get(
+                            CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT
+                        ),
+                        CONF_SITE: site,
+                        CONF_AUTH_METHOD: self._detected_auth_method,
+                    }
+                    return await self.async_step_finish()
 
         # Build a schema with one boolean per category
         fields: dict[Any, Any] = {}
@@ -225,7 +257,6 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="categories",
             data_schema=schema,
             errors=errors,
-            description_placeholders={cat: CATEGORY_LABELS[cat] for cat in ALL_CATEGORIES},
         )
 
     async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -493,13 +524,40 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             if not enabled:
                 errors["base"] = "at_least_one_category"
             else:
-                self._pending_options = {
-                    CONF_ENABLED_CATEGORIES: enabled,
-                    CONF_POLL_INTERVAL: user_input.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
-                    CONF_CLEAR_TIMEOUT: user_input.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT),
-                    CONF_SITE: user_input.get(CONF_SITE, DEFAULT_SITE),
-                }
-                return await self.async_step_finish()
+                site = user_input.get(CONF_SITE, DEFAULT_SITE)
+                if site != DEFAULT_SITE:
+                    creds = self._pending_data or dict(self._config_entry.data)
+                    controller_url = creds.get(CONF_CONTROLLER_URL, "")
+                    verify_ssl = creds.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+                    session = async_get_clientsession(self.hass, verify_ssl=verify_ssl)
+                    client = UniFiClient(session, controller_url, cast(UniFiClientConfig, creds))
+                    try:
+                        await client.authenticate()
+                        await client.fetch_alarms(site)
+                    except InvalidSiteError:
+                        errors[CONF_SITE] = "invalid_site"
+                    except (InvalidAuthError, CannotConnectError) as err:
+                        _LOGGER.error(
+                            "Cannot validate site %r during options update: %s", site, err
+                        )
+                        errors["base"] = "cannot_connect"
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.exception(
+                            "Unexpected error validating site %r during options update", site
+                        )
+                        errors["base"] = "unknown"
+                if not errors:
+                    self._pending_options = {
+                        CONF_ENABLED_CATEGORIES: enabled,
+                        CONF_POLL_INTERVAL: user_input.get(
+                            CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL
+                        ),
+                        CONF_CLEAR_TIMEOUT: user_input.get(
+                            CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT
+                        ),
+                        CONF_SITE: site,
+                    }
+                    return await self.async_step_finish()
 
         current_enabled: list[str] = self._config_entry.options.get(
             CONF_ENABLED_CATEGORIES,
@@ -533,7 +591,6 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             step_id="categories",
             data_schema=vol.Schema(fields),
             errors=errors,
-            description_placeholders={cat: CATEGORY_LABELS[cat] for cat in ALL_CATEGORIES},
         )
 
     async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

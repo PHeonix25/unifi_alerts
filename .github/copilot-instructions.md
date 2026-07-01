@@ -77,7 +77,7 @@ What must be updated when specific parts of the codebase change.
 
 | File | Change required |
 | ---- | --------------- |
-| `custom_components/unifi_alerts/const.py` | Add `CATEGORY_<NAME>` constant; add to `ALL_CATEGORIES`, `CATEGORY_LABELS`, `CATEGORY_ICONS`, `CATEGORY_ICONS_OK`; add all `EVT_*` keys to `UNIFI_KEY_TO_CATEGORY` |
+| `custom_components/unifi_alerts/const.py` | Add `CATEGORY_<NAME>` constant; add to `ALL_CATEGORIES`, `CATEGORY_ICONS`, `CATEGORY_ICONS_OK`; add all `EVT_*` keys to `UNIFI_KEY_TO_CATEGORY` |
 | `custom_components/unifi_alerts/strings.json` | Add `"cat_<name>"` label to `config.step.categories.data`, `config.step.finish.data`, `options.step.options.data`; add webhook URL label |
 | `custom_components/unifi_alerts/translations/en.json` | Mirror every change to `strings.json` exactly |
 | `tests/unit/conftest.py` | Add category to fixture category lists |

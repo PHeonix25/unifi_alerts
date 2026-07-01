@@ -2,9 +2,24 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Category binary sensors now expose a `last_severity` attribute containing the severity string from the most recent alert (`"LOW"`, `"MEDIUM"`, `"HIGH"`, `"VERY_HIGH"` on v2 controllers; raw webhook severity on legacy controllers). The `any_alert` rollup sensor exposes the same attribute. Automations can condition on this to suppress or escalate alerts by severity without disabling the category. ([#135])
+
 ### Added
 
 - UniFi OS consoles (UDM, UDM Pro, UDM SE, UDM Pro Max) are now discovered automatically via SSDP. When one is found on the local network it appears in Settings > Integrations > Discovered, with the controller URL pre-filled. Credentials still need to be entered manually. ([#172])
+- Unclassified event keys seen during polling are now collected and exposed under `unrecognised_keys` in the integration diagnostics (Settings > Devices & Services > UniFi Alerts > Download diagnostics). This makes previously-invisible unmapped events visible without enabling DEBUG logging, so users can identify and report missing keys to the issue tracker. ([#134])
+- A typo'd site name during setup now shows a dedicated error ("Site not found on the controller") on the categories step instead of creating a broken config entry stuck in "Not Ready". The default site (`default`) still proceeds without an extra network round-trip since reachability was already confirmed in the credentials step. The same validation runs in the options flow when changing to a non-default site. ([#171])
+- Category labels in entity names (e.g. "Network: WAN offline/latency") are now defined in `translations/en.json` instead of being hard-coded English strings, so translators can provide locale-specific versions without rebuilding the integration. Each entity now carries a per-category translation key rather than a generic key with a hard-coded English placeholder. ([#133])
+
+### Fixed
+
+- The v2 system-log fetch window is now clamped to `DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS` (24 hours). Previously, a rarely-cleared category could hold the oldest watermark to an arbitrarily old timestamp, causing every poll to paginate from that date forward and silently miss recent alarms once the 10-page cap was reached. The clamp ensures all categories are always within the paged window. A WARNING is now logged when the page cap is reached, indicating some events may have been missed. ([#136])
+
+### Internal
+
+- Added unicode round-trip tests for `UniFiAlert` serialisation: emoji, CJK, and RTL text survive `to_dict`/`from_dict` without mangling, and 300-character unicode messages are clamped to 255 characters. Added large-batch determinism tests: 500-alert `CategoryState` count is exact, watermark filtering passes precisely the expected subset, and all 500 messages survive serialisation round-trip. ([#140])
 
 ## [1.8.0] - 2026-06-19
 
@@ -261,14 +276,20 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#123]: https://github.com/PHeonix25/unifi_alerts/issues/123
 [#127]: https://github.com/PHeonix25/unifi_alerts/issues/127
 [#128]: https://github.com/PHeonix25/unifi_alerts/issues/128
+[#133]: https://github.com/PHeonix25/unifi_alerts/issues/133
+[#134]: https://github.com/PHeonix25/unifi_alerts/issues/134
+[#135]: https://github.com/PHeonix25/unifi_alerts/issues/135
+[#136]: https://github.com/PHeonix25/unifi_alerts/issues/136
 [#138]: https://github.com/PHeonix25/unifi_alerts/issues/138
 [#139]: https://github.com/PHeonix25/unifi_alerts/issues/139
+[#140]: https://github.com/PHeonix25/unifi_alerts/issues/140
 [#163]: https://github.com/PHeonix25/unifi_alerts/issues/163
 [#164]: https://github.com/PHeonix25/unifi_alerts/issues/164
 [#166]: https://github.com/PHeonix25/unifi_alerts/issues/166
 [#167]: https://github.com/PHeonix25/unifi_alerts/issues/167
 [#168]: https://github.com/PHeonix25/unifi_alerts/issues/168
 [#170]: https://github.com/PHeonix25/unifi_alerts/issues/170
+[#171]: https://github.com/PHeonix25/unifi_alerts/issues/171
 [#172]: https://github.com/PHeonix25/unifi_alerts/issues/172
 [#173]: https://github.com/PHeonix25/unifi_alerts/issues/173
 [#175]: https://github.com/PHeonix25/unifi_alerts/issues/175
