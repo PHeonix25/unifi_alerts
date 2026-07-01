@@ -81,16 +81,6 @@ ALL_CATEGORIES: list[str] = [
     CATEGORY_POWER,
 ]
 
-CATEGORY_LABELS: dict[str, str] = {
-    CATEGORY_NETWORK_DEVICE: "Network: Device offline/online",
-    CATEGORY_NETWORK_WAN: "Network: WAN offline/latency",
-    CATEGORY_NETWORK_CLIENT: "Network: Client connect/disconnect",
-    CATEGORY_SECURITY_THREAT: "Security: Threat / IDS detected",
-    CATEGORY_SECURITY_HONEYPOT: "Security: Honeypot triggered",
-    CATEGORY_SECURITY_FIREWALL: "Security: Firewall block",
-    CATEGORY_POWER: "Power: PoE / power loss",
-}
-
 CATEGORY_ICONS: dict[str, str] = {
     CATEGORY_NETWORK_DEVICE: "mdi:lan-disconnect",
     CATEGORY_NETWORK_WAN: "mdi:wan",

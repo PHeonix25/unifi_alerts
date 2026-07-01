@@ -2,6 +2,24 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-06-27
+
+- **release**: v1.9.0-pre1 tagged. First checkpoint of the v1.9.0 "Localisation and Scale" cycle. Headline: translatable per-category entity labels (#133) and the v2 system-log fetch-window clamp (#136), plus large-volume serialisation tests and CI/process hardening. Five further v1.9.0 PRs (#207, #210, #205, #212, #218) remain open and will land in a later checkpoint.
+- **feat**: entity display names now resolve through per-category `translation_key`s in `strings.json` / `translations/en.json` instead of a hard-coded English label map; the unused `CATEGORY_LABELS` dict was removed ([#208]). Closes #133.
+- **fix**: clamp the v2 system-log fetch window to `DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS` (24h) and warn when the page cap is hit, so a rarely-cleared category can no longer anchor every poll to an arbitrarily old timestamp and silently drop recent alarms ([#204]). Closes #136.
+- **tests**: add unicode round-trip and large-batch determinism coverage for `UniFiAlert` serialisation (emoji, CJK, and RTL survive `to_dict` / `from_dict`; 500-alert batches stay exact) ([#202]). Closes #140.
+- **ci**: bump `actions/checkout` 6.0.2 to 7.0.0 ([#248]); move pytest config into `pyproject.toml` ([#249]); add an advanced CodeQL workflow so config-only PRs are not blocked ([#251]); bump `codecov/codecov-action` 5.4.3 to 7.0.0 ([#247]); run `pr-labeler` on `pull_request_target` so fork PRs get labelled ([#250]); allow HISTORY.md edits on the dev-to-main release merge in `history-guard` ([#245]).
+
+[#202]: https://github.com/PHeonix25/unifi_alerts/pull/202
+[#204]: https://github.com/PHeonix25/unifi_alerts/pull/204
+[#208]: https://github.com/PHeonix25/unifi_alerts/pull/208
+[#245]: https://github.com/PHeonix25/unifi_alerts/pull/245
+[#247]: https://github.com/PHeonix25/unifi_alerts/pull/247
+[#248]: https://github.com/PHeonix25/unifi_alerts/pull/248
+[#249]: https://github.com/PHeonix25/unifi_alerts/pull/249
+[#250]: https://github.com/PHeonix25/unifi_alerts/pull/250
+[#251]: https://github.com/PHeonix25/unifi_alerts/pull/251
+
 ## 2026-06-19
 
 - **release**: v1.8.0 stable. Promotes the "Trust and Hardening" cycle to main. All pre1-pre3 items shipped; one additional fix (#242) landed after pre3.

@@ -1470,18 +1470,22 @@ class TestCoordinatorV2Dispatch:
             assert state.open_count == 0
 
     @pytest.mark.asyncio
-    async def test_v2_watermark_passed_as_since_to_fetch(self):
-        """The oldest watermark across enabled categories must be passed as since=."""
-        from datetime import UTC, datetime
+    async def test_v2_watermark_within_window_passed_as_since(self):
+        """When the oldest watermark is within DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS,
+        it is passed as-is to fetch_system_log_alarms (no clamping needed)."""
+        from datetime import UTC, datetime, timedelta
+
+        from custom_components.unifi_alerts.const import DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS
 
         hass, client = _make_hass_and_client()
         client.probe_system_log_endpoint = AsyncMock(return_value=True)
         client.fetch_system_log_alarms = AsyncMock(return_value=[])
         coord = _make_full_coordinator(hass, client)
 
-        # Set distinct watermarks; the oldest should be passed as since
-        older_wm = datetime(2026, 5, 1, 10, 0, 0, tzinfo=UTC)
-        newer_wm = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
+        # Place both watermarks within the lookback window
+        now = datetime.now(UTC)
+        older_wm = now - timedelta(hours=DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS - 1)
+        newer_wm = now - timedelta(hours=1)
         coord.get_category_state(CATEGORY_NETWORK_WAN).last_cleared_at = older_wm
         coord.get_category_state(CATEGORY_SECURITY_THREAT).last_cleared_at = newer_wm
 
@@ -1489,7 +1493,36 @@ class TestCoordinatorV2Dispatch:
 
         client.fetch_system_log_alarms.assert_awaited_once()
         _, kwargs = client.fetch_system_log_alarms.call_args
+        # since must equal the older watermark (not clamped)
         assert kwargs.get("since") == older_wm
+
+    @pytest.mark.asyncio
+    async def test_v2_watermark_older_than_lookback_clamped(self):
+        """When the oldest watermark is beyond DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS,
+        since= is clamped to now - DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS."""
+        from datetime import UTC, datetime, timedelta
+
+        from custom_components.unifi_alerts.const import DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS
+
+        hass, client = _make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=True)
+        client.fetch_system_log_alarms = AsyncMock(return_value=[])
+        coord = _make_full_coordinator(hass, client)
+
+        # Watermark far in the past (30 days ago) — well beyond the 24h cap
+        stale_wm = datetime.now(UTC) - timedelta(days=30)
+        coord.get_category_state(CATEGORY_NETWORK_WAN).last_cleared_at = stale_wm
+
+        await coord._async_update_data()
+
+        client.fetch_system_log_alarms.assert_awaited_once()
+        _, kwargs = client.fetch_system_log_alarms.call_args
+        since = kwargs.get("since")
+        assert since is not None
+        # since must NOT be the stale watermark; it must be approximately now - 24h
+        expected_floor = datetime.now(UTC) - timedelta(hours=DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS)
+        # Allow 5-second tolerance for test execution time
+        assert abs((since - expected_floor).total_seconds()) < 5
 
     @pytest.mark.asyncio
     async def test_v2_no_watermark_passes_none_as_since(self):

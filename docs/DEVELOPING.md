@@ -54,9 +54,10 @@ tests/integration/                # full HA lifecycle tests using the hass fixtu
 
 1. Add a `CATEGORY_*` constant to `const.py`.
 2. Append it to `ALL_CATEGORIES`.
-3. Add entries to `CATEGORY_LABELS`, `CATEGORY_ICONS`, and `CATEGORY_ICONS_OK`.
-4. Map any known UniFi event keys to it in `UNIFI_KEY_TO_CATEGORY`.
-5. Add parametrised test cases to `tests/unit/test_unifi_client.py::TestClassify::test_known_keys`.
+3. Add entries to `CATEGORY_ICONS` and `CATEGORY_ICONS_OK`.
+4. Add the per-category entity display-name keys (binary sensor, last message, open count, event, clear button) to `strings.json` and mirror them in `translations/en.json`. Run `scripts/check_translations.py` to validate.
+5. Map any known UniFi event keys to it in `UNIFI_KEY_TO_CATEGORY`.
+6. Add parametrised test cases to `tests/unit/test_unifi_client.py::TestClassify::test_known_keys`.
 
 ## Adding new UniFi event keys
 
