@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Category binary sensors now expose a `last_severity` attribute containing the severity string from the most recent alert (`"LOW"`, `"MEDIUM"`, `"HIGH"`, `"VERY_HIGH"` on v2 controllers; raw webhook severity on legacy controllers). The `any_alert` rollup sensor exposes the same attribute. Automations can condition on this to suppress or escalate alerts by severity without disabling the category. ([#135])
+
 ### Added
 
 - Unclassified event keys seen during polling are now collected and exposed under `unrecognised_keys` in the integration diagnostics (Settings > Devices & Services > UniFi Alerts > Download diagnostics). This makes previously-invisible unmapped events visible without enabling DEBUG logging, so users can identify and report missing keys to the issue tracker. ([#134])
@@ -273,6 +277,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#128]: https://github.com/PHeonix25/unifi_alerts/issues/128
 [#133]: https://github.com/PHeonix25/unifi_alerts/issues/133
 [#134]: https://github.com/PHeonix25/unifi_alerts/issues/134
+[#135]: https://github.com/PHeonix25/unifi_alerts/issues/135
 [#136]: https://github.com/PHeonix25/unifi_alerts/issues/136
 [#138]: https://github.com/PHeonix25/unifi_alerts/issues/138
 [#139]: https://github.com/PHeonix25/unifi_alerts/issues/139
