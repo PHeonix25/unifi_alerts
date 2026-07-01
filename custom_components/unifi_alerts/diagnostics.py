@@ -57,6 +57,9 @@ async def async_get_config_entry_diagnostics(
             "rollup_alert_count": coordinator.rollup_alert_count,
             "rollup_open_count": coordinator.rollup_open_count,
             "categories": categories,
+            "unrecognised_keys": dict(
+                sorted(coordinator.unrecognised_keys.items(), key=lambda kv: kv[1], reverse=True)
+            ),
             # Per-category alert content (message, device_name, last_alert.raw) is
             # intentionally excluded. Those fields carry controller-supplied strings
             # that may contain client hostnames, MAC addresses, or IP addresses and

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Unclassified event keys seen during polling are now collected and exposed under `unrecognised_keys` in the integration diagnostics (Settings > Devices & Services > UniFi Alerts > Download diagnostics). This makes previously-invisible unmapped events visible without enabling DEBUG logging, so users can identify and report missing keys to the issue tracker. ([#134])
 - A typo'd site name during setup now shows a dedicated error ("Site not found on the controller") on the categories step instead of creating a broken config entry stuck in "Not Ready". The default site (`default`) still proceeds without an extra network round-trip since reachability was already confirmed in the credentials step. The same validation runs in the options flow when changing to a non-default site. ([#171])
 - Category labels in entity names (e.g. "Network: WAN offline/latency") are now defined in `translations/en.json` instead of being hard-coded English strings, so translators can provide locale-specific versions without rebuilding the integration. Each entity now carries a per-category translation key rather than a generic key with a hard-coded English placeholder. ([#133])
 
@@ -271,6 +272,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#127]: https://github.com/PHeonix25/unifi_alerts/issues/127
 [#128]: https://github.com/PHeonix25/unifi_alerts/issues/128
 [#133]: https://github.com/PHeonix25/unifi_alerts/issues/133
+[#134]: https://github.com/PHeonix25/unifi_alerts/issues/134
 [#136]: https://github.com/PHeonix25/unifi_alerts/issues/136
 [#138]: https://github.com/PHeonix25/unifi_alerts/issues/138
 [#139]: https://github.com/PHeonix25/unifi_alerts/issues/139

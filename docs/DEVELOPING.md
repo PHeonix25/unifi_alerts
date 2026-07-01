@@ -63,6 +63,8 @@ tests/integration/                # full HA lifecycle tests using the hass fixtu
 
 When a user reports an unrecognised alert key, add it to `UNIFI_KEY_TO_CATEGORY` in `const.py` and add a corresponding entry to `tests/unit/test_unifi_client.py::TestClassify::test_known_keys`. See `docs/UNIFI.md` for the key taxonomy.
 
+**How users find unrecognised keys without DEBUG logging:** the integration accumulates event keys that could not be matched to any category and exposes them in the HA diagnostics download (Settings > Devices & Services > UniFi Alerts > Download diagnostics, look for `coordinator.unrecognised_keys`). Ask users reporting missed alerts to share their diagnostics file and look for entries there first.
+
 ## Keeping strings.json and translations/en.json in sync
 
 HA requires `strings.json` and `translations/en.json` to match exactly. Edit both files together; the CI `lint` job and the pre-push hook diff the two files and fail on drift.

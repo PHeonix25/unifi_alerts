@@ -1768,3 +1768,97 @@ class TestWatermarkPersistFailureRepair:
             coord._store.async_save = AsyncMock()
             await coord._async_persist_watermarks()
             assert mock_ir.async_delete_issue.call_count == 1
+
+
+class TestUnrecognisedKeys:
+    """Coordinator must accumulate unrecognised event keys from both polling paths."""
+
+    @pytest.mark.asyncio
+    async def test_v2_unrecognised_key_accumulates_in_coordinator(self):
+        """An unclassified v2 system-log key must be added to coordinator.unrecognised_keys."""
+        hass, client = _make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=True)
+        client.fetch_system_log_alarms = AsyncMock(
+            return_value=[
+                {
+                    "key": "TOTALLY_UNKNOWN_V2_KEY",
+                    "category": "AUDIT",  # not in SYSTEM_LOG_CATEGORY_FALLBACK
+                    "status": "NEW",
+                    "timestamp": 1778025612345,
+                    "message_raw": "Something happened.",
+                    "parameters": {},
+                    "severity": "LOW",
+                }
+            ]
+        )
+        coord = _make_full_coordinator(hass, client)
+
+        await coord._async_update_data()
+
+        assert "TOTALLY_UNKNOWN_V2_KEY" in coord.unrecognised_keys
+        assert coord.unrecognised_keys["TOTALLY_UNKNOWN_V2_KEY"] == 1
+
+    @pytest.mark.asyncio
+    async def test_v2_unrecognised_key_count_increments_across_polls(self):
+        """Repeated unclassified keys accumulate counts across multiple polls."""
+        hass, client = _make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=True)
+        event = {
+            "key": "REPEATING_UNKNOWN_KEY",
+            "category": "AUDIT",
+            "status": "NEW",
+            "timestamp": 1778025612345,
+            "message_raw": ".",
+            "parameters": {},
+            "severity": "LOW",
+        }
+        client.fetch_system_log_alarms = AsyncMock(return_value=[event])
+        coord = _make_full_coordinator(hass, client)
+
+        await coord._async_update_data()
+        await coord._async_update_data()
+
+        assert coord.unrecognised_keys["REPEATING_UNKNOWN_KEY"] == 2
+
+    @pytest.mark.asyncio
+    async def test_legacy_unrecognised_keys_merged_from_client(self):
+        """On the legacy path, unrecognised keys from client.unrecognised_keys are merged."""
+        hass, client = _make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
+        client.categorise_alarms = AsyncMock(return_value={})
+        # Simulate the client having tracked one unrecognised key from its last call.
+        client.unrecognised_keys = {"EVT_MYSTERY_EVENT": 2}
+        coord = _make_full_coordinator(hass, client)
+
+        await coord._async_update_data()
+
+        assert "EVT_MYSTERY_EVENT" in coord.unrecognised_keys
+        assert coord.unrecognised_keys["EVT_MYSTERY_EVENT"] == 2
+
+    @pytest.mark.asyncio
+    async def test_unrecognised_keys_empty_when_all_classified(self):
+        """With no unclassified events, unrecognised_keys remains empty."""
+        from custom_components.unifi_alerts.const import CATEGORY_SECURITY_THREAT
+
+        hass, client = _make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=True)
+        client.fetch_system_log_alarms = AsyncMock(
+            return_value=[
+                {
+                    "key": "THREAT_BLOCKED_KNOWN_DESTINATION_CLIENT",
+                    "category": "SECURITY",
+                    "status": "NEW",
+                    "timestamp": 1778025612345,
+                    "message_raw": "Threat from {SRC_IP}.",
+                    "parameters": {"SRC_IP": {"name": "1.2.3.4"}},
+                    "severity": "HIGH",
+                }
+            ]
+        )
+        coord = _make_full_coordinator(hass, client)
+
+        await coord._async_update_data()
+
+        assert coord.unrecognised_keys == {}
+        state = coord.get_category_state(CATEGORY_SECURITY_THREAT)
+        assert state.open_count == 1
