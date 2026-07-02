@@ -41,13 +41,8 @@ from .const import (
     webhook_id_for_category,
 )
 from .models import UniFiClientConfig
-from .unifi_client import (
-    CannotConnectError,
-    InvalidAuthError,
-    InvalidSiteError,
-    SslCertificateError,
-    UniFiClient,
-)
+from .unifi_auth import CannotConnectError, InvalidAuthError, SslCertificateError
+from .unifi_client import InvalidSiteError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
 

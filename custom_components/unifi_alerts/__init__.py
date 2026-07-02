@@ -24,7 +24,8 @@ from .const import (
 from .coordinator import UniFiAlertsCoordinator
 from .models import RuntimeData, UniFiClientConfig
 from .services import async_register_services, async_unregister_services
-from .unifi_client import InvalidAuthError, UniFiClient
+from .unifi_auth import InvalidAuthError
+from .unifi_client import UniFiClient
 from .webhook_handler import WebhookManager
 
 _LOGGER = logging.getLogger(__name__)
