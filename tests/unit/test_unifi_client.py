@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
@@ -506,6 +507,36 @@ class TestFetchAlarms:
         message = str(exc_info.value)
         assert "400" in message
         assert "default" in message  # site name is mentioned so user knows what to check
+
+    @pytest.mark.asyncio
+    async def test_http_400_with_unparseable_body_still_raises_cannot_connect(self):
+        """A 400 response whose body isn't valid JSON must not crash — CannotConnectError still raises.
+
+        _try_fetch_alarms tries to parse the 400 body to detect api.err.InvalidObject
+        (path-not-found) vs. a genuine rejection. If the body itself can't be parsed
+        as JSON, that lookup must fail closed (treated as a genuine 400, not silently
+        swallowed) rather than propagating the JSONDecodeError.
+        """
+        client = make_client()
+        client._auth._authenticated = True
+
+        @asynccontextmanager
+        async def _400_unparseable(*args, **kwargs):
+            resp = MagicMock()
+            resp.status = 400
+            resp.headers = {}
+            resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(side_effect=json.JSONDecodeError("Expecting value", "", 0))
+            yield resp
+
+        client._session.get = _400_unparseable
+
+        with pytest.raises(CannotConnectError) as exc_info:
+            await client.fetch_alarms()
+
+        message = str(exc_info.value)
+        assert "400" in message
+        assert "default" in message
 
     @pytest.mark.asyncio
     async def test_api_error_response_raises_cannot_connect(self):
