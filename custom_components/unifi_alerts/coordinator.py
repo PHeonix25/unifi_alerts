@@ -29,7 +29,8 @@ from .const import (
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
 from .models import CategoryState, UniFiAlert, UniFiClientConfig
-from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
+from .unifi_auth import CannotConnectError, InvalidAuthError
+from .unifi_client import UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
 

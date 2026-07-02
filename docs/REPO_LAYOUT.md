@@ -8,7 +8,8 @@ custom_components/unifi_alerts/   # integration source
   manifest.json                   # HA metadata (domain, version, iot_class); do NOT add "homeassistant" min-version key - it is not in the HA manifest schema and breaks hassfest
   const.py                        # all constants, category defs, UniFi key>category map; DEFAULT_VERIFY_SSL = True (secure by default); CONF_WEBHOOK_SECRET = "webhook_secret"
   models.py                       # UniFiAlert and CategoryState dataclasses; all datetimes are UTC-aware (datetime.now(UTC))
-  unifi_client.py                 # async HTTP client, auth auto-detect
+  unifi_client.py                 # async HTTP client (alarm fetch, pagination, system-log probe); composes a UniFiAuth instance (self._auth) for all auth concerns - does not proxy or duplicate its state
+  unifi_auth.py                   # UniFiAuth: auth-method auto-detection, credential verification, session state, header construction; also owns CannotConnectError/SslCertificateError/InvalidAuthError (unifi_client.py re-exports them, so existing `from .unifi_client import ...` call sites elsewhere in the integration are unaffected)
   coordinator.py                  # DataUpdateCoordinator, owns all category state; polling path sets is_alerting/last_alert directly (does NOT call apply_alert, so alert_count is not incremented); open_count filtered by last_cleared_at watermark (alarms since last Clear only); async_clear_category()/async_clear_all() are the sole clear entry points - they cancel tasks, advance watermark, persist via Store, notify; cancel_clear(category) cancels pending auto-clear tasks; async_restore_watermarks() loads persisted watermarks from storage on startup; async_shutdown() cancels all pending clear tasks on unload
   webhook_handler.py              # registers HA webhooks (POST-only), dispatches to coordinator; rejects requests missing/wrong ?token= with HTTP 401; bearer secret from CONF_WEBHOOK_SECRET
   config_flow.py                  # three-step UI setup (credentials > categories > webhook URLs with token) + options flow; generates CONF_WEBHOOK_SECRET via secrets.token_urlsafe(32) on first auth; network_device and network_client default OFF; options flow reads entry.options first, falls back to entry.data
@@ -38,6 +39,7 @@ tests/
     test_models.py
     test_services.py
     test_unifi_client.py
+    test_unifi_auth.py            # UniFiAuth in isolation via make_auth() - no full UniFiClient needed
     test_webhook_handler.py       # WebhookManager: register/unregister, token auth, alert dispatch
   integration/                    # full HA lifecycle tests using hass fixture
     conftest.py                   # entry fixture, mock_unifi_client, get_coordinator(); real entry setup/teardown
