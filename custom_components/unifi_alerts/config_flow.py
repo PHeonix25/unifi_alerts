@@ -102,9 +102,6 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 except CannotConnectError as err:
                     _LOGGER.error("Cannot reach alarm endpoint: %s", err)
                     errors["base"] = "cannot_connect"
-                except Exception:  # noqa: BLE001
-                    _LOGGER.exception("Unexpected error during auth")
-                    errors["base"] = "unknown"
                 else:
                     self._controller_url = url
                     self._detected_auth_method = auth_method
@@ -214,9 +211,6 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                     except (InvalidAuthError, CannotConnectError) as err:
                         _LOGGER.error("Cannot validate site %r during setup: %s", site, err)
                         errors["base"] = "cannot_connect"
-                    except Exception:  # noqa: BLE001
-                        _LOGGER.exception("Unexpected error validating site %r during setup", site)
-                        errors["base"] = "unknown"
                 if not errors:
                     self._entry_data = {
                         **self._credentials,
@@ -315,9 +309,6 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             except CannotConnectError as err:
                 _LOGGER.error("Cannot reach controller during reauth: %s", err)
                 errors["base"] = "cannot_connect"
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("Unexpected error during reauth")
-                errors["base"] = "unknown"
             else:
                 # Merge updated credentials into the entry
                 new_data = {
@@ -452,9 +443,6 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                 except CannotConnectError as err:
                     _LOGGER.error("Cannot reach controller during options update: %s", err)
                     errors["base"] = "cannot_connect"
-                except Exception:  # noqa: BLE001
-                    _LOGGER.exception("Unexpected error during options credentials update")
-                    errors["base"] = "unknown"
                 else:
                     # Check whether the new URL would collide with another entry
                     if effective_url != self._config_entry.data[CONF_CONTROLLER_URL]:
@@ -536,11 +524,6 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                             "Cannot validate site %r during options update: %s", site, err
                         )
                         errors["base"] = "cannot_connect"
-                    except Exception:  # noqa: BLE001
-                        _LOGGER.exception(
-                            "Unexpected error validating site %r during options update", site
-                        )
-                        errors["base"] = "unknown"
                 if not errors:
                     self._pending_options = {
                         CONF_ENABLED_CATEGORIES: enabled,

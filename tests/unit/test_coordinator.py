@@ -37,6 +37,7 @@ def make_coordinator(hass=None, enabled=None):
 
     client = MagicMock()
     client.categorise_alarms = AsyncMock(return_value={})
+    client.probe_system_log_endpoint = AsyncMock(return_value=False)
 
     config = {
         CONF_ENABLED_CATEGORIES: enabled or ALL_CATEGORIES,
@@ -371,6 +372,7 @@ class TestPollingPath:
         hass.async_create_task = _create_task
         hass.async_create_background_task = _create_task
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         from custom_components.unifi_alerts.models import UniFiAlert
 
         polled_alert = UniFiAlert(
@@ -408,6 +410,7 @@ class TestPollingPath:
         hass.async_create_task = _create_task
         hass.async_create_background_task = _create_task
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         from custom_components.unifi_alerts.models import UniFiAlert
 
         polled_alert = UniFiAlert(
@@ -455,6 +458,7 @@ class TestPollingErrorPaths:
         hass.async_create_task = _create_task
         hass.async_create_background_task = _create_task
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
 
         # First call raises InvalidAuthError; after re-auth the second call succeeds
         client.categorise_alarms = AsyncMock(side_effect=[InvalidAuthError("expired"), {}])
@@ -486,6 +490,7 @@ class TestPollingErrorPaths:
         hass.async_create_task = _create_task
         hass.async_create_background_task = _create_task
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         client.categorise_alarms = AsyncMock(side_effect=InvalidAuthError("expired"))
         client.authenticate = AsyncMock(side_effect=InvalidAuthError("still bad"))
 
@@ -514,6 +519,7 @@ class TestPollingErrorPaths:
         hass.async_create_task = _create_task
         hass.async_create_background_task = _create_task
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         client.categorise_alarms = AsyncMock(side_effect=InvalidAuthError("expired"))
         client.authenticate = AsyncMock(side_effect=CannotConnectError("unreachable during reauth"))
 
@@ -544,6 +550,7 @@ class TestPollingErrorPaths:
         hass.async_create_task = _create_task
         hass.async_create_background_task = _create_task
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         # First categorise_alarms call fails with auth error; re-auth succeeds; second call fails
         client.categorise_alarms = AsyncMock(
             side_effect=[InvalidAuthError("expired"), CannotConnectError("controller 500")]
@@ -577,6 +584,7 @@ class TestPollingErrorPaths:
         hass.async_create_task = _create_task
         hass.async_create_background_task = _create_task
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         client.categorise_alarms = AsyncMock(
             side_effect=[InvalidAuthError("expired"), InvalidAuthError("still 401")]
         )
@@ -609,6 +617,7 @@ class TestPollingErrorPaths:
         hass.async_create_task = _create_task
         hass.async_create_background_task = _create_task
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         client.categorise_alarms = AsyncMock(side_effect=CannotConnectError("timeout"))
 
         config = {
@@ -632,6 +641,7 @@ class TestPollingErrorPaths:
         hass.async_create_task = _create_task
         hass.async_create_background_task = _create_task
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         # First poll: WAN has 1 alarm; second poll: WAN has 0 alarms
         polled_alert = UniFiAlert(
             category=CATEGORY_NETWORK_WAN,
@@ -857,6 +867,7 @@ class TestWatermarks:
         hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
         hass.async_create_background_task = hass.async_create_task
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
 
         watermark = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
         old_alarm = MagicMock()
@@ -887,6 +898,7 @@ class TestWatermarks:
         hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
         hass.async_create_background_task = hass.async_create_task
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
 
         alarms = [MagicMock() for _ in range(5)]
         for i, a in enumerate(alarms):
@@ -919,6 +931,7 @@ class TestSiteConfig:
         hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
 
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         client.categorise_alarms = AsyncMock(return_value={})
 
         config = {
@@ -941,6 +954,7 @@ class TestSiteConfig:
         hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
 
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         client.categorise_alarms = AsyncMock(return_value={})
 
         config = {
@@ -981,6 +995,7 @@ class TestPollingWatermarkSuppressesIsAlerting:
         )
 
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: [stale_alarm]})
 
         config = {
@@ -1019,6 +1034,7 @@ class TestPollingWatermarkSuppressesIsAlerting:
         )
 
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: [stale, fresh]})
 
         config = {
@@ -1070,6 +1086,7 @@ class TestWebhookMidPollRace:
         hass.async_create_background_task = _create_task
 
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         client.categorise_alarms = blocking_categorise_alarms
 
         config = {
@@ -1176,6 +1193,7 @@ class TestPushAlertOptimisticOpenCount:
         hass.async_create_background_task = hass.async_create_task
 
         client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
         # Polling returns nothing for the WAN category — alarm has cleared
         # on the controller side already.
         client.categorise_alarms = AsyncMock(return_value={})

@@ -546,36 +546,6 @@ class TestCategoriesStep:
         call_kwargs = flow.async_show_form.call_args.kwargs
         assert call_kwargs["errors"].get("base") == "cannot_connect"
 
-    @pytest.mark.asyncio
-    async def test_site_validation_unexpected_error_shows_unknown(self) -> None:
-        """An unexpected error during site validation maps to the unknown base error."""
-        from custom_components.unifi_alerts.const import CONF_SITE
-
-        flow = make_flow()
-        flow._controller_url = "https://192.168.1.1"
-        flow._detected_auth_method = "userpass"
-        flow._credentials = {**_VALID_INPUT}
-        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
-
-        cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
-        cat_input[CONF_SITE] = "mysite"
-
-        with (
-            patch(
-                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
-                return_value=make_session_mock(),
-            ),
-            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
-        ):
-            instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(side_effect=RuntimeError("something unexpected"))
-
-            result = await flow.async_step_categories(cat_input)
-
-        assert result["step_id"] == "categories"
-        call_kwargs = flow.async_show_form.call_args.kwargs
-        assert call_kwargs["errors"].get("base") == "unknown"
-
 
 class TestFinishStep:
     """Tests for async_step_finish."""
