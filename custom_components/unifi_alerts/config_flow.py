@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import secrets
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 import voluptuous as vol
@@ -343,6 +345,160 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         return UniFiAlertsOptionsFlow(config_entry)
 
 
+@dataclass
+class _CredentialsFormInput:
+    """Normalized values parsed from an options-flow credentials form submission."""
+
+    new_url_raw: str
+    new_username: str
+    new_password: str
+    new_api_key: str
+    regenerate_secret: bool
+    new_verify_ssl: bool
+    verify_ssl_changed: bool
+    credentials_changed: bool
+
+
+def _parse_credentials_form_input(
+    user_input: dict[str, Any], current_data: Mapping[str, Any]
+) -> _CredentialsFormInput:
+    """Normalize the raw options-flow credentials submission.
+
+    Pure function: no I/O, no flow state. Isolated so the change-detection
+    logic (credentials_changed / verify_ssl_changed) can be unit tested
+    without driving the full flow step.
+    """
+    new_url_raw = (user_input.get(CONF_CONTROLLER_URL) or "").strip()
+    new_username = (user_input.get(CONF_USERNAME) or "").strip()
+    new_password = (user_input.get(CONF_PASSWORD) or "").strip()
+    new_api_key = (user_input.get(CONF_API_KEY) or "").strip()
+    regenerate_secret = bool(user_input.get(CONF_REGENERATE_WEBHOOK_SECRET, False))
+    current_verify_ssl = current_data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+    # verify_ssl always comes through as a bool (voluptuous default)
+    new_verify_ssl = user_input.get(CONF_VERIFY_SSL, current_verify_ssl)
+    verify_ssl_changed = new_verify_ssl != current_verify_ssl
+    credentials_changed = bool(new_url_raw or new_username or new_password or new_api_key)
+    return _CredentialsFormInput(
+        new_url_raw=new_url_raw,
+        new_username=new_username,
+        new_password=new_password,
+        new_api_key=new_api_key,
+        regenerate_secret=regenerate_secret,
+        new_verify_ssl=new_verify_ssl,
+        verify_ssl_changed=verify_ssl_changed,
+        credentials_changed=credentials_changed,
+    )
+
+
+def _is_valid_url_scheme(url: str) -> bool:
+    """Return True if `url` uses the http/https scheme.
+
+    Same trust model as `UniFiAlertsConfigFlow.async_step_user`: scheme-only
+    validation, loopback/link-local hosts are accepted (see the comment
+    there). `async_step_user` has equivalent inline logic that is left
+    untouched here — issue #238 scopes this refactor to the options flow
+    only, and unifying the two would touch the initial setup flow as well.
+    """
+    return URL(url).scheme in ("http", "https")
+
+
+def _find_duplicate_entry(hass: Any, current_entry_id: str, url: str) -> ConfigEntry | None:
+    """Return another config entry already using `url`, or None.
+
+    Pure(ish) helper — only reads `hass.config_entries`, does not mutate
+    anything — so duplicate-detection can be unit tested with a bare list of
+    mock entries instead of driving the full credentials step.
+    """
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.entry_id != current_entry_id and entry.data.get(CONF_CONTROLLER_URL) == url:
+            return cast(ConfigEntry, entry)
+    return None
+
+
+def _credential_overrides(parsed: _CredentialsFormInput) -> dict[str, Any]:
+    """Return the sparse dict of credential fields the user actually typed.
+
+    Blank fields are omitted so callers can merge this over an existing
+    dict without clobbering unrelated stored values.
+    """
+    overrides: dict[str, Any] = {}
+    if parsed.new_username:
+        overrides[CONF_USERNAME] = parsed.new_username
+    if parsed.new_password:
+        overrides[CONF_PASSWORD] = parsed.new_password
+    if parsed.new_api_key:
+        overrides[CONF_API_KEY] = parsed.new_api_key
+    return overrides
+
+
+def _build_verify_ssl_and_secret_only_pending(
+    current_data: Mapping[str, Any], parsed: _CredentialsFormInput
+) -> dict[str, Any]:
+    """Build the staged entry.data for a verify_ssl flip and/or secret rotation
+    with no credential changes — no controller round-trip needed."""
+    pending = dict(current_data)
+    if parsed.verify_ssl_changed:
+        pending[CONF_VERIFY_SSL] = parsed.new_verify_ssl
+    if parsed.regenerate_secret:
+        # WHY: Rotation replaces the `?token=...` bearer but reuses
+        # the webhook ID suffix. An attacker with the old token
+        # still hits a live endpoint; the token check rejects them.
+        # URL-path revocation requires deleting and re-adding the
+        # entry. See SECURITY.md § "Webhook secret rotation".
+        pending[CONF_WEBHOOK_SECRET] = secrets.token_urlsafe(32)
+    return pending
+
+
+def _build_credentials_test_data(
+    current_data: Mapping[str, Any], effective_url: str, parsed: _CredentialsFormInput
+) -> dict[str, Any]:
+    """Build the merged credential dict used to validate new credentials
+    against the controller (not yet persisted)."""
+    return {
+        **current_data,
+        CONF_CONTROLLER_URL: effective_url,
+        CONF_VERIFY_SSL: parsed.new_verify_ssl,
+        **_credential_overrides(parsed),
+    }
+
+
+def _build_credentials_pending_data(
+    current_data: Mapping[str, Any],
+    effective_url: str,
+    auth_method: str,
+    parsed: _CredentialsFormInput,
+) -> dict[str, Any]:
+    """Build the staged entry.data after new credentials validate successfully."""
+    pending = {
+        **current_data,
+        CONF_CONTROLLER_URL: effective_url,
+        CONF_VERIFY_SSL: parsed.new_verify_ssl,
+        CONF_AUTH_METHOD: auth_method,
+        **_credential_overrides(parsed),
+    }
+    if parsed.regenerate_secret:
+        pending[CONF_WEBHOOK_SECRET] = secrets.token_urlsafe(32)
+    return pending
+
+
+async def _async_validate_controller_credentials(
+    hass: Any, url: str, verify_ssl: bool, test_data: dict[str, Any]
+) -> str:
+    """Instantiate a UniFiClient and validate it can authenticate and reach
+    the alarm endpoint.
+
+    Returns the detected auth method on success. `InvalidAuthError`,
+    `SslCertificateError`, and `CannotConnectError` propagate unchanged so
+    the caller classifies them into its `errors` dict — this function does
+    not know about the options-flow error-key mapping.
+    """
+    session = async_get_clientsession(hass, verify_ssl=verify_ssl)
+    client = UniFiClient(session, url, cast(UniFiClientConfig, test_data))
+    auth_method = await client.authenticate()
+    await client.fetch_alarms()
+    return auth_method
+
+
 class UniFiAlertsOptionsFlow(OptionsFlow):
     """Handle re-configuration (Settings → Integrations → Configure)."""
 
@@ -371,71 +527,42 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            new_url_raw: str = (user_input.get(CONF_CONTROLLER_URL) or "").strip()
-            new_username: str = (user_input.get(CONF_USERNAME) or "").strip()
-            new_password: str = (user_input.get(CONF_PASSWORD) or "").strip()
-            new_api_key: str = (user_input.get(CONF_API_KEY) or "").strip()
-            regenerate_secret: bool = bool(user_input.get(CONF_REGENERATE_WEBHOOK_SECRET, False))
-            current_verify_ssl: bool = self._config_entry.data.get(
-                CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL
-            )
-            # verify_ssl always comes through as a bool (voluptuous default)
-            new_verify_ssl: bool = user_input.get(CONF_VERIFY_SSL, current_verify_ssl)
-            verify_ssl_changed = new_verify_ssl != current_verify_ssl
+            parsed = _parse_credentials_form_input(user_input, self._config_entry.data)
 
-            credentials_changed = bool(new_url_raw or new_username or new_password or new_api_key)
-
-            if not credentials_changed and not regenerate_secret and not verify_ssl_changed:
+            if (
+                not parsed.credentials_changed
+                and not parsed.regenerate_secret
+                and not parsed.verify_ssl_changed
+            ):
                 # Nothing changed — skip straight to categories
                 return await self.async_step_categories()
 
-            if not credentials_changed:
+            if not parsed.credentials_changed:
                 # Verify-SSL flip and/or secret rotation only — no credentials to
                 # validate against the controller. Stage the change; the finish
                 # step will persist atomically when the user submits.
-                pending = dict(self._config_entry.data)
-                if verify_ssl_changed:
-                    pending[CONF_VERIFY_SSL] = new_verify_ssl
-                if regenerate_secret:
-                    # WHY: Rotation replaces the `?token=...` bearer but reuses
-                    # the webhook ID suffix. An attacker with the old token
-                    # still hits a live endpoint; the token check rejects them.
-                    # URL-path revocation requires deleting and re-adding the
-                    # entry. See SECURITY.md § "Webhook secret rotation".
-                    pending[CONF_WEBHOOK_SECRET] = secrets.token_urlsafe(32)
-                self._pending_data = pending
+                self._pending_data = _build_verify_ssl_and_secret_only_pending(
+                    self._config_entry.data, parsed
+                )
                 return await self.async_step_categories()
 
             # Determine the effective values to test
             effective_url = (
-                new_url_raw.rstrip("/")
-                if new_url_raw
+                parsed.new_url_raw.rstrip("/")
+                if parsed.new_url_raw
                 else self._config_entry.data[CONF_CONTROLLER_URL]
             )
 
-            # Same trust model as the initial config step: scheme-only validation;
-            # loopback/link-local hosts are accepted (see comment in async_step_user).
-            if URL(effective_url).scheme not in ("http", "https"):
+            if not _is_valid_url_scheme(effective_url):
                 errors[CONF_CONTROLLER_URL] = "invalid_url_scheme"
             else:
-                # Build a merged credential dict for the test client
-                test_data: dict[str, Any] = {
-                    **self._config_entry.data,
-                    CONF_CONTROLLER_URL: effective_url,
-                    CONF_VERIFY_SSL: new_verify_ssl,
-                }
-                if new_username:
-                    test_data[CONF_USERNAME] = new_username
-                if new_password:
-                    test_data[CONF_PASSWORD] = new_password
-                if new_api_key:
-                    test_data[CONF_API_KEY] = new_api_key
-
-                session = async_get_clientsession(self.hass, verify_ssl=new_verify_ssl)
-                client = UniFiClient(session, effective_url, cast(UniFiClientConfig, test_data))
+                test_data = _build_credentials_test_data(
+                    self._config_entry.data, effective_url, parsed
+                )
                 try:
-                    auth_method = await client.authenticate()
-                    await client.fetch_alarms()
+                    auth_method = await _async_validate_controller_credentials(
+                        self.hass, effective_url, parsed.new_verify_ssl, test_data
+                    )
                 except InvalidAuthError:
                     errors["base"] = "invalid_auth"
                 except SslCertificateError:
@@ -445,32 +572,18 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                     errors["base"] = "cannot_connect"
                 else:
                     # Check whether the new URL would collide with another entry
-                    if effective_url != self._config_entry.data[CONF_CONTROLLER_URL]:
-                        for entry in self.hass.config_entries.async_entries(DOMAIN):
-                            if (
-                                entry.entry_id != self._config_entry.entry_id
-                                and entry.data.get(CONF_CONTROLLER_URL) == effective_url
-                            ):
-                                return self.async_abort(reason="already_configured")
+                    url_changed = effective_url != self._config_entry.data[CONF_CONTROLLER_URL]
+                    if url_changed and _find_duplicate_entry(
+                        self.hass, self._config_entry.entry_id, effective_url
+                    ):
+                        return self.async_abort(reason="already_configured")
 
                     # Stage the updated entry.data — actual persistence happens
                     # in the finish step, so abandoning the flow leaves nothing
                     # behind. async_update_entry is intentionally NOT called here.
-                    pending = {
-                        **self._config_entry.data,
-                        CONF_CONTROLLER_URL: effective_url,
-                        CONF_VERIFY_SSL: new_verify_ssl,
-                        CONF_AUTH_METHOD: auth_method,
-                    }
-                    if new_username:
-                        pending[CONF_USERNAME] = new_username
-                    if new_password:
-                        pending[CONF_PASSWORD] = new_password
-                    if new_api_key:
-                        pending[CONF_API_KEY] = new_api_key
-                    if regenerate_secret:
-                        pending[CONF_WEBHOOK_SECRET] = secrets.token_urlsafe(32)
-                    self._pending_data = pending
+                    self._pending_data = _build_credentials_pending_data(
+                        self._config_entry.data, effective_url, auth_method, parsed
+                    )
                     return await self.async_step_categories()
 
         # Build the credentials form — all fields optional with current values as hints
