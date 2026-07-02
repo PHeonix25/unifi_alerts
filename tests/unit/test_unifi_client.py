@@ -1,12 +1,23 @@
-"""Tests for the UniFi HTTP client."""
+"""Tests for the UniFi HTTP client.
+
+HTTP-hitting tests use aioresponses to mock at the aiohttp transport layer
+(``aiohttp.ClientSession._request``) rather than hand-building fake response
+objects. This means they exercise the real ``aiohttp.ClientSession``
+request/response plumbing (headers, status codes, JSON parsing, exception
+raising) instead of a fabricated surface that could drift from real aiohttp
+behaviour, and assertions can be made against the outbound request itself
+(URL, method, headers, body) via aioresponses' request history. See issue
+#229.
+"""
 
 from __future__ import annotations
 
-import json
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
+import aiohttp
 import pytest
+from aiohttp.resolver import ThreadedResolver
+from aioresponses import aioresponses
 
 from custom_components.unifi_alerts.const import (
     CATEGORY_NETWORK_CLIENT,
@@ -20,18 +31,96 @@ from custom_components.unifi_alerts.const import (
 from custom_components.unifi_alerts.unifi_auth import CannotConnectError, InvalidAuthError
 from custom_components.unifi_alerts.unifi_client import (
     _PROBE_FAIL_LIMIT,
+    UNIFI_OS_NETWORK_PREFIX,
     UniFiClient,
 )
 
+BASE_URL = "https://192.168.1.1"
+LOGIN_URL = f"{BASE_URL}/api/auth/login"
+LOGOUT_URL = f"{BASE_URL}/api/auth/logout"
+
+
+# Sessions created by make_client() during the current test, closed by the
+# _close_client_sessions autouse fixture below. pytest-homeassistant-custom-component
+# asserts no lingering threads/timers survive a test, and an unclosed
+# aiohttp.ClientSession schedules its own cleanup on the loop's default
+# executor, which trips that check — so every session made here must be
+# closed before the test ends.
+_created_sessions: list[aiohttp.ClientSession] = []
+
 
 def make_client(config: dict | None = None) -> UniFiClient:
-    session = MagicMock()
+    """Build a UniFiClient wired to a real aiohttp.ClientSession.
+
+    aioresponses patches ClientSession._request, so no real socket is ever
+    opened here; using the real session (instead of a MagicMock) means these
+    tests exercise actual aiohttp request/response plumbing rather than a
+    hand-built double of it. The session is tracked for teardown by
+    _close_client_sessions.
+
+    Uses a TCPConnector pinned to ThreadedResolver rather than aiohttp's
+    aiodns-backed default. No DNS lookup ever actually happens (aioresponses
+    intercepts before the connector runs), but constructing and then closing
+    an AsyncResolver spins up pycares' global shutdown thread on first use —
+    a daemon thread that outlives the test and trips the HA test harness's
+    "no lingering threads" check. ThreadedResolver has no such side effect.
+    """
+    connector = aiohttp.TCPConnector(resolver=ThreadedResolver())
+    session = aiohttp.ClientSession(connector=connector)
+    _created_sessions.append(session)
     cfg = config or {
         "username": "admin",
         "password": "password",
         "verify_ssl": False,
     }
-    return UniFiClient(session, "https://192.168.1.1", cfg)
+    return UniFiClient(session, BASE_URL, cfg)
+
+
+@pytest.fixture(autouse=True)
+async def _close_client_sessions():
+    """Close every aiohttp.ClientSession created via make_client() this test."""
+    yield
+    while _created_sessions:
+        session = _created_sessions.pop()
+        if not session.closed:
+            await session.close()
+
+
+def _list_alarm_url(site: str = "default") -> str:
+    return f"{BASE_URL}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/list/alarm"
+
+
+def _alarm_url(site: str = "default") -> str:
+    return f"{BASE_URL}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/alarm"
+
+
+def _stat_alarm_url(site: str = "default") -> str:
+    return f"{BASE_URL}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/stat/alarm"
+
+
+def _probe_url(site: str = "default") -> str:
+    return f"{BASE_URL}{UNIFI_OS_NETWORK_PREFIX}/v2/api/site/{site}/system-log/count"
+
+
+def _system_log_url(site: str = "default") -> str:
+    return f"{BASE_URL}{UNIFI_OS_NETWORK_PREFIX}/v2/api/site/{site}/system-log/all"
+
+
+def _find_calls(m: aioresponses, method: str, url: str) -> list:
+    """Return the recorded request history for one (method, url) pair.
+
+    Compares by string rather than by yarl.URL equality so this stays robust
+    to aioresponses' internal key normalisation across versions.
+    """
+    calls: list = []
+    for (recorded_method, recorded_url), call_list in m.requests.items():
+        if recorded_method == method and str(recorded_url) == url:
+            calls.extend(call_list)
+    return calls
+
+
+def _total_calls(m: aioresponses) -> int:
+    return sum(len(v) for v in m.requests.values())
 
 
 class TestClassify:
@@ -145,35 +234,6 @@ class TestClassify:
         assert UniFiClient._classify(alarm) is None
 
 
-def _make_response(status: int, headers: dict | None = None):
-    """Build a minimal mock aiohttp response for use in async context managers."""
-    resp = MagicMock()
-    resp.status = status
-    resp.headers = headers or {}
-    resp.raise_for_status = MagicMock()
-
-    @asynccontextmanager
-    async def _ctx(*args, **kwargs):
-        yield resp
-
-    return _ctx
-
-
-def _make_json_response(status: int, body: dict | None = None):
-    """Build a mock aiohttp response that returns JSON body."""
-    resp = MagicMock()
-    resp.status = status
-    resp.headers = {}
-    resp.raise_for_status = MagicMock()
-    resp.json = AsyncMock(return_value=body or {})
-
-    @asynccontextmanager
-    async def _ctx(*args, **kwargs):
-        yield resp
-
-    return _ctx, resp
-
-
 class TestFetchAlarms:
     """Tests for UniFiClient.fetch_alarms."""
 
@@ -188,9 +248,9 @@ class TestFetchAlarms:
                 {"key": "EVT_AP_Disconnected", "archived": True},  # should be filtered
             ],
         }
-        ctx, _ = _make_json_response(200, body)
-        client._session.get = ctx
-        alarms = await client.fetch_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload=body)
+            alarms = await client.fetch_alarms()
         assert len(alarms) == 1
         assert alarms[0]["key"] == "EVT_GW_WANTransition"
 
@@ -199,36 +259,29 @@ class TestFetchAlarms:
         client = make_client()
         client._auth._authenticated = True
         body = {"meta": {"rc": "ok"}, "data": [{"key": "EVT_GW_WANTransition", "archived": True}]}
-        ctx, _ = _make_json_response(200, body)
-        client._session.get = ctx
-        alarms = await client.fetch_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload=body)
+            alarms = await client.fetch_alarms()
         assert alarms == []
 
     @pytest.mark.asyncio
     async def test_401_raises_invalid_auth_and_clears_authenticated(self):
         client = make_client()
         client._auth._authenticated = True
-        ctx = _make_response(401)
-        client._session.get = ctx
-        with pytest.raises(InvalidAuthError):
-            await client.fetch_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=401)
+            with pytest.raises(InvalidAuthError):
+                await client.fetch_alarms()
         assert client._auth._authenticated is False
 
     @pytest.mark.asyncio
     async def test_client_error_raises_cannot_connect(self):
-        import aiohttp
-
         client = make_client()
         client._auth._authenticated = True
-
-        @asynccontextmanager
-        async def _raise(*args, **kwargs):
-            raise aiohttp.ClientConnectionError("unreachable")
-            yield  # make it a generator
-
-        client._session.get = _raise
-        with pytest.raises(CannotConnectError):
-            await client.fetch_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), exception=aiohttp.ClientConnectionError("unreachable"))
+            with pytest.raises(CannotConnectError):
+                await client.fetch_alarms()
 
     @pytest.mark.asyncio
     async def test_client_error_message_is_class_name_not_url(self):
@@ -238,25 +291,21 @@ class TestFetchAlarms:
         their string representation.  Using type(err).__name__ prevents credential
         leaks via HA log output.
         """
-        import aiohttp
-
         client = make_client()
         client._auth._authenticated = True
-
-        @asynccontextmanager
-        async def _raise(*args, **kwargs):
-            raise aiohttp.ClientConnectionError("https://admin:secret@192.168.1.1/api")
-            yield
-
-        client._session.get = _raise
-        with pytest.raises(CannotConnectError) as exc_info:
-            await client.fetch_alarms()
+        with aioresponses() as m:
+            m.get(
+                _list_alarm_url(),
+                exception=aiohttp.ClientConnectionError("https://admin:secret@192.168.1.1/api"),
+            )
+            with pytest.raises(CannotConnectError) as exc_info:
+                await client.fetch_alarms()
         assert "secret" not in str(exc_info.value)
         assert exc_info.value.args[0] == "ClientConnectionError"
 
     @pytest.mark.asyncio
     async def test_response_error_preserves_status_code_in_message(self):
-        """A ClientResponseError (e.g. 404) must surface its status code in the error.
+        """A ClientResponseError (e.g. 503) must surface its status code in the error.
 
         Before this test existed, the handler wrapped all aiohttp errors as
         ``CannotConnectError(type(err).__name__)``, which produced the opaque
@@ -264,29 +313,12 @@ class TestFetchAlarms:
         status code. Status code only — no URL — to avoid leaking credentials
         that may be embedded in a misconfigured controller URL.
         """
-        import aiohttp
-
         client = make_client()
         client._auth._authenticated = True
-
-        @asynccontextmanager
-        async def _ctx(*args, **kwargs):
-            resp = MagicMock()
-            resp.status = 503
-            resp.headers = {}
-            resp.raise_for_status = MagicMock(
-                side_effect=aiohttp.ClientResponseError(
-                    request_info=MagicMock(),
-                    history=(),
-                    status=503,
-                    message="Service Unavailable",
-                )
-            )
-            yield resp
-
-        client._session.get = _ctx
-        with pytest.raises(CannotConnectError) as exc_info:
-            await client.fetch_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=503)
+            with pytest.raises(CannotConnectError) as exc_info:
+                await client.fetch_alarms()
 
         message = str(exc_info.value)
         assert "503" in message, f"Status code must be in the error message; got: {message!r}"
@@ -304,56 +336,30 @@ class TestFetchAlarms:
         """
         client = make_client()
         client._auth._authenticated = True
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload={"meta": {"rc": "ok"}, "data": []})
+            await client.fetch_alarms()
+            list_calls = _find_calls(m, "GET", _list_alarm_url())
+            total = _total_calls(m)
 
-        captured_urls: list[str] = []
-
-        @asynccontextmanager
-        async def _tracking_get(*args, **kwargs):
-            captured_urls.append(args[0] if args else "")
-            resp = MagicMock()
-            resp.status = 200
-            resp.headers = {}
-            resp.raise_for_status = MagicMock()
-            resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
-            yield resp
-
-        client._session.get = _tracking_get
-        await client.fetch_alarms()
-
-        assert captured_urls, "Expected at least one GET call"
-        first_url = captured_urls[0]
-        assert first_url.endswith("/list/alarm"), (
-            f"First URL tried must end with /list/alarm; got: {first_url}"
-        )
+        assert len(list_calls) == 1, "Expected exactly one GET to /list/alarm"
         # Only one call expected — /list/alarm worked, no fallback needed
-        assert len(captured_urls) == 1
+        assert total == 1
 
     @pytest.mark.asyncio
     async def test_fetch_alarms_uses_proxy_network_path(self):
         """fetch_alarms must always use the /proxy/network prefix for all alarm paths."""
         client = make_client()
         client._auth._authenticated = True
+        expected_url = _list_alarm_url()
+        assert "/proxy/network/api/s/default/" in expected_url
 
-        captured_urls: list[str] = []
+        with aioresponses() as m:
+            m.get(expected_url, status=200, payload={"meta": {"rc": "ok"}, "data": []})
+            await client.fetch_alarms()
+            calls = _find_calls(m, "GET", expected_url)
 
-        @asynccontextmanager
-        async def _tracking_get(*args, **kwargs):
-            captured_urls.append(args[0] if args else "")
-            resp = MagicMock()
-            resp.status = 200
-            resp.headers = {}
-            resp.raise_for_status = MagicMock()
-            resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
-            yield resp
-
-        client._session.get = _tracking_get
-        await client.fetch_alarms()
-
-        assert captured_urls, "Expected at least one GET call"
-        first_url = captured_urls[0]
-        assert "/proxy/network/api/s/default/" in first_url, (
-            f"fetch_alarms must use /proxy/network path; got: {first_url}"
-        )
+        assert len(calls) == 1, f"fetch_alarms must GET {expected_url} exactly once"
 
     @pytest.mark.asyncio
     async def test_falls_back_through_full_path_chain(self):
@@ -367,31 +373,16 @@ class TestFetchAlarms:
         client = make_client()
         client._auth._authenticated = True
 
-        captured_urls: list[str] = []
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=404)
+            m.get(_alarm_url(), status=404)
+            m.get(_stat_alarm_url(), status=200, payload={"meta": {"rc": "ok"}, "data": []})
+            result = await client.fetch_alarms()
 
-        @asynccontextmanager
-        async def _404_404_then_200(*args, **kwargs):
-            captured_urls.append(args[0] if args else "")
-            call_index = len(captured_urls)
-            resp = MagicMock()
-            resp.headers = {}
-            resp.raise_for_status = MagicMock()
-            if call_index < 3:
-                resp.status = 404
-            else:
-                resp.status = 200
-                resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
-            yield resp
+            assert len(_find_calls(m, "GET", _list_alarm_url())) == 1
+            assert len(_find_calls(m, "GET", _alarm_url())) == 1
+            assert len(_find_calls(m, "GET", _stat_alarm_url())) == 1
 
-        client._session.get = _404_404_then_200
-        result = await client.fetch_alarms()
-
-        assert len(captured_urls) == 3, (
-            f"Expected exactly three GET calls walking the chain; got {len(captured_urls)}"
-        )
-        assert captured_urls[0].endswith("/list/alarm")
-        assert captured_urls[1].endswith("/alarm") and not captured_urls[1].endswith("/list/alarm")
-        assert captured_urls[2].endswith("/stat/alarm")
         assert result == []
 
     @pytest.mark.asyncio
@@ -404,27 +395,13 @@ class TestFetchAlarms:
         client = make_client()
         client._auth._authenticated = True
 
-        call_count = [0]
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=404)
+            m.get(_alarm_url(), status=200, payload={"meta": {"rc": "ok"}, "data": []})
+            result = await client.fetch_alarms()
+            total = _total_calls(m)
 
-        @asynccontextmanager
-        async def _404_then_200(*args, **kwargs):
-            call_count[0] += 1
-            resp = MagicMock()
-            if call_count[0] == 1:
-                resp.status = 404
-                resp.headers = {}
-                resp.raise_for_status = MagicMock()
-            else:
-                resp.status = 200
-                resp.headers = {}
-                resp.raise_for_status = MagicMock()
-                resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
-            yield resp
-
-        client._session.get = _404_then_200
-        result = await client.fetch_alarms()
-
-        assert call_count[0] == 2, "Expected exactly two GET calls (primary + fallback)"
+        assert total == 2, "Expected exactly two GET calls (primary + fallback)"
         assert result == []
 
     @pytest.mark.asyncio
@@ -437,30 +414,15 @@ class TestFetchAlarms:
         """
         client = make_client()
         client._auth._authenticated = True
-
-        call_count = [0]
         invalid_body = {"meta": {"rc": "error", "msg": "api.err.InvalidObject"}, "data": []}
 
-        @asynccontextmanager
-        async def _invalid_object_then_200(*args, **kwargs):
-            call_count[0] += 1
-            resp = MagicMock()
-            if call_count[0] == 1:
-                resp.status = 400
-                resp.headers = {}
-                resp.raise_for_status = MagicMock()
-                resp.json = AsyncMock(return_value=invalid_body)
-            else:
-                resp.status = 200
-                resp.headers = {}
-                resp.raise_for_status = MagicMock()
-                resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
-            yield resp
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=400, payload=invalid_body)
+            m.get(_alarm_url(), status=200, payload={"meta": {"rc": "ok"}, "data": []})
+            result = await client.fetch_alarms()
+            total = _total_calls(m)
 
-        client._session.get = _invalid_object_then_200
-        result = await client.fetch_alarms()
-
-        assert call_count[0] == 2, "Expected exactly two GET calls (primary + fallback)"
+        assert total == 2, "Expected exactly two GET calls (primary + fallback)"
         assert result == []
 
     @pytest.mark.asyncio
@@ -470,11 +432,13 @@ class TestFetchAlarms:
 
         client = make_client()
         client._auth._authenticated = True
-        ctx = _make_response(404)
-        client._session.get = ctx
 
-        with pytest.raises(InvalidSiteError, match="not found on the controller"):
-            await client.fetch_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=404)
+            m.get(_alarm_url(), status=404)
+            m.get(_stat_alarm_url(), status=404)
+            with pytest.raises(InvalidSiteError, match="not found on the controller"):
+                await client.fetch_alarms()
 
     @pytest.mark.asyncio
     async def test_http_400_raises_cannot_connect_with_site_hint(self):
@@ -487,22 +451,13 @@ class TestFetchAlarms:
         """
         client = make_client()
         client._auth._authenticated = True
-        # Return 400 with a non-InvalidObject body so neither path is treated as "not found"
+        # Return 400 with a non-InvalidObject body so the path isn't treated as "not found"
         bad_body = {"meta": {"rc": "error", "msg": "api.err.Invalid"}, "data": []}
 
-        @asynccontextmanager
-        async def _400_bad(*args, **kwargs):
-            resp = MagicMock()
-            resp.status = 400
-            resp.headers = {}
-            resp.raise_for_status = MagicMock()
-            resp.json = AsyncMock(return_value=bad_body)
-            yield resp
-
-        client._session.get = _400_bad
-
-        with pytest.raises(CannotConnectError) as exc_info:
-            await client.fetch_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=400, payload=bad_body)
+            with pytest.raises(CannotConnectError) as exc_info:
+                await client.fetch_alarms()
 
         message = str(exc_info.value)
         assert "400" in message
@@ -515,24 +470,17 @@ class TestFetchAlarms:
         _try_fetch_alarms tries to parse the 400 body to detect api.err.InvalidObject
         (path-not-found) vs. a genuine rejection. If the body itself can't be parsed
         as JSON, that lookup must fail closed (treated as a genuine 400, not silently
-        swallowed) rather than propagating the JSONDecodeError.
+        swallowed) rather than propagating the JSONDecodeError. Registering a raw,
+        non-JSON ``body`` (rather than ``payload``) makes ``resp.json()`` raise
+        naturally via real aiohttp JSON parsing.
         """
         client = make_client()
         client._auth._authenticated = True
 
-        @asynccontextmanager
-        async def _400_unparseable(*args, **kwargs):
-            resp = MagicMock()
-            resp.status = 400
-            resp.headers = {}
-            resp.raise_for_status = MagicMock()
-            resp.json = AsyncMock(side_effect=json.JSONDecodeError("Expecting value", "", 0))
-            yield resp
-
-        client._session.get = _400_unparseable
-
-        with pytest.raises(CannotConnectError) as exc_info:
-            await client.fetch_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=400, body="not valid json")
+            with pytest.raises(CannotConnectError) as exc_info:
+                await client.fetch_alarms()
 
         message = str(exc_info.value)
         assert "400" in message
@@ -549,21 +497,18 @@ class TestFetchAlarms:
         client = make_client()
         client._auth._authenticated = True
         body = {"meta": {"rc": "error", "msg": "api.err.InvalidObject"}, "data": []}
-        ctx, _ = _make_json_response(200, body)
-        client._session.get = ctx
-        with pytest.raises(CannotConnectError, match="api.err.InvalidObject"):
-            await client.fetch_alarms()
+
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload=body)
+            with pytest.raises(CannotConnectError, match="api.err.InvalidObject"):
+                await client.fetch_alarms()
 
     @pytest.mark.asyncio
     async def test_not_authenticated_calls_authenticate_first(self):
         """fetch_alarms must call authenticate() when not yet authenticated."""
         client = make_client()
         client._auth._authenticated = False
-        # authenticate() is called; after it the client should be marked as authenticated
-        # so we patch authenticate to set _authenticated=True and return
         body = {"meta": {"rc": "ok"}, "data": [{"key": "EVT_GW_WANTransition", "archived": False}]}
-        ctx, _ = _make_json_response(200, body)
-        client._session.get = ctx
 
         authenticated_calls = []
 
@@ -573,7 +518,11 @@ class TestFetchAlarms:
             authenticated_calls.append(1)
 
         client.authenticate = _mock_authenticate
-        await client.fetch_alarms()
+
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload=body)
+            await client.fetch_alarms()
+
         assert len(authenticated_calls) == 1
 
     @pytest.mark.asyncio
@@ -581,10 +530,33 @@ class TestFetchAlarms:
         """A 3xx on an authenticated alarm fetch must raise CannotConnectError (no redirect)."""
         client = make_client()
         client._auth._authenticated = True
-        ctx = _make_response(301)
-        client._session.get = ctx
-        with pytest.raises(CannotConnectError, match="redirect"):
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=301)
+            with pytest.raises(CannotConnectError, match="redirect"):
+                await client.fetch_alarms()
+
+    @pytest.mark.asyncio
+    async def test_sends_x_api_key_header_and_correct_url_method(self):
+        """The outbound GET to /list/alarm must carry the X-API-Key header from apikey auth.
+
+        Asserts against aioresponses' recorded request history (method, URL,
+        headers) — i.e. the HTTP the client actually sent on the wire — rather
+        than a mock's internal call_args, so this catches regressions in the
+        real auth-header wiring, not just the client's internal call sequence.
+        """
+        client = make_client({"api_key": "s3cr3t-key", "verify_ssl": False})
+        client._auth._method = "apikey"
+        client._auth._authenticated = True
+
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload={"meta": {"rc": "ok"}, "data": []})
             await client.fetch_alarms()
+            calls = _find_calls(m, "GET", _list_alarm_url())
+
+        assert len(calls) == 1, "Expected exactly one GET to /list/alarm"
+        sent_headers = calls[0].kwargs.get("headers") or {}
+        assert sent_headers.get("X-API-Key") == "s3cr3t-key"
+        assert sent_headers.get("Accept") == "application/json"
 
 
 class TestCategoriseAlarms:
@@ -602,13 +574,9 @@ class TestCategoriseAlarms:
                 {"key": "EVT_GW_Failover", "msg": "Failover", "archived": False},
             ],
         }
-        ctx, _ = _make_json_response(200, body)
-        client._session.get = ctx
-        result = await client.categorise_alarms()
-        from custom_components.unifi_alerts.const import (
-            CATEGORY_NETWORK_WAN,
-            CATEGORY_SECURITY_THREAT,
-        )
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload=body)
+            result = await client.categorise_alarms()
 
         assert CATEGORY_NETWORK_WAN in result
         assert CATEGORY_SECURITY_THREAT in result
@@ -624,18 +592,18 @@ class TestCategoriseAlarms:
                 {"key": "EVT_UNKNOWN_THING", "msg": "who knows", "archived": False},
             ],
         }
-        ctx, _ = _make_json_response(200, body)
-        client._session.get = ctx
-        result = await client.categorise_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload=body)
+            result = await client.categorise_alarms()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_empty_alarm_list_returns_empty_dict(self):
         client = make_client()
         client._auth._authenticated = True
-        ctx, _ = _make_json_response(200, {"meta": {"rc": "ok"}, "data": []})
-        client._session.get = ctx
-        result = await client.categorise_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload={"meta": {"rc": "ok"}, "data": []})
+            result = await client.categorise_alarms()
         assert result == {}
 
     @pytest.mark.asyncio
@@ -651,10 +619,9 @@ class TestCategoriseAlarms:
                 {"key": "EVT_ANOTHER_UNKNOWN", "msg": "hmm", "archived": False},
             ],
         }
-        ctx, _ = _make_json_response(200, body)
-        client._session.get = ctx
-
-        await client.categorise_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload=body)
+            await client.categorise_alarms()
 
         assert client.unrecognised_keys == {
             "EVT_MYSTERY_DEVICE_FELL_OVER": 2,
@@ -667,24 +634,22 @@ class TestCategoriseAlarms:
         client = make_client()
         client._auth._authenticated = True
 
-        # First call: unknown key
         body1 = {
             "meta": {"rc": "ok"},
             "data": [{"key": "EVT_UNKNOWN_FIRST", "msg": ".", "archived": False}],
         }
-        ctx1, _ = _make_json_response(200, body1)
-        client._session.get = ctx1
-        await client.categorise_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload=body1)
+            await client.categorise_alarms()
         assert "EVT_UNKNOWN_FIRST" in client.unrecognised_keys
 
-        # Second call: different unknown key
         body2 = {
             "meta": {"rc": "ok"},
             "data": [{"key": "EVT_UNKNOWN_SECOND", "msg": ".", "archived": False}],
         }
-        ctx2, _ = _make_json_response(200, body2)
-        client._session.get = ctx2
-        await client.categorise_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload=body2)
+            await client.categorise_alarms()
 
         # Only the second call's keys remain
         assert "EVT_UNKNOWN_SECOND" in client.unrecognised_keys
@@ -701,10 +666,9 @@ class TestCategoriseAlarms:
                 {"key": "EVT_GW_WANTransition", "msg": "WAN down", "archived": False},
             ],
         }
-        ctx, _ = _make_json_response(200, body)
-        client._session.get = ctx
-
-        await client.categorise_alarms()
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload=body)
+            await client.categorise_alarms()
 
         assert client.unrecognised_keys == {}
 
@@ -716,6 +680,9 @@ class TestAuthenticate:
     covered by tests/unit/test_unifi_auth.py. These tests only cover what
     UniFiClient itself is responsible for: delegating to self._auth and
     resetting probe-backoff state on every successful authentication.
+
+    UniFiAuth is a composed collaborator here (not HTTP), so these stay on
+    MagicMock/AsyncMock — out of scope for the aioresponses conversion.
     """
 
     @pytest.mark.asyncio
@@ -738,11 +705,7 @@ class TestAuthenticate:
 
 
 class TestClose:
-    """Tests for UniFiClient.close — logout behavior.
-
-    close() calls ``await session.post(url, ...)`` without an async-with block,
-    so the mock must be a plain AsyncMock (coroutine), not an asynccontextmanager.
-    """
+    """Tests for UniFiClient.close — logout behavior."""
 
     @pytest.mark.asyncio
     async def test_userpass_auth_posts_to_unifi_os_logout_path(self):
@@ -750,29 +713,35 @@ class TestClose:
         client = make_client()
         client._auth._method = "userpass"
         client._auth._authenticated = True
-        client._session.post = AsyncMock()
-        await client.close()
-        client._session.post.assert_awaited_once()
-        url_called = client._session.post.call_args[0][0]
-        assert "/api/auth/logout" in url_called
+
+        with aioresponses() as m:
+            m.post(LOGOUT_URL, status=200)
+            await client.close()
+            calls = _find_calls(m, "POST", LOGOUT_URL)
+
+        assert len(calls) == 1
 
     @pytest.mark.asyncio
     async def test_apikey_auth_does_not_post_logout(self):
         client = make_client({"api_key": "k", "verify_ssl": False})
         client._auth._method = "apikey"
         client._auth._authenticated = True
-        client._session.post = AsyncMock()
-        await client.close()
-        client._session.post.assert_not_awaited()
+
+        with aioresponses() as m:
+            # Nothing registered — if close() posted anywhere, aioresponses
+            # would raise for the unmatched request and fail this test.
+            await client.close()
+            assert _total_calls(m) == 0
 
     @pytest.mark.asyncio
     async def test_not_authenticated_does_not_post_logout(self):
         client = make_client()
         client._auth._method = "userpass"
         client._auth._authenticated = False
-        client._session.post = AsyncMock()
-        await client.close()
-        client._session.post.assert_not_awaited()
+
+        with aioresponses() as m:
+            await client.close()
+            assert _total_calls(m) == 0
 
     @pytest.mark.asyncio
     async def test_logout_failure_logs_warning_with_class_name_only(self, caplog):
@@ -789,10 +758,13 @@ class TestClose:
         client._auth._method = "userpass"
         client._auth._authenticated = True
         secret_marker = "controller.local: 401 Unauthorized — api_key=secret"
-        client._session.post = AsyncMock(side_effect=ConnectionResetError(secret_marker))
 
-        with caplog.at_level(logging.WARNING, logger="custom_components.unifi_alerts.unifi_client"):
-            await client.close()
+        with aioresponses() as m:
+            m.post(LOGOUT_URL, exception=ConnectionResetError(secret_marker))
+            with caplog.at_level(
+                logging.WARNING, logger="custom_components.unifi_alerts.unifi_client"
+            ):
+                await client.close()
 
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert any("ConnectionResetError" in r.getMessage() for r in warnings)
@@ -811,10 +783,11 @@ class TestClose:
         client = make_client()
         client._auth._method = "userpass"
         client._auth._authenticated = True
-        client._session.post = AsyncMock(side_effect=aiohttp.ClientConnectionError("boom"))
 
-        # No pytest.raises — close() must absorb the failure.
-        await client.close()
+        with aioresponses() as m:
+            m.post(LOGOUT_URL, exception=aiohttp.ClientConnectionError("boom"))
+            # No pytest.raises — close() must absorb the failure.
+            await client.close()
 
 
 class TestSslFailOpen:
@@ -829,8 +802,9 @@ class TestSslFailOpen:
     async def test_absent_verify_ssl_key_defaults_to_true_in_fetch_alarms(self):
         """When CONF_VERIFY_SSL is absent from config, _try_fetch_alarms must pass ssl=True.
 
-        Constructs a config dict with no verify_ssl key and asserts that the ssl kwarg
-        forwarded to the mock session is DEFAULT_VERIFY_SSL (True), not False.
+        Constructs a config dict with no verify_ssl key and asserts, via
+        aioresponses' request history, that the ssl kwarg forwarded on the
+        outbound request is DEFAULT_VERIFY_SSL (True), not False.
         """
         from custom_components.unifi_alerts.const import DEFAULT_VERIFY_SSL
 
@@ -839,42 +813,18 @@ class TestSslFailOpen:
         client = make_client(config)
         client._auth._authenticated = True
 
-        captured_ssl: list = []
+        with aioresponses() as m:
+            m.get(_list_alarm_url(), status=200, payload={"meta": {"rc": "ok"}, "data": []})
+            await client.fetch_alarms()
+            calls = _find_calls(m, "GET", _list_alarm_url())
 
-        @asynccontextmanager
-        async def _tracking_get(*args, **kwargs):
-            captured_ssl.append(kwargs.get("ssl"))
-            resp = MagicMock()
-            resp.status = 200
-            resp.headers = {}
-            resp.raise_for_status = MagicMock()
-            resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}, "data": []})
-            yield resp
-
-        client._session.get = _tracking_get
-        await client.fetch_alarms()
-
-        assert captured_ssl, "Expected at least one GET call"
-        assert captured_ssl[0] is DEFAULT_VERIFY_SSL, (
+        assert len(calls) == 1, "Expected exactly one GET call"
+        sent_ssl = calls[0].kwargs.get("ssl")
+        assert sent_ssl is DEFAULT_VERIFY_SSL, (
             f"Expected ssl={DEFAULT_VERIFY_SSL!r} (DEFAULT_VERIFY_SSL) when key is absent, "
-            f"got {captured_ssl[0]!r}"
+            f"got {sent_ssl!r}"
         )
-        assert captured_ssl[0] is True, "DEFAULT_VERIFY_SSL must be True — fail closed"
-
-
-def _make_post_json_response(status: int, body: dict | None = None):
-    """Build a mock aiohttp POST response that returns JSON body."""
-    resp = MagicMock()
-    resp.status = status
-    resp.headers = {}
-    resp.raise_for_status = MagicMock()
-    resp.json = AsyncMock(return_value=body or {})
-
-    @asynccontextmanager
-    async def _ctx(*args, **kwargs):
-        yield resp
-
-    return _ctx, resp
+        assert sent_ssl is True, "DEFAULT_VERIFY_SSL must be True — fail closed"
 
 
 class TestSslCertificateError:
@@ -888,40 +838,35 @@ class TestSslCertificateError:
     @pytest.mark.asyncio
     async def test_try_fetch_alarms_raises_ssl_cert_error(self):
         """aiohttp.ClientConnectorCertificateError in _try_fetch_alarms must raise SslCertificateError."""
-        import aiohttp
-
         from custom_components.unifi_alerts.unifi_client import SslCertificateError
 
         client = make_client()
         client._auth._authenticated = True
+        url = "https://192.168.1.1/api/alarm"
 
-        @asynccontextmanager
-        async def _raise(*args, **kwargs):
-            raise aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock())
-            yield  # type: ignore[misc]
-
-        client._session.get = _raise
-        with pytest.raises(SslCertificateError):
-            await client._try_fetch_alarms("https://192.168.1.1/api/alarm", "default")
+        with aioresponses() as m:
+            m.get(
+                url,
+                exception=aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock()),
+            )
+            with pytest.raises(SslCertificateError):
+                await client._try_fetch_alarms(url, "default")
 
     @pytest.mark.asyncio
     async def test_fetch_system_log_alarms_raises_ssl_cert_error(self):
         """aiohttp.ClientConnectorCertificateError in fetch_system_log_alarms must raise SslCertificateError."""
-        import aiohttp
-
         from custom_components.unifi_alerts.unifi_client import SslCertificateError
 
         client = make_client()
         client._auth._authenticated = True
 
-        @asynccontextmanager
-        async def _raise(*args, **kwargs):
-            raise aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock())
-            yield  # type: ignore[misc]
-
-        client._session.post = _raise
-        with pytest.raises(SslCertificateError):
-            await client.fetch_system_log_alarms()
+        with aioresponses() as m:
+            m.post(
+                _system_log_url(),
+                exception=aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock()),
+            )
+            with pytest.raises(SslCertificateError):
+                await client.fetch_system_log_alarms()
 
 
 class TestProbeSystemLogEndpoint:
@@ -932,9 +877,9 @@ class TestProbeSystemLogEndpoint:
         """HTTP 200 from /system-log/count must return True and set _has_system_log=True."""
         client = make_client()
         client._auth._authenticated = True
-        ctx, _ = _make_post_json_response(200, {"categories": []})
-        client._session.post = ctx
-        result = await client.probe_system_log_endpoint()
+        with aioresponses() as m:
+            m.post(_probe_url(), status=200, payload={"categories": []})
+            result = await client.probe_system_log_endpoint()
         assert result is True
         assert client._has_system_log is True
 
@@ -943,9 +888,9 @@ class TestProbeSystemLogEndpoint:
         """HTTP 404 from /system-log/count must return False and set _has_system_log=False."""
         client = make_client()
         client._auth._authenticated = True
-        ctx, _ = _make_post_json_response(404)
-        client._session.post = ctx
-        result = await client.probe_system_log_endpoint()
+        with aioresponses() as m:
+            m.post(_probe_url(), status=404)
+            result = await client.probe_system_log_endpoint()
         assert result is False
         assert client._has_system_log is False
 
@@ -959,9 +904,9 @@ class TestProbeSystemLogEndpoint:
         """
         client = make_client()
         client._auth._authenticated = True
-        ctx, _ = _make_post_json_response(403)
-        client._session.post = ctx
-        result = await client.probe_system_log_endpoint()
+        with aioresponses() as m:
+            m.post(_probe_url(), status=403)
+            result = await client.probe_system_log_endpoint()
         assert result is False
         assert client._has_system_log is None
 
@@ -970,52 +915,45 @@ class TestProbeSystemLogEndpoint:
         """HTTP 5xx is treated as transient: returns False without caching."""
         client = make_client()
         client._auth._authenticated = True
-        ctx, _ = _make_post_json_response(503)
-        client._session.post = ctx
-        result = await client.probe_system_log_endpoint()
+        with aioresponses() as m:
+            m.post(_probe_url(), status=503)
+            result = await client.probe_system_log_endpoint()
         assert result is False
         assert client._has_system_log is None
 
     @pytest.mark.asyncio
     async def test_probe_returns_false_on_network_error_does_not_cache(self):
         """aiohttp.ClientError during probe must return False, not raise, and not cache."""
-        import aiohttp
-
         client = make_client()
         client._auth._authenticated = True
-
-        @asynccontextmanager
-        async def _raise(*args, **kwargs):
-            raise aiohttp.ClientConnectionError("unreachable")
-            yield
-
-        client._session.post = _raise
-        result = await client.probe_system_log_endpoint()
+        with aioresponses() as m:
+            m.post(_probe_url(), exception=aiohttp.ClientConnectionError("unreachable"))
+            result = await client.probe_system_log_endpoint()
         assert result is False
         assert client._has_system_log is None
 
     @pytest.mark.asyncio
     async def test_probe_retries_after_transient_failure(self):
-        """A 5xx followed by a 200 must end with cache=True (transient does not pin to legacy)."""
+        """A 5xx followed by a 200 must end with cache=True (transient does not pin to legacy).
+
+        Registers two responses for the same URL without repeat=True: aioresponses
+        consumes them FIFO in call order, so the first probe gets 503 and the
+        second gets 200.
+        """
         client = make_client()
         client._auth._authenticated = True
 
-        responses = [503, 200]
+        with aioresponses() as m:
+            m.post(_probe_url(), status=503)
+            m.post(_probe_url(), status=200, payload={})
 
-        @asynccontextmanager
-        async def _stub(*args, **kwargs):
-            resp = MagicMock()
-            resp.status = responses.pop(0)
-            resp.json = AsyncMock(return_value={})
-            yield resp
+            first = await client.probe_system_log_endpoint()
+            assert first is False
+            assert client._has_system_log is None, "Transient failure must not cache"
 
-        client._session.post = _stub
-        first = await client.probe_system_log_endpoint()
-        assert first is False
-        assert client._has_system_log is None, "Transient failure must not cache"
-        second = await client.probe_system_log_endpoint()
-        assert second is True
-        assert client._has_system_log is True
+            second = await client.probe_system_log_endpoint()
+            assert second is True
+            assert client._has_system_log is True
 
     @pytest.mark.asyncio
     async def test_probe_is_cached_after_true(self):
@@ -1024,20 +962,11 @@ class TestProbeSystemLogEndpoint:
         client._auth._authenticated = True
         client._has_system_log = True  # pre-set the cache
 
-        call_count = [0]
-
-        @asynccontextmanager
-        async def _counting(*args, **kwargs):
-            call_count[0] += 1
-            resp = MagicMock()
-            resp.status = 200
-            resp.json = AsyncMock(return_value={})
-            yield resp
-
-        client._session.post = _counting
-        result = await client.probe_system_log_endpoint()
+        with aioresponses() as m:
+            # Nothing registered — a network hit here would raise and fail the test.
+            result = await client.probe_system_log_endpoint()
+            assert _total_calls(m) == 0, "Network must not be hit when result is cached"
         assert result is True
-        assert call_count[0] == 0, "Network must not be hit when result is cached"
 
     @pytest.mark.asyncio
     async def test_probe_is_cached_after_false(self):
@@ -1046,39 +975,25 @@ class TestProbeSystemLogEndpoint:
         client._auth._authenticated = True
         client._has_system_log = False  # pre-set the cache
 
-        call_count = [0]
-
-        @asynccontextmanager
-        async def _counting(*args, **kwargs):
-            call_count[0] += 1
-            yield MagicMock()
-
-        client._session.post = _counting
-        result = await client.probe_system_log_endpoint()
+        with aioresponses() as m:
+            result = await client.probe_system_log_endpoint()
+            assert _total_calls(m) == 0, "Network must not be hit when result is cached"
         assert result is False
-        assert call_count[0] == 0, "Network must not be hit when result is cached"
 
     @pytest.mark.asyncio
     async def test_probe_url_includes_v2_and_site(self):
         """Probe URL must include /v2/api/site/{site}/system-log/count."""
         client = make_client()
         client._auth._authenticated = True
+        expected_url = _probe_url(site="mysite")
 
-        captured_url: list[str] = []
+        with aioresponses() as m:
+            m.post(expected_url, status=200, payload={})
+            await client.probe_system_log_endpoint(site="mysite")
+            calls = _find_calls(m, "POST", expected_url)
 
-        @asynccontextmanager
-        async def _tracking(*args, **kwargs):
-            captured_url.append(args[0] if args else "")
-            resp = MagicMock()
-            resp.status = 200
-            resp.json = AsyncMock(return_value={})
-            yield resp
-
-        client._session.post = _tracking
-        await client.probe_system_log_endpoint(site="mysite")
-
-        assert captured_url, "Expected one POST call"
-        assert "v2/api/site/mysite/system-log/count" in captured_url[0]
+        assert len(calls) == 1, "Expected one POST call"
+        assert "v2/api/site/mysite/system-log/count" in expected_url
 
     @pytest.mark.asyncio
     async def test_probe_backoff_triggers_after_fail_limit(self):
@@ -1086,22 +1001,12 @@ class TestProbeSystemLogEndpoint:
         and sets a backoff deadline so subsequent polls skip the network entirely."""
         client = make_client()
         client._auth._authenticated = True
-        ctx, _ = _make_post_json_response(503)
 
-        call_count = [0]
-
-        @asynccontextmanager
-        async def _always_503(*args, **kwargs):
-            call_count[0] += 1
-            resp = MagicMock()
-            resp.status = 503
-            resp.json = AsyncMock(return_value={})
-            yield resp
-
-        client._session.post = _always_503
-        for _ in range(_PROBE_FAIL_LIMIT):
-            result = await client.probe_system_log_endpoint()
-            assert result is False
+        with aioresponses() as m:
+            m.post(_probe_url(), status=503, repeat=True)
+            for _ in range(_PROBE_FAIL_LIMIT):
+                result = await client.probe_system_log_endpoint()
+                assert result is False
 
         # After the threshold the cache must be False and a backoff deadline set.
         assert client._has_system_log is False
@@ -1118,17 +1023,10 @@ class TestProbeSystemLogEndpoint:
         client._has_system_log = False
         client._probe_backoff_until = datetime.now(UTC) + timedelta(hours=1)
 
-        call_count = [0]
-
-        @asynccontextmanager
-        async def _should_not_be_called(*args, **kwargs):
-            call_count[0] += 1
-            yield MagicMock()
-
-        client._session.post = _should_not_be_called
-        result = await client.probe_system_log_endpoint()
+        with aioresponses() as m:
+            result = await client.probe_system_log_endpoint()
+            assert _total_calls(m) == 0, "Network must not be hit during backoff"
         assert result is False
-        assert call_count[0] == 0, "Network must not be hit during backoff"
 
     @pytest.mark.asyncio
     async def test_probe_retries_after_backoff_expires(self):
@@ -1143,10 +1041,10 @@ class TestProbeSystemLogEndpoint:
         client._probe_backoff_until = datetime.now(UTC) - timedelta(seconds=1)
         client._probe_fail_count = _PROBE_FAIL_LIMIT
 
-        ctx, _ = _make_post_json_response(200, {})
-        client._session.post = ctx
+        with aioresponses() as m:
+            m.post(_probe_url(), status=200, payload={})
+            result = await client.probe_system_log_endpoint()
 
-        result = await client.probe_system_log_endpoint()
         assert result is True
         assert client._has_system_log is True
         assert client._probe_backoff_until is None
@@ -1158,10 +1056,11 @@ class TestProbeSystemLogEndpoint:
         (the endpoint will never appear on this controller)."""
         client = make_client()
         client._auth._authenticated = True
-        ctx, _ = _make_post_json_response(404)
-        client._session.post = ctx
 
-        result = await client.probe_system_log_endpoint()
+        with aioresponses() as m:
+            m.post(_probe_url(), status=404)
+            result = await client.probe_system_log_endpoint()
+
         assert result is False
         assert client._has_system_log is False
         assert client._probe_backoff_until is None
@@ -1170,20 +1069,18 @@ class TestProbeSystemLogEndpoint:
     async def test_probe_backoff_via_network_error(self):
         """Repeated aiohttp.ClientError failures must also trigger the backoff
         after reaching _PROBE_FAIL_LIMIT."""
-        import aiohttp
-
         client = make_client()
         client._auth._authenticated = True
 
-        @asynccontextmanager
-        async def _always_fail(*args, **kwargs):
-            raise aiohttp.ClientConnectionError("unreachable")
-            yield
-
-        client._session.post = _always_fail
-        for _ in range(_PROBE_FAIL_LIMIT):
-            result = await client.probe_system_log_endpoint()
-            assert result is False
+        with aioresponses() as m:
+            m.post(
+                _probe_url(),
+                exception=aiohttp.ClientConnectionError("unreachable"),
+                repeat=True,
+            )
+            for _ in range(_PROBE_FAIL_LIMIT):
+                result = await client.probe_system_log_endpoint()
+                assert result is False
 
         assert client._has_system_log is False
         assert client._probe_backoff_until is not None
@@ -1201,10 +1098,9 @@ class TestProbeSystemLogEndpoint:
         client._probe_fail_count = _PROBE_FAIL_LIMIT
         client._probe_backoff_until = datetime.now(UTC) + timedelta(hours=1)
 
-        # Authenticate succeeds (200 from the login endpoint)
-        login_ctx = _make_response(200)
-        client._session.post = login_ctx
-        await client.authenticate()
+        with aioresponses() as m:
+            m.post(LOGIN_URL, status=200)
+            await client.authenticate()
 
         # Backoff state must be cleared
         assert client._probe_backoff_until is None
@@ -1220,9 +1116,9 @@ class TestProbeSystemLogEndpoint:
         client._probe_fail_count = 0
         client._probe_backoff_until = None
 
-        login_ctx = _make_response(200)
-        client._session.post = login_ctx
-        await client.authenticate()
+        with aioresponses() as m:
+            m.post(LOGIN_URL, status=200)
+            await client.authenticate()
 
         assert client._has_system_log is True
 
@@ -1230,16 +1126,14 @@ class TestProbeSystemLogEndpoint:
 class TestFetchSystemLogAlarms:
     """Tests for UniFiClient.fetch_system_log_alarms."""
 
-    def _make_page_response(self, events: list[dict], total_pages: int, page: int = 0):
-        """Build a mock POST response for one system-log/all page."""
-        body = {
+    def _page_body(self, events: list[dict], total_pages: int, page: int = 0) -> dict:
+        """Build the JSON body for one system-log/all page response."""
+        return {
             "data": events,
             "page_number": page,
             "total_element_count": len(events),
             "total_page_count": total_pages,
         }
-        ctx, resp = _make_post_json_response(200, body)
-        return ctx, resp
 
     @pytest.mark.asyncio
     async def test_returns_new_events_only(self):
@@ -1250,9 +1144,9 @@ class TestFetchSystemLogAlarms:
             {"key": "THREAT_BLOCKED", "status": "NEW", "timestamp": 1778025612345},
             {"key": "THREAT_BLOCKED", "status": "ARCHIVED", "timestamp": 1778025612000},
         ]
-        ctx, _ = self._make_page_response(events, total_pages=1)
-        client._session.post = ctx
-        result = await client.fetch_system_log_alarms()
+        with aioresponses() as m:
+            m.post(_system_log_url(), status=200, payload=self._page_body(events, total_pages=1))
+            result = await client.fetch_system_log_alarms()
         assert len(result) == 1
         assert result[0]["status"] == "NEW"
 
@@ -1261,28 +1155,16 @@ class TestFetchSystemLogAlarms:
         """Must fetch pages until total_page_count is reached."""
         client = make_client()
         client._auth._authenticated = True
+        event = {"key": "K", "status": "NEW", "timestamp": 1000}
 
-        call_count = [0]
+        with aioresponses() as m:
+            m.post(_system_log_url(), status=200, payload=self._page_body([event], 3, page=0))
+            m.post(_system_log_url(), status=200, payload=self._page_body([event], 3, page=1))
+            m.post(_system_log_url(), status=200, payload=self._page_body([event], 3, page=2))
+            result = await client.fetch_system_log_alarms()
+            total = _total_calls(m)
 
-        @asynccontextmanager
-        async def _paginated(*args, **kwargs):
-            call_count[0] += 1
-            page = call_count[0] - 1
-            body = {
-                "data": [{"key": "K", "status": "NEW", "timestamp": 1000}],
-                "page_number": page,
-                "total_element_count": 3,
-                "total_page_count": 3,
-            }
-            resp = MagicMock()
-            resp.status = 200
-            resp.raise_for_status = MagicMock()
-            resp.json = AsyncMock(return_value=body)
-            yield resp
-
-        client._session.post = _paginated
-        result = await client.fetch_system_log_alarms()
-        assert call_count[0] == 3
+        assert total == 3
         assert len(result) == 3  # one NEW event per page
 
     @pytest.mark.asyncio
@@ -1292,28 +1174,17 @@ class TestFetchSystemLogAlarms:
 
         client = make_client()
         client._auth._authenticated = True
+        event = {"key": "K", "status": "NEW", "timestamp": 1000}
+        # total_page_count is intentionally larger than MAX_SYSTEM_LOG_PAGES
+        body = self._page_body([event], total_pages=9999, page=0)
 
-        call_count = [0]
+        with aioresponses() as m:
+            m.post(_system_log_url(), status=200, payload=body, repeat=True)
+            await client.fetch_system_log_alarms()
+            total = _total_calls(m)
 
-        @asynccontextmanager
-        async def _many_pages(*args, **kwargs):
-            call_count[0] += 1
-            body = {
-                "data": [{"key": "K", "status": "NEW", "timestamp": 1000}],
-                "page_number": call_count[0] - 1,
-                "total_element_count": 9999,
-                "total_page_count": 9999,  # more than MAX_SYSTEM_LOG_PAGES
-            }
-            resp = MagicMock()
-            resp.status = 200
-            resp.raise_for_status = MagicMock()
-            resp.json = AsyncMock(return_value=body)
-            yield resp
-
-        client._session.post = _many_pages
-        await client.fetch_system_log_alarms()
-        assert call_count[0] == MAX_SYSTEM_LOG_PAGES, (
-            f"Expected exactly {MAX_SYSTEM_LOG_PAGES} page fetches; got {call_count[0]}"
+        assert total == MAX_SYSTEM_LOG_PAGES, (
+            f"Expected exactly {MAX_SYSTEM_LOG_PAGES} page fetches; got {total}"
         )
 
     @pytest.mark.asyncio
@@ -1321,28 +1192,16 @@ class TestFetchSystemLogAlarms:
         """Must stop when a page returns an empty data list."""
         client = make_client()
         client._auth._authenticated = True
+        event = {"key": "K", "status": "NEW", "timestamp": 1000}
 
-        call_count = [0]
+        with aioresponses() as m:
+            # large total_page_count — early stop must come from the empty page
+            m.post(_system_log_url(), status=200, payload=self._page_body([event], 99, page=0))
+            m.post(_system_log_url(), status=200, payload=self._page_body([], 99, page=1))
+            result = await client.fetch_system_log_alarms()
+            total = _total_calls(m)
 
-        @asynccontextmanager
-        async def _empty_second_page(*args, **kwargs):
-            call_count[0] += 1
-            data = [{"key": "K", "status": "NEW", "timestamp": 1000}] if call_count[0] == 1 else []
-            body = {
-                "data": data,
-                "page_number": call_count[0] - 1,
-                "total_element_count": 1,
-                "total_page_count": 99,  # large total — early stop on empty page
-            }
-            resp = MagicMock()
-            resp.status = 200
-            resp.raise_for_status = MagicMock()
-            resp.json = AsyncMock(return_value=body)
-            yield resp
-
-        client._session.post = _empty_second_page
-        result = await client.fetch_system_log_alarms()
-        assert call_count[0] == 2  # first page + one empty page
+        assert total == 2  # first page + one empty page
         assert len(result) == 1
 
     @pytest.mark.asyncio
@@ -1353,27 +1212,17 @@ class TestFetchSystemLogAlarms:
         client = make_client()
         client._auth._authenticated = True
 
-        captured_body: list[dict] = []
+        with aioresponses() as m:
+            m.post(_system_log_url(), status=200, payload=self._page_body([], 1, page=0))
+            since = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
+            expected_ms = int(since.timestamp() * 1000)
+            await client.fetch_system_log_alarms(since=since)
+            calls = _find_calls(m, "POST", _system_log_url())
 
-        @asynccontextmanager
-        async def _capturing(*args, **kwargs):
-            captured_body.append(kwargs.get("json", {}))
-            body = {"data": [], "page_number": 0, "total_element_count": 0, "total_page_count": 1}
-            resp = MagicMock()
-            resp.status = 200
-            resp.raise_for_status = MagicMock()
-            resp.json = AsyncMock(return_value=body)
-            yield resp
-
-        client._session.post = _capturing
-
-        since = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
-        expected_ms = int(since.timestamp() * 1000)
-        await client.fetch_system_log_alarms(since=since)
-
-        assert captured_body, "Expected at least one POST call"
-        assert captured_body[0]["timestampFrom"] == expected_ms, (
-            f"Expected timestampFrom={expected_ms}, got {captured_body[0].get('timestampFrom')}"
+        assert len(calls) == 1, "Expected at least one POST call"
+        sent_json = calls[0].kwargs.get("json") or {}
+        assert sent_json.get("timestampFrom") == expected_ms, (
+            f"Expected timestampFrom={expected_ms}, got {sent_json.get('timestampFrom')}"
         )
 
     @pytest.mark.asyncio
@@ -1386,26 +1235,16 @@ class TestFetchSystemLogAlarms:
         client = make_client()
         client._auth._authenticated = True
 
-        captured_body: list[dict] = []
-
-        @asynccontextmanager
-        async def _capturing(*args, **kwargs):
-            captured_body.append(kwargs.get("json", {}))
-            body = {"data": [], "page_number": 0, "total_element_count": 0, "total_page_count": 1}
-            resp = MagicMock()
-            resp.status = 200
-            resp.raise_for_status = MagicMock()
-            resp.json = AsyncMock(return_value=body)
-            yield resp
-
-        client._session.post = _capturing
-        await client.fetch_system_log_alarms(since=None)
+        with aioresponses() as m:
+            m.post(_system_log_url(), status=200, payload=self._page_body([], 1, page=0))
+            await client.fetch_system_log_alarms(since=None)
+            calls = _find_calls(m, "POST", _system_log_url())
 
         expected_approx_ms = int(
             (datetime.now(UTC) - timedelta(hours=DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS)).timestamp()
             * 1000
         )
-        actual_ms = captured_body[0]["timestampFrom"]
+        actual_ms = calls[0].kwargs.get("json", {}).get("timestampFrom")
         # Allow 5-second slack for test execution time
         assert abs(actual_ms - expected_approx_ms) < 5000, (
             f"timestampFrom {actual_ms} deviates too far from expected {expected_approx_ms}"
@@ -1416,34 +1255,27 @@ class TestFetchSystemLogAlarms:
         """HTTP 401 during system-log fetch must raise InvalidAuthError."""
         client = make_client()
         client._auth._authenticated = True
-        ctx, _ = _make_post_json_response(401)
-        client._session.post = ctx
-        with pytest.raises(InvalidAuthError):
-            await client.fetch_system_log_alarms()
+        with aioresponses() as m:
+            m.post(_system_log_url(), status=401)
+            with pytest.raises(InvalidAuthError):
+                await client.fetch_system_log_alarms()
 
     @pytest.mark.asyncio
     async def test_network_error_raises_cannot_connect(self):
         """aiohttp.ClientError during fetch must raise CannotConnectError."""
-        import aiohttp
-
         client = make_client()
         client._auth._authenticated = True
-
-        @asynccontextmanager
-        async def _raise(*args, **kwargs):
-            raise aiohttp.ClientConnectionError("unreachable")
-            yield
-
-        client._session.post = _raise
-        with pytest.raises(CannotConnectError):
-            await client.fetch_system_log_alarms()
+        with aioresponses() as m:
+            m.post(_system_log_url(), exception=aiohttp.ClientConnectionError("unreachable"))
+            with pytest.raises(CannotConnectError):
+                await client.fetch_system_log_alarms()
 
     @pytest.mark.asyncio
     async def test_redirect_raises_cannot_connect(self):
         """3xx from the system-log endpoint must raise CannotConnectError."""
         client = make_client()
         client._auth._authenticated = True
-        ctx, _ = _make_post_json_response(301)
-        client._session.post = ctx
-        with pytest.raises(CannotConnectError, match="redirect"):
-            await client.fetch_system_log_alarms()
+        with aioresponses() as m:
+            m.post(_system_log_url(), status=301)
+            with pytest.raises(CannotConnectError, match="redirect"):
+                await client.fetch_system_log_alarms()
