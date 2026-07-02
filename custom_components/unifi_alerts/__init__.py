@@ -24,7 +24,7 @@ from .const import (
 from .coordinator import UniFiAlertsCoordinator
 from .models import RuntimeData, UniFiClientConfig
 from .services import async_register_services, async_unregister_services
-from .unifi_auth import InvalidAuthError
+from .unifi_auth import CannotConnectError, InvalidAuthError
 from .unifi_client import UniFiClient
 from .webhook_handler import WebhookManager
 
@@ -105,7 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryAuthFailed(
             f"Invalid credentials for UniFi controller: {type(err).__name__}"
         ) from err
-    except Exception as err:  # noqa: BLE001
+    except CannotConnectError as err:
         _LOGGER.error("Failed to authenticate to UniFi controller: %s", type(err).__name__)
         raise ConfigEntryNotReady(
             f"Could not connect to UniFi controller: {type(err).__name__}"
@@ -135,11 +135,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # open_count is filtered correctly from the very first data fetch.
     await coordinator.async_restore_watermarks()
 
-    # Perform an initial poll so entities have data before first render
-    try:
-        await coordinator.async_config_entry_first_refresh()
-    except Exception as err:  # noqa: BLE001
-        raise ConfigEntryNotReady(f"Initial data fetch failed: {type(err).__name__}") from err
+    # Perform an initial poll so entities have data before first render.
+    # async_config_entry_first_refresh() (HA core) already raises the
+    # semantically correct exception on failure — ConfigEntryNotReady for a
+    # connectivity/UpdateFailed outcome, or ConfigEntryAuthFailed if the
+    # coordinator's own re-auth attempt failed (see coordinator._async_update_data).
+    # A blanket except here would misclassify a ConfigEntryAuthFailed as
+    # ConfigEntryNotReady, silently suppressing HA's reauth-repair flow.
+    await coordinator.async_config_entry_first_refresh()
 
     # Register webhooks and capture the generated URLs for display
     webhook_manager = WebhookManager(

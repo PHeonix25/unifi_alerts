@@ -16,11 +16,13 @@
 ### Fixed
 
 - The v2 system-log fetch window is now clamped to `DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS` (24 hours). Previously, a rarely-cleared category could hold the oldest watermark to an arbitrarily old timestamp, causing every poll to paginate from that date forward and silently miss recent alarms once the 10-page cap was reached. The clamp ensures all categories are always within the paged window. A WARNING is now logged when the page cap is reached, indicating some events may have been missed. ([#136])
+- A `ConfigEntryAuthFailed` raised during the initial data fetch (for example, credentials rotated between setup's `authenticate()` call and the first coordinator poll) is no longer misclassified as `ConfigEntryNotReady`. Previously a blanket exception handler around the first refresh re-wrapped every failure, including a genuine auth failure, as "not ready": silently suppressing Home Assistant's reauth-repair flow. ([#257])
 
 ### Internal
 
 - Added unicode round-trip tests for `UniFiAlert` serialisation: emoji, CJK, and RTL text survive `to_dict`/`from_dict` without mangling, and 300-character unicode messages are clamped to 255 characters. Added large-batch determinism tests: 500-alert `CategoryState` count is exact, watermark filtering passes precisely the expected subset, and all 500 messages survive serialisation round-trip. ([#140])
 - Authentication concerns (`authenticate`, API-key verification, username/password login, request headers, and auth state) are extracted from `UniFiClient` into a dedicated `UniFiAuth` class in a new `unifi_auth.py` module, so auth can be unit-tested in isolation without the full client. `UniFiClient` composes a `UniFiAuth` instance and still owns the probe-backoff reset on every successful authentication. No behaviour change. ([#120])
+- Replaced every blanket `except Exception` (`# noqa: BLE001`) handler across the integration with the specific exception types each call site can actually raise: `json.JSONDecodeError`/`UnicodeDecodeError` for 400-body parsing and `aiohttp.ClientError`/`OSError`/`TimeoutError` for the best-effort logout in `unifi_client.py`; `CannotConnectError` for the initial `authenticate()` call in `__init__.py`; the five `config_flow.py` "unknown error" fallbacks (setup, site validation, reauth, options credentials, options site validation) removed entirely, since the preceding specific catches already cover the full raise-surface of `authenticate()`/`fetch_alarms()`; `(InvalidAuthError, CannotConnectError)` for the system-log probe's internal re-auth in `coordinator.py`; and `ValueError` (the only failure mode of HA's `async_register`) for webhook registration in `webhook_handler.py`. A genuine bug now surfaces with its real traceback instead of being silently reduced to a generic error. ([#257])
 
 ## [1.8.0] - 2026-06-19
 
@@ -297,4 +299,5 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#175]: https://github.com/PHeonix25/unifi_alerts/issues/175
 [#233]: https://github.com/PHeonix25/unifi_alerts/issues/233
 [#241]: https://github.com/PHeonix25/unifi_alerts/issues/241
+[#257]: https://github.com/PHeonix25/unifi_alerts/pull/257
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR

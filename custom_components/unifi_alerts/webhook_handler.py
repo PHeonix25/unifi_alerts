@@ -86,7 +86,9 @@ class WebhookManager:
                     allowed_methods=["POST"],
                     local_only=True,
                 )
-            except Exception as err:  # noqa: BLE001
+            except ValueError as err:
+                # HA's async_register raises ValueError for a duplicate webhook_id
+                # or an unsupported HTTP method — the only failure modes it has.
                 _LOGGER.warning(
                     "Failed to register webhook for category %s (%s): %s",
                     category,

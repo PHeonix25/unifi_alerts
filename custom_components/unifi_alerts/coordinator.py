@@ -201,7 +201,10 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         """
         try:
             has_v2 = await self._client.probe_system_log_endpoint(self._site)
-        except Exception as probe_err:  # noqa: BLE001
+        except (InvalidAuthError, CannotConnectError) as probe_err:
+            # probe_system_log_endpoint() only raises via its internal re-auth
+            # attempt (authenticate() when not yet authenticated); the HTTP probe
+            # itself catches aiohttp.ClientError internally and returns False.
             _LOGGER.debug(
                 "v2 system-log probe raised %s; falling back to legacy path",
                 type(probe_err).__name__,

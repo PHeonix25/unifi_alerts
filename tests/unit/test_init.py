@@ -106,11 +106,12 @@ class TestAsyncSetupEntry:
         from homeassistant.exceptions import ConfigEntryNotReady
 
         from custom_components.unifi_alerts import async_setup_entry
+        from custom_components.unifi_alerts.unifi_auth import CannotConnectError
 
         hass = make_hass()
         entry = make_entry()
         mock_client, mock_coordinator, mock_wm = _patch_all(
-            authenticate_side_effect=Exception("connection refused")
+            authenticate_side_effect=CannotConnectError("connection refused")
         )
 
         with (
@@ -130,6 +131,13 @@ class TestAsyncSetupEntry:
 
     @pytest.mark.asyncio
     async def test_first_refresh_failure_raises_config_entry_not_ready(self):
+        """A ConfigEntryNotReady raised by the coordinator's first refresh propagates unmodified.
+
+        HA core's async_config_entry_first_refresh() raises ConfigEntryNotReady
+        itself on a connectivity/UpdateFailed outcome — async_setup_entry no
+        longer wraps this call, so the mock must raise the same exception type
+        real HA raises.
+        """
         from homeassistant.exceptions import ConfigEntryNotReady
 
         from custom_components.unifi_alerts import async_setup_entry
@@ -137,7 +145,7 @@ class TestAsyncSetupEntry:
         hass = make_hass()
         entry = make_entry()
         mock_client, mock_coordinator, mock_wm = _patch_all(
-            first_refresh_side_effect=Exception("poll failed")
+            first_refresh_side_effect=ConfigEntryNotReady("poll failed")
         )
 
         with (
@@ -152,6 +160,42 @@ class TestAsyncSetupEntry:
             patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
             patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
             pytest.raises(ConfigEntryNotReady),
+        ):
+            await async_setup_entry(hass, entry)
+
+    @pytest.mark.asyncio
+    async def test_first_refresh_auth_failure_raises_config_entry_auth_failed(self):
+        """A ConfigEntryAuthFailed raised by the first refresh must not be misclassified.
+
+        HA core raises ConfigEntryAuthFailed directly out of
+        async_config_entry_first_refresh() when the coordinator's own re-auth
+        attempt fails (see coordinator._async_update_data); silently
+        converting it to ConfigEntryNotReady would suppress HA's reauth-repair
+        flow. Regression test for the bug where a blanket `except Exception`
+        around this call re-wrapped every failure as ConfigEntryNotReady.
+        """
+        from homeassistant.exceptions import ConfigEntryAuthFailed
+
+        from custom_components.unifi_alerts import async_setup_entry
+
+        hass = make_hass()
+        entry = make_entry()
+        mock_client, mock_coordinator, mock_wm = _patch_all(
+            first_refresh_side_effect=ConfigEntryAuthFailed("credentials changed")
+        )
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
+            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
+            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
+            pytest.raises(ConfigEntryAuthFailed),
         ):
             await async_setup_entry(hass, entry)
 
@@ -198,12 +242,13 @@ class TestAsyncSetupEntry:
         from homeassistant.exceptions import ConfigEntryNotReady
 
         from custom_components.unifi_alerts import async_setup_entry
+        from custom_components.unifi_alerts.unifi_auth import CannotConnectError
 
         secret_marker = "https://admin:secretpass@10.0.0.1:8443"
         hass = make_hass()
         entry = make_entry()
         mock_client, mock_coordinator, mock_wm = _patch_all(
-            authenticate_side_effect=ConnectionError(secret_marker)
+            authenticate_side_effect=CannotConnectError(secret_marker)
         )
 
         with (
@@ -222,40 +267,9 @@ class TestAsyncSetupEntry:
             await async_setup_entry(hass, entry)
 
         assert secret_marker not in str(excinfo.value)
-        assert "ConnectionError" in str(excinfo.value)
+        assert "CannotConnectError" in str(excinfo.value)
 
     @pytest.mark.asyncio
-    async def test_first_refresh_failure_message_omits_underlying_error_text(self):
-        """ConfigEntryNotReady on the first-refresh path must not embed inner error text."""
-        from homeassistant.exceptions import ConfigEntryNotReady
-
-        from custom_components.unifi_alerts import async_setup_entry
-
-        secret_marker = "https://admin:secretpass@10.0.0.1/api/alarm?token=leak"
-        hass = make_hass()
-        entry = make_entry()
-        mock_client, mock_coordinator, mock_wm = _patch_all(
-            first_refresh_side_effect=RuntimeError(secret_marker)
-        )
-
-        with (
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
-            pytest.raises(ConfigEntryNotReady) as excinfo,
-        ):
-            await async_setup_entry(hass, entry)
-
-        assert secret_marker not in str(excinfo.value)
-        assert "RuntimeError" in str(excinfo.value)
-
     @pytest.mark.asyncio
     async def test_ssl_disabled_logs_warning(self):
         from custom_components.unifi_alerts import async_setup_entry

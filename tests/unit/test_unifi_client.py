@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
@@ -508,6 +509,36 @@ class TestFetchAlarms:
         assert "default" in message  # site name is mentioned so user knows what to check
 
     @pytest.mark.asyncio
+    async def test_http_400_with_unparseable_body_still_raises_cannot_connect(self):
+        """A 400 response whose body isn't valid JSON must not crash — CannotConnectError still raises.
+
+        _try_fetch_alarms tries to parse the 400 body to detect api.err.InvalidObject
+        (path-not-found) vs. a genuine rejection. If the body itself can't be parsed
+        as JSON, that lookup must fail closed (treated as a genuine 400, not silently
+        swallowed) rather than propagating the JSONDecodeError.
+        """
+        client = make_client()
+        client._auth._authenticated = True
+
+        @asynccontextmanager
+        async def _400_unparseable(*args, **kwargs):
+            resp = MagicMock()
+            resp.status = 400
+            resp.headers = {}
+            resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(side_effect=json.JSONDecodeError("Expecting value", "", 0))
+            yield resp
+
+        client._session.get = _400_unparseable
+
+        with pytest.raises(CannotConnectError) as exc_info:
+            await client.fetch_alarms()
+
+        message = str(exc_info.value)
+        assert "400" in message
+        assert "default" in message
+
+    @pytest.mark.asyncio
     async def test_api_error_response_raises_cannot_connect(self):
         """HTTP 200 with meta.rc != 'ok' must raise CannotConnectError.
 
@@ -769,11 +800,18 @@ class TestClose:
 
     @pytest.mark.asyncio
     async def test_logout_failure_does_not_propagate(self):
-        """close() must never raise — failed logout is best-effort."""
+        """close() must never raise on a realistic logout failure — best-effort.
+
+        Only network/connection failures (aiohttp.ClientError, OSError,
+        TimeoutError) are absorbed; a genuine bug (e.g. RuntimeError from our
+        own code) is intentionally allowed to propagate so it isn't hidden.
+        """
+        import aiohttp
+
         client = make_client()
         client._auth._method = "userpass"
         client._auth._authenticated = True
-        client._session.post = AsyncMock(side_effect=RuntimeError("boom"))
+        client._session.post = AsyncMock(side_effect=aiohttp.ClientConnectionError("boom"))
 
         # No pytest.raises — close() must absorb the failure.
         await client.close()
