@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -163,7 +164,7 @@ class UniFiClient:
                     try:
                         body = await resp.json(content_type=None)
                         unifi_msg = body.get("meta", {}).get("msg", "")
-                    except Exception as err:  # noqa: BLE001
+                    except (json.JSONDecodeError, UnicodeDecodeError) as err:
                         _LOGGER.debug(
                             "Could not parse 400 response body from %s: %s",
                             url,
@@ -421,7 +422,7 @@ class UniFiClient:
                     timeout=aiohttp.ClientTimeout(total=5),
                     allow_redirects=False,
                 )
-            except Exception as err:  # noqa: BLE001
+            except (aiohttp.ClientError, OSError, TimeoutError) as err:
                 _LOGGER.warning("UniFi logout failed: %s", type(err).__name__)
 
     # ── Private helpers ───────────────────────────────────────────────────

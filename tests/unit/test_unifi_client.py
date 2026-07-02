@@ -769,11 +769,18 @@ class TestClose:
 
     @pytest.mark.asyncio
     async def test_logout_failure_does_not_propagate(self):
-        """close() must never raise — failed logout is best-effort."""
+        """close() must never raise on a realistic logout failure — best-effort.
+
+        Only network/connection failures (aiohttp.ClientError, OSError,
+        TimeoutError) are absorbed; a genuine bug (e.g. RuntimeError from our
+        own code) is intentionally allowed to propagate so it isn't hidden.
+        """
+        import aiohttp
+
         client = make_client()
         client._auth._method = "userpass"
         client._auth._authenticated = True
-        client._session.post = AsyncMock(side_effect=RuntimeError("boom"))
+        client._session.post = AsyncMock(side_effect=aiohttp.ClientConnectionError("boom"))
 
         # No pytest.raises — close() must absorb the failure.
         await client.close()
