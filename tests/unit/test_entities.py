@@ -95,39 +95,40 @@ class TestUniFiCategoryBinarySensor:
         entity = UniFiCategoryBinarySensor(coord, entry, CATEGORY_NETWORK_WAN)
         return entity
 
-    def test_is_on_true_when_alerting(self):
-        state = make_state(is_alerting=True)
+    @pytest.mark.parametrize(
+        "state,expected",
+        [
+            pytest.param(make_state(is_alerting=True), True, id="alerting"),
+            pytest.param(make_state(is_alerting=False), False, id="not-alerting"),
+            pytest.param(None, False, id="state-missing"),
+        ],
+    )
+    def test_is_on(self, state, expected):
         entity = self._make(state)
-        assert entity.is_on is True
+        assert entity.is_on is expected
 
-    def test_is_on_false_when_not_alerting(self):
-        state = make_state(is_alerting=False)
+    @pytest.mark.parametrize(
+        "state,expected",
+        [
+            pytest.param(make_state(enabled=True), True, id="enabled"),
+            pytest.param(make_state(enabled=False), False, id="disabled"),
+        ],
+    )
+    def test_available(self, state, expected):
         entity = self._make(state)
-        assert entity.is_on is False
+        assert entity.available is expected
 
-    def test_is_on_false_when_state_missing(self):
-        entity = self._make(None)
-        assert entity.is_on is False
-
-    def test_available_true_when_enabled(self):
-        state = make_state(enabled=True)
+    @pytest.mark.parametrize(
+        "is_alerting,expected_icon",
+        [
+            pytest.param(True, CATEGORY_ICONS[CATEGORY_NETWORK_WAN], id="alerting"),
+            pytest.param(False, CATEGORY_ICONS_OK[CATEGORY_NETWORK_WAN], id="not-alerting"),
+        ],
+    )
+    def test_icon(self, is_alerting, expected_icon):
+        state = make_state(is_alerting=is_alerting)
         entity = self._make(state)
-        assert entity.available is True
-
-    def test_available_false_when_disabled(self):
-        state = make_state(enabled=False)
-        entity = self._make(state)
-        assert entity.available is False
-
-    def test_icon_alert_when_on(self):
-        state = make_state(is_alerting=True)
-        entity = self._make(state)
-        assert entity.icon == CATEGORY_ICONS[CATEGORY_NETWORK_WAN]
-
-    def test_icon_ok_when_off(self):
-        state = make_state(is_alerting=False)
-        entity = self._make(state)
-        assert entity.icon == CATEGORY_ICONS_OK[CATEGORY_NETWORK_WAN]
+        assert entity.icon == expected_icon
 
     def test_extra_attrs_with_alert(self):
         alert = make_alert()
@@ -191,25 +192,32 @@ class TestUniFiRollupBinarySensor:
         entry = make_entry()
         return UniFiRollupBinarySensor(coord, entry)
 
-    def test_is_on_when_any_alerting(self):
-        states = {CATEGORY_NETWORK_WAN: make_state(is_alerting=True)}
+    @pytest.mark.parametrize(
+        "is_alerting,expected",
+        [
+            pytest.param(True, True, id="alerting"),
+            pytest.param(False, False, id="not-alerting"),
+        ],
+    )
+    def test_is_on(self, is_alerting, expected):
+        states = {CATEGORY_NETWORK_WAN: make_state(is_alerting=is_alerting)}
         entity = self._make(states)
-        assert entity.is_on is True
+        assert entity.is_on is expected
 
-    def test_is_on_false_when_nothing_alerting(self):
-        states = {CATEGORY_NETWORK_WAN: make_state(is_alerting=False)}
+    @pytest.mark.parametrize(
+        "states,expected_icon",
+        [
+            pytest.param(
+                {CATEGORY_NETWORK_WAN: make_state(is_alerting=True)},
+                "mdi:shield-alert",
+                id="alerting",
+            ),
+            pytest.param({}, "mdi:shield-check", id="not-alerting"),
+        ],
+    )
+    def test_icon(self, states, expected_icon):
         entity = self._make(states)
-        assert entity.is_on is False
-
-    def test_icon_alert_when_on(self):
-        states = {CATEGORY_NETWORK_WAN: make_state(is_alerting=True)}
-        entity = self._make(states)
-        assert entity.icon == "mdi:shield-alert"
-
-    def test_icon_check_when_off(self):
-        states = {}
-        entity = self._make(states)
-        assert entity.icon == "mdi:shield-check"
+        assert entity.icon == expected_icon
 
     def test_extra_attrs_with_last_alert(self):
         alert = make_alert()
@@ -247,40 +255,44 @@ class TestUniFiCategoryMessageSensor:
         entry = make_entry()
         return UniFiCategoryMessageSensor(coord, entry, CATEGORY_NETWORK_WAN)
 
-    def test_native_value_returns_message_when_alert_present(self):
-        alert = make_alert(message="WAN went down")
-        state = make_state(last_alert=alert)
+    @pytest.mark.parametrize(
+        "state,expected",
+        [
+            pytest.param(
+                make_state(last_alert=make_alert(message="WAN went down")),
+                "WAN went down",
+                id="alert-present",
+            ),
+            pytest.param(make_state(), None, id="no-alert"),
+            pytest.param(None, None, id="state-missing"),
+        ],
+    )
+    def test_native_value(self, state, expected):
         entity = self._make(state)
-        assert entity.native_value == "WAN went down"
+        assert entity.native_value == expected
 
-    def test_native_value_default_when_no_alert(self):
-        state = make_state()
+    @pytest.mark.parametrize(
+        "state,expected",
+        [
+            pytest.param(make_state(enabled=True), True, id="enabled"),
+            pytest.param(make_state(enabled=False), False, id="disabled"),
+        ],
+    )
+    def test_available(self, state, expected):
         entity = self._make(state)
-        assert entity.native_value is None
+        assert entity.available is expected
 
-    def test_native_value_default_when_state_missing(self):
-        entity = self._make(None)
-        assert entity.native_value is None
-
-    def test_available_true_when_enabled(self):
-        state = make_state(enabled=True)
+    @pytest.mark.parametrize(
+        "is_alerting,expected_icon",
+        [
+            pytest.param(True, CATEGORY_ICONS[CATEGORY_NETWORK_WAN], id="alerting"),
+            pytest.param(False, CATEGORY_ICONS_OK[CATEGORY_NETWORK_WAN], id="not-alerting"),
+        ],
+    )
+    def test_icon(self, is_alerting, expected_icon):
+        state = make_state(is_alerting=is_alerting)
         entity = self._make(state)
-        assert entity.available is True
-
-    def test_available_false_when_disabled(self):
-        state = make_state(enabled=False)
-        entity = self._make(state)
-        assert entity.available is False
-
-    def test_icon_alert_when_alerting(self):
-        state = make_state(is_alerting=True)
-        entity = self._make(state)
-        assert entity.icon == CATEGORY_ICONS[CATEGORY_NETWORK_WAN]
-
-    def test_icon_ok_when_not_alerting(self):
-        state = make_state(is_alerting=False)
-        entity = self._make(state)
-        assert entity.icon == CATEGORY_ICONS_OK[CATEGORY_NETWORK_WAN]
+        assert entity.icon == expected_icon
 
     def test_extra_attrs_with_alert(self):
         alert = make_alert()
@@ -398,19 +410,17 @@ class TestUniFiAlertEventEntity:
         entity.async_write_ha_state = MagicMock()
         return entity
 
-    def test_available_true_when_enabled(self):
-        state = make_state(enabled=True)
+    @pytest.mark.parametrize(
+        "state,expected",
+        [
+            pytest.param(make_state(enabled=True), True, id="enabled"),
+            pytest.param(make_state(enabled=False), False, id="disabled"),
+            pytest.param(None, False, id="state-missing"),
+        ],
+    )
+    def test_available(self, state, expected):
         entity = self._make(state)
-        assert entity.available is True
-
-    def test_available_false_when_disabled(self):
-        state = make_state(enabled=False)
-        entity = self._make(state)
-        assert entity.available is False
-
-    def test_available_false_when_state_missing(self):
-        entity = self._make(None)
-        assert entity.available is False
+        assert entity.available is expected
 
     def test_handle_update_fires_event_on_count_increase(self):
         alert = make_alert()
@@ -535,19 +545,17 @@ class TestUniFiClearCategoryButton:
         entity = self._make(state)
         assert entity.unique_id == f"entry-abc_{CATEGORY_NETWORK_WAN}_clear"
 
-    def test_available_true_when_enabled(self):
-        state = make_state(enabled=True)
+    @pytest.mark.parametrize(
+        "state,expected",
+        [
+            pytest.param(make_state(enabled=True), True, id="enabled"),
+            pytest.param(make_state(enabled=False), False, id="disabled"),
+            pytest.param(None, False, id="state-missing"),
+        ],
+    )
+    def test_available(self, state, expected):
         entity = self._make(state)
-        assert entity.available is True
-
-    def test_available_false_when_disabled(self):
-        state = make_state(enabled=False)
-        entity = self._make(state)
-        assert entity.available is False
-
-    def test_available_false_when_state_missing(self):
-        entity = self._make(None)
-        assert entity.available is False
+        assert entity.available is expected
 
     def test_handle_coordinator_update_writes_ha_state(self):
         """Coordinator update must re-evaluate available without a reload."""
@@ -586,25 +594,31 @@ class TestUniFiClearAllButton:
         await entity.async_press()
         entity.coordinator.async_clear_all.assert_awaited_once()
 
-    def test_available_true_when_any_category_enabled(self):
-        states = {
-            CATEGORY_NETWORK_WAN: make_state(enabled=True),
-            CATEGORY_SECURITY_THREAT: make_state(enabled=False),
-        }
+    @pytest.mark.parametrize(
+        "states,expected",
+        [
+            pytest.param(
+                {
+                    CATEGORY_NETWORK_WAN: make_state(enabled=True),
+                    CATEGORY_SECURITY_THREAT: make_state(enabled=False),
+                },
+                True,
+                id="any-category-enabled",
+            ),
+            pytest.param(
+                {
+                    CATEGORY_NETWORK_WAN: make_state(enabled=False),
+                    CATEGORY_SECURITY_THREAT: make_state(enabled=False),
+                },
+                False,
+                id="all-categories-disabled",
+            ),
+            pytest.param({}, False, id="no-categories"),
+        ],
+    )
+    def test_available(self, states, expected):
         entity = self._make(states)
-        assert entity.available is True
-
-    def test_available_false_when_all_categories_disabled(self):
-        states = {
-            CATEGORY_NETWORK_WAN: make_state(enabled=False),
-            CATEGORY_SECURITY_THREAT: make_state(enabled=False),
-        }
-        entity = self._make(states)
-        assert entity.available is False
-
-    def test_available_false_when_no_categories(self):
-        entity = self._make({})
-        assert entity.available is False
+        assert entity.available is expected
 
     def test_handle_coordinator_update_writes_ha_state(self):
         """Coordinator update must re-evaluate available without a reload."""
@@ -636,29 +650,16 @@ class TestUniFiClearAllButton:
 class TestDeviceInfo:
     """_device_info() helpers in all four platforms must include configuration_url."""
 
-    def test_binary_sensor_device_info_has_configuration_url(self):
-        from custom_components.unifi_alerts.binary_sensor import _device_info
+    @pytest.mark.parametrize(
+        "platform",
+        ["binary_sensor", "sensor", "event", "button"],
+    )
+    def test_device_info_has_configuration_url(self, platform):
+        import importlib
 
-        entry = make_entry()
-        info = _device_info(entry)
-        assert info["configuration_url"] == entry.data["controller_url"]
-
-    def test_sensor_device_info_has_configuration_url(self):
-        from custom_components.unifi_alerts.sensor import _device_info
-
-        entry = make_entry()
-        info = _device_info(entry)
-        assert info["configuration_url"] == entry.data["controller_url"]
-
-    def test_event_device_info_has_configuration_url(self):
-        from custom_components.unifi_alerts.event import _device_info
-
-        entry = make_entry()
-        info = _device_info(entry)
-        assert info["configuration_url"] == entry.data["controller_url"]
-
-    def test_button_device_info_has_configuration_url(self):
-        from custom_components.unifi_alerts.button import _device_info
+        _device_info = importlib.import_module(
+            f"custom_components.unifi_alerts.{platform}"
+        )._device_info
 
         entry = make_entry()
         info = _device_info(entry)
@@ -684,32 +685,28 @@ class TestDeviceInfo:
 class TestEntityCategories:
     """Verify entity_category assignments for the polish items bundled into v1.3."""
 
-    def test_message_sensor_is_diagnostic(self):
+    @pytest.mark.parametrize(
+        "entity_cls_path,expected_category",
+        [
+            pytest.param("sensor.UniFiCategoryMessageSensor", "DIAGNOSTIC", id="message-sensor"),
+            pytest.param("button.UniFiClearCategoryButton", "CONFIG", id="clear-category-button"),
+            pytest.param("button.UniFiClearAllButton", "CONFIG", id="clear-all-button"),
+        ],
+    )
+    def test_entity_category_assignment(self, entity_cls_path, expected_category):
+        import importlib
+
         from homeassistant.const import EntityCategory
 
-        from custom_components.unifi_alerts.sensor import UniFiCategoryMessageSensor
+        module_name, cls_name = entity_cls_path.rsplit(".", 1)
+        entity_cls = getattr(
+            importlib.import_module(f"custom_components.unifi_alerts.{module_name}"), cls_name
+        )
 
         # CachedProperties metaclass stores _attr_* backing values as __attr_* in __dict__
-        assert (
-            UniFiCategoryMessageSensor.__dict__.get("__attr_entity_category")
-            == EntityCategory.DIAGNOSTIC
+        assert entity_cls.__dict__.get("__attr_entity_category") == getattr(
+            EntityCategory, expected_category
         )
-
-    def test_clear_category_button_is_config(self):
-        from homeassistant.const import EntityCategory
-
-        from custom_components.unifi_alerts.button import UniFiClearCategoryButton
-
-        assert (
-            UniFiClearCategoryButton.__dict__.get("__attr_entity_category") == EntityCategory.CONFIG
-        )
-
-    def test_clear_all_button_is_config(self):
-        from homeassistant.const import EntityCategory
-
-        from custom_components.unifi_alerts.button import UniFiClearAllButton
-
-        assert UniFiClearAllButton.__dict__.get("__attr_entity_category") == EntityCategory.CONFIG
 
     def test_event_entity_has_no_device_class(self):
         from custom_components.unifi_alerts.event import UniFiAlertEventEntity
@@ -747,74 +744,72 @@ class TestEntityCategories:
 class TestTranslationKeys:
     """Verify each entity exposes the expected translation key + placeholders."""
 
-    def test_category_binary_sensor_translation(self):
-        from custom_components.unifi_alerts.binary_sensor import UniFiCategoryBinarySensor
+    @pytest.mark.parametrize(
+        "entity_cls_path,expected_key",
+        [
+            pytest.param(
+                "binary_sensor.UniFiCategoryBinarySensor",
+                CATEGORY_NETWORK_WAN,
+                id="category-binary-sensor",
+            ),
+            pytest.param(
+                "sensor.UniFiCategoryMessageSensor",
+                f"last_message_{CATEGORY_NETWORK_WAN}",
+                id="message-sensor",
+            ),
+            pytest.param(
+                "sensor.UniFiCategoryCountSensor",
+                f"open_count_{CATEGORY_NETWORK_WAN}",
+                id="count-sensor",
+            ),
+            pytest.param(
+                "event.UniFiAlertEventEntity", f"event_{CATEGORY_NETWORK_WAN}", id="event-entity"
+            ),
+            pytest.param(
+                "button.UniFiClearCategoryButton",
+                f"clear_{CATEGORY_NETWORK_WAN}",
+                id="clear-category-button",
+            ),
+        ],
+    )
+    def test_per_category_entity_translation(self, entity_cls_path, expected_key):
+        """Per-category entities (constructed with a category arg) route through strings.json."""
+        import importlib
+
+        module_name, cls_name = entity_cls_path.rsplit(".", 1)
+        entity_cls = getattr(
+            importlib.import_module(f"custom_components.unifi_alerts.{module_name}"), cls_name
+        )
 
         coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
         entry = make_entry()
-        entity = UniFiCategoryBinarySensor(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.translation_key == CATEGORY_NETWORK_WAN
+        entity = entity_cls(coord, entry, CATEGORY_NETWORK_WAN)
+        assert entity.translation_key == expected_key
         assert entity.translation_placeholders == {}
 
-    def test_rollup_binary_sensor_translation(self):
-        from custom_components.unifi_alerts.binary_sensor import UniFiRollupBinarySensor
+    @pytest.mark.parametrize(
+        "entity_cls_path,expected_key",
+        [
+            pytest.param(
+                "binary_sensor.UniFiRollupBinarySensor", "any_alert", id="rollup-binary-sensor"
+            ),
+            pytest.param("sensor.UniFiRollupCountSensor", "total_open", id="rollup-count-sensor"),
+            pytest.param("button.UniFiClearAllButton", "clear_all", id="clear-all-button"),
+        ],
+    )
+    def test_rollup_entity_translation(self, entity_cls_path, expected_key):
+        """Rollup entities (constructed with no category arg) route through strings.json."""
+        import importlib
+
+        module_name, cls_name = entity_cls_path.rsplit(".", 1)
+        entity_cls = getattr(
+            importlib.import_module(f"custom_components.unifi_alerts.{module_name}"), cls_name
+        )
 
         coord = make_coordinator({})
         entry = make_entry()
-        entity = UniFiRollupBinarySensor(coord, entry)
-        assert entity.translation_key == "any_alert"
-
-    def test_message_sensor_translation(self):
-        from custom_components.unifi_alerts.sensor import UniFiCategoryMessageSensor
-
-        coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
-        entry = make_entry()
-        entity = UniFiCategoryMessageSensor(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.translation_key == f"last_message_{CATEGORY_NETWORK_WAN}"
-        assert entity.translation_placeholders == {}
-
-    def test_count_sensor_translation(self):
-        from custom_components.unifi_alerts.sensor import UniFiCategoryCountSensor
-
-        coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
-        entry = make_entry()
-        entity = UniFiCategoryCountSensor(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.translation_key == f"open_count_{CATEGORY_NETWORK_WAN}"
-        assert entity.translation_placeholders == {}
-
-    def test_rollup_count_sensor_translation(self):
-        from custom_components.unifi_alerts.sensor import UniFiRollupCountSensor
-
-        coord = make_coordinator({})
-        entry = make_entry()
-        entity = UniFiRollupCountSensor(coord, entry)
-        assert entity.translation_key == "total_open"
-
-    def test_event_entity_translation(self):
-        from custom_components.unifi_alerts.event import UniFiAlertEventEntity
-
-        coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
-        entry = make_entry()
-        entity = UniFiAlertEventEntity(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.translation_key == f"event_{CATEGORY_NETWORK_WAN}"
-        assert entity.translation_placeholders == {}
-
-    def test_clear_category_button_translation(self):
-        from custom_components.unifi_alerts.button import UniFiClearCategoryButton
-
-        coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
-        entry = make_entry()
-        entity = UniFiClearCategoryButton(coord, entry, CATEGORY_NETWORK_WAN)
-        assert entity.translation_key == f"clear_{CATEGORY_NETWORK_WAN}"
-        assert entity.translation_placeholders == {}
-
-    def test_clear_all_button_translation(self):
-        from custom_components.unifi_alerts.button import UniFiClearAllButton
-
-        coord = make_coordinator({})
-        entry = make_entry()
-        entity = UniFiClearAllButton(coord, entry)
-        assert entity.translation_key == "clear_all"
+        entity = entity_cls(coord, entry)
+        assert entity.translation_key == expected_key
 
     def test_unique_ids_unchanged_by_translation_migration(self):
         """unique_id is the contract for automations - it must NOT change."""

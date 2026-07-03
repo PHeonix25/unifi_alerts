@@ -475,41 +475,49 @@ class TestPollingErrorPaths:
         client.authenticate.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_reauth_raises_invalid_auth_raises_config_entry_auth_failed(self):
-        """If re-auth itself raises InvalidAuthError, ConfigEntryAuthFailed must be raised."""
-        from homeassistant.exceptions import ConfigEntryAuthFailed
+    @pytest.mark.parametrize(
+        "categorise_side_effect,authenticate_side_effect",
+        [
+            pytest.param(
+                "auth_error",
+                "auth_error",
+                id="reauth-itself-raises-invalid-auth",
+            ),
+            pytest.param(
+                "auth_error",
+                "cannot_connect",
+                id="reauth-itself-raises-cannot-connect",
+            ),
+            pytest.param(
+                "auth_error_twice",
+                None,
+                id="reauth-succeeds-but-retry-still-401",
+            ),
+        ],
+    )
+    async def test_reauth_failure_paths_raise_config_entry_auth_failed(
+        self, categorise_side_effect, authenticate_side_effect
+    ):
+        """Every path that ends without a valid session must raise ConfigEntryAuthFailed.
 
-        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
-
-        hass = MagicMock()
-
-        def _create_task(coro, **kwargs):
-            coro.close()
-            return MagicMock()
-
-        hass.async_create_task = _create_task
-        hass.async_create_background_task = _create_task
-        client = MagicMock()
-        client.probe_system_log_endpoint = AsyncMock(return_value=False)
-        client.categorise_alarms = AsyncMock(side_effect=InvalidAuthError("expired"))
-        client.authenticate = AsyncMock(side_effect=InvalidAuthError("still bad"))
-
-        config = {
-            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-            CONF_POLL_INTERVAL: 60,
-            CONF_CLEAR_TIMEOUT: 30,
-        }
-        coord = UniFiAlertsCoordinator(hass, client, config)
-        with pytest.raises(ConfigEntryAuthFailed):
-            await coord._async_update_data()
-
-    @pytest.mark.asyncio
-    async def test_reauth_raises_cannot_connect_raises_config_entry_auth_failed(self):
-        """If re-auth raises CannotConnectError, ConfigEntryAuthFailed must be raised."""
+        Covers: re-auth itself raising InvalidAuthError, re-auth itself raising
+        CannotConnectError, and re-auth succeeding but the retried fetch still
+        returning 401.
+        """
         from homeassistant.exceptions import ConfigEntryAuthFailed
 
         from custom_components.unifi_alerts.unifi_client import CannotConnectError, InvalidAuthError
 
+        categorise_effects = {
+            "auth_error": InvalidAuthError("expired"),
+            "auth_error_twice": [InvalidAuthError("expired"), InvalidAuthError("still 401")],
+        }
+        authenticate_effects = {
+            None: None,
+            "auth_error": InvalidAuthError("still bad"),
+            "cannot_connect": CannotConnectError("unreachable during reauth"),
+        }
+
         hass = MagicMock()
 
         def _create_task(coro, **kwargs):
@@ -520,8 +528,8 @@ class TestPollingErrorPaths:
         hass.async_create_background_task = _create_task
         client = MagicMock()
         client.probe_system_log_endpoint = AsyncMock(return_value=False)
-        client.categorise_alarms = AsyncMock(side_effect=InvalidAuthError("expired"))
-        client.authenticate = AsyncMock(side_effect=CannotConnectError("unreachable during reauth"))
+        client.categorise_alarms = AsyncMock(side_effect=categorise_effects[categorise_side_effect])
+        client.authenticate = AsyncMock(side_effect=authenticate_effects[authenticate_side_effect])
 
         config = {
             CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
@@ -531,6 +539,8 @@ class TestPollingErrorPaths:
         coord = UniFiAlertsCoordinator(hass, client, config)
         with pytest.raises(ConfigEntryAuthFailed):
             await coord._async_update_data()
+
+        client.authenticate.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_reauth_succeeds_but_retry_fails_raises_update_failed_with_distinctive_message(
@@ -567,39 +577,6 @@ class TestPollingErrorPaths:
             await coord._async_update_data()
 
         assert "after re-authentication" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_reauth_succeeds_but_retry_still_401_raises_config_entry_auth_failed(self):
-        """Re-auth succeeds but the retried fetch still returns 401 → ConfigEntryAuthFailed."""
-        from homeassistant.exceptions import ConfigEntryAuthFailed
-
-        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
-
-        hass = MagicMock()
-
-        def _create_task(coro, **kwargs):
-            coro.close()
-            return MagicMock()
-
-        hass.async_create_task = _create_task
-        hass.async_create_background_task = _create_task
-        client = MagicMock()
-        client.probe_system_log_endpoint = AsyncMock(return_value=False)
-        client.categorise_alarms = AsyncMock(
-            side_effect=[InvalidAuthError("expired"), InvalidAuthError("still 401")]
-        )
-        client.authenticate = AsyncMock()  # re-auth itself succeeds
-
-        config = {
-            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-            CONF_POLL_INTERVAL: 60,
-            CONF_CLEAR_TIMEOUT: 30,
-        }
-        coord = UniFiAlertsCoordinator(hass, client, config)
-        with pytest.raises(ConfigEntryAuthFailed):
-            await coord._async_update_data()
-
-        client.authenticate.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_cannot_connect_raises_update_failed(self):
@@ -671,21 +648,29 @@ class TestPollingErrorPaths:
 
 
 class TestRollupOpenCount:
-    def test_rollup_open_count_sums_enabled_categories(self):
-        coord = make_coordinator()
-        coord.get_category_state(CATEGORY_NETWORK_WAN).open_count = 3
-        coord.get_category_state(CATEGORY_SECURITY_THREAT).open_count = 2
-        assert coord.rollup_open_count == 5
-
-    def test_rollup_open_count_excludes_disabled_categories(self):
-        coord = make_coordinator(enabled=[CATEGORY_NETWORK_WAN])
-        coord.get_category_state(CATEGORY_NETWORK_WAN).open_count = 3
-        coord.get_category_state(CATEGORY_SECURITY_THREAT).open_count = 99
-        assert coord.rollup_open_count == 3
-
-    def test_rollup_open_count_zero_when_no_alarms(self):
-        coord = make_coordinator()
-        assert coord.rollup_open_count == 0
+    @pytest.mark.parametrize(
+        "enabled,open_counts,expected_rollup",
+        [
+            pytest.param(
+                None,
+                {CATEGORY_NETWORK_WAN: 3, CATEGORY_SECURITY_THREAT: 2},
+                5,
+                id="sums-enabled-categories",
+            ),
+            pytest.param(
+                [CATEGORY_NETWORK_WAN],
+                {CATEGORY_NETWORK_WAN: 3, CATEGORY_SECURITY_THREAT: 99},
+                3,
+                id="excludes-disabled-categories",
+            ),
+            pytest.param(None, {}, 0, id="zero-when-no-alarms"),
+        ],
+    )
+    def test_rollup_open_count(self, enabled, open_counts, expected_rollup):
+        coord = make_coordinator(enabled=enabled)
+        for category, count in open_counts.items():
+            coord.get_category_state(category).open_count = count
+        assert coord.rollup_open_count == expected_rollup
 
 
 class TestAutoClear:
@@ -861,23 +846,43 @@ class TestWatermarks:
         coord.async_set_updated_data.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_open_count_filtered_by_watermark(self):
-        """Alarms older than watermark must not contribute to open_count."""
+    @pytest.mark.parametrize(
+        "watermark,alarm_times,expected_open_count",
+        [
+            pytest.param(
+                datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC),
+                [
+                    datetime(2024, 6, 1, 11, 0, 0, tzinfo=UTC),  # before watermark
+                    datetime(2024, 6, 1, 13, 0, 0, tzinfo=UTC),  # after watermark
+                ],
+                1,
+                id="filtered-by-watermark",
+            ),
+            pytest.param(
+                None,
+                [datetime(2024, 6, 1, i, 0, 0, tzinfo=UTC) for i in range(5)],
+                5,
+                id="unfiltered-without-watermark",
+            ),
+        ],
+    )
+    async def test_open_count_watermark_filtering(
+        self, watermark, alarm_times, expected_open_count
+    ):
+        """open_count only counts alarms after the watermark; with no watermark, all count."""
         hass = MagicMock()
         hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
         hass.async_create_background_task = hass.async_create_task
         client = MagicMock()
         client.probe_system_log_endpoint = AsyncMock(return_value=False)
 
-        watermark = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
-        old_alarm = MagicMock()
-        old_alarm.received_at = datetime(2024, 6, 1, 11, 0, 0, tzinfo=UTC)  # before watermark
-        new_alarm = MagicMock()
-        new_alarm.received_at = datetime(2024, 6, 1, 13, 0, 0, tzinfo=UTC)  # after watermark
+        alarms = []
+        for received_at in alarm_times:
+            alarm = MagicMock()
+            alarm.received_at = received_at
+            alarms.append(alarm)
 
-        client.categorise_alarms = AsyncMock(
-            return_value={CATEGORY_NETWORK_WAN: [old_alarm, new_alarm]}
-        )
+        client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: alarms})
         config = {
             CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
             CONF_POLL_INTERVAL: 60,
@@ -889,42 +894,24 @@ class TestWatermarks:
 
         await coord._async_update_data()
 
-        assert coord.get_category_state(CATEGORY_NETWORK_WAN).open_count == 1
-
-    @pytest.mark.asyncio
-    async def test_open_count_unfiltered_when_no_watermark(self):
-        """Without a watermark, all unarchived alarms are counted."""
-        hass = MagicMock()
-        hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
-        hass.async_create_background_task = hass.async_create_task
-        client = MagicMock()
-        client.probe_system_log_endpoint = AsyncMock(return_value=False)
-
-        alarms = [MagicMock() for _ in range(5)]
-        for i, a in enumerate(alarms):
-            a.received_at = datetime(2024, 6, 1, i, 0, 0, tzinfo=UTC)
-
-        client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: alarms})
-        config = {
-            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-            CONF_POLL_INTERVAL: 60,
-            CONF_CLEAR_TIMEOUT: 30,
-        }
-        coord = UniFiAlertsCoordinator(hass, client, config)
-        coord.async_set_updated_data = MagicMock()
-        # No watermark set — last_cleared_at is None
-
-        await coord._async_update_data()
-
-        assert coord.get_category_state(CATEGORY_NETWORK_WAN).open_count == 5
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).open_count == expected_open_count
 
 
 class TestSiteConfig:
     """Tests for CONF_SITE threading through the coordinator."""
 
     @pytest.mark.asyncio
-    async def test_coordinator_passes_site_to_categorise_alarms(self):
-        """Coordinator must forward the configured site name to categorise_alarms."""
+    @pytest.mark.parametrize(
+        "site_configured,expected_site",
+        [
+            pytest.param("secondary", "secondary", id="explicit-site-forwarded"),
+            pytest.param(None, "default", id="absent-site-defaults-to-default"),
+        ],
+    )
+    async def test_coordinator_forwards_site_to_categorise_alarms(
+        self, site_configured, expected_site
+    ):
+        """Coordinator must forward the configured site name (or 'default') to categorise_alarms."""
         from custom_components.unifi_alerts.const import CONF_SITE
 
         hass = MagicMock()
@@ -938,37 +925,15 @@ class TestSiteConfig:
             CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
             CONF_POLL_INTERVAL: 60,
             CONF_CLEAR_TIMEOUT: 30,
-            CONF_SITE: "secondary",
         }
+        if site_configured is not None:
+            config[CONF_SITE] = site_configured
         coord = UniFiAlertsCoordinator(hass, client, config)
         coord.async_set_updated_data = MagicMock()
 
         await coord._async_update_data()
 
-        client.categorise_alarms.assert_awaited_once_with("secondary")
-
-    @pytest.mark.asyncio
-    async def test_coordinator_defaults_site_to_default(self):
-        """When CONF_SITE is absent, coordinator must use 'default'."""
-        hass = MagicMock()
-        hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
-
-        client = MagicMock()
-        client.probe_system_log_endpoint = AsyncMock(return_value=False)
-        client.categorise_alarms = AsyncMock(return_value={})
-
-        config = {
-            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-            CONF_POLL_INTERVAL: 60,
-            CONF_CLEAR_TIMEOUT: 30,
-            # CONF_SITE intentionally absent
-        }
-        coord = UniFiAlertsCoordinator(hass, client, config)
-        coord.async_set_updated_data = MagicMock()
-
-        await coord._async_update_data()
-
-        client.categorise_alarms.assert_awaited_once_with("default")
+        client.categorise_alarms.assert_awaited_once_with(expected_site)
 
 
 class TestPollingWatermarkSuppressesIsAlerting:
@@ -982,41 +947,16 @@ class TestPollingWatermarkSuppressesIsAlerting:
     """
 
     @pytest.mark.asyncio
-    async def test_polling_does_not_reassert_for_pre_watermark_alarm(self):
-        hass = MagicMock()
-        hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
-        hass.async_create_background_task = hass.async_create_task
+    @pytest.mark.parametrize(
+        "scenario",
+        ["pre-watermark-alarm-suppressed", "mixed-batch-picks-post-watermark-alarm"],
+    )
+    async def test_polling_applies_watermark_filter(self, scenario):
+        """Polling must never re-assert is_alerting from a pre-watermark alarm.
 
-        watermark = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
-        stale_alarm = UniFiAlert(
-            category=CATEGORY_NETWORK_WAN,
-            message="stale pre-watermark alarm",
-            received_at=datetime(2024, 6, 1, 11, 0, 0, tzinfo=UTC),
-        )
-
-        client = MagicMock()
-        client.probe_system_log_endpoint = AsyncMock(return_value=False)
-        client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: [stale_alarm]})
-
-        config = {
-            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-            CONF_POLL_INTERVAL: 60,
-            CONF_CLEAR_TIMEOUT: 30,
-        }
-        coord = UniFiAlertsCoordinator(hass, client, config)
-        coord.async_set_updated_data = MagicMock()
-        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
-        state.last_cleared_at = watermark
-
-        await coord._async_update_data()
-
-        assert state.is_alerting is False
-        assert state.last_alert is None
-        assert state.open_count == 0
-
-    @pytest.mark.asyncio
-    async def test_polling_picks_post_watermark_alarm_for_most_recent(self):
-        """Mixed pre+post-watermark batch must use the post-watermark alarm."""
+        Covers the pure pre-watermark case (fully suppressed) and a mixed
+        pre+post-watermark batch (only the post-watermark alarm counts).
+        """
         hass = MagicMock()
         hass.async_create_task = lambda coro, **kw: coro.close() or MagicMock()
         hass.async_create_background_task = hass.async_create_task
@@ -1024,7 +964,7 @@ class TestPollingWatermarkSuppressesIsAlerting:
         watermark = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
         stale = UniFiAlert(
             category=CATEGORY_NETWORK_WAN,
-            message="stale",
+            message="stale pre-watermark alarm",
             received_at=datetime(2024, 6, 1, 11, 0, 0, tzinfo=UTC),
         )
         fresh = UniFiAlert(
@@ -1032,10 +972,15 @@ class TestPollingWatermarkSuppressesIsAlerting:
             message="fresh",
             received_at=datetime(2024, 6, 1, 13, 0, 0, tzinfo=UTC),
         )
+        scenarios = {
+            "pre-watermark-alarm-suppressed": ([stale], False, None, 0),
+            "mixed-batch-picks-post-watermark-alarm": ([stale, fresh], True, fresh, 1),
+        }
+        alarms, expected_is_alerting, expected_last_alert, expected_open_count = scenarios[scenario]
 
         client = MagicMock()
         client.probe_system_log_endpoint = AsyncMock(return_value=False)
-        client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: [stale, fresh]})
+        client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: alarms})
 
         config = {
             CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
@@ -1049,9 +994,9 @@ class TestPollingWatermarkSuppressesIsAlerting:
 
         await coord._async_update_data()
 
-        assert state.is_alerting is True
-        assert state.last_alert is fresh
-        assert state.open_count == 1
+        assert state.is_alerting is expected_is_alerting
+        assert state.last_alert is expected_last_alert
+        assert state.open_count == expected_open_count
 
 
 class TestWebhookMidPollRace:
@@ -1131,41 +1076,33 @@ class TestPushAlertOptimisticOpenCount:
     reconciles to the authoritative value on the next refresh.
     """
 
-    def test_push_increments_open_count_when_no_watermark(self):
+    @pytest.mark.parametrize(
+        "watermark,expected_open_count",
+        [
+            pytest.param(None, 1, id="no-watermark"),
+            pytest.param(datetime(2020, 1, 1, tzinfo=UTC), 1, id="alert-after-watermark"),
+            pytest.param(datetime(2030, 1, 1, tzinfo=UTC), 0, id="alert-before-watermark"),
+        ],
+    )
+    def test_push_increments_open_count_based_on_watermark(self, watermark, expected_open_count):
+        """push_alert bumps open_count only when the alert is after the watermark (or none is set).
+
+        Webhook payloads use datetime.now(UTC), so a future watermark always
+        puts the incoming alert "before" it (suppressed) while a past or
+        absent watermark always puts it "after" (counted).
+        """
         coord = make_coordinator()
         coord.async_set_updated_data = MagicMock()
         state = coord.get_category_state(CATEGORY_NETWORK_WAN)
         assert state.open_count == 0
+        state.last_cleared_at = watermark
 
         coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
 
-        assert state.open_count == 1
-
-    def test_push_increments_open_count_when_alert_after_watermark(self):
-        coord = make_coordinator()
-        coord.async_set_updated_data = MagicMock()
-        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
-        # Watermark set in the past — webhook arriving "now" is after it
-        state.last_cleared_at = datetime(2020, 1, 1, tzinfo=UTC)
-
-        coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
-
-        assert state.open_count == 1
-
-    def test_push_does_not_increment_open_count_for_pre_watermark_alert(self):
-        """A push for an alert older than the watermark must not bump open_count."""
-        coord = make_coordinator()
-        coord.async_set_updated_data = MagicMock()
-        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
-        state.last_cleared_at = datetime(2030, 1, 1, tzinfo=UTC)  # future
-
-        # Webhook payloads use datetime.now(UTC), which is before 2030
-        coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
-
-        # apply_alert still ran (alert_count bumped), but open_count was
-        # suppressed because the alert is older than the watermark.
+        # apply_alert always runs (alert_count bumps); open_count only bumps
+        # when the alert is not suppressed by the watermark.
         assert state.alert_count == 1
-        assert state.open_count == 0
+        assert state.open_count == expected_open_count
 
     def test_dedup_window_also_suppresses_open_count_increment(self):
         """Duplicate (category, key) within the dedup window must not double-count."""
@@ -1373,57 +1310,43 @@ class TestCoordinatorV2Dispatch:
     """Tests for the v2 system-log dispatch path in _async_update_data."""
 
     @pytest.mark.asyncio
-    async def test_coordinator_uses_system_log_when_available(self):
-        """When probe returns True, coordinator must call fetch_system_log_alarms."""
+    @pytest.mark.parametrize(
+        "probe_return_value,probe_side_effect,expected_fetch_count,expected_categorise_count",
+        [
+            pytest.param(True, None, 1, 0, id="system-log-available"),
+            pytest.param(False, None, 0, 1, id="legacy-fallback-probe-false"),
+            pytest.param(
+                None,
+                "cannot_connect",
+                0,
+                1,
+                id="legacy-fallback-probe-exception",
+            ),
+            # Simulates the probe returning False due to a 404 (already handled
+            # inside UniFiClient) - mechanically identical to the plain
+            # probe-false case above, kept as its own id for traceability.
+            pytest.param(False, None, 0, 1, id="legacy-fallback-404"),
+        ],
+    )
+    async def test_coordinator_dispatches_on_probe_result(
+        self, probe_return_value, probe_side_effect, expected_fetch_count, expected_categorise_count
+    ):
+        """The system-log probe result must select fetch_system_log_alarms vs categorise_alarms."""
+        from custom_components.unifi_alerts.unifi_client import CannotConnectError
+
+        side_effects = {None: None, "cannot_connect": CannotConnectError("network error")}
+
         hass, client = _make_hass_and_client()
-        client.probe_system_log_endpoint = AsyncMock(return_value=True)
+        client.probe_system_log_endpoint = AsyncMock(
+            return_value=probe_return_value, side_effect=side_effects[probe_side_effect]
+        )
         client.fetch_system_log_alarms = AsyncMock(return_value=[])
         coord = _make_full_coordinator(hass, client)
 
         await coord._async_update_data()
 
-        client.fetch_system_log_alarms.assert_awaited_once()
-        client.categorise_alarms.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_coordinator_falls_back_to_legacy_on_probe_false(self):
-        """When probe returns False, coordinator must use categorise_alarms."""
-        hass, client = _make_hass_and_client()
-        client.probe_system_log_endpoint = AsyncMock(return_value=False)
-        coord = _make_full_coordinator(hass, client)
-
-        await coord._async_update_data()
-
-        client.categorise_alarms.assert_awaited_once()
-        client.fetch_system_log_alarms.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_coordinator_falls_back_to_legacy_on_probe_exception(self):
-        """If probe raises an exception, coordinator must fall back to legacy path."""
-        from custom_components.unifi_alerts.unifi_client import CannotConnectError
-
-        hass, client = _make_hass_and_client()
-        client.probe_system_log_endpoint = AsyncMock(
-            side_effect=CannotConnectError("network error")
-        )
-        coord = _make_full_coordinator(hass, client)
-
-        await coord._async_update_data()
-
-        client.categorise_alarms.assert_awaited_once()
-        client.fetch_system_log_alarms.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_coordinator_falls_back_to_legacy_on_404(self):
-        """probe=False (from a 404) triggers legacy fallback."""
-        hass, client = _make_hass_and_client()
-        # Simulates the probe returning False due to 404 (already handled in UniFiClient)
-        client.probe_system_log_endpoint = AsyncMock(return_value=False)
-        coord = _make_full_coordinator(hass, client)
-
-        await coord._async_update_data()
-
-        client.categorise_alarms.assert_awaited_once()
+        assert client.fetch_system_log_alarms.await_count == expected_fetch_count
+        assert client.categorise_alarms.await_count == expected_categorise_count
 
     @pytest.mark.asyncio
     async def test_v2_events_parsed_and_categorised(self):
