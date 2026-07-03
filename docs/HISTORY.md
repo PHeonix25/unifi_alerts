@@ -2,6 +2,29 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-07-03
+
+- **release**: v1.9.0-pre2 tagged. Second checkpoint of the v1.9.0 "Localisation and Scale" cycle. Headline: site validation against the controller (#205), unrecognised event keys surfaced in diagnostics (#207), severity exposed on binary sensors (#210), SSDP discovery for UniFi OS consoles (#212), plus a `UniFiAuth` extraction (#218), narrowed exception handling with a `ConfigEntryAuthFailed` reauth-repair fix (#257), and test-infrastructure hardening (#258, #260) alongside an options-flow refactor (#259). Closes the five PRs carried forward from pre1.
+- **feat**: non-default site names are now validated against the controller in both the config and options flow; a failed lookup shows an `invalid_site` field error instead of creating a broken entry; the default site skips the extra round-trip ([#205]). Closes #171.
+- **feat**: unclassified event keys seen during polling now accumulate and appear under `coordinator.unrecognised_keys` in the HA diagnostics download, sorted by occurrence count, from both the v2 system-log and legacy alarm paths ([#207]). Closes #134.
+- **feat**: `last_severity` is now exposed as an attribute on `UniFiCategoryBinarySensor` and `UniFiRollupBinarySensor`, not just the message sensor, so automations can condition on severity directly from the entity that triggers them ([#210]). Closes #135.
+- **feat**: SSDP discovery for UDM, UDM Pro, UDM SE, and UDM Pro Max consoles; `async_step_ssdp` pre-fills the controller URL and forwards to the credentials step ([#212]). Closes #172.
+- **refactor**: extract `UniFiAuth` from `UniFiClient` into its own module (`unifi_auth.py`) with no passthrough properties; production call sites import auth exceptions from `.unifi_auth` directly ([#218]). Closes #120.
+- **fix**: `coordinator.async_config_entry_first_refresh()` no longer wraps HA core's call in a blanket `except Exception`, which was silently misclassifying `ConfigEntryAuthFailed` as `ConfigEntryNotReady` and suppressing HA's reauth-repair flow; every other blind `except Exception` (BLE001) across the integration narrowed to the specific exceptions each call site can raise ([#257]). Closes #237.
+- **tests**: `test_unifi_client.py` now drives a real `aiohttp.ClientSession` through `aioresponses` instead of hand-built `MagicMock` response doubles, so tests assert on actual outbound HTTP rather than a fabricated aiohttp surface ([#258]). Closes #229.
+- **refactor**: `UniFiAlertsOptionsFlow.async_step_credentials` split from a ~135-line method into a thin orchestrator over standalone helpers (form parsing, duplicate-entry detection, staged-dict builders, credential validation); no behaviour change ([#259]). Closes #238.
+- **tests**: collapsed near-duplicate test-body clusters in `test_coordinator.py` and `test_entities.py` into `@pytest.mark.parametrize` cases with readable `ids`; test-item counts unchanged (90 and 84 respectively) ([#260]). Closes #231.
+
+[#205]: https://github.com/PHeonix25/unifi_alerts/pull/205
+[#207]: https://github.com/PHeonix25/unifi_alerts/pull/207
+[#210]: https://github.com/PHeonix25/unifi_alerts/pull/210
+[#212]: https://github.com/PHeonix25/unifi_alerts/pull/212
+[#218]: https://github.com/PHeonix25/unifi_alerts/pull/218
+[#257]: https://github.com/PHeonix25/unifi_alerts/pull/257
+[#258]: https://github.com/PHeonix25/unifi_alerts/pull/258
+[#259]: https://github.com/PHeonix25/unifi_alerts/pull/259
+[#260]: https://github.com/PHeonix25/unifi_alerts/pull/260
+
 ## 2026-06-27
 
 - **release**: v1.9.0-pre1 tagged. First checkpoint of the v1.9.0 "Localisation and Scale" cycle. Headline: translatable per-category entity labels (#133) and the v2 system-log fetch-window clamp (#136), plus large-volume serialisation tests and CI/process hardening. Five further v1.9.0 PRs (#207, #210, #205, #212, #218) remain open and will land in a later checkpoint.
