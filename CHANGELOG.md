@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added the MIT license. The repository previously shipped without any license file, which left users and contributors without a legal grant to use or modify the code and would have blocked the HACS default catalogue submission. ([#290])
 - UniFi OS consoles (UDM, UDM Pro, UDM SE, UDM Pro Max) are now discovered automatically via SSDP. When one is found on the local network it appears in Settings > Integrations > Discovered, with the controller URL pre-filled. Credentials still need to be entered manually. ([#172])
 - Unclassified event keys seen during polling are now collected and exposed under `unrecognised_keys` in the integration diagnostics (Settings > Devices & Services > UniFi Alerts > Download diagnostics). This makes previously-invisible unmapped events visible without enabling DEBUG logging, so users can identify and report missing keys to the issue tracker. ([#134])
 - A typo'd site name during setup now shows a dedicated error ("Site not found on the controller") on the categories step instead of creating a broken config entry stuck in "Not Ready". The default site (`default`) still proceeds without an extra network round-trip since reachability was already confirmed in the credentials step. The same validation runs in the options flow when changing to a non-default site. ([#171])
@@ -302,4 +303,5 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#238]: https://github.com/PHeonix25/unifi_alerts/issues/238
 [#241]: https://github.com/PHeonix25/unifi_alerts/issues/241
 [#257]: https://github.com/PHeonix25/unifi_alerts/pull/257
+[#290]: https://github.com/PHeonix25/unifi_alerts/pull/290
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR

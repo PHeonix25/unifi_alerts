@@ -270,7 +270,6 @@ class TestAsyncSetupEntry:
         assert "CannotConnectError" in str(excinfo.value)
 
     @pytest.mark.asyncio
-    @pytest.mark.asyncio
     async def test_ssl_disabled_logs_warning(self):
         from custom_components.unifi_alerts import async_setup_entry
 

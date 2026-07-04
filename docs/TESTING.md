@@ -37,7 +37,8 @@ Individual commands if you prefer to skip the Makefile:
 # Integration tests only
 .venv/bin/pytest tests/integration/ -v -m integration
 
-# Single file
+# Single file (passes on its own: the 95% whole-suite coverage gate lives in
+# `make test` and the CI test job, not in pytest addopts)
 .venv/bin/pytest tests/unit/test_coordinator.py -v
 
 # Lint

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(gh run:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh pr:*)",
+      "Bash(make:*)",
+      "Bash(pytest:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(.venv/bin/pytest:*)",
+      "Bash(.venv/bin/ruff:*)",
+      "Bash(.venv/bin/mypy:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:ui.com)",
+      "WebFetch(domain:help.ui.com)",
+      "WebSearch"
+    ]
+  }
+}
