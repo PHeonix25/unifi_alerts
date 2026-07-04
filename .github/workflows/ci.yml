@@ -52,6 +52,7 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
+          cache: pip
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
       - name: Ruff lint
@@ -71,10 +72,13 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
+          cache: pip
       - name: Install test dependencies
         run: pip install -r requirements-dev.txt
       - name: Run tests with coverage
-        run: pytest tests/ -v --cov-report=xml
+        # --cov-fail-under lives here (and in `make test`), not in pytest
+        # addopts, so targeted local runs of a single file still pass.
+        run: pytest tests/ -v --cov-report=xml --cov-fail-under=95
       - name: Upload coverage to Codecov
         if: always()
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0

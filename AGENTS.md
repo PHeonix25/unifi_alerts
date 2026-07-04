@@ -85,7 +85,10 @@ tests/
 
 docs/                             # extended documentation
 scripts/                          # validation helpers (validate_hacs.py, check_translations.py, etc.)
+agentrc.eval.json                 # agent planning-eval cases (see below)
 ```
+
+`agentrc.eval.json` holds planning-evaluation cases for agent harnesses: each case pairs a realistic task prompt with the expectations a good implementation plan must meet (files touched, constraints respected, tests updated). It is not executed by CI. If you rename a symbol or move a test file referenced in its expectations, update the case text in the same PR.
 
 ---
 

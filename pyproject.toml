@@ -6,9 +6,6 @@ line-length = 100
 select = ["E", "F", "W", "I", "UP", "B", "BLE", "C4", "SIM"]
 ignore = ["E501"]
 
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]   # allow assert in tests
-
 [tool.mypy]
 python_version = "3.12"
 strict = true
@@ -34,7 +31,11 @@ pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "--cov=custom_components/unifi_alerts --cov-report=term-missing --cov-fail-under=95"
+# The 95% coverage gate lives in the Makefile `test` target and the CI test
+# job, not here: keeping it out of addopts lets a documented single-file run
+# (`pytest tests/unit/test_models.py`) pass without tripping a whole-suite
+# coverage threshold.
+addopts = "--cov=custom_components/unifi_alerts --cov-report=term-missing"
 filterwarnings = [
     "ignore::DeprecationWarning:josepy",
     "ignore::DeprecationWarning:acme",

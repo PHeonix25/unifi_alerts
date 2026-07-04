@@ -36,8 +36,10 @@ setup-lint:
 	$(PY312) -m venv .venv
 	$(VENV)/pip$(EXE) install -r requirements-lint.txt
 
+# The whole-suite coverage gate lives here (and in the CI test job), not in
+# pytest addopts, so a targeted single-file pytest run still passes.
 test:
-	$(VENV)/pytest$(EXE) tests/ -v
+	$(VENV)/pytest$(EXE) tests/ -v --cov-fail-under=95
 
 coverage:
 	$(VENV)/pytest$(EXE) tests/ -v --cov-report=html
