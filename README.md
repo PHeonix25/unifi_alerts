@@ -186,13 +186,7 @@ See [docs/EXAMPLES.md](docs/EXAMPLES.md) for a Lovelace dashboard card and an au
 
 ## Privacy and data retention
 
-All data stays on your local network; the integration does not communicate with any external service.
-
-**What is stored:** each alert records `message` (truncated to 255 characters), `category`, `device_name`, `alert_key`, `severity`, `site`, and `received_at` (UTC timestamp). The most recent alert per category is kept in memory and persisted to `.storage/unifi_alerts` so it survives HA restarts.
-
-**What clearing does:** pressing Clear (or letting auto-clear fire) marks the category as acknowledged (`is_alerting = False`) and advances the watermark (`last_cleared_at`). It does NOT delete `last_alert` - the most recent alert details remain visible in entity attributes. This is intentional: dashboards and automations can still reference the last seen event after acknowledging it.
-
-**How to purge stored data:** delete the integration entry via Settings > Devices & Services > UniFi Alerts > three-dot menu > Delete. This removes all persisted state including every `last_alert`.
+All data stays on your local network; the integration does not communicate with any external service. For the full statement of what is stored, where, what appears in diagnostics downloads, and how to purge it, see [docs/DATA_HANDLING.md](docs/DATA_HANDLING.md).
 
 ---
 
