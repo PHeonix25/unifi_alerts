@@ -221,4 +221,5 @@ A short tour of the rest of the documentation:
 | [docs/UNIFI.md](docs/UNIFI.md) | UniFi API, auth methods, alarm payload taxonomy |
 | [docs/TESTING.md](docs/TESTING.md) | Test layout and conventions |
 | [docs/REPO_LAYOUT.md](docs/REPO_LAYOUT.md) | Per-file responsibilities |
+| [docs/LOCALIZATION.md](docs/LOCALIZATION.md) | Localisation maturity bar, audit history, and how to contribute a new language |
 | [CLAUDE.md](CLAUDE.md) | Non-negotiable constraints and coding conventions |

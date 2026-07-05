@@ -22,6 +22,7 @@
 - Removing a config entry now deletes its persisted watermark storage file and any open repair issues tied to it, instead of leaving them behind permanently. ([#294])
 - Alert payloads with non-string `device_name` or `site` values no longer crash the webhook handler or the polling path; these fields are now always coerced to strings, matching how `message`/`key`/`severity` were already handled. ([#292])
 - The config entry's `unique_id` now updates when the controller URL is changed via the options flow, so duplicate-entry prevention and SSDP discovery matching stay correct after re-pointing an entry to a different controller. ([#295])
+- The options (reconfigure) flow's `cannot_connect`, `invalid_auth`, `invalid_ssl_cert`, `invalid_url_scheme`, and `at_least_one_category` errors, and the SSDP discovery flow's `cannot_connect` abort reason, now have translated text. Previously these were missing from `strings.json`'s `options.error` and `config.abort` sections, so a user hitting one of them while reconfiguring an entry or during a failed SSDP discovery would see the raw untranslated key instead of a readable message. ([#PR])
 
 ### Internal
 
