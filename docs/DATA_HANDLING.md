@@ -79,7 +79,7 @@ The webhook bearer token is never logged. Webhook URLs that appear anywhere in l
 
 There is no time-based retention window. Data for a category persists until one of:
 
-1. **The category is cleared** - `last_cleared_at` advances, but `last_alert` is not deleted (see README "Privacy and data retention" for the clear-vs-delete distinction that affects entity attributes visible in the UI).
+1. **The category is cleared** - pressing Clear (or auto-clear firing) marks the category as acknowledged (`is_alerting = False`) and advances the watermark (`last_cleared_at`). It does NOT delete `last_alert` - the most recent alert's details remain visible in entity attributes. This is intentional: dashboards and automations can still reference the last-seen event after it has been acknowledged.
 2. **The config entry is removed** - the watermark `Store` file is deleted outright (see Deletion above).
 3. **Home Assistant itself is reset or uninstalled** - nothing in this integration outlives the HA install; there is no separate database, external store, or backup mechanism of its own.
 
