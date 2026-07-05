@@ -708,9 +708,22 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                         translation_key=ISSUE_ID_WEBHOOK_SECRET_ROTATED,
                         translation_placeholders={"name": self._config_entry.title},
                     )
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry, data=self._pending_data
-                )
+                # unique_id tracks the controller URL from initial setup (see
+                # async_step_user). If the URL changed here, the entry's unique_id
+                # must follow it — otherwise it stays pinned to the old URL forever,
+                # which breaks both future duplicate-prevention (a fresh entry for
+                # the old URL would wrongly abort as already_configured) and SSDP
+                # discovery matching (keyed on unique_id) for the new controller.
+                # _build_verify_ssl_and_secret_only_pending leaves
+                # CONF_CONTROLLER_URL unchanged, so this only fires on an actual
+                # URL change (issue #276). Passing unique_id=None here (unchanged
+                # case) would be interpreted by HA as "clear the unique_id", so
+                # the kwarg is omitted entirely rather than passed as None.
+                update_kwargs: dict[str, Any] = {"data": self._pending_data}
+                new_url = self._pending_data.get(CONF_CONTROLLER_URL)
+                if new_url and new_url != self._config_entry.data.get(CONF_CONTROLLER_URL):
+                    update_kwargs["unique_id"] = new_url
+                self.hass.config_entries.async_update_entry(self._config_entry, **update_kwargs)
             return self.async_create_entry(title="", data=self._pending_options)
 
         enabled: list[str] = self._pending_options.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)

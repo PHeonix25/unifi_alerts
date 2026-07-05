@@ -21,6 +21,7 @@
 - Two distinct webhook alerts with no `key` field arriving in the same category within the dedup window no longer suppress each other; only genuine duplicate keys are still deduplicated. ([#291])
 - Removing a config entry now deletes its persisted watermark storage file and any open repair issues tied to it, instead of leaving them behind permanently. ([#294])
 - Alert payloads with non-string `device_name` or `site` values no longer crash the webhook handler or the polling path; these fields are now always coerced to strings, matching how `message`/`key`/`severity` were already handled. ([#292])
+- The config entry's `unique_id` now updates when the controller URL is changed via the options flow, so duplicate-entry prevention and SSDP discovery matching stay correct after re-pointing an entry to a different controller. ([#295])
 
 ### Internal
 
@@ -310,4 +311,5 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#291]: https://github.com/PHeonix25/unifi_alerts/pull/291
 [#292]: https://github.com/PHeonix25/unifi_alerts/pull/292
 [#294]: https://github.com/PHeonix25/unifi_alerts/pull/294
+[#295]: https://github.com/PHeonix25/unifi_alerts/pull/295
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR

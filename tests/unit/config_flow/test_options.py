@@ -967,6 +967,157 @@ class TestWebhookSecretRotationRepairIssue:
         mock_ir.async_create_issue.assert_not_called()
 
 
+class TestOptionsFlowUniqueIdFollowsUrl:
+    """The config entry's unique_id must track the controller URL (issue #276).
+
+    Prior to the fix, async_step_finish persisted entry.data with the new
+    controller URL but never passed unique_id= to async_update_entry, so the
+    entry's unique_id stayed pinned to whatever URL was used at initial setup.
+    That left duplicate-prevention and SSDP discovery matching (both keyed on
+    unique_id) looking at a stale URL after a re-point.
+    """
+
+    @pytest.mark.asyncio
+    async def test_url_change_updates_entry_unique_id(self) -> None:
+        """Changing the controller URL through the options flow must update
+        entry.unique_id to the new URL when finish is submitted."""
+        flow = make_options_flow(url="https://192.168.1.1")
+        flow.async_show_form = MagicMock(
+            side_effect=lambda **kwargs: {"type": "form", "step_id": kwargs["step_id"]}
+        )
+        flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+
+        new_creds = {
+            CONF_CONTROLLER_URL: "https://10.0.0.1",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+        }
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+                return_value=make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance._is_unifi_os = False
+            await flow.async_step_credentials(new_creds)
+
+        cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+        with patch(
+            "custom_components.unifi_alerts.config_flow.async_generate_url",
+            return_value="http://ha.local/webhook/x",
+        ):
+            await flow.async_step_categories(cat_input)
+            result = await flow.async_step_finish(user_input={})
+
+        assert result["type"] == "create_entry"
+        flow.hass.config_entries.async_update_entry.assert_called_once()
+        call_kwargs = flow.hass.config_entries.async_update_entry.call_args.kwargs
+        assert call_kwargs["unique_id"] == "https://10.0.0.1"
+        assert call_kwargs["data"][CONF_CONTROLLER_URL] == "https://10.0.0.1"
+
+    @pytest.mark.asyncio
+    async def test_unchanged_url_leaves_unique_id_untouched(self) -> None:
+        """Rotating only verify_ssl/secret (URL untouched) must NOT pass
+        unique_id= to async_update_entry."""
+        flow = make_options_flow(url="https://192.168.1.1")
+        flow.async_show_form = MagicMock(
+            side_effect=lambda **kwargs: {"type": "form", "step_id": kwargs["step_id"]}
+        )
+        flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+
+        ssl_only = {
+            CONF_CONTROLLER_URL: "",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: False,
+        }
+        await flow.async_step_credentials(ssl_only)
+
+        cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+        with patch(
+            "custom_components.unifi_alerts.config_flow.async_generate_url",
+            return_value="http://ha.local/webhook/x",
+        ):
+            await flow.async_step_categories(cat_input)
+            result = await flow.async_step_finish(user_input={})
+
+        assert result["type"] == "create_entry"
+        flow.hass.config_entries.async_update_entry.assert_called_once()
+        call_kwargs = flow.hass.config_entries.async_update_entry.call_args.kwargs
+        assert "unique_id" not in call_kwargs
+        assert call_kwargs["data"][CONF_CONTROLLER_URL] == "https://192.168.1.1"
+
+    @pytest.mark.asyncio
+    async def test_url_change_unique_id_does_not_collide_with_another_entry(self) -> None:
+        """The new unique_id must not collide with another entry's URL.
+
+        _find_duplicate_entry already runs in async_step_credentials and
+        aborts before staging if the new URL matches ANOTHER entry's
+        entry.data[CONF_CONTROLLER_URL] -- so by the time async_step_finish
+        runs and sets unique_id=new_url, no other entry can already be using
+        that URL/unique_id.
+        """
+        from custom_components.unifi_alerts.config_flow import _find_duplicate_entry
+
+        flow = make_options_flow(url="https://192.168.1.1")
+        flow.async_show_form = MagicMock(
+            side_effect=lambda **kwargs: {"type": "form", "step_id": kwargs["step_id"]}
+        )
+        flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+
+        other_entry = MagicMock()
+        other_entry.entry_id = "other-entry"
+        other_entry.data = {CONF_CONTROLLER_URL: "https://172.16.0.1"}
+        flow.hass.config_entries.async_entries = MagicMock(return_value=[other_entry])
+
+        new_creds = {
+            CONF_CONTROLLER_URL: "https://10.0.0.1",
+            CONF_USERNAME: "",
+            CONF_PASSWORD: "",
+            CONF_API_KEY: "",
+            CONF_VERIFY_SSL: True,
+        }
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+                return_value=make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance._is_unifi_os = False
+            result = await flow.async_step_credentials(new_creds)
+
+        # Not aborted -- the new URL doesn't collide with the other entry.
+        assert result["step_id"] == "categories"
+
+        cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+        with patch(
+            "custom_components.unifi_alerts.config_flow.async_generate_url",
+            return_value="http://ha.local/webhook/x",
+        ):
+            await flow.async_step_categories(cat_input)
+            await flow.async_step_finish(user_input={})
+
+        call_kwargs = flow.hass.config_entries.async_update_entry.call_args.kwargs
+        new_unique_id = call_kwargs["unique_id"]
+        assert new_unique_id == "https://10.0.0.1"
+        # Confirm the helper that gated staging would still find no collision
+        # for the URL that just became the entry's unique_id.
+        assert _find_duplicate_entry(flow.hass, flow._config_entry.entry_id, new_unique_id) is None
+
+
 class TestOptionsCredentialsErrorsAndStaging:
     @pytest.mark.asyncio
     async def test_credentials_cannot_connect_shows_error(self) -> None:
