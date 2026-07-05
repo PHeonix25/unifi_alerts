@@ -273,16 +273,20 @@ class TestPushDedup:
 
         assert coord.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 2
 
-    def test_empty_key_still_dedups(self):
-        """Alerts with no `key` field still dedup on the empty-string token —
-        prevents a misconfigured controller (which omits `key`) from flooding."""
+    def test_distinct_keyless_alerts_are_not_suppressed(self):
+        """Alerts with no `key` field (e.g. the empty-body webhook ping) have no
+        identity to dedup on — two distinct keyless alerts in the same window
+        must both count, unlike two keyed alerts sharing the same key (issue #263)."""
         coord = make_coordinator()
         coord.async_set_updated_data = MagicMock()
         a1 = make_alert(CATEGORY_NETWORK_WAN, "first")  # key=""
         a2 = make_alert(CATEGORY_NETWORK_WAN, "second")  # key=""
         coord.push_alert(CATEGORY_NETWORK_WAN, a1)
         coord.push_alert(CATEGORY_NETWORK_WAN, a2)
-        assert coord.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 1
+        assert coord.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 2
+        assert coord.async_set_updated_data.call_count == 2
+        # Keyless pushes must not pollute _last_push_at — only real keys are tracked.
+        assert coord._last_push_at == {}
 
     def test_last_push_at_dict_bounded_by_dedup_window(self):
         """Regression: ``_last_push_at`` must not grow without bound.

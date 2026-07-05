@@ -18,6 +18,8 @@
 
 - The v2 system-log fetch window is now clamped to `DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS` (24 hours). Previously, a rarely-cleared category could hold the oldest watermark to an arbitrarily old timestamp, causing every poll to paginate from that date forward and silently miss recent alarms once the 10-page cap was reached. The clamp ensures all categories are always within the paged window. A WARNING is now logged when the page cap is reached, indicating some events may have been missed. ([#136])
 - A `ConfigEntryAuthFailed` raised during the initial data fetch (for example, credentials rotated between setup's `authenticate()` call and the first coordinator poll) is no longer misclassified as `ConfigEntryNotReady`. Previously a blanket exception handler around the first refresh re-wrapped every failure, including a genuine auth failure, as "not ready": silently suppressing Home Assistant's reauth-repair flow. ([#257])
+- Two distinct webhook alerts with no `key` field arriving in the same category within the dedup window no longer suppress each other; only genuine duplicate keys are still deduplicated. ([#291])
+- Removing a config entry now deletes its persisted watermark storage file and any open repair issues tied to it, instead of leaving them behind permanently. ([#294])
 - Alert payloads with non-string `device_name` or `site` values no longer crash the webhook handler or the polling path; these fields are now always coerced to strings, matching how `message`/`key`/`severity` were already handled. ([#292])
 
 ### Internal
@@ -305,5 +307,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#241]: https://github.com/PHeonix25/unifi_alerts/issues/241
 [#257]: https://github.com/PHeonix25/unifi_alerts/pull/257
 [#290]: https://github.com/PHeonix25/unifi_alerts/pull/290
+[#291]: https://github.com/PHeonix25/unifi_alerts/pull/291
 [#292]: https://github.com/PHeonix25/unifi_alerts/pull/292
+[#294]: https://github.com/PHeonix25/unifi_alerts/pull/294
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR
