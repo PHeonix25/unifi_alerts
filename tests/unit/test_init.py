@@ -456,6 +456,64 @@ class TestAsyncUnloadEntry:
         assert call_order == ["shutdown", "unregister", "close"]
 
 
+# ── async_remove_entry ────────────────────────────────────────────────────────
+
+
+class TestAsyncRemoveEntry:
+    """async_remove_entry must delete the watermark store file and all four repair issues."""
+
+    @pytest.mark.asyncio
+    async def test_removes_watermark_store_file(self):
+        from custom_components.unifi_alerts import async_remove_entry
+
+        hass = make_hass()
+        entry = make_entry(entry_id="entry-xyz")
+
+        mock_store = MagicMock()
+        mock_store.async_remove = AsyncMock()
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.Store", return_value=mock_store
+            ) as mock_store_cls,
+            patch("custom_components.unifi_alerts.ir.async_delete_issue"),
+        ):
+            await async_remove_entry(hass, entry)
+
+        mock_store_cls.assert_called_once()
+        call_args = mock_store_cls.call_args.args
+        assert call_args[0] is hass
+        assert call_args[2] == f"{DOMAIN}_watermarks_entry-xyz"
+        mock_store.async_remove.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_deletes_all_four_per_entry_repair_issues(self):
+        from custom_components.unifi_alerts import async_remove_entry
+
+        hass = make_hass()
+        entry = make_entry(entry_id="entry-xyz")
+
+        mock_store = MagicMock()
+        mock_store.async_remove = AsyncMock()
+
+        with (
+            patch("custom_components.unifi_alerts.Store", return_value=mock_store),
+            patch("custom_components.unifi_alerts.ir.async_delete_issue") as mock_delete_issue,
+        ):
+            await async_remove_entry(hass, entry)
+
+        deleted_issue_ids = {call.args[2] for call in mock_delete_issue.call_args_list}
+        assert deleted_issue_ids == {
+            "auth_failed_entry-xyz",
+            "webhook_secret_rotated_entry-xyz",
+            "webhook_urls_changed_entry-xyz",
+            "watermark_persist_failed_entry-xyz",
+        }
+        for call in mock_delete_issue.call_args_list:
+            assert call.args[0] is hass
+            assert call.args[1] == DOMAIN
+
+
 # ── device registry ───────────────────────────────────────────────────────────
 
 
