@@ -40,6 +40,8 @@ from .const import (
     DEFAULT_SITE,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
+    ISSUE_ID_AUTH_FAILED,
+    ISSUE_ID_WEBHOOK_SECRET_ROTATED,
     webhook_id_for_category,
 )
 from .models import UniFiClientConfig
@@ -54,10 +56,10 @@ def _create_auth_failed_issue(hass: Any, entry: Any) -> None:
     ir.async_create_issue(
         hass,
         DOMAIN,
-        f"auth_failed_{entry.entry_id}",
+        f"{ISSUE_ID_AUTH_FAILED}_{entry.entry_id}",
         is_fixable=True,
         severity=ir.IssueSeverity.ERROR,
-        translation_key="auth_failed",
+        translation_key=ISSUE_ID_AUTH_FAILED,
         translation_placeholders={"name": entry.title},
     )
 
@@ -320,7 +322,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
                 self.hass.config_entries.async_update_entry(entry, data=new_data)
                 # Clear the repair issue now that auth is restored
-                ir.async_delete_issue(self.hass, DOMAIN, f"auth_failed_{entry.entry_id}")
+                ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_ID_AUTH_FAILED}_{entry.entry_id}")
                 await self.hass.config_entries.async_reload(entry.entry_id)
                 return self.async_abort(reason="reauth_successful")
 
@@ -700,10 +702,10 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                     ir.async_create_issue(
                         self.hass,
                         DOMAIN,
-                        f"webhook_secret_rotated_{self._config_entry.entry_id}",
+                        f"{ISSUE_ID_WEBHOOK_SECRET_ROTATED}_{self._config_entry.entry_id}",
                         is_fixable=False,
                         severity=ir.IssueSeverity.WARNING,
-                        translation_key="webhook_secret_rotated",
+                        translation_key=ISSUE_ID_WEBHOOK_SECRET_ROTATED,
                         translation_placeholders={"name": self._config_entry.title},
                     )
                 # unique_id tracks the controller URL from initial setup (see

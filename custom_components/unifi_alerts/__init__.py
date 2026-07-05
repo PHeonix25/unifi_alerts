@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import cast
+from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -14,12 +14,18 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntryType
+from homeassistant.helpers.storage import Store
 
 from .const import (
     CONF_CONTROLLER_URL,
     CONF_VERIFY_SSL,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
+    ISSUE_ID_AUTH_FAILED,
+    ISSUE_ID_PERSIST_FAILED,
+    ISSUE_ID_WEBHOOK_SECRET_ROTATED,
+    ISSUE_ID_WEBHOOK_URLS_CHANGED,
+    STORAGE_VERSION_WATERMARKS,
 )
 from .coordinator import UniFiAlertsCoordinator
 from .models import RuntimeData, UniFiClientConfig
@@ -67,10 +73,10 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
                 ir.async_create_issue(
                     hass,
                     DOMAIN,
-                    f"webhook_urls_changed_{config_entry.entry_id}",
+                    f"{ISSUE_ID_WEBHOOK_URLS_CHANGED}_{config_entry.entry_id}",
                     is_fixable=False,
                     severity=ir.IssueSeverity.WARNING,
-                    translation_key="webhook_urls_changed",
+                    translation_key=ISSUE_ID_WEBHOOK_URLS_CHANGED,
                     translation_placeholders={"name": config_entry.title},
                 )
         else:
@@ -204,6 +210,30 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not remaining:
             async_unregister_services(hass)
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clean up persisted storage and repair issues after a config entry is removed.
+
+    Fires after async_unload_entry, once HA has decided the entry itself is
+    gone for good (not just reloading). Without this, the per-entry watermark
+    Store file and any open repair issues keyed to entry.entry_id would remain
+    orphaned forever, since nothing else ever reads or clears them again.
+    """
+    store: Store[dict[str, Any]] = Store(
+        hass, STORAGE_VERSION_WATERMARKS, f"{DOMAIN}_watermarks_{entry.entry_id}"
+    )
+    await store.async_remove()
+
+    for issue_id_base in (
+        ISSUE_ID_AUTH_FAILED,
+        ISSUE_ID_WEBHOOK_SECRET_ROTATED,
+        ISSUE_ID_WEBHOOK_URLS_CHANGED,
+        ISSUE_ID_PERSIST_FAILED,
+    ):
+        ir.async_delete_issue(hass, DOMAIN, f"{issue_id_base}_{entry.entry_id}")
+
+    _LOGGER.debug("Cleaned up storage and repair issues for removed entry %s", entry.entry_id)
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
