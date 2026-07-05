@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from custom_components.unifi_alerts.const import (
     CATEGORY_NETWORK_CLIENT,
     CATEGORY_NETWORK_DEVICE,
@@ -130,6 +132,62 @@ class TestUniFiAlert:
         alarm = {"msg": "test", "datetime": "not-a-date"}
         alert = UniFiAlert.from_api_alarm(CATEGORY_SECURITY_THREAT, alarm)
         assert alert.received_at.tzinfo is not None
+
+
+class TestNonStringPayloadFields:
+    """device_name and site must coerce to str for any payload value, matching the
+    existing str(...) handling already applied to message/key/severity. Regression
+    tests for GitHub issue #266."""
+
+    _NON_STRING_VALUES = [123, {"nested": "dict"}, ["a", "list"], None]
+
+    @pytest.mark.parametrize("value", _NON_STRING_VALUES)
+    def test_webhook_device_name_non_string_coerced(self, value):
+        payload = {"message": "test", "device_name": value}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert isinstance(alert.device_name, str)
+
+    @pytest.mark.parametrize("value", _NON_STRING_VALUES)
+    def test_webhook_site_non_string_coerced(self, value):
+        payload = {"message": "test", "site_name": value}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert isinstance(alert.site, str)
+
+    @pytest.mark.parametrize("value", _NON_STRING_VALUES)
+    def test_api_alarm_device_name_non_string_coerced(self, value):
+        alarm = {"msg": "test", "device_name": value}
+        alert = UniFiAlert.from_api_alarm(CATEGORY_SECURITY_THREAT, alarm)
+        assert isinstance(alert.device_name, str)
+
+    @pytest.mark.parametrize("value", _NON_STRING_VALUES)
+    def test_api_alarm_site_non_string_coerced(self, value):
+        alarm = {"msg": "test", "site_name": value}
+        alert = UniFiAlert.from_api_alarm(CATEGORY_SECURITY_THREAT, alarm)
+        assert isinstance(alert.site, str)
+
+    @pytest.mark.parametrize("value", _NON_STRING_VALUES)
+    def test_system_log_event_device_name_non_string_coerced(self, value):
+        event = {
+            "key": "FIREWALL_BLOCK",
+            "category": "SECURITY",
+            "timestamp": 1700000000000,
+            "status": "NEW",
+            "device_name": value,
+        }
+        alert = UniFiAlert.from_system_log_event(event, set())
+        assert isinstance(alert.device_name, str)
+
+    @pytest.mark.parametrize("value", _NON_STRING_VALUES)
+    def test_system_log_event_site_non_string_coerced(self, value):
+        event = {
+            "key": "FIREWALL_BLOCK",
+            "category": "SECURITY",
+            "timestamp": 1700000000000,
+            "status": "NEW",
+            "site_name": value,
+        }
+        alert = UniFiAlert.from_system_log_event(event, set())
+        assert isinstance(alert.site, str)
 
 
 class TestCategoryState:
