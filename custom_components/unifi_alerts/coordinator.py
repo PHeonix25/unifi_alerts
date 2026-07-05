@@ -260,7 +260,9 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         ``WEBHOOK_DEDUP_WINDOW_SECONDS`` are dropped — without this, a
         misconfigured Alarm Manager or noisy category can flood the webhook
         endpoint and cause unbounded ``alert_count`` increments and event
-        entity fires for the same underlying event.
+        entity fires for the same underlying event. Keyless alerts (e.g. the
+        empty-body webhook ping) have no identity to dedup on, so they are
+        never suppressed against each other.
         """
         if category not in self._category_states:
             _LOGGER.warning("push_alert called with unknown category: %s", category)
@@ -270,28 +272,32 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         if not state.enabled:
             return
 
-        dedup_key = (category, alert.key or "")
-        now = time.monotonic()
-        # Absorbs duplicate webhook deliveries from the controller within the window;
-        # monotonic time makes the window immune to clock skew during HA suspend/resume.
-        prev = self._last_push_at.get(dedup_key)
-        if prev is not None and (now - prev) < WEBHOOK_DEDUP_WINDOW_SECONDS:
-            _LOGGER.debug(
-                "Suppressing duplicate webhook push for %s/%s within %.1fs window",
-                category,
-                dedup_key[1],
-                WEBHOOK_DEDUP_WINDOW_SECONDS,
-            )
-            return
-        # Opportunistically drop expired entries before recording the new one.
-        # Bounds the dict size at "distinct (category, alert_key) pairs seen
-        # within the last WEBHOOK_DEDUP_WINDOW_SECONDS" — a misconfigured
-        # controller emitting high-cardinality keys cannot grow it without
-        # bound. Cost is O(n) per push, but n is naturally small (capped by
-        # the active windowed set).
-        cutoff = now - WEBHOOK_DEDUP_WINDOW_SECONDS
-        self._last_push_at = {k: t for k, t in self._last_push_at.items() if t >= cutoff}
-        self._last_push_at[dedup_key] = now
+        # Alerts without a key (e.g. the empty-body webhook ping) have no
+        # identity to dedup on — treating them as duplicates of each other
+        # would silently drop distinct events that merely lack a key.
+        if alert.key:
+            dedup_key = (category, alert.key)
+            now = time.monotonic()
+            # Absorbs duplicate webhook deliveries from the controller within the window;
+            # monotonic time makes the window immune to clock skew during HA suspend/resume.
+            prev = self._last_push_at.get(dedup_key)
+            if prev is not None and (now - prev) < WEBHOOK_DEDUP_WINDOW_SECONDS:
+                _LOGGER.debug(
+                    "Suppressing duplicate webhook push for %s/%s within %.1fs window",
+                    category,
+                    dedup_key[1],
+                    WEBHOOK_DEDUP_WINDOW_SECONDS,
+                )
+                return
+            # Opportunistically drop expired entries before recording the new one.
+            # Bounds the dict size at "distinct (category, alert_key) pairs seen
+            # within the last WEBHOOK_DEDUP_WINDOW_SECONDS" — a misconfigured
+            # controller emitting high-cardinality keys cannot grow it without
+            # bound. Cost is O(n) per push, but n is naturally small (capped by
+            # the active windowed set).
+            cutoff = now - WEBHOOK_DEDUP_WINDOW_SECONDS
+            self._last_push_at = {k: t for k, t in self._last_push_at.items() if t >= cutoff}
+            self._last_push_at[dedup_key] = now
 
         state.apply_alert(alert)
         # Record webhook receipt for the per-category health signal. Set only
