@@ -33,7 +33,7 @@
       },
       "finish": {
         "title": "Webhook URLs",
-        "description": "Copy each webhook URL into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. You can retrieve these URLs later via Settings > Devices & Services > UniFi Alerts > Configure.",
+        "description": "Copy each webhook URL into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. You can retrieve these URLs later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough.",
         "data": {
           "webhook_url_network_device": "Network: Device offline/online webhook URL",
           "webhook_url_network_wan": "Network: WAN offline/latency webhook URL",
@@ -211,7 +211,7 @@
       },
       "finish": {
         "title": "Webhook URLs",
-        "description": "Copy each webhook URL into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. You can retrieve these URLs later via Settings > Devices & Services > UniFi Alerts > Configure.",
+        "description": "Copy each webhook URL into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. You can retrieve these URLs later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough.",
         "data": {
           "webhook_url_network_device": "Network: Device offline/online webhook URL",
           "webhook_url_network_wan": "Network: WAN offline/latency webhook URL",
