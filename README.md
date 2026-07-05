@@ -109,6 +109,8 @@ The key is shown only once at creation - copy it immediately.
 
 For each enabled category, create an alarm in **UniFi Network > Settings > Notifications > Alarm Manager**:
 
+> See [docs/ALARM_MANAGER_SETUP.md](docs/ALARM_MANAGER_SETUP.md) for a full walkthrough, including how to verify delivery via `webhook_health` and fixes for the most common failure modes (local-only rejection, secret rotation, wrong HA base URL).
+
 1. Click **Create Alarm**
 2. Set the **trigger** matching your category (see table below)
 3. Set scope (specific devices or network-wide)
