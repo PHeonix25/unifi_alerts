@@ -10,7 +10,6 @@ What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `
 
 ## v1.9.0: Localisation and Scale
 
-- Localisation: the remaining inline strings.
 - Capability: severity filtering for noisy categories; a self-healing key map.
 - Process: GitHub Issues is now the work tracker (see `docs/TODO.md` for the taxonomy).
 
@@ -20,7 +19,7 @@ Item-level detail: the `v1.9.0` [milestone](https://github.com/PHeonix25/unifi_a
 
 Prerequisites for submitting to <https://github.com/hacs/default>.
 
-- [ ] All `v2.0-gate` issues closed (raw-payload persistence, retention and data-handling statement, Alarm Manager onboarding docs, and localisation maturity).
+- [x] All `v2.0-gate` issues closed (raw-payload persistence, retention and data-handling statement, Alarm Manager onboarding docs, and localisation maturity).
 - [ ] Submit PR to `hacs/default`.
 
 ---
