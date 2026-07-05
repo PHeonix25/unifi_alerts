@@ -705,7 +705,7 @@ class TestAuthenticate:
 
 
 class TestClose:
-    """Tests for UniFiClient.close — logout behavior."""
+    """Tests for UniFiClient.close — logout behaviour."""
 
     @pytest.mark.asyncio
     async def test_userpass_auth_posts_to_unifi_os_logout_path(self):

@@ -92,7 +92,7 @@ So that [measurable outcome from Step 3]
 
 ## Acceptance Criteria
 - [ ] User can [specific testable action]
-- [ ] System responds [specific behavior with expected outcome]
+- [ ] System responds [specific behaviour with expected outcome]
 - [ ] Success = [specific measurement with target]
 - [ ] Error case: [how system handles failure]
 

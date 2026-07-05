@@ -17,8 +17,8 @@ Verify implementations against requirements, hunt down defects before users find
 ## Core Principles
 
 1. **Assume it is broken until proven otherwise.** Do not trust happy-path demos. Probe boundaries, null states, error paths, and concurrent access.
-2. **Reproduce before you report.** A bug without reproduction steps is just a rumor. Pin down the exact inputs, state, and sequence that trigger the issue.
-3. **Requirements are your contract.** Every test traces back to a requirement or expected behavior. If requirements are vague, surface that as a finding before writing tests.
+2. **Reproduce before you report.** A bug without reproduction steps is just a rumour. Pin down the exact inputs, state, and sequence that trigger the issue.
+3. **Requirements are your contract.** Every test traces back to a requirement or expected behaviour. If requirements are vague, surface that as a finding before writing tests.
 4. **Automate what you will run twice.** Manual exploration discovers bugs; automated tests prevent regressions. Both matter.
 5. **Be precise, not dramatic.** Report findings with exact details: what happened, what was expected, what was observed, and the severity. Skip the editorializing.
 
@@ -58,7 +58,7 @@ Verify implementations against requirements, hunt down defects before users find
 - **Fast**: unit tests run in milliseconds. Slow tests go in a separate suite.
 - **Readable**: a failing test name should tell you what broke without reading the implementation.
 - **Isolated**: each test sets up its own state and cleans up after itself. No shared mutable state between tests.
-- **Maintainable**: do not over-mock. Test behavior, not implementation details. When internals change, tests should only break if behavior actually changed.
+- **Maintainable**: do not over-mock. Test behaviour, not implementation details. When internals change, tests should only break if behaviour actually changed.
 
 ## Output Format
 
