@@ -2,6 +2,23 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-07-06
+
+- **release**: v1.9.0 tagged. Closes out the v1.9.0 "Localisation and Scale" cycle: a webhook health sensor and setup-failure cleanup, a documented `webhook` runtime dependency, a full CI and tooling hardening pass, and a repo-wide documentation drift audit, on top of everything already shipped in pre1 through pre3.
+- **ci**: bumped `actions/setup-python` from 6.2.0 to 6.3.0 via the grouped Dependabot github-actions update ([#300]).
+- **ci**: single-sourced agent instructions into `AGENTS.md` and slimmed `CLAUDE.md`, added a `SessionStart` bootstrap hook so remote agent sessions install the venv automatically, aligned the declared minimum supported Home Assistant version (2025.1.0) with what CI actually tests via a new pinned-minimum test matrix leg, and expanded the ruff rule set (`ASYNC`, `RUF`, `PT`, `S`, complexity budgets) with justified suppressions ([#301]). Combines #281, #284, #286, #288.
+- **feat**: unregister webhooks and close the client when setup fails after registration, so the automatic retry no longer finds every deterministic webhook ID already taken and silently loads with an empty URL map; documented the runtime dependency on the `webhook` component in the README, since `manifest.json` cannot declare it as a HACS dependency; promoted `webhook_health`/`last_webhook_at` from a buried binary-sensor attribute to a first-class per-category diagnostic sensor entity ([#302]). Closes #265, #267, #270.
+- **tests**: closed five defect-detection gaps where assertions were too weak to catch a real bug even with green CI: auto-clear delay arithmetic, probe backoff duration, auto-clear strength, post-unload webhook dispatch, and same-category push concurrency; each new assertion was verified against a deliberately introduced bug before being finalised ([#303]). Closes #282.
+- **tests**: factored the repeated 5-patch `async_setup_entry` collaborator stack into a shared `conftest.py` helper, deduplicated three identical coordinator test helpers into one, split three oversized test modules (each over 1300 lines) into behaviour-grouped files under 800 lines, and parametrised `TestRegisterAll`'s six near-identical bodies; no behaviour or coverage change ([#304]).
+- **docs**: audited every doc for drift against current code: fixed `ARCHITECTURE.md`, `REPO_LAYOUT.md`, `HOMEASSISTANT.md`, `TESTING.md`, `DEVELOPING.md`, and `info.md`; refreshed `ROADMAP.md`'s status line; repointed stale references to the split test tree in `UNIFI.md`, `AGENTS.md`, `REPO_LAYOUT.md`, `TESTING.md`, and `.github/copilot-instructions.md` ([#305]). Closes #269.
+
+[#300]: https://github.com/PHeonix25/unifi_alerts/pull/300
+[#301]: https://github.com/PHeonix25/unifi_alerts/pull/301
+[#302]: https://github.com/PHeonix25/unifi_alerts/pull/302
+[#303]: https://github.com/PHeonix25/unifi_alerts/pull/303
+[#304]: https://github.com/PHeonix25/unifi_alerts/pull/304
+[#305]: https://github.com/PHeonix25/unifi_alerts/pull/305
+
 ## 2026-07-05
 
 - **release**: v1.9.0-pre3 tagged. Third checkpoint of the v1.9.0 cycle. Headline: five bug fixes closing out real defects found during triage (webhook dedup, non-string payload coercion, entry-removal cleanup, stale `unique_id` on controller URL change), CI now lints and type-checks the `tests/` tree, and all three remaining `v2.0-gate` documentation items land, closing out every `v2.0-gate` issue.

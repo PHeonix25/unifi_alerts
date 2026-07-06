@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-06
+
 ### Changed
 
 - Category binary sensors now expose a `last_severity` attribute containing the severity string from the most recent alert (`"LOW"`, `"MEDIUM"`, `"HIGH"`, `"VERY_HIGH"` on v2 controllers; raw webhook severity on legacy controllers). The `any_alert` rollup sensor exposes the same attribute. Automations can condition on this to suppress or escalate alerts by severity without disabling the category. ([#135])
@@ -252,7 +254,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.9.0
 [1.8.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.8.0
 [1.7.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.7.0
 [1.6.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.6.0
