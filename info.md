@@ -35,7 +35,7 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 
 ## Requirements
 
-- Home Assistant 2024.5 or later
+- Home Assistant 2025.1 or later
 - UniFi OS console (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+). Classic self-hosted Network Application is not supported.
 - UniFi controller reachable on the same local network as your HA instance
 - Credentials: API key (recommended) or username + password

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -16,9 +16,11 @@ from .const import (
     ALL_CATEGORIES,
     CATEGORY_ICONS,
     CATEGORY_ICONS_OK,
-    CATEGORY_LABELS,
     CONF_CONTROLLER_URL,
     DOMAIN,
+    WEBHOOK_HEALTH_HEALTHY,
+    WEBHOOK_HEALTH_NEVER,
+    WEBHOOK_HEALTH_STALE,
 )
 from .coordinator import UniFiAlertsCoordinator
 from .models import CategoryState
@@ -36,6 +38,7 @@ async def async_setup_entry(
         if coordinator.get_category_state(category) is not None:
             entities.append(UniFiCategoryMessageSensor(coordinator, entry, category))
             entities.append(UniFiCategoryCountSensor(coordinator, entry, category))
+            entities.append(UniFiWebhookHealthSensor(coordinator, entry, category))
 
     entities.append(UniFiRollupCountSensor(coordinator, entry))
     async_add_entities(entities)
@@ -56,8 +59,7 @@ class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sens
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_message"
-        self._attr_translation_key = "last_message"
-        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
+        self._attr_translation_key = f"last_message_{category}"
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -111,8 +113,7 @@ class UniFiCategoryCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sensor
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_count"
-        self._attr_translation_key = "open_count"
-        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
+        self._attr_translation_key = f"open_count_{category}"
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -124,6 +125,55 @@ class UniFiCategoryCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sensor
     def available(self) -> bool:
         state = self.coordinator.get_category_state(self._category)
         return state is not None and state.enabled
+
+
+class UniFiWebhookHealthSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEntity):
+    """Sensor exposing whether Alarm Manager is actually delivering webhooks for a category.
+
+    Promotes the ``webhook_health`` / ``last_webhook_at`` signal (previously
+    only a buried attribute on the category binary sensor) to a first-class
+    diagnostic entity so it is dashboardable and automatable on its own.
+    """
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.ENUM
+
+    def __init__(
+        self,
+        coordinator: UniFiAlertsCoordinator,
+        entry: ConfigEntry,
+        category: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._category = category
+        self._attr_unique_id = f"{entry.entry_id}_{category}_webhook_health"
+        self._attr_translation_key = f"webhook_health_{category}"
+        self._attr_device_info = _device_info(entry)
+        self._attr_options = [WEBHOOK_HEALTH_NEVER, WEBHOOK_HEALTH_HEALTHY, WEBHOOK_HEALTH_STALE]
+
+    @property
+    def native_value(self) -> str | None:
+        state: CategoryState | None = self.coordinator.get_category_state(self._category)
+        # Coordinator state is only refreshed on poll or push, so a category
+        # can read "healthy" here for up to one poll interval after it has
+        # actually gone stale by wall-clock time. Acceptable: the next poll
+        # tick corrects it, and polling already exists to catch missed pushes.
+        return state.webhook_health() if state else None
+
+    @property
+    def available(self) -> bool:
+        state = self.coordinator.get_category_state(self._category)
+        return state is not None and state.enabled
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        state: CategoryState | None = self.coordinator.get_category_state(self._category)
+        if not state:
+            return {}
+        return {
+            "last_webhook_at": state.last_webhook_at.isoformat() if state.last_webhook_at else None,
+        }
 
 
 class UniFiRollupCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEntity):

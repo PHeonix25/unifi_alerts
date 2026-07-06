@@ -98,10 +98,10 @@ class UniFiAlert:
             message=str(message)[:255],
             received_at=datetime.now(UTC),
             key=str(payload.get("key", ""))[:64],
-            device_name=(
+            device_name=str(
                 payload.get("device_name") or payload.get("ap_name") or payload.get("sw_name") or ""
             )[:255],
-            site=payload.get("site_name") or payload.get("site") or "",
+            site=str(payload.get("site_name") or payload.get("site") or ""),
             severity=str(payload.get("severity") or payload.get("subsystem") or "")[:32],
         )
 
@@ -131,8 +131,8 @@ class UniFiAlert:
             message=str(message)[:255],
             received_at=received_at,
             key=str(alarm.get("key", ""))[:64],
-            device_name=(alarm.get("device_name") or alarm.get("ap_name") or "")[:255],
-            site=alarm.get("site_name") or "",
+            device_name=str(alarm.get("device_name") or alarm.get("ap_name") or "")[:255],
+            site=str(alarm.get("site_name") or ""),
             severity=str(alarm.get("severity") or alarm.get("subsystem") or "")[:32],
         )
 
@@ -217,8 +217,8 @@ class UniFiAlert:
             message=str(message)[:255],
             received_at=received_at,
             key=key[:64],
-            device_name=(payload.get("device_name") or "")[:255],
-            site=payload.get("site_name") or payload.get("site") or "",
+            device_name=str(payload.get("device_name") or "")[:255],
+            site=str(payload.get("site_name") or payload.get("site") or ""),
             severity=str(payload.get("severity") or "")[:32],
         )
 

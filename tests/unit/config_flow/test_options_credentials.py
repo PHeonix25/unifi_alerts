@@ -1,11 +1,15 @@
-"""Tests for the options flow: credential changes, category toggles, regenerate secret."""
+"""Tests for the options flow: basic finish/categories cycle and the credentials step.
+
+Split out of test_options.py (#283) by behaviour area. See
+test_options_rotation_validation.py and test_options_helpers.py for the
+other pieces.
+"""
 
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import voluptuous as vol
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
@@ -19,10 +23,6 @@ from custom_components.unifi_alerts.const import (
 )
 
 from .conftest import make_options_flow, make_session_mock
-
-# ---------------------------------------------------------------------------
-# Basic options flow tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -254,11 +254,22 @@ async def test_options_flow_saves_submitted_values() -> None:
     user_input[CONF_CLEAR_TIMEOUT] = 60
     user_input[CONF_SITE] = "secondary"
 
-    # Submit categories (stores in _pending_options, routes to finish)
-    with patch(
-        "custom_components.unifi_alerts.config_flow.async_generate_url",
-        return_value="http://ha.local/webhook/x",
+    # Submit categories (stores in _pending_options, routes to finish).
+    # CONF_SITE = "secondary" triggers site validation, so mock the client.
+    with (
+        patch(
+            "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+            return_value=MagicMock(),
+        ),
+        patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        patch(
+            "custom_components.unifi_alerts.config_flow.async_generate_url",
+            return_value="http://ha.local/webhook/x",
+        ),
     ):
+        instance = mock_cls.return_value
+        instance.authenticate = AsyncMock(return_value="apikey")
+        instance.fetch_alarms = AsyncMock(return_value=[])
         await flow.async_step_categories(user_input)
 
     # Submit finish -> creates entry
@@ -677,285 +688,6 @@ class TestOptionsFlowCredentials:
 # ---------------------------------------------------------------------------
 
 
-class TestWebhookSecretRotation:
-    """Users must be able to regenerate the webhook secret without deleting and
-    re-adding the integration.
-
-    The options flow's credentials step exposes a CONF_REGENERATE_WEBHOOK_SECRET
-    checkbox. When ticked:
-    - With no other credential changes: persist a new secret and continue.
-    - With credential changes: persist new credentials AND new secret atomically.
-    """
-
-    @pytest.mark.asyncio
-    async def test_rotate_only_stages_new_secret_and_skips_auth(self) -> None:
-        """Ticking only the regenerate checkbox must NOT call authenticate()
-        and must NOT persist eagerly -- the new secret is staged for the
-        finish step to commit atomically."""
-        from custom_components.unifi_alerts.const import CONF_REGENERATE_WEBHOOK_SECRET
-
-        flow = make_options_flow()
-        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
-
-        rotate_only = {
-            CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
-            CONF_API_KEY: "",
-            CONF_VERIFY_SSL: True,
-            CONF_REGENERATE_WEBHOOK_SECRET: True,
-        }
-
-        with patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls:
-            instance = mock_cls.return_value
-            instance.authenticate = AsyncMock()  # must NOT be called
-            await flow.async_step_credentials(rotate_only)
-            instance.authenticate.assert_not_called()
-
-        # No persistence at this stage; the secret is staged.
-        flow.hass.config_entries.async_update_entry.assert_not_called()
-        # New secret must differ from the fixture-installed one
-        assert flow._pending_data[CONF_WEBHOOK_SECRET] != "fixed-secret"
-        # And it must be a non-empty token (token_urlsafe(32) is at least 40 chars)
-        assert len(flow._pending_data[CONF_WEBHOOK_SECRET]) >= 40
-
-    @pytest.mark.asyncio
-    async def test_rotate_with_credential_change_stages_both(self) -> None:
-        """Ticking regenerate alongside new creds stages the rotated secret AND new creds."""
-        from custom_components.unifi_alerts.const import CONF_REGENERATE_WEBHOOK_SECRET
-
-        flow = make_options_flow()
-        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
-
-        new_input = {
-            CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "newpass",
-            CONF_API_KEY: "",
-            CONF_VERIFY_SSL: True,
-            CONF_REGENERATE_WEBHOOK_SECRET: True,
-        }
-
-        with (
-            patch(
-                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
-                return_value=make_session_mock(),
-            ),
-            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
-        ):
-            instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
-            instance.fetch_alarms = AsyncMock(return_value=[])
-            instance._is_unifi_os = False
-            await flow.async_step_credentials(new_input)
-
-        # No eager persistence; staged for finish.
-        flow.hass.config_entries.async_update_entry.assert_not_called()
-        assert flow._pending_data[CONF_PASSWORD] == "newpass"
-        assert flow._pending_data[CONF_WEBHOOK_SECRET] != "fixed-secret"
-
-    @pytest.mark.asyncio
-    async def test_unticked_does_not_rotate(self) -> None:
-        """If the checkbox is unset, the existing secret must remain intact."""
-        from custom_components.unifi_alerts.const import CONF_REGENERATE_WEBHOOK_SECRET
-
-        flow = make_options_flow()
-        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
-
-        no_rotate = {
-            CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
-            CONF_API_KEY: "",
-            CONF_VERIFY_SSL: True,
-            CONF_REGENERATE_WEBHOOK_SECRET: False,
-        }
-
-        await flow.async_step_credentials(no_rotate)
-        # No update or staging at all because nothing changed
-        flow.hass.config_entries.async_update_entry.assert_not_called()
-        assert flow._pending_data == {}
-
-    @pytest.mark.asyncio
-    async def test_finish_step_displays_new_url_after_rotation(self) -> None:
-        """After secret rotation is staged, the finish step must show URLs with
-        the NEW token even though entry.data has not been written yet.
-
-        Under the staged-persistence model the finish step renders from
-        ``self._pending_data`` until the user submits, so the displayed URLs
-        match what the entry WILL contain after submit. If a regression made
-        the finish step read straight from ``self._config_entry.data`` again,
-        the user would see the OLD token alongside a regenerate confirmation:
-        a confusing UX bug.
-        """
-        from custom_components.unifi_alerts.const import (
-            CONF_REGENERATE_WEBHOOK_SECRET,
-            CONF_WEBHOOK_ID_SUFFIX,
-        )
-
-        flow = make_options_flow()
-
-        # Make data a real dict (not MagicMock) so .get() / mutation work cleanly
-        flow._config_entry.data = {
-            **flow._config_entry.data,
-            CONF_WEBHOOK_ID_SUFFIX: "deadbeef",
-        }
-
-        # Step 1: rotate-only credentials submission
-        flow.async_show_form = MagicMock(
-            side_effect=lambda **kwargs: {"type": "form", "step_id": kwargs["step_id"]}
-        )
-        await flow.async_step_credentials(
-            {
-                CONF_CONTROLLER_URL: "",
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "",
-                CONF_API_KEY: "",
-                CONF_VERIFY_SSL: True,
-                CONF_REGENERATE_WEBHOOK_SECRET: True,
-            }
-        )
-
-        # Staged but not persisted: entry.data still holds the old secret.
-        flow.hass.config_entries.async_update_entry.assert_not_called()
-        new_secret = flow._pending_data[CONF_WEBHOOK_SECRET]
-        assert new_secret != "fixed-secret"
-        assert len(new_secret) >= 40
-        assert flow._config_entry.data[CONF_WEBHOOK_SECRET] == "fixed-secret"
-
-        # Step 2: submit categories so the flow advances to finish. The
-        # categories step calls async_step_finish() internally to render the
-        # URL display form, so the async_generate_url patch must wrap this
-        # call too.
-        cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
-        with patch(
-            "custom_components.unifi_alerts.config_flow.async_generate_url",
-            side_effect=lambda hass, wid: f"http://ha.local/api/webhook/{wid}",
-        ):
-            await flow.async_step_categories(cat_input)
-
-        # Inspect the form schema's default URLs -- they must contain the NEW secret
-        finish_call = flow.async_show_form.call_args_list[-1]
-        schema = finish_call.kwargs["data_schema"]
-        url_defaults = [
-            marker.default()
-            for marker in schema.schema
-            if isinstance(marker, vol.Optional)
-            and isinstance(marker.schema, str)
-            and marker.schema.startswith("webhook_url_")
-        ]
-        assert url_defaults, "Expected at least one webhook_url_* field on the finish step"
-        for url in url_defaults:
-            assert new_secret in url, (
-                f"Finish step displayed an old/wrong token. URL: {url}, "
-                f"expected new secret: {new_secret}"
-            )
-
-
-class TestWebhookSecretRotationRepairIssue:
-    """The finish step must create a repair issue when the secret was rotated,
-    and must NOT create one when the secret is unchanged."""
-
-    @pytest.mark.asyncio
-    async def test_finish_submit_with_rotation_creates_repair_issue(self) -> None:
-        """Submitting finish after a secret rotation creates the repair issue."""
-        from custom_components.unifi_alerts.const import CONF_REGENERATE_WEBHOOK_SECRET
-
-        flow = make_options_flow()
-        flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
-        flow.async_show_form = MagicMock(
-            side_effect=lambda **kwargs: {"type": "form", "step_id": kwargs["step_id"]}
-        )
-
-        # Stage a rotation via the credentials step
-        await flow.async_step_credentials(
-            {
-                CONF_CONTROLLER_URL: "",
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "",
-                CONF_API_KEY: "",
-                CONF_VERIFY_SSL: True,
-                CONF_REGENERATE_WEBHOOK_SECRET: True,
-            }
-        )
-        new_secret = flow._pending_data[CONF_WEBHOOK_SECRET]
-        assert new_secret != "fixed-secret"
-
-        # Advance to categories, then submit finish
-        cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
-        with patch(
-            "custom_components.unifi_alerts.config_flow.async_generate_url",
-            side_effect=lambda hass, wid: f"http://ha.local/api/webhook/{wid}",
-        ):
-            await flow.async_step_categories(cat_input)
-
-        with patch("custom_components.unifi_alerts.config_flow.ir") as mock_ir:
-            result = await flow.async_step_finish(user_input={})
-
-        assert result["type"] == "create_entry"
-        mock_ir.async_create_issue.assert_called_once()
-        call_kwargs = mock_ir.async_create_issue.call_args.kwargs
-        assert call_kwargs["translation_key"] == "webhook_secret_rotated"
-        assert "webhook_secret_rotated_" in mock_ir.async_create_issue.call_args.args[2]
-
-    @pytest.mark.asyncio
-    async def test_finish_submit_without_rotation_does_not_create_repair_issue(self) -> None:
-        """Submitting finish without a secret rotation must NOT create the repair issue."""
-        from custom_components.unifi_alerts.const import (
-            CONF_CLEAR_TIMEOUT,
-            CONF_POLL_INTERVAL,
-            CONF_SITE,
-        )
-
-        flow = make_options_flow()
-        flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
-        flow._pending_options = {
-            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-            CONF_POLL_INTERVAL: 60,
-            CONF_CLEAR_TIMEOUT: 5,
-            CONF_SITE: "default",
-        }
-        # _pending_data is empty: no credential/secret changes staged
-        flow._pending_data = {}
-
-        with patch("custom_components.unifi_alerts.config_flow.ir") as mock_ir:
-            result = await flow.async_step_finish(user_input={})
-
-        assert result["type"] == "create_entry"
-        mock_ir.async_create_issue.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_finish_submit_with_non_secret_data_change_does_not_create_repair_issue(
-        self,
-    ) -> None:
-        """Changing credentials without rotating the secret must NOT create the repair issue."""
-        from custom_components.unifi_alerts.const import (
-            CONF_CLEAR_TIMEOUT,
-            CONF_POLL_INTERVAL,
-            CONF_SITE,
-        )
-
-        flow = make_options_flow()
-        flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
-        flow._pending_options = {
-            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-            CONF_POLL_INTERVAL: 60,
-            CONF_CLEAR_TIMEOUT: 5,
-            CONF_SITE: "default",
-        }
-        # _pending_data has a new username but the SAME secret
-        flow._pending_data = {
-            CONF_USERNAME: "new-admin",
-            CONF_WEBHOOK_SECRET: "fixed-secret",
-        }
-
-        with patch("custom_components.unifi_alerts.config_flow.ir") as mock_ir:
-            result = await flow.async_step_finish(user_input={})
-
-        assert result["type"] == "create_entry"
-        mock_ir.async_create_issue.assert_not_called()
-
-
 class TestOptionsCredentialsErrorsAndStaging:
     @pytest.mark.asyncio
     async def test_credentials_cannot_connect_shows_error(self) -> None:
@@ -1012,32 +744,6 @@ class TestOptionsCredentialsErrorsAndStaging:
 
         assert result["step_id"] == "credentials"
         assert flow.async_show_form.call_args.kwargs["errors"] == {"base": "invalid_ssl_cert"}
-
-    @pytest.mark.asyncio
-    async def test_credentials_unexpected_error_shows_unknown(self) -> None:
-        flow = make_options_flow()
-        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "credentials"})
-        user_input = {
-            CONF_CONTROLLER_URL: "https://10.0.0.1",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "newpass",
-            CONF_API_KEY: "",
-            CONF_VERIFY_SSL: True,
-        }
-
-        with (
-            patch(
-                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
-                return_value=make_session_mock(),
-            ),
-            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
-        ):
-            instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(side_effect=RuntimeError("boom"))
-            result = await flow.async_step_credentials(user_input)
-
-        assert result["step_id"] == "credentials"
-        assert flow.async_show_form.call_args.kwargs["errors"] == {"base": "unknown"}
 
     @pytest.mark.asyncio
     async def test_credentials_stages_api_key_update(self) -> None:

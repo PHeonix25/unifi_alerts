@@ -18,15 +18,15 @@ jobs:
     name: Validate with hassfest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - uses: home-assistant/actions/hassfest@e91ad1948e57189485b9c1ad608af0c303946f89  # master tip 2026-06-14
 
   hacs-preflight:
     name: HACS manifest pre-flight (local rules)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3
         with:
           python-version: "3.12"
       - name: Run HACS manifest checks
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: hacs-preflight
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa  # main tip 2026-06-14
         with:
           category: integration
@@ -48,36 +48,58 @@ jobs:
     name: Lint & type-check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3
         with:
           python-version: "3.12"
+          cache: pip
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
-      - name: Ruff lint
-        run: ruff check custom_components/
-      - name: Ruff format check
-        run: ruff format --check custom_components/
+      - name: Ruff lint & format check (custom_components/ + tests/)
+        run: python scripts/run_lint.py
       - name: Mypy type check
         run: mypy custom_components/unifi_alerts --ignore-missing-imports
       - name: Check strings.json matches translations/en.json
         run: python scripts/check_translations.py
 
   test:
-    name: Run tests
+    name: Run tests (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Latest HA: whatever requirements-dev.txt resolves (its pinned
+          # pytest-homeassistant-custom-component drives the HA version).
+          - name: latest HA
+            ha_pin: ""
+          # Minimum supported HA: the floor declared in hacs.json. The pinned
+          # pytest-homeassistant-custom-component release must match this HA
+          # version (0.13.201 maps to homeassistant 2025.1.0). When the floor
+          # moves, bump both pins here alongside hacs.json and the README.
+          - name: minimum HA (2025.1.0)
+            ha_pin: "homeassistant==2025.1.0 pytest-homeassistant-custom-component==0.13.201"
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3
         with:
           python-version: "3.12"
+          cache: pip
       - name: Install test dependencies
         run: pip install -r requirements-dev.txt
+      - name: Pin minimum Home Assistant
+        # Override the requirements-dev pins for the minimum-HA leg only, so the
+        # declared floor is exercised by the suite rather than only the latest.
+        if: matrix.ha_pin != ''
+        run: pip install ${{ matrix.ha_pin }}
       - name: Run tests with coverage
-        run: pytest tests/ -v --cov-report=xml
+        # --cov-fail-under lives here (and in `make test`), not in pytest
+        # addopts, so targeted local runs of a single file still pass.
+        run: pytest tests/ -v --cov-report=xml --cov-fail-under=95
       - name: Upload coverage to Codecov
-        if: always()
-        uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24  # v5.4.3
+        # Upload once (latest leg only) to avoid duplicate reports.
+        if: ${{ always() && matrix.ha_pin == '' }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml

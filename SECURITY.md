@@ -48,6 +48,11 @@ Security-relevant components of this integration include:
 - CI / release workflows (`.github/workflows/`): supply-chain integrity (action
   pinning, release packaging).
 
+See [docs/DATA_HANDLING.md](docs/DATA_HANDLING.md) for the full statement of
+what this integration persists to disk, what stays memory-only, what appears
+in diagnostics downloads (and what is redacted from them), and what is logged
+at DEBUG.
+
 ## Webhook secret rotation
 
 The options flow can regenerate the per-entry webhook bearer secret. Rotation

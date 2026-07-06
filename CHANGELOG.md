@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-06
+
+### Changed
+
+- Category binary sensors now expose a `last_severity` attribute containing the severity string from the most recent alert (`"LOW"`, `"MEDIUM"`, `"HIGH"`, `"VERY_HIGH"` on v2 controllers; raw webhook severity on legacy controllers). The `any_alert` rollup sensor exposes the same attribute. Automations can condition on this to suppress or escalate alerts by severity without disabling the category. ([#135])
+- Raised the declared minimum supported Home Assistant version from 2024.5 to 2025.1, matching the version the test suite actually runs against. CI now runs the full suite against both the declared minimum HA (pinned) and the latest HA. ([#284])
+
+### Added
+
+- Added the MIT license. The repository previously shipped without any license file, which left users and contributors without a legal grant to use or modify the code and would have blocked the HACS default catalogue submission. ([#290])
+- The config-flow finish step now links to a new Alarm Manager onboarding guide covering setup, verification, and common failure modes. ([#297])
+- UniFi OS consoles (UDM, UDM Pro, UDM SE, UDM Pro Max) are now discovered automatically via SSDP. When one is found on the local network it appears in Settings > Integrations > Discovered, with the controller URL pre-filled. Credentials still need to be entered manually. ([#172])
+- Unclassified event keys seen during polling are now collected and exposed under `unrecognised_keys` in the integration diagnostics (Settings > Devices & Services > UniFi Alerts > Download diagnostics). This makes previously-invisible unmapped events visible without enabling DEBUG logging, so users can identify and report missing keys to the issue tracker. ([#134])
+- A typo'd site name during setup now shows a dedicated error ("Site not found on the controller") on the categories step instead of creating a broken config entry stuck in "Not Ready". The default site (`default`) still proceeds without an extra network round-trip since reachability was already confirmed in the credentials step. The same validation runs in the options flow when changing to a non-default site. ([#171])
+- Category labels in entity names (e.g. "Network: WAN offline/latency") are now defined in `translations/en.json` instead of being hard-coded English strings, so translators can provide locale-specific versions without rebuilding the integration. Each entity now carries a per-category translation key rather than a generic key with a hard-coded English placeholder. ([#133])
+- Each category now has a diagnostic `sensor.*_webhook_health` entity (`never_received` / `healthy` / `stale`, with a `last_webhook_at` attribute), promoting the existing `webhook_health` signal from a buried binary-sensor attribute to a dashboardable, automatable entity with history. The attribute remains on the binary sensor for backward compatibility. ([#270])
+
+### Fixed
+
+- The v2 system-log fetch window is now clamped to `DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS` (24 hours). Previously, a rarely-cleared category could hold the oldest watermark to an arbitrarily old timestamp, causing every poll to paginate from that date forward and silently miss recent alarms once the 10-page cap was reached. The clamp ensures all categories are always within the paged window. A WARNING is now logged when the page cap is reached, indicating some events may have been missed. ([#136])
+- A `ConfigEntryAuthFailed` raised during the initial data fetch (for example, credentials rotated between setup's `authenticate()` call and the first coordinator poll) is no longer misclassified as `ConfigEntryNotReady`. Previously a blanket exception handler around the first refresh re-wrapped every failure, including a genuine auth failure, as "not ready": silently suppressing Home Assistant's reauth-repair flow. ([#257])
+- Two distinct webhook alerts with no `key` field arriving in the same category within the dedup window no longer suppress each other; only genuine duplicate keys are still deduplicated. ([#291])
+- Removing a config entry now deletes its persisted watermark storage file and any open repair issues tied to it, instead of leaving them behind permanently. ([#294])
+- Alert payloads with non-string `device_name` or `site` values no longer crash the webhook handler or the polling path; these fields are now always coerced to strings, matching how `message`/`key`/`severity` were already handled. ([#292])
+- The config entry's `unique_id` now updates when the controller URL is changed via the options flow, so duplicate-entry prevention and SSDP discovery matching stay correct after re-pointing an entry to a different controller. ([#295])
+- The options (reconfigure) flow's `cannot_connect`, `invalid_auth`, `invalid_ssl_cert`, `invalid_url_scheme`, and `at_least_one_category` errors, and the SSDP discovery flow's `cannot_connect` abort reason, now have translated text. Previously these were missing from `strings.json`'s `options.error` and `config.abort` sections, so a user hitting one of them while reconfiguring an entry or during a failed SSDP discovery would see the raw untranslated key instead of a readable message. ([#298])
+- A setup failure that occurs after webhooks were registered (for example a platform-forwarding error) now unregisters those webhooks and closes the client before re-raising. Previously the failed webhooks stayed registered, so Home Assistant's automatic setup retry hit a duplicate-id error for every category, silently loaded with an empty webhook URL map, and left real-time alerts routed to the dead coordinator from the first attempt until HA was restarted. ([#265])
+
+### Internal
+
+- Added unicode round-trip tests for `UniFiAlert` serialisation: emoji, CJK, and RTL text survive `to_dict`/`from_dict` without mangling, and 300-character unicode messages are clamped to 255 characters. Added large-batch determinism tests: 500-alert `CategoryState` count is exact, watermark filtering passes precisely the expected subset, and all 500 messages survive serialisation round-trip. ([#140])
+- Authentication concerns (`authenticate`, API-key verification, username/password login, request headers, and auth state) are extracted from `UniFiClient` into a dedicated `UniFiAuth` class in a new `unifi_auth.py` module, so auth can be unit-tested in isolation without the full client. `UniFiClient` composes a `UniFiAuth` instance and still owns the probe-backoff reset on every successful authentication. No behaviour change. ([#120])
+- Replaced every blanket `except Exception` (`# noqa: BLE001`) handler across the integration with the specific exception types each call site can actually raise: `json.JSONDecodeError`/`UnicodeDecodeError` for 400-body parsing and `aiohttp.ClientError`/`OSError`/`TimeoutError` for the best-effort logout in `unifi_client.py`; `CannotConnectError` for the initial `authenticate()` call in `__init__.py`; the five `config_flow.py` "unknown error" fallbacks (setup, site validation, reauth, options credentials, options site validation) removed entirely, since the preceding specific catches already cover the full raise-surface of `authenticate()`/`fetch_alarms()`; `(InvalidAuthError, CannotConnectError)` for the system-log probe's internal re-auth in `coordinator.py`; and `ValueError` (the only failure mode of HA's `async_register`) for webhook registration in `webhook_handler.py`. A genuine bug now surfaces with its real traceback instead of being silently reduced to a generic error. ([#257])
+- `UniFiAlertsOptionsFlow.async_step_credentials` in `config_flow.py` is now a thin orchestrator over standalone helpers: input parsing/normalisation, URL scheme validation, duplicate-entry detection, the staged-data dict builders, and the `UniFiClient` authenticate/fetch-alarms validation call are each extracted into their own function so they can be unit-tested in isolation instead of only through the full flow step. No behaviour change. ([#238])
+- Strengthened five test assertions that could previously let a real bug ship with CI green: auto-clear delay arithmetic (`clear_timeout_minutes * 60`) had zero coverage; the probe-backoff deadline was only checked for presence, not duration; the auto-clear test never checked `last_cleared_at` or asserted a single notification; no test proved a webhook POST after entry unload is inert; and no test covered concurrent same-category webhook pushes or a manual clear racing a poll. Each new/strengthened assertion was verified against a deliberately introduced bug before being finalised. No behaviour change. ([#282])
+- Reduced test-suite maintenance cost with no behaviour change: factored the repeated 5-patch `async_setup_entry` collaborator stack in `test_init.py` into a single `patch_setup_entry_collaborators()` helper; deduplicated three identical "coordinator with a cancellable task" helpers in `test_coordinator.py` into one shared helper; parametrised `TestRegisterAll`'s six near-identical bodies in `test_webhook_handler.py` into one; and split three oversized test modules (`test_coordinator.py`, `test_options.py`, `test_unifi_client.py`, each over 1300 lines) into behaviour-grouped files under 800 lines each. Test count and coverage unchanged. ([#283])
+
 ## [1.8.0] - 2026-06-19
 
 ### Added
@@ -217,7 +254,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.9.0
 [1.8.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.8.0
 [1.7.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.7.0
 [1.6.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.6.0
@@ -252,21 +290,43 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#147]: https://github.com/PHeonix25/unifi_alerts/pull/147
 [#148]: https://github.com/PHeonix25/unifi_alerts/issues/148
 [#119]: https://github.com/PHeonix25/unifi_alerts/issues/119
+[#120]: https://github.com/PHeonix25/unifi_alerts/issues/120
 [#121]: https://github.com/PHeonix25/unifi_alerts/issues/121
 [#122]: https://github.com/PHeonix25/unifi_alerts/issues/122
 [#123]: https://github.com/PHeonix25/unifi_alerts/issues/123
 [#127]: https://github.com/PHeonix25/unifi_alerts/issues/127
 [#128]: https://github.com/PHeonix25/unifi_alerts/issues/128
+[#133]: https://github.com/PHeonix25/unifi_alerts/issues/133
+[#134]: https://github.com/PHeonix25/unifi_alerts/issues/134
+[#135]: https://github.com/PHeonix25/unifi_alerts/issues/135
+[#136]: https://github.com/PHeonix25/unifi_alerts/issues/136
 [#138]: https://github.com/PHeonix25/unifi_alerts/issues/138
 [#139]: https://github.com/PHeonix25/unifi_alerts/issues/139
+[#140]: https://github.com/PHeonix25/unifi_alerts/issues/140
 [#163]: https://github.com/PHeonix25/unifi_alerts/issues/163
 [#164]: https://github.com/PHeonix25/unifi_alerts/issues/164
 [#166]: https://github.com/PHeonix25/unifi_alerts/issues/166
 [#167]: https://github.com/PHeonix25/unifi_alerts/issues/167
 [#168]: https://github.com/PHeonix25/unifi_alerts/issues/168
 [#170]: https://github.com/PHeonix25/unifi_alerts/issues/170
+[#171]: https://github.com/PHeonix25/unifi_alerts/issues/171
+[#172]: https://github.com/PHeonix25/unifi_alerts/issues/172
 [#173]: https://github.com/PHeonix25/unifi_alerts/issues/173
 [#175]: https://github.com/PHeonix25/unifi_alerts/issues/175
 [#233]: https://github.com/PHeonix25/unifi_alerts/issues/233
+[#238]: https://github.com/PHeonix25/unifi_alerts/issues/238
 [#241]: https://github.com/PHeonix25/unifi_alerts/issues/241
+[#257]: https://github.com/PHeonix25/unifi_alerts/pull/257
+[#290]: https://github.com/PHeonix25/unifi_alerts/pull/290
+[#291]: https://github.com/PHeonix25/unifi_alerts/pull/291
+[#292]: https://github.com/PHeonix25/unifi_alerts/pull/292
+[#294]: https://github.com/PHeonix25/unifi_alerts/pull/294
+[#295]: https://github.com/PHeonix25/unifi_alerts/pull/295
+[#297]: https://github.com/PHeonix25/unifi_alerts/pull/297
+[#298]: https://github.com/PHeonix25/unifi_alerts/pull/298
+[#284]: https://github.com/PHeonix25/unifi_alerts/issues/284
+[#265]: https://github.com/PHeonix25/unifi_alerts/issues/265
+[#270]: https://github.com/PHeonix25/unifi_alerts/issues/270
+[#282]: https://github.com/PHeonix25/unifi_alerts/issues/282
+[#283]: https://github.com/PHeonix25/unifi_alerts/issues/283
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR

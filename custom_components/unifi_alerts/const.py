@@ -61,6 +61,24 @@ MAX_SYSTEM_LOG_PAGES = 10  # safety cap: at most 100*10 = 1000 events per poll c
 DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS = 24  # hours to look back when no watermark exists
 
 # ──────────────────────────────────────────────
+# Persisted storage & repair-issue identifiers
+# ──────────────────────────────────────────────
+# Version for the per-entry watermark Store file (coordinator.py). Shared with
+# __init__.py so async_remove_entry can address the same file for deletion
+# without duplicating the version number.
+STORAGE_VERSION_WATERMARKS: Final = 1
+
+# Repair-issue id bases. Each is suffixed with f"_{entry.entry_id}" at the
+# creation site (config_flow.py, coordinator.py, __init__.py) so multi-entry
+# installs get independent repair cards. Centralised here, instead of as
+# inline f-string literals, so the creation site and the async_remove_entry
+# cleanup site can never drift apart.
+ISSUE_ID_AUTH_FAILED: Final = "auth_failed"
+ISSUE_ID_WEBHOOK_SECRET_ROTATED: Final = "webhook_secret_rotated"
+ISSUE_ID_WEBHOOK_URLS_CHANGED: Final = "webhook_urls_changed"
+ISSUE_ID_PERSIST_FAILED: Final = "watermark_persist_failed"
+
+# ──────────────────────────────────────────────
 # Category identifiers
 # ──────────────────────────────────────────────
 CATEGORY_NETWORK_DEVICE = "network_device"
@@ -80,16 +98,6 @@ ALL_CATEGORIES: list[str] = [
     CATEGORY_SECURITY_FIREWALL,
     CATEGORY_POWER,
 ]
-
-CATEGORY_LABELS: dict[str, str] = {
-    CATEGORY_NETWORK_DEVICE: "Network: Device offline/online",
-    CATEGORY_NETWORK_WAN: "Network: WAN offline/latency",
-    CATEGORY_NETWORK_CLIENT: "Network: Client connect/disconnect",
-    CATEGORY_SECURITY_THREAT: "Security: Threat / IDS detected",
-    CATEGORY_SECURITY_HONEYPOT: "Security: Honeypot triggered",
-    CATEGORY_SECURITY_FIREWALL: "Security: Firewall block",
-    CATEGORY_POWER: "Power: PoE / power loss",
-}
 
 CATEGORY_ICONS: dict[str, str] = {
     CATEGORY_NETWORK_DEVICE: "mdi:lan-disconnect",

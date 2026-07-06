@@ -1,46 +1,13 @@
 # GitHub Copilot Instructions
 
-> Full project context, hard constraints, conventions, and working style live in [`CLAUDE.md`](../CLAUDE.md). Read it first.
-> Quick-reference links to architecture, HA patterns, UniFi API, testing, and outstanding work (GitHub Issues) are in [`AGENTS.md`](../AGENTS.md).
+> Claude-specific working style and the full non-negotiable constraint list live in [`CLAUDE.md`](../CLAUDE.md). Read it first.
+> Release and branching detail lives in [`docs/RELEASING.md`](../docs/RELEASING.md).
 
 ---
 
-## What this repo is
+## Shared facts (defined once in AGENTS.md)
 
-A Home Assistant custom integration (`domain: unifi_alerts`) that aggregates UniFi Network controller alerts into HA sensors, binary sensors, event entities, and buttons. Distributed via HACS.
-
-## Tech stack
-
-| Layer | Tool |
-|-------|------|
-| Language | Python 3.12+ |
-| Async HTTP | `aiohttp` |
-| Lint + format | `ruff` |
-| Type checking | `mypy` (strict) |
-| Tests | `pytest` + `MagicMock`/`AsyncMock` |
-| HA integration | `custom_components/unifi_alerts/` |
-
-## Build & test
-
-```bash
-make check      # lint + typecheck + validate + test (run before every commit)
-make lint       # ruff check + format check
-make typecheck  # mypy
-make validate   # HACS preflight + translation drift check
-make test       # pytest
-```
-
-All commands use `.venv` in the repo root, never the system Python.
-
-## Key source files
-
-| File | Role |
-|------|------|
-| `custom_components/unifi_alerts/const.py` | All constants, category defs, UniFi key to category map |
-| `custom_components/unifi_alerts/coordinator.py` | DataUpdateCoordinator, owns all category state |
-| `custom_components/unifi_alerts/webhook_handler.py` | Registers HA webhooks, validates `?token=` bearer auth |
-| `custom_components/unifi_alerts/config_flow.py` | Three-step UI setup + options flow |
-| `custom_components/unifi_alerts/strings.json` | Must stay identical to `translations/en.json` |
+Repo purpose, the tech stack, the build/test command block, the repository structure, and the key source-file map all live in [`AGENTS.md`](../AGENTS.md). Read that first; it is the single source for those facts, so they are not repeated here. `scripts/validate_docs.py` fails the build if the shared blocks are copied back into this file.
 
 ## Non-negotiable rules (summary)
 
@@ -62,7 +29,7 @@ See [`CLAUDE.md`](../CLAUDE.md) for the complete list with rationale.
 - Feature branches: `claude/*` or `feature/*`, always branched from `dev`.
 - Claude cannot push tags; provide the user with the exact `git tag` + `git push origin <tag>` command after a version-bump PR merges.
 
-See [`CLAUDE.md`](../CLAUDE.md) for the full release workflow.
+See [`docs/RELEASING.md`](../docs/RELEASING.md) for the full release workflow.
 
 ## Ways of working: outstanding work and findings
 
@@ -77,7 +44,7 @@ What must be updated when specific parts of the codebase change.
 
 | File | Change required |
 | ---- | --------------- |
-| `custom_components/unifi_alerts/const.py` | Add `CATEGORY_<NAME>` constant; add to `ALL_CATEGORIES`, `CATEGORY_LABELS`, `CATEGORY_ICONS`, `CATEGORY_ICONS_OK`; add all `EVT_*` keys to `UNIFI_KEY_TO_CATEGORY` |
+| `custom_components/unifi_alerts/const.py` | Add `CATEGORY_<NAME>` constant; add to `ALL_CATEGORIES`, `CATEGORY_ICONS`, `CATEGORY_ICONS_OK`; add all `EVT_*` keys to `UNIFI_KEY_TO_CATEGORY` |
 | `custom_components/unifi_alerts/strings.json` | Add `"cat_<name>"` label to `config.step.categories.data`, `config.step.finish.data`, `options.step.options.data`; add webhook URL label |
 | `custom_components/unifi_alerts/translations/en.json` | Mirror every change to `strings.json` exactly |
 | `tests/unit/conftest.py` | Add category to fixture category lists |
@@ -104,7 +71,7 @@ Never remove the `?token=` validation check - it is a security hard requirement.
 | `custom_components/unifi_alerts/sensor.py` | Reads `coordinator.data` - check all `@property` accessors |
 | `custom_components/unifi_alerts/event.py` | Reads `coordinator.data` - check all `@property` accessors |
 | `custom_components/unifi_alerts/button.py` | Reads `coordinator.data` - check all `@property` accessors |
-| `tests/unit/test_coordinator.py` | Coordinator unit tests |
+| `tests/unit/coordinator/` | Coordinator unit tests |
 | `tests/integration/test_lifecycle.py` | Full lifecycle integration tests |
 
 ### Modifying `UniFiClientConfig` or `UniFiAlert`

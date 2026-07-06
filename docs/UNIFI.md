@@ -73,7 +73,7 @@ X-API-Key: your-key-here
 >
 > A path that doesn't exist may return either 404 or `400 api.err.InvalidObject` depending on firmware; both are treated as "try the next path". A genuine 400 (e.g. wrong site name) is surfaced only after every path is exhausted.
 >
-> **If UniFi changes the endpoint again:** add the new path to the head of `alarm_paths` in `unifi_client.py::fetch_alarms`, update the table above, and add a fallback test in `tests/unit/test_unifi_client.py` (see `TestFetchAlarms::test_falls_back_*`).
+> **If UniFi changes the endpoint again:** add the new path to the head of `alarm_paths` in `unifi_client.py::fetch_alarms`, update the table above, and add a fallback test in `tests/unit/unifi_client/test_legacy.py` (see `TestFetchAlarms::test_falls_back_*`).
 
 Default site name is `default`. Multi-site is configurable via `CONF_SITE` per entry; per-category site selection is not implemented (see `docs/ROADMAP.md`, Deferred).
 
@@ -302,7 +302,7 @@ Guidelines:
 
 - Use the shortest prefix that uniquely identifies the event family (e.g. `EVT_GW_Honeypot` not `EVT_GW_HoneypotDetected` if there are multiple honeypot variants).
 - Add a comment with the category group.
-- Add a corresponding test case in `test_unifi_client.py::TestClassify`.
+- Add a corresponding test case in `tests/unit/unifi_client/test_legacy.py::TestClassify`.
 
 ## Known API inconsistencies
 

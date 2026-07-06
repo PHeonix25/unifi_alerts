@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import ClassVar
+
+import pytest
 
 from custom_components.unifi_alerts.const import (
     CATEGORY_NETWORK_CLIENT,
@@ -130,6 +133,62 @@ class TestUniFiAlert:
         alarm = {"msg": "test", "datetime": "not-a-date"}
         alert = UniFiAlert.from_api_alarm(CATEGORY_SECURITY_THREAT, alarm)
         assert alert.received_at.tzinfo is not None
+
+
+class TestNonStringPayloadFields:
+    """device_name and site must coerce to str for any payload value, matching the
+    existing str(...) handling already applied to message/key/severity. Regression
+    tests for GitHub issue #266."""
+
+    _NON_STRING_VALUES: ClassVar = [123, {"nested": "dict"}, ["a", "list"], None]
+
+    @pytest.mark.parametrize("value", _NON_STRING_VALUES)
+    def test_webhook_device_name_non_string_coerced(self, value):
+        payload = {"message": "test", "device_name": value}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert isinstance(alert.device_name, str)
+
+    @pytest.mark.parametrize("value", _NON_STRING_VALUES)
+    def test_webhook_site_non_string_coerced(self, value):
+        payload = {"message": "test", "site_name": value}
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, payload)
+        assert isinstance(alert.site, str)
+
+    @pytest.mark.parametrize("value", _NON_STRING_VALUES)
+    def test_api_alarm_device_name_non_string_coerced(self, value):
+        alarm = {"msg": "test", "device_name": value}
+        alert = UniFiAlert.from_api_alarm(CATEGORY_SECURITY_THREAT, alarm)
+        assert isinstance(alert.device_name, str)
+
+    @pytest.mark.parametrize("value", _NON_STRING_VALUES)
+    def test_api_alarm_site_non_string_coerced(self, value):
+        alarm = {"msg": "test", "site_name": value}
+        alert = UniFiAlert.from_api_alarm(CATEGORY_SECURITY_THREAT, alarm)
+        assert isinstance(alert.site, str)
+
+    @pytest.mark.parametrize("value", _NON_STRING_VALUES)
+    def test_system_log_event_device_name_non_string_coerced(self, value):
+        event = {
+            "key": "FIREWALL_BLOCK",
+            "category": "SECURITY",
+            "timestamp": 1700000000000,
+            "status": "NEW",
+            "device_name": value,
+        }
+        alert = UniFiAlert.from_system_log_event(event, set())
+        assert isinstance(alert.device_name, str)
+
+    @pytest.mark.parametrize("value", _NON_STRING_VALUES)
+    def test_system_log_event_site_non_string_coerced(self, value):
+        event = {
+            "key": "FIREWALL_BLOCK",
+            "category": "SECURITY",
+            "timestamp": 1700000000000,
+            "status": "NEW",
+            "site_name": value,
+        }
+        alert = UniFiAlert.from_system_log_event(event, set())
+        assert isinstance(alert.site, str)
 
 
 class TestCategoryState:
@@ -288,7 +347,7 @@ class TestFromSystemLogEvent:
     """Tests for UniFiAlert.from_system_log_event() — v2 system-log parser."""
 
     # Minimal valid event matching the field-confirmed schema from docs/research/alert-endpoints.md
-    _BASE_EVENT = {
+    _BASE_EVENT: ClassVar = {
         "id": "60a1b2c3d4e5f60718293a4b",
         "category": "SECURITY",
         "event": "THREAT_BLOCKED",
@@ -416,7 +475,7 @@ class TestUnknownSystemLogKeyObservability:
     get warn-once behaviour; pass None to warn on every call.
     """
 
-    _BASE_EVENT = {
+    _BASE_EVENT: ClassVar = {
         "id": "x",
         "category": "SECURITY",
         "key": "UNMAPPED_BUT_HAS_ENUM_FALLBACK",
@@ -565,3 +624,128 @@ class TestAlertSerialization:
         assert restored.site == original.site
         assert restored.severity == original.severity
         assert restored.raw == {}
+
+
+class TestUnicodeRoundTrip:
+    """Non-ASCII text must survive parse -> to_dict -> from_dict without mangling
+    and must be truncated at 255 chars by the same byte-count boundary as ASCII."""
+
+    def test_emoji_in_message_survives_round_trip(self):
+        """Emoji characters (multi-byte UTF-8) survive serialisation and restore."""
+        msg = "WAN down 🔥🚨 check your ISP 💀"
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": msg})
+        assert alert.message == msg
+        restored = UniFiAlert.from_dict(alert.to_dict())
+        assert restored.message == msg
+
+    def test_cjk_characters_survive_round_trip(self):
+        """Chinese/Japanese/Korean characters survive serialisation and restore."""
+        msg = "网络断开 — 請检查 ISP 连接"
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": msg})
+        assert alert.message == msg
+        restored = UniFiAlert.from_dict(alert.to_dict())
+        assert restored.message == msg
+
+    def test_rtl_text_survives_round_trip(self):
+        """Right-to-left Arabic text survives serialisation and restore."""
+        msg = "انقطاع الشبكة — تحقق من مزود الإنترنت"
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": msg})
+        assert alert.message == msg
+        restored = UniFiAlert.from_dict(alert.to_dict())
+        assert restored.message == msg
+
+    def test_unicode_message_truncated_at_255_chars(self):
+        """A 300-character message is clamped to 255 characters (not bytes)."""
+        msg = "あ" * 300
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": msg})
+        assert len(alert.message) == 255
+        assert alert.message == "あ" * 255
+
+    def test_mixed_unicode_ascii_round_trip(self):
+        """Mixed Unicode and ASCII in all scalar fields survives round-trip."""
+        original = UniFiAlert(
+            category=CATEGORY_SECURITY_THREAT,
+            message="🔥 Threat blocked: 203.0.113.5 → internal host (CVE-2025-99999)",
+            received_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
+            raw={},
+            key="THREAT_BLOCKED",
+            device_name="UDM-Pro 日本語 テスト",
+            site="default",
+            severity="HIGH",
+        )
+        restored = UniFiAlert.from_dict(original.to_dict())
+        assert restored.message == original.message
+        assert restored.device_name == original.device_name
+        assert restored.key == original.key
+
+
+class TestLargeBatchDeterminism:
+    """A large number of alerts must keep counts and watermark filtering exact."""
+
+    def test_500_alerts_applied_to_category_state_count_is_exact(self):
+        """Applying 500 alerts to CategoryState must produce alert_count == 500."""
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        base_time = datetime(2026, 1, 1, tzinfo=UTC)
+        for i in range(500):
+            alert = UniFiAlert(
+                category=CATEGORY_NETWORK_WAN,
+                message=f"alert {i}",
+                received_at=base_time + timedelta(seconds=i),
+                raw={},
+                key="EVT_GW_WANTransition",
+                device_name="UDM-Pro",
+                site="default",
+                severity="critical",
+            )
+            state.apply_alert(alert)
+        assert state.alert_count == 500
+        assert state.is_alerting is True
+        assert state.last_alert is not None
+        assert state.last_alert.message == "alert 499"
+
+    def test_watermark_filter_on_500_alerts_is_deterministic(self):
+        """Watermark filtering on 500 alerts must pass exactly the alerts after the mark."""
+        base_time = datetime(2026, 1, 1, tzinfo=UTC)
+        watermark = base_time + timedelta(seconds=249)
+        alerts = [
+            UniFiAlert(
+                category=CATEGORY_NETWORK_WAN,
+                message=f"alert {i}",
+                received_at=base_time + timedelta(seconds=i),
+                raw={},
+                key="EVT_GW_WANTransition",
+                device_name="UDM-Pro",
+                site="default",
+                severity="critical",
+            )
+            for i in range(500)
+        ]
+        # Mirrors the coordinator's watermark filter:
+        # state.open_count = len([a for a in alerts if a.received_at > watermark])
+        counted = [a for a in alerts if a.received_at > watermark]
+        # Alerts at seconds 250..499 pass (250 total); 0..249 are at or before the mark.
+        assert len(counted) == 250
+        assert counted[0].message == "alert 250"
+        assert counted[-1].message == "alert 499"
+
+    def test_500_alerts_round_trip_preserves_all_messages(self):
+        """500 alerts serialised and restored via to_dict/from_dict keep their messages."""
+        base_time = datetime(2026, 1, 1, tzinfo=UTC)
+        alerts = [
+            UniFiAlert(
+                category=CATEGORY_NETWORK_WAN,
+                message=f"msg-{i:04d}",
+                received_at=base_time + timedelta(seconds=i),
+                raw={},
+                key="EVT",
+                device_name="",
+                site="default",
+                severity="info",
+            )
+            for i in range(500)
+        ]
+        restored = [UniFiAlert.from_dict(a.to_dict()) for a in alerts]
+        assert len(restored) == 500
+        for i, alert in enumerate(restored):
+            assert alert.message == f"msg-{i:04d}"
+            assert alert.received_at == base_time + timedelta(seconds=i)

@@ -3,11 +3,25 @@ target-version = "py312"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "BLE", "C4", "SIM"]
+select = ["E", "F", "W", "I", "UP", "B", "BLE", "C4", "SIM", "ASYNC", "RUF", "PT", "S", "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915"]
 ignore = ["E501"]
 
+# Complexity and size budgets are pinned to the current codebase maxima so the
+# suite passes as-is; tighten them in later PRs to ratchet size down (see #281).
+[tool.ruff.lint.mccabe]
+max-complexity = 13
+
+[tool.ruff.lint.pylint]
+max-branches = 13
+max-returns = 6
+max-args = 6
+max-statements = 40
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]   # allow assert in tests
+# assert plus dummy fixture credentials are expected in the test suite
+"tests/*" = ["S101", "S105", "S106", "S107"]
+# CONF_*/ISSUE_ID_* are config-key names and issue identifiers, not secrets
+"custom_components/unifi_alerts/const.py" = ["S105"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -24,4 +38,26 @@ exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["."]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# The 95% coverage gate lives in the Makefile `test` target and the CI test
+# job, not here: keeping it out of addopts lets a documented single-file run
+# (`pytest tests/unit/test_models.py`) pass without tripping a whole-suite
+# coverage threshold.
+addopts = "--cov=custom_components/unifi_alerts --cov-report=term-missing"
+filterwarnings = [
+    "ignore::DeprecationWarning:josepy",
+    "ignore::DeprecationWarning:acme",
+    "ignore::DeprecationWarning:homeassistant.components.http",
+]
+markers = [
+    "integration: end-to-end tests that use a real HomeAssistant instance (hass fixture)",
 ]

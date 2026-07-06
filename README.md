@@ -37,7 +37,8 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 
 ## Requirements
 
-- **Home Assistant** 2024.5 or later
+- **Home Assistant** 2025.1 or later
+- **The `webhook` component enabled** - ships with `default_config`, which almost all installs include. If you run a minimal Home Assistant configuration that hand-picks integrations instead of using `default_config`, add `webhook:` to `configuration.yaml` yourself; without it, webhook registration fails at setup. (`manifest.json` cannot declare this as a HACS dependency - see [#267](https://github.com/PHeonix25/unifi_alerts/issues/267).)
 - **UniFi OS console** - the classic self-hosted Network Application is not supported. The integration uses the `/proxy/network` API path, which is UniFi OS-only.
 - **Local network reachability** - your UniFi controller and HA must share a network. Webhook URLs are local-only and cannot be reached over Nabu Casa remote access or from cloud-hosted controllers.
 - **Credentials** - API key (recommended) or username + password.
@@ -109,6 +110,8 @@ The key is shown only once at creation - copy it immediately.
 
 For each enabled category, create an alarm in **UniFi Network > Settings > Notifications > Alarm Manager**:
 
+> See [docs/ALARM_MANAGER_SETUP.md](docs/ALARM_MANAGER_SETUP.md) for a full walkthrough, including how to verify delivery via `webhook_health` and fixes for the most common failure modes (local-only rejection, secret rotation, wrong HA base URL).
+
 1. Click **Create Alarm**
 2. Set the **trigger** matching your category (see table below)
 3. Set scope (specific devices or network-wide)
@@ -167,6 +170,7 @@ Per-category entities (example uses `network_device`; the same pattern applies t
 | Binary sensor | `binary_sensor.unifi_alerts_network_device_offline_online` | ON = alert active |
 | Message sensor | `sensor.unifi_alerts_network_device_offline_online_last_message` | Last alert text |
 | Count sensor | `sensor.unifi_alerts_network_device_offline_online_open_count` | Open alarm count |
+| Webhook health sensor | `sensor.unifi_alerts_network_device_offline_online_webhook_health` | `never_received` / `healthy` / `stale` diagnostic |
 | Event entity | `event.unifi_alerts_network_device_offline_online_event` | Fires per alert |
 | Clear button | `button.unifi_alerts_clear_network_device_offline_online` | Manual clear |
 
@@ -184,13 +188,7 @@ See [docs/EXAMPLES.md](docs/EXAMPLES.md) for a Lovelace dashboard card and an au
 
 ## Privacy and data retention
 
-All data stays on your local network; the integration does not communicate with any external service.
-
-**What is stored:** each alert records `message` (truncated to 255 characters), `category`, `device_name`, `alert_key`, `severity`, `site`, and `received_at` (UTC timestamp). The most recent alert per category is kept in memory and persisted to `.storage/unifi_alerts` so it survives HA restarts.
-
-**What clearing does:** pressing Clear (or letting auto-clear fire) marks the category as acknowledged (`is_alerting = False`) and advances the watermark (`last_cleared_at`). It does NOT delete `last_alert` - the most recent alert details remain visible in entity attributes. This is intentional: dashboards and automations can still reference the last seen event after acknowledging it.
-
-**How to purge stored data:** delete the integration entry via Settings > Devices & Services > UniFi Alerts > three-dot menu > Delete. This removes all persisted state including every `last_alert`.
+All data stays on your local network; the integration does not communicate with any external service. For the full statement of what is stored, where, what appears in diagnostics downloads, and how to purge it, see [docs/DATA_HANDLING.md](docs/DATA_HANDLING.md).
 
 ---
 
@@ -221,4 +219,5 @@ A short tour of the rest of the documentation:
 | [docs/UNIFI.md](docs/UNIFI.md) | UniFi API, auth methods, alarm payload taxonomy |
 | [docs/TESTING.md](docs/TESTING.md) | Test layout and conventions |
 | [docs/REPO_LAYOUT.md](docs/REPO_LAYOUT.md) | Per-file responsibilities |
+| [docs/LOCALISATION.md](docs/LOCALISATION.md) | Localisation maturity bar, audit history, and how to contribute a new language |
 | [CLAUDE.md](CLAUDE.md) | Non-negotiable constraints and coding conventions |

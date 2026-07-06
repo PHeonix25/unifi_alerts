@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import make_entry, make_hass
+from conftest import make_entry, make_hass, patch_setup_entry_collaborators
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
@@ -59,18 +59,7 @@ class TestAsyncSetupEntry:
         entry = make_entry()
         mock_client, mock_coordinator, mock_wm = _patch_all()
 
-        with (
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
-        ):
+        with patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm):
             result = await async_setup_entry(hass, entry)
 
         assert result is True
@@ -83,18 +72,7 @@ class TestAsyncSetupEntry:
         entry = make_entry()
         mock_client, mock_coordinator, mock_wm = _patch_all()
 
-        with (
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
-        ):
+        with patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm):
             await async_setup_entry(hass, entry)
 
         assert entry.runtime_data.coordinator is mock_coordinator
@@ -106,30 +84,29 @@ class TestAsyncSetupEntry:
         from homeassistant.exceptions import ConfigEntryNotReady
 
         from custom_components.unifi_alerts import async_setup_entry
+        from custom_components.unifi_alerts.unifi_auth import CannotConnectError
 
         hass = make_hass()
         entry = make_entry()
         mock_client, mock_coordinator, mock_wm = _patch_all(
-            authenticate_side_effect=Exception("connection refused")
+            authenticate_side_effect=CannotConnectError("connection refused")
         )
 
         with (
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
+            patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm),
             pytest.raises(ConfigEntryNotReady),
         ):
             await async_setup_entry(hass, entry)
 
     @pytest.mark.asyncio
     async def test_first_refresh_failure_raises_config_entry_not_ready(self):
+        """A ConfigEntryNotReady raised by the coordinator's first refresh propagates unmodified.
+
+        HA core's async_config_entry_first_refresh() raises ConfigEntryNotReady
+        itself on a connectivity/UpdateFailed outcome — async_setup_entry no
+        longer wraps this call, so the mock must raise the same exception type
+        real HA raises.
+        """
         from homeassistant.exceptions import ConfigEntryNotReady
 
         from custom_components.unifi_alerts import async_setup_entry
@@ -137,21 +114,39 @@ class TestAsyncSetupEntry:
         hass = make_hass()
         entry = make_entry()
         mock_client, mock_coordinator, mock_wm = _patch_all(
-            first_refresh_side_effect=Exception("poll failed")
+            first_refresh_side_effect=ConfigEntryNotReady("poll failed")
         )
 
         with (
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
+            patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm),
             pytest.raises(ConfigEntryNotReady),
+        ):
+            await async_setup_entry(hass, entry)
+
+    @pytest.mark.asyncio
+    async def test_first_refresh_auth_failure_raises_config_entry_auth_failed(self):
+        """A ConfigEntryAuthFailed raised by the first refresh must not be misclassified.
+
+        HA core raises ConfigEntryAuthFailed directly out of
+        async_config_entry_first_refresh() when the coordinator's own re-auth
+        attempt fails (see coordinator._async_update_data); silently
+        converting it to ConfigEntryNotReady would suppress HA's reauth-repair
+        flow. Regression test for the bug where a blanket `except Exception`
+        around this call re-wrapped every failure as ConfigEntryNotReady.
+        """
+        from homeassistant.exceptions import ConfigEntryAuthFailed
+
+        from custom_components.unifi_alerts import async_setup_entry
+
+        hass = make_hass()
+        entry = make_entry()
+        mock_client, mock_coordinator, mock_wm = _patch_all(
+            first_refresh_side_effect=ConfigEntryAuthFailed("credentials changed")
+        )
+
+        with (
+            patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm),
+            pytest.raises(ConfigEntryAuthFailed),
         ):
             await async_setup_entry(hass, entry)
 
@@ -175,16 +170,7 @@ class TestAsyncSetupEntry:
         )
 
         with (
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
+            patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm),
             pytest.raises(ConfigEntryAuthFailed) as excinfo,
         ):
             await async_setup_entry(hass, entry)
@@ -198,63 +184,23 @@ class TestAsyncSetupEntry:
         from homeassistant.exceptions import ConfigEntryNotReady
 
         from custom_components.unifi_alerts import async_setup_entry
+        from custom_components.unifi_alerts.unifi_auth import CannotConnectError
 
         secret_marker = "https://admin:secretpass@10.0.0.1:8443"
         hass = make_hass()
         entry = make_entry()
         mock_client, mock_coordinator, mock_wm = _patch_all(
-            authenticate_side_effect=ConnectionError(secret_marker)
+            authenticate_side_effect=CannotConnectError(secret_marker)
         )
 
         with (
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
+            patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm),
             pytest.raises(ConfigEntryNotReady) as excinfo,
         ):
             await async_setup_entry(hass, entry)
 
         assert secret_marker not in str(excinfo.value)
-        assert "ConnectionError" in str(excinfo.value)
-
-    @pytest.mark.asyncio
-    async def test_first_refresh_failure_message_omits_underlying_error_text(self):
-        """ConfigEntryNotReady on the first-refresh path must not embed inner error text."""
-        from homeassistant.exceptions import ConfigEntryNotReady
-
-        from custom_components.unifi_alerts import async_setup_entry
-
-        secret_marker = "https://admin:secretpass@10.0.0.1/api/alarm?token=leak"
-        hass = make_hass()
-        entry = make_entry()
-        mock_client, mock_coordinator, mock_wm = _patch_all(
-            first_refresh_side_effect=RuntimeError(secret_marker)
-        )
-
-        with (
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
-            pytest.raises(ConfigEntryNotReady) as excinfo,
-        ):
-            await async_setup_entry(hass, entry)
-
-        assert secret_marker not in str(excinfo.value)
-        assert "RuntimeError" in str(excinfo.value)
+        assert "CannotConnectError" in str(excinfo.value)
 
     @pytest.mark.asyncio
     async def test_ssl_disabled_logs_warning(self):
@@ -277,16 +223,7 @@ class TestAsyncSetupEntry:
 
         with (
             patch("custom_components.unifi_alerts._LOGGER") as mock_logger,
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
+            patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm),
         ):
             await async_setup_entry(hass, entry)
 
@@ -303,16 +240,7 @@ class TestAsyncSetupEntry:
 
         with (
             patch("custom_components.unifi_alerts._LOGGER") as mock_logger,
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
+            patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm),
         ):
             await async_setup_entry(hass, entry)
 
@@ -327,21 +255,89 @@ class TestAsyncSetupEntry:
         entry = make_entry()
         mock_client, mock_coordinator, mock_wm = _patch_all()
 
-        with (
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
-        ):
+        with patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm):
             await async_setup_entry(hass, entry)
 
         hass.config_entries.async_forward_entry_setups.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "failing_call",
+        ["async_forward_entry_setups", "async_register_services"],
+    )
+    @pytest.mark.asyncio
+    async def test_failure_after_webhook_registration_unregisters_and_closes(self, failing_call):
+        """Any failure after register_all() must leave zero webhooks registered.
+
+        Otherwise the automatic setup retry finds every deterministic
+        webhook_id already taken, register_all() skips them all, and the
+        entry silently loads with an empty webhook URL map (#265).
+        """
+        from custom_components.unifi_alerts import async_setup_entry
+
+        hass = make_hass()
+        entry = make_entry()
+        mock_client, mock_coordinator, mock_wm = _patch_all()
+
+        if failing_call == "async_forward_entry_setups":
+            hass.config_entries.async_forward_entry_setups = AsyncMock(
+                side_effect=RuntimeError("boom")
+            )
+            register_services_patch = patch(
+                "custom_components.unifi_alerts.async_register_services"
+            )
+        else:
+            register_services_patch = patch(
+                "custom_components.unifi_alerts.async_register_services",
+                side_effect=RuntimeError("boom"),
+            )
+
+        with (
+            patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm),
+            register_services_patch,
+            pytest.raises(RuntimeError),
+        ):
+            await async_setup_entry(hass, entry)
+
+        mock_wm.unregister_all.assert_called_once()
+        mock_client.close.assert_awaited_once()
+        mock_coordinator.async_shutdown.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_retry_after_setup_failure_produces_full_webhook_url_map(self):
+        """The retry after a cleaned-up failure must re-register every webhook.
+
+        Simulates the fail-then-retry sequence directly: register_all() is
+        called twice against the same WebhookManager mock, and because the
+        first attempt's cleanup unregistered everything, the second call
+        returns the full URL map rather than an empty one.
+        """
+        from custom_components.unifi_alerts import async_setup_entry
+
+        mock_client, mock_coordinator, mock_wm = _patch_all()
+        full_urls = {cat: f"http://ha/hook/{cat}?token=x" for cat in ALL_CATEGORIES}
+        mock_wm.register_all.side_effect = [RuntimeError("first attempt never gets here")]
+
+        with patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm):
+            # First attempt: forward setups fails after webhooks are registered.
+            first_hass = make_hass()
+            first_hass.config_entries.async_forward_entry_setups = AsyncMock(
+                side_effect=RuntimeError("boom")
+            )
+            entry = make_entry()
+            mock_wm.register_all.side_effect = None
+            mock_wm.register_all.return_value = full_urls
+            with pytest.raises(RuntimeError):
+                await async_setup_entry(first_hass, entry)
+            mock_wm.unregister_all.assert_called_once()
+
+            # Retry: a fresh hass/entry, same underlying WebhookManager mock —
+            # register_all() must return the full map again, not an empty one.
+            retry_hass = make_hass()
+            retry_entry = make_entry()
+            result = await async_setup_entry(retry_hass, retry_entry)
+
+        assert result is True
+        assert retry_entry.runtime_data.webhook_urls == full_urls
 
 
 # ── async_unload_entry ────────────────────────────────────────────────────────
@@ -443,6 +439,64 @@ class TestAsyncUnloadEntry:
         assert call_order == ["shutdown", "unregister", "close"]
 
 
+# ── async_remove_entry ────────────────────────────────────────────────────────
+
+
+class TestAsyncRemoveEntry:
+    """async_remove_entry must delete the watermark store file and all four repair issues."""
+
+    @pytest.mark.asyncio
+    async def test_removes_watermark_store_file(self):
+        from custom_components.unifi_alerts import async_remove_entry
+
+        hass = make_hass()
+        entry = make_entry(entry_id="entry-xyz")
+
+        mock_store = MagicMock()
+        mock_store.async_remove = AsyncMock()
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.Store", return_value=mock_store
+            ) as mock_store_cls,
+            patch("custom_components.unifi_alerts.ir.async_delete_issue"),
+        ):
+            await async_remove_entry(hass, entry)
+
+        mock_store_cls.assert_called_once()
+        call_args = mock_store_cls.call_args.args
+        assert call_args[0] is hass
+        assert call_args[2] == f"{DOMAIN}_watermarks_entry-xyz"
+        mock_store.async_remove.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_deletes_all_four_per_entry_repair_issues(self):
+        from custom_components.unifi_alerts import async_remove_entry
+
+        hass = make_hass()
+        entry = make_entry(entry_id="entry-xyz")
+
+        mock_store = MagicMock()
+        mock_store.async_remove = AsyncMock()
+
+        with (
+            patch("custom_components.unifi_alerts.Store", return_value=mock_store),
+            patch("custom_components.unifi_alerts.ir.async_delete_issue") as mock_delete_issue,
+        ):
+            await async_remove_entry(hass, entry)
+
+        deleted_issue_ids = {call.args[2] for call in mock_delete_issue.call_args_list}
+        assert deleted_issue_ids == {
+            "auth_failed_entry-xyz",
+            "webhook_secret_rotated_entry-xyz",
+            "webhook_urls_changed_entry-xyz",
+            "watermark_persist_failed_entry-xyz",
+        }
+        for call in mock_delete_issue.call_args_list:
+            assert call.args[0] is hass
+            assert call.args[1] == DOMAIN
+
+
 # ── device registry ───────────────────────────────────────────────────────────
 
 
@@ -463,17 +517,8 @@ class TestDeviceRegistration:
         mock_dev_reg = MagicMock()
         mock_dev_reg.async_get_or_create = MagicMock()
 
-        with (
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=mock_dev_reg),
+        with patch_setup_entry_collaborators(
+            mock_client, mock_coordinator, mock_wm, dev_reg=mock_dev_reg
         ):
             await async_setup_entry(hass, entry)
 
@@ -495,17 +540,8 @@ class TestDeviceRegistration:
         mock_dev_reg = MagicMock()
         mock_dev_reg.async_get_or_create = MagicMock()
 
-        with (
-            patch(
-                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
-            ),
-            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
-            patch(
-                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
-                return_value=mock_coordinator,
-            ),
-            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
-            patch("custom_components.unifi_alerts.dr.async_get", return_value=mock_dev_reg),
+        with patch_setup_entry_collaborators(
+            mock_client, mock_coordinator, mock_wm, dev_reg=mock_dev_reg
         ):
             await async_setup_entry(hass, entry)
 

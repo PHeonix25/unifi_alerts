@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
+import contextlib
+from collections.abc import Generator, Iterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -39,6 +40,7 @@ def mock_unifi_client() -> Generator[MagicMock, None, None]:
         instance = mock_cls.return_value
         instance.authenticate = AsyncMock(return_value="userpass")
         instance.categorise_alarms = AsyncMock(return_value={})
+        instance.probe_system_log_endpoint = AsyncMock(return_value=False)
         instance.close = AsyncMock()
         yield instance
 
@@ -108,3 +110,36 @@ def make_entry(
     entry.async_on_unload = MagicMock()
     entry.add_update_listener = MagicMock(return_value=MagicMock())
     return entry
+
+
+@contextlib.contextmanager
+def patch_setup_entry_collaborators(
+    mock_client: MagicMock,
+    mock_coordinator: MagicMock,
+    mock_wm: MagicMock,
+    *,
+    dev_reg: MagicMock | None = None,
+) -> Iterator[None]:
+    """Patch the five external collaborators `async_setup_entry` depends on.
+
+    Every `test_init.py` setup test needs the same five patches (session,
+    client, coordinator, webhook manager, device registry) regardless of what
+    it's actually testing; only the mocks' configured behaviour differs
+    between tests. Pass `dev_reg` when a test needs to assert against the
+    device-registry mock itself (e.g. `async_get_or_create` call args);
+    otherwise a throwaway `MagicMock()` is used. Callers needing an additional
+    patch (`_LOGGER`, `async_register_services`) or `pytest.raises` nest it
+    around this context manager rather than this helper taking every
+    possible extra.
+    """
+    with (
+        patch("custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()),
+        patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
+        patch(
+            "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+            return_value=mock_coordinator,
+        ),
+        patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+        patch("custom_components.unifi_alerts.dr.async_get", return_value=dev_reg or MagicMock()),
+    ):
+        yield

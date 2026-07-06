@@ -24,3 +24,6 @@ htmlcov/
 # Claude Code auto-memory internal state
 .claude/auto-memory/
 .claude/worktrees/
+
+# Personal Claude Code overrides (shared settings live in .claude/settings.json)
+.claude/settings.local.json

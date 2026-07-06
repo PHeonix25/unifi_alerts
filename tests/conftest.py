@@ -35,7 +35,7 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
-def pytest_configure(config):  # noqa: ARG001
+def pytest_configure(config):
     """Replace ``pytest_socket.disable_socket`` with a no-op on Windows.
 
     Home Assistant's test conftest (loaded via
@@ -68,6 +68,6 @@ def pytest_configure(config):  # noqa: ARG001
     if sys.platform != "win32":
         return
 
-    import pytest_socket  # noqa: PLC0415
+    import pytest_socket
 
     pytest_socket.disable_socket = lambda **kwargs: None

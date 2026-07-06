@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Coroutine
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -24,25 +24,23 @@ from .const import (
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_SITE,
+    DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS,
     DOMAIN,
+    ISSUE_ID_PERSIST_FAILED,
+    STORAGE_VERSION_WATERMARKS,
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
 from .models import CategoryState, UniFiAlert, UniFiClientConfig
-from .unifi_client import CannotConnectError, InvalidAuthError, UniFiClient
+from .unifi_auth import CannotConnectError, InvalidAuthError
+from .unifi_client import UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
-
-_STORAGE_VERSION = 1
 
 # Debounce window for watermark persistence. push_alert is synchronous and can
 # fire in bursts; routing writes through Store.async_delay_save with this delay
 # coalesces a burst into a single durable write instead of one fire-and-forget
 # save per push.
 _PERSIST_DELAY_SECONDS = 1
-
-# Issue-registry id base for the repair surfaced when a watermark persist fails.
-# Suffixed with the config entry id so multi-entry installs report independently.
-_PERSIST_FAILED_ISSUE_BASE = "watermark_persist_failed"
 
 
 class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
@@ -78,7 +76,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._site: str = config.get(CONF_SITE, DEFAULT_SITE)
         self._entry_id: str = entry_id
         self._store: Store[dict[str, Any]] = Store(
-            hass, _STORAGE_VERSION, f"{DOMAIN}_watermarks_{entry_id}"
+            hass, STORAGE_VERSION_WATERMARKS, f"{DOMAIN}_watermarks_{entry_id}"
         )
 
         # Category state is long-lived; do NOT reset between coordinator refreshes
@@ -99,6 +97,11 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         # within WEBHOOK_DEDUP_WINDOW_SECONDS are dropped to prevent a noisy
         # controller from generating unbounded state updates and event fires.
         self._last_push_at: dict[tuple[str, str], float] = {}
+
+        # Accumulates event keys seen during polling that could not be mapped to
+        # any category. Exposed via diagnostics so users can report missing keys
+        # without needing DEBUG logging. Never reset; grows until the entry reloads.
+        self._unrecognised_keys: dict[str, int] = {}
 
     # ── DataUpdateCoordinator override ───────────────────────────────────
 
@@ -194,7 +197,10 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         """
         try:
             has_v2 = await self._client.probe_system_log_endpoint(self._site)
-        except Exception as probe_err:  # noqa: BLE001
+        except (InvalidAuthError, CannotConnectError) as probe_err:
+            # probe_system_log_endpoint() only raises via its internal re-auth
+            # attempt (authenticate() when not yet authenticated); the HTTP probe
+            # itself catches aiohttp.ClientError internally and returns False.
             _LOGGER.debug(
                 "v2 system-log probe raised %s; falling back to legacy path",
                 type(probe_err).__name__,
@@ -202,16 +208,27 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             has_v2 = False
 
         if not has_v2:
-            return await self._client.categorise_alarms(self._site)
+            result = await self._client.categorise_alarms(self._site)
+            for key, count in self._client.unrecognised_keys.items():
+                self._unrecognised_keys[key] = self._unrecognised_keys.get(key, 0) + count
+            return result
 
         # v2 path: compute the oldest watermark across enabled categories so we
-        # fetch everything since the oldest unacknowledged window.
+        # fetch everything since the oldest unacknowledged window. Clamp to
+        # DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS so a rarely-cleared category cannot
+        # grow the fetch window without bound and push recent events past
+        # MAX_SYSTEM_LOG_PAGES.
         watermarks = [
             state.last_cleared_at
             for state in self._category_states.values()
             if state.enabled and state.last_cleared_at is not None
         ]
-        since: datetime | None = min(watermarks) if watermarks else None
+        since: datetime | None
+        if watermarks:
+            lookback_floor = datetime.now(UTC) - timedelta(hours=DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS)
+            since = max(min(watermarks), lookback_floor)
+        else:
+            since = None
 
         raw_events = await self._client.fetch_system_log_alarms(self._site, since=since)
 
@@ -219,6 +236,15 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         for event in raw_events:
             alert = UniFiAlert.from_system_log_event(event, self._seen_unknown_keys)
             if not alert.category:
+                # Unknown key and no broad enum fallback — skip, same as legacy behaviour
+                key = event.get("key", "")
+                if key:
+                    self._unrecognised_keys[key] = self._unrecognised_keys.get(key, 0) + 1
+                    _LOGGER.debug(
+                        "Unclassified v2 system-log event key %r — consider reporting it at "
+                        "https://github.com/PHeonix25/unifi_alerts/issues",
+                        key,
+                    )
                 continue
             categorised.setdefault(alert.category, []).append(alert)
 
@@ -234,7 +260,9 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         ``WEBHOOK_DEDUP_WINDOW_SECONDS`` are dropped — without this, a
         misconfigured Alarm Manager or noisy category can flood the webhook
         endpoint and cause unbounded ``alert_count`` increments and event
-        entity fires for the same underlying event.
+        entity fires for the same underlying event. Keyless alerts (e.g. the
+        empty-body webhook ping) have no identity to dedup on, so they are
+        never suppressed against each other.
         """
         if category not in self._category_states:
             _LOGGER.warning("push_alert called with unknown category: %s", category)
@@ -244,28 +272,32 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         if not state.enabled:
             return
 
-        dedup_key = (category, alert.key or "")
-        now = time.monotonic()
-        # Absorbs duplicate webhook deliveries from the controller within the window;
-        # monotonic time makes the window immune to clock skew during HA suspend/resume.
-        prev = self._last_push_at.get(dedup_key)
-        if prev is not None and (now - prev) < WEBHOOK_DEDUP_WINDOW_SECONDS:
-            _LOGGER.debug(
-                "Suppressing duplicate webhook push for %s/%s within %.1fs window",
-                category,
-                dedup_key[1],
-                WEBHOOK_DEDUP_WINDOW_SECONDS,
-            )
-            return
-        # Opportunistically drop expired entries before recording the new one.
-        # Bounds the dict size at "distinct (category, alert_key) pairs seen
-        # within the last WEBHOOK_DEDUP_WINDOW_SECONDS" — a misconfigured
-        # controller emitting high-cardinality keys cannot grow it without
-        # bound. Cost is O(n) per push, but n is naturally small (capped by
-        # the active windowed set).
-        cutoff = now - WEBHOOK_DEDUP_WINDOW_SECONDS
-        self._last_push_at = {k: t for k, t in self._last_push_at.items() if t >= cutoff}
-        self._last_push_at[dedup_key] = now
+        # Alerts without a key (e.g. the empty-body webhook ping) have no
+        # identity to dedup on — treating them as duplicates of each other
+        # would silently drop distinct events that merely lack a key.
+        if alert.key:
+            dedup_key = (category, alert.key)
+            now = time.monotonic()
+            # Absorbs duplicate webhook deliveries from the controller within the window;
+            # monotonic time makes the window immune to clock skew during HA suspend/resume.
+            prev = self._last_push_at.get(dedup_key)
+            if prev is not None and (now - prev) < WEBHOOK_DEDUP_WINDOW_SECONDS:
+                _LOGGER.debug(
+                    "Suppressing duplicate webhook push for %s/%s within %.1fs window",
+                    category,
+                    dedup_key[1],
+                    WEBHOOK_DEDUP_WINDOW_SECONDS,
+                )
+                return
+            # Opportunistically drop expired entries before recording the new one.
+            # Bounds the dict size at "distinct (category, alert_key) pairs seen
+            # within the last WEBHOOK_DEDUP_WINDOW_SECONDS" — a misconfigured
+            # controller emitting high-cardinality keys cannot grow it without
+            # bound. Cost is O(n) per push, but n is naturally small (capped by
+            # the active windowed set).
+            cutoff = now - WEBHOOK_DEDUP_WINDOW_SECONDS
+            self._last_push_at = {k: t for k, t in self._last_push_at.items() if t >= cutoff}
+            self._last_push_at[dedup_key] = now
 
         state.apply_alert(alert)
         # Record webhook receipt for the per-category health signal. Set only
@@ -311,6 +343,15 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     @property
     def rollup_open_count(self) -> int:
         return sum(s.open_count for s in self._category_states.values() if s.enabled)
+
+    @property
+    def unrecognised_keys(self) -> dict[str, int]:
+        """Event keys seen during polling that could not be mapped to any category.
+
+        Keys accumulate across all polls since the config entry was loaded. Exposed
+        via diagnostics so users can report missing keys without enabling DEBUG logging.
+        """
+        return self._unrecognised_keys
 
     @property
     def rollup_last_alert(self) -> UniFiAlert | None:
@@ -413,7 +454,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     @property
     def _persist_failed_issue_id(self) -> str:
         """Per-entry issue-registry id for the watermark-persist-failed repair."""
-        return f"{_PERSIST_FAILED_ISSUE_BASE}_{self._entry_id}"
+        return f"{ISSUE_ID_PERSIST_FAILED}_{self._entry_id}"
 
     def _create_persist_failed_issue(self) -> None:
         """Raise a repair issue telling the user a watermark write failed."""
@@ -423,7 +464,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             self._persist_failed_issue_id,
             is_fixable=False,
             severity=ir.IssueSeverity.WARNING,
-            translation_key=_PERSIST_FAILED_ISSUE_BASE,
+            translation_key=ISSUE_ID_PERSIST_FAILED,
         )
 
     def _delete_persist_failed_issue(self) -> None:
