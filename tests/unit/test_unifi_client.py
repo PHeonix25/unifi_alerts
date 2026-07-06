@@ -127,7 +127,7 @@ class TestClassify:
     """Test the static _classify method for event key → category mapping."""
 
     @pytest.mark.parametrize(
-        "key,expected",
+        ("key", "expected"),
         [
             # Access points
             ("EVT_AP_Disconnected", CATEGORY_NETWORK_DEVICE),
@@ -500,7 +500,7 @@ class TestFetchAlarms:
 
         with aioresponses() as m:
             m.get(_list_alarm_url(), status=200, payload=body)
-            with pytest.raises(CannotConnectError, match="api.err.InvalidObject"):
+            with pytest.raises(CannotConnectError, match=r"api\.err\.InvalidObject"):
                 await client.fetch_alarms()
 
     @pytest.mark.asyncio

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import ClassVar
 
 import pytest
 
@@ -139,7 +140,7 @@ class TestNonStringPayloadFields:
     existing str(...) handling already applied to message/key/severity. Regression
     tests for GitHub issue #266."""
 
-    _NON_STRING_VALUES = [123, {"nested": "dict"}, ["a", "list"], None]
+    _NON_STRING_VALUES: ClassVar = [123, {"nested": "dict"}, ["a", "list"], None]
 
     @pytest.mark.parametrize("value", _NON_STRING_VALUES)
     def test_webhook_device_name_non_string_coerced(self, value):
@@ -346,7 +347,7 @@ class TestFromSystemLogEvent:
     """Tests for UniFiAlert.from_system_log_event() — v2 system-log parser."""
 
     # Minimal valid event matching the field-confirmed schema from docs/research/alert-endpoints.md
-    _BASE_EVENT = {
+    _BASE_EVENT: ClassVar = {
         "id": "60a1b2c3d4e5f60718293a4b",
         "category": "SECURITY",
         "event": "THREAT_BLOCKED",
@@ -474,7 +475,7 @@ class TestUnknownSystemLogKeyObservability:
     get warn-once behaviour; pass None to warn on every call.
     """
 
-    _BASE_EVENT = {
+    _BASE_EVENT: ClassVar = {
         "id": "x",
         "category": "SECURITY",
         "key": "UNMAPPED_BUT_HAS_ENUM_FALLBACK",

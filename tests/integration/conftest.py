@@ -44,10 +44,10 @@ from custom_components.unifi_alerts.const import (
 @pytest.fixture(autouse=True, scope="session")
 def _prime_pycares_shutdown_thread() -> None:
     """Warm up the optional aiodns/pycares resolver stack before tests run."""
-    import asyncio  # noqa: PLC0415
+    import asyncio
 
     try:
-        import aiodns  # noqa: PLC0415
+        import aiodns
     except ImportError:
         return
 
