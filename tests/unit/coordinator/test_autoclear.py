@@ -1,8 +1,7 @@
 """Tests for UniFiAlertsCoordinator: shutdown, cancel_clear, and auto-clear.
 
-Split out of test_coordinator.py (#283) by behaviour area. See
-test_coordinator_push_dedup.py, test_coordinator_polling.py, and
-test_coordinator_persistence.py for the other pieces.
+Split by behaviour area (#283) alongside test_push_dedup.py,
+test_polling.py, and test_persistence.py in this package.
 """
 
 from __future__ import annotations
@@ -10,9 +9,10 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import make_alert, make_coordinator, make_coordinator_with_cancellable_task
 
 from custom_components.unifi_alerts.const import CATEGORY_NETWORK_WAN
+
+from .conftest import make_alert, make_coordinator, make_coordinator_with_cancellable_task
 
 
 class TestShutdown:

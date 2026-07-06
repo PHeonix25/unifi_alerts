@@ -1,8 +1,7 @@
 """Tests for UniFiAlertsCoordinator: watermark/counter persistence and misc coverage.
 
-Split out of test_coordinator.py (#283) by behaviour area. See
-test_coordinator_push_dedup.py, test_coordinator_polling.py, and
-test_coordinator_autoclear.py for the other pieces.
+Split by behaviour area (#283) alongside test_push_dedup.py,
+test_polling.py, and test_autoclear.py in this package.
 """
 
 from __future__ import annotations
@@ -13,13 +12,6 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import (
-    make_alert,
-    make_coordinator,
-    make_coordinator_with_cancellable_task,
-    make_full_coordinator,
-    make_hass_and_client,
-)
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
@@ -27,6 +19,14 @@ from custom_components.unifi_alerts.const import (
     CATEGORY_SECURITY_THREAT,
 )
 from custom_components.unifi_alerts.coordinator import _PERSIST_DELAY_SECONDS
+
+from .conftest import (
+    make_alert,
+    make_coordinator,
+    make_coordinator_with_cancellable_task,
+    make_full_coordinator,
+    make_hass_and_client,
+)
 
 
 class TestWatermarks:

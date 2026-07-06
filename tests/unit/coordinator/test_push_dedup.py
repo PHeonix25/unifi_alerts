@@ -1,8 +1,7 @@
 """Tests for UniFiAlertsCoordinator: init, rollups, push, dedup, and push/poll races.
 
-Split out of test_coordinator.py (#283) by behaviour area. See
-test_coordinator_polling.py, test_coordinator_persistence.py, and
-test_coordinator_autoclear.py for the other pieces.
+Split by behaviour area (#283) alongside test_polling.py,
+test_persistence.py, and test_autoclear.py in this package.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import make_alert, make_coordinator, make_full_coordinator, make_hass_and_client
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
@@ -20,6 +18,8 @@ from custom_components.unifi_alerts.const import (
     CATEGORY_SECURITY_THREAT,
 )
 from custom_components.unifi_alerts.models import UniFiAlert
+
+from .conftest import make_alert, make_coordinator, make_full_coordinator, make_hass_and_client
 
 
 class TestCoordinatorInit:

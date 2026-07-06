@@ -1,7 +1,7 @@
 """Tests for the UniFi HTTP client's v2 system-log probe and fetch path.
 
-Split out of test_unifi_client.py (#283) by behaviour area. See
-test_unifi_client_legacy.py for classify/legacy-fetch/auth/close/SSL.
+Split by behaviour area (#283) alongside test_legacy.py
+(classify/legacy-fetch/auth/close/SSL) in this package.
 """
 
 from __future__ import annotations
@@ -11,17 +11,11 @@ from datetime import timedelta
 import aiohttp
 import pytest
 from aioresponses import aioresponses
-from conftest import (
-    UNIFI_CLIENT_LOGIN_URL,
-    find_calls,
-    make_unifi_client,
-    probe_url,
-    system_log_url,
-    total_calls,
-)
 
 from custom_components.unifi_alerts.unifi_auth import CannotConnectError, InvalidAuthError
 from custom_components.unifi_alerts.unifi_client import _PROBE_FAIL_LIMIT
+
+from .conftest import LOGIN_URL, find_calls, make_client, probe_url, system_log_url, total_calls
 
 # Pinned business-rule value for the probe backoff window. Deliberately NOT
 # imported as `_PROBE_RETRY_AFTER` from unifi_client — importing the constant
@@ -37,7 +31,7 @@ class TestProbeSystemLogEndpoint:
     @pytest.mark.asyncio
     async def test_probe_returns_true_on_200(self):
         """HTTP 200 from /system-log/count must return True and set _has_system_log=True."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.post(probe_url(), status=200, payload={"categories": []})
@@ -48,7 +42,7 @@ class TestProbeSystemLogEndpoint:
     @pytest.mark.asyncio
     async def test_probe_returns_false_on_404(self):
         """HTTP 404 from /system-log/count must return False and set _has_system_log=False."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.post(probe_url(), status=404)
@@ -64,7 +58,7 @@ class TestProbeSystemLogEndpoint:
         Other 4xx codes may be transient (e.g., temporary permission state) and
         re-probing on the next poll is preferable to pinning to legacy mode.
         """
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.post(probe_url(), status=403)
@@ -75,7 +69,7 @@ class TestProbeSystemLogEndpoint:
     @pytest.mark.asyncio
     async def test_probe_returns_false_on_500_does_not_cache(self):
         """HTTP 5xx is treated as transient: returns False without caching."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.post(probe_url(), status=503)
@@ -86,7 +80,7 @@ class TestProbeSystemLogEndpoint:
     @pytest.mark.asyncio
     async def test_probe_returns_false_on_network_error_does_not_cache(self):
         """aiohttp.ClientError during probe must return False, not raise, and not cache."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.post(probe_url(), exception=aiohttp.ClientConnectionError("unreachable"))
@@ -102,7 +96,7 @@ class TestProbeSystemLogEndpoint:
         consumes them FIFO in call order, so the first probe gets 503 and the
         second gets 200.
         """
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
 
         with aioresponses() as m:
@@ -120,7 +114,7 @@ class TestProbeSystemLogEndpoint:
     @pytest.mark.asyncio
     async def test_probe_is_cached_after_true(self):
         """Second call must not hit the network when _has_system_log is True."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         client._has_system_log = True  # pre-set the cache
 
@@ -133,7 +127,7 @@ class TestProbeSystemLogEndpoint:
     @pytest.mark.asyncio
     async def test_probe_is_cached_after_false(self):
         """Second call must not hit the network when _has_system_log is False."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         client._has_system_log = False  # pre-set the cache
 
@@ -145,7 +139,7 @@ class TestProbeSystemLogEndpoint:
     @pytest.mark.asyncio
     async def test_probe_url_includes_v2_and_site(self):
         """Probe URL must include /v2/api/site/{site}/system-log/count."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         expected_url = probe_url(site="mysite")
 
@@ -163,7 +157,7 @@ class TestProbeSystemLogEndpoint:
         and sets a backoff deadline so subsequent polls skip the network entirely."""
         from datetime import UTC, datetime
 
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
 
         before = datetime.now(UTC)
@@ -192,7 +186,7 @@ class TestProbeSystemLogEndpoint:
         """Once in backoff, probes must return False without making a network call."""
         from datetime import UTC, datetime, timedelta
 
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         client._has_system_log = False
         client._probe_backoff_until = datetime.now(UTC) + timedelta(hours=1)
@@ -208,7 +202,7 @@ class TestProbeSystemLogEndpoint:
         and, if successful, set cache=True and clear backoff state."""
         from datetime import UTC, datetime, timedelta
 
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         # Simulate an expired backoff (deadline in the past).
         client._has_system_log = False
@@ -228,7 +222,7 @@ class TestProbeSystemLogEndpoint:
     async def test_probe_404_does_not_set_backoff(self):
         """A definitive 404 must set cache=False without a backoff deadline
         (the endpoint will never appear on this controller)."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
 
         with aioresponses() as m:
@@ -245,7 +239,7 @@ class TestProbeSystemLogEndpoint:
         after reaching _PROBE_FAIL_LIMIT."""
         from datetime import UTC, datetime
 
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
 
         before = datetime.now(UTC)
@@ -275,14 +269,14 @@ class TestProbeSystemLogEndpoint:
         False from backoff."""
         from datetime import UTC, datetime, timedelta
 
-        client = make_unifi_client()
+        client = make_client()
         # Simulate an active backoff (e.g. credentials were bad, probe kept failing)
         client._has_system_log = False
         client._probe_fail_count = _PROBE_FAIL_LIMIT
         client._probe_backoff_until = datetime.now(UTC) + timedelta(hours=1)
 
         with aioresponses() as m:
-            m.post(UNIFI_CLIENT_LOGIN_URL, status=200)
+            m.post(LOGIN_URL, status=200)
             await client.authenticate()
 
         # Backoff state must be cleared
@@ -294,13 +288,13 @@ class TestProbeSystemLogEndpoint:
     async def test_reauth_does_not_reset_confirmed_true(self):
         """If _has_system_log is True (v2 endpoint confirmed), re-auth must not
         reset it to None - there's nothing to re-probe."""
-        client = make_unifi_client()
+        client = make_client()
         client._has_system_log = True
         client._probe_fail_count = 0
         client._probe_backoff_until = None
 
         with aioresponses() as m:
-            m.post(UNIFI_CLIENT_LOGIN_URL, status=200)
+            m.post(LOGIN_URL, status=200)
             await client.authenticate()
 
         assert client._has_system_log is True
@@ -321,7 +315,7 @@ class TestFetchSystemLogAlarms:
     @pytest.mark.asyncio
     async def test_returns_new_events_only(self):
         """Only events with status='NEW' must be returned; others are filtered."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         events = [
             {"key": "THREAT_BLOCKED", "status": "NEW", "timestamp": 1778025612345},
@@ -336,7 +330,7 @@ class TestFetchSystemLogAlarms:
     @pytest.mark.asyncio
     async def test_paginates_until_total_pages_exhausted(self):
         """Must fetch pages until total_page_count is reached."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         event = {"key": "K", "status": "NEW", "timestamp": 1000}
 
@@ -355,7 +349,7 @@ class TestFetchSystemLogAlarms:
         """Must stop after MAX_SYSTEM_LOG_PAGES even if total_page_count is larger."""
         from custom_components.unifi_alerts.const import MAX_SYSTEM_LOG_PAGES
 
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         event = {"key": "K", "status": "NEW", "timestamp": 1000}
         # total_page_count is intentionally larger than MAX_SYSTEM_LOG_PAGES
@@ -373,7 +367,7 @@ class TestFetchSystemLogAlarms:
     @pytest.mark.asyncio
     async def test_stops_on_empty_page(self):
         """Must stop when a page returns an empty data list."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         event = {"key": "K", "status": "NEW", "timestamp": 1000}
 
@@ -392,7 +386,7 @@ class TestFetchSystemLogAlarms:
         """timestampFrom must be epoch milliseconds derived from the since datetime."""
         from datetime import UTC, datetime
 
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
 
         with aioresponses() as m:
@@ -415,7 +409,7 @@ class TestFetchSystemLogAlarms:
 
         from custom_components.unifi_alerts.const import DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS
 
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
 
         with aioresponses() as m:
@@ -436,7 +430,7 @@ class TestFetchSystemLogAlarms:
     @pytest.mark.asyncio
     async def test_401_raises_invalid_auth(self):
         """HTTP 401 during system-log fetch must raise InvalidAuthError."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.post(system_log_url(), status=401)
@@ -446,7 +440,7 @@ class TestFetchSystemLogAlarms:
     @pytest.mark.asyncio
     async def test_network_error_raises_cannot_connect(self):
         """aiohttp.ClientError during fetch must raise CannotConnectError."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.post(system_log_url(), exception=aiohttp.ClientConnectionError("unreachable"))
@@ -456,7 +450,7 @@ class TestFetchSystemLogAlarms:
     @pytest.mark.asyncio
     async def test_redirect_raises_cannot_connect(self):
         """3xx from the system-log endpoint must raise CannotConnectError."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.post(system_log_url(), status=301)

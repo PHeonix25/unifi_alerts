@@ -1,8 +1,7 @@
 """Tests for UniFiAlertsCoordinator: polling path, error handling, v2 dispatch, unrecognised keys.
 
-Split out of test_coordinator.py (#283) by behaviour area. See
-test_coordinator_push_dedup.py, test_coordinator_persistence.py, and
-test_coordinator_autoclear.py for the other pieces.
+Split by behaviour area (#283) alongside test_push_dedup.py,
+test_persistence.py, and test_autoclear.py in this package.
 """
 
 from __future__ import annotations
@@ -11,7 +10,6 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from conftest import make_alert, make_full_coordinator, make_hass_and_client
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
@@ -23,6 +21,8 @@ from custom_components.unifi_alerts.const import (
 )
 from custom_components.unifi_alerts.coordinator import UniFiAlertsCoordinator
 from custom_components.unifi_alerts.models import UniFiAlert
+
+from .conftest import make_alert, make_full_coordinator, make_hass_and_client
 
 
 class TestPollingPath:

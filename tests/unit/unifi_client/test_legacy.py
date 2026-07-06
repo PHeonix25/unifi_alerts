@@ -1,16 +1,7 @@
 """Tests for the UniFi HTTP client: classify, legacy fetch_alarms/categorise_alarms, auth, close, SSL.
 
-HTTP-hitting tests use aioresponses to mock at the aiohttp transport layer
-(``aiohttp.ClientSession._request``) rather than hand-building fake response
-objects. This means they exercise the real ``aiohttp.ClientSession``
-request/response plumbing (headers, status codes, JSON parsing, exception
-raising) instead of a fabricated surface that could drift from real aiohttp
-behaviour, and assertions can be made against the outbound request itself
-(URL, method, headers, body) via aioresponses' request history. See issue
-#229.
-
-Split out of test_unifi_client.py (#283) by behaviour area. See
-test_unifi_client_v2.py for the v2 system-log probe/fetch path.
+Split by behaviour area (#283) alongside test_v2.py (the v2 system-log
+probe/fetch path) in this package.
 """
 
 from __future__ import annotations
@@ -20,16 +11,6 @@ from unittest.mock import AsyncMock, MagicMock
 import aiohttp
 import pytest
 from aioresponses import aioresponses
-from conftest import (
-    UNIFI_CLIENT_LOGOUT_URL,
-    alarm_url,
-    find_calls,
-    list_alarm_url,
-    make_unifi_client,
-    stat_alarm_url,
-    system_log_url,
-    total_calls,
-)
 
 from custom_components.unifi_alerts.const import (
     CATEGORY_NETWORK_CLIENT,
@@ -42,6 +23,17 @@ from custom_components.unifi_alerts.const import (
 )
 from custom_components.unifi_alerts.unifi_auth import CannotConnectError, InvalidAuthError
 from custom_components.unifi_alerts.unifi_client import UniFiClient
+
+from .conftest import (
+    LOGOUT_URL,
+    alarm_url,
+    find_calls,
+    list_alarm_url,
+    make_client,
+    stat_alarm_url,
+    system_log_url,
+    total_calls,
+)
 
 
 class TestClassify:
@@ -160,7 +152,7 @@ class TestFetchAlarms:
 
     @pytest.mark.asyncio
     async def test_returns_non_archived_alarms(self):
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         body = {
             "meta": {"rc": "ok"},
@@ -177,7 +169,7 @@ class TestFetchAlarms:
 
     @pytest.mark.asyncio
     async def test_filters_out_archived_alarms(self):
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         body = {"meta": {"rc": "ok"}, "data": [{"key": "EVT_GW_WANTransition", "archived": True}]}
         with aioresponses() as m:
@@ -187,7 +179,7 @@ class TestFetchAlarms:
 
     @pytest.mark.asyncio
     async def test_401_raises_invalid_auth_and_clears_authenticated(self):
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.get(list_alarm_url(), status=401)
@@ -197,7 +189,7 @@ class TestFetchAlarms:
 
     @pytest.mark.asyncio
     async def test_client_error_raises_cannot_connect(self):
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.get(list_alarm_url(), exception=aiohttp.ClientConnectionError("unreachable"))
@@ -212,7 +204,7 @@ class TestFetchAlarms:
         their string representation.  Using type(err).__name__ prevents credential
         leaks via HA log output.
         """
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.get(
@@ -234,7 +226,7 @@ class TestFetchAlarms:
         status code. Status code only — no URL — to avoid leaking credentials
         that may be embedded in a misconfigured controller URL.
         """
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.get(list_alarm_url(), status=503)
@@ -255,7 +247,7 @@ class TestFetchAlarms:
         and /stat/alarm paths are kept as fallbacks so the integration keeps
         working on older firmware. See docs/UNIFI.md § "Alarm API endpoint".
         """
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.get(list_alarm_url(), status=200, payload={"meta": {"rc": "ok"}, "data": []})
@@ -270,7 +262,7 @@ class TestFetchAlarms:
     @pytest.mark.asyncio
     async def test_fetch_alarms_uses_proxy_network_path(self):
         """fetch_alarms must always use the /proxy/network prefix for all alarm paths."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         expected_url = list_alarm_url()
         assert "/proxy/network/api/s/default/" in expected_url
@@ -291,7 +283,7 @@ class TestFetchAlarms:
         against future regressions if someone reorders or drops an entry from
         ``alarm_paths`` without updating both code and docs.
         """
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
 
         with aioresponses() as m:
@@ -313,7 +305,7 @@ class TestFetchAlarms:
         Verifies the basic fallback contract for any single-step transition in the
         chain. The first path returns 404, the second returns success.
         """
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
 
         with aioresponses() as m:
@@ -333,7 +325,7 @@ class TestFetchAlarms:
         exist on that firmware version (instead of the more conventional 404).  The
         integration must treat this the same as 404 and try the next path.
         """
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         invalid_body = {"meta": {"rc": "error", "msg": "api.err.InvalidObject"}, "data": []}
 
@@ -351,7 +343,7 @@ class TestFetchAlarms:
         """When all alarm paths return 404, raise InvalidSiteError (subclass of CannotConnectError)."""
         from custom_components.unifi_alerts.unifi_client import InvalidSiteError
 
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
 
         with aioresponses() as m:
@@ -370,7 +362,7 @@ class TestFetchAlarms:
         what to check.  api.err.InvalidObject is treated as "path not found" (see separate
         test) and causes a fallback rather than an immediate error.
         """
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         # Return 400 with a non-InvalidObject body so the path isn't treated as "not found"
         bad_body = {"meta": {"rc": "error", "msg": "api.err.Invalid"}, "data": []}
@@ -395,7 +387,7 @@ class TestFetchAlarms:
         non-JSON ``body`` (rather than ``payload``) makes ``resp.json()`` raise
         naturally via real aiohttp JSON parsing.
         """
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
 
         with aioresponses() as m:
@@ -415,7 +407,7 @@ class TestFetchAlarms:
         meta.rc distinguishes success from failure.  Silently returning [] would
         hide misconfigured site names and similar problems from the user.
         """
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         body = {"meta": {"rc": "error", "msg": "api.err.InvalidObject"}, "data": []}
 
@@ -427,7 +419,7 @@ class TestFetchAlarms:
     @pytest.mark.asyncio
     async def test_not_authenticated_calls_authenticate_first(self):
         """fetch_alarms must call authenticate() when not yet authenticated."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = False
         body = {"meta": {"rc": "ok"}, "data": [{"key": "EVT_GW_WANTransition", "archived": False}]}
 
@@ -449,7 +441,7 @@ class TestFetchAlarms:
     @pytest.mark.asyncio
     async def test_redirect_raises_cannot_connect(self):
         """A 3xx on an authenticated alarm fetch must raise CannotConnectError (no redirect)."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.get(list_alarm_url(), status=301)
@@ -465,7 +457,7 @@ class TestFetchAlarms:
         than a mock's internal call_args, so this catches regressions in the
         real auth-header wiring, not just the client's internal call sequence.
         """
-        client = make_unifi_client({"api_key": "s3cr3t-key", "verify_ssl": False})
+        client = make_client({"api_key": "s3cr3t-key", "verify_ssl": False})
         client._auth._method = "apikey"
         client._auth._authenticated = True
 
@@ -485,7 +477,7 @@ class TestCategoriseAlarms:
 
     @pytest.mark.asyncio
     async def test_groups_alarms_by_category(self):
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         body = {
             "meta": {"rc": "ok"},
@@ -505,7 +497,7 @@ class TestCategoriseAlarms:
 
     @pytest.mark.asyncio
     async def test_skips_unclassified_alarms(self):
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         body = {
             "meta": {"rc": "ok"},
@@ -520,7 +512,7 @@ class TestCategoriseAlarms:
 
     @pytest.mark.asyncio
     async def test_empty_alarm_list_returns_empty_dict(self):
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         with aioresponses() as m:
             m.get(list_alarm_url(), status=200, payload={"meta": {"rc": "ok"}, "data": []})
@@ -530,7 +522,7 @@ class TestCategoriseAlarms:
     @pytest.mark.asyncio
     async def test_unrecognised_keys_tracked_on_unclassified_alarm(self):
         """categorise_alarms() must record unclassified alarm keys in unrecognised_keys."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         body = {
             "meta": {"rc": "ok"},
@@ -552,7 +544,7 @@ class TestCategoriseAlarms:
     @pytest.mark.asyncio
     async def test_unrecognised_keys_reset_between_calls(self):
         """unrecognised_keys reflects only the most recent categorise_alarms() call."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
 
         body1 = {
@@ -579,7 +571,7 @@ class TestCategoriseAlarms:
     @pytest.mark.asyncio
     async def test_unrecognised_keys_empty_when_all_classified(self):
         """unrecognised_keys is empty when all alarms map to a category."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         body = {
             "meta": {"rc": "ok"},
@@ -608,7 +600,7 @@ class TestAuthenticate:
 
     @pytest.mark.asyncio
     async def test_delegates_to_auth_and_returns_its_result(self):
-        client = make_unifi_client()
+        client = make_client()
         client._auth.authenticate = AsyncMock(return_value="apikey")
 
         result = await client.authenticate()
@@ -618,7 +610,7 @@ class TestAuthenticate:
 
     @pytest.mark.asyncio
     async def test_propagates_auth_failure(self):
-        client = make_unifi_client()
+        client = make_client()
         client._auth.authenticate = AsyncMock(side_effect=InvalidAuthError("bad creds"))
 
         with pytest.raises(InvalidAuthError):
@@ -631,20 +623,20 @@ class TestClose:
     @pytest.mark.asyncio
     async def test_userpass_auth_posts_to_unifi_os_logout_path(self):
         """close() must POST to /api/auth/logout (UniFi OS path only)."""
-        client = make_unifi_client()
+        client = make_client()
         client._auth._method = "userpass"
         client._auth._authenticated = True
 
         with aioresponses() as m:
-            m.post(UNIFI_CLIENT_LOGOUT_URL, status=200)
+            m.post(LOGOUT_URL, status=200)
             await client.close()
-            calls = find_calls(m, "POST", UNIFI_CLIENT_LOGOUT_URL)
+            calls = find_calls(m, "POST", LOGOUT_URL)
 
         assert len(calls) == 1
 
     @pytest.mark.asyncio
     async def test_apikey_auth_does_not_post_logout(self):
-        client = make_unifi_client({"api_key": "k", "verify_ssl": False})
+        client = make_client({"api_key": "k", "verify_ssl": False})
         client._auth._method = "apikey"
         client._auth._authenticated = True
 
@@ -656,7 +648,7 @@ class TestClose:
 
     @pytest.mark.asyncio
     async def test_not_authenticated_does_not_post_logout(self):
-        client = make_unifi_client()
+        client = make_client()
         client._auth._method = "userpass"
         client._auth._authenticated = False
 
@@ -675,13 +667,13 @@ class TestClose:
         """
         import logging
 
-        client = make_unifi_client()
+        client = make_client()
         client._auth._method = "userpass"
         client._auth._authenticated = True
         secret_marker = "controller.local: 401 Unauthorized — api_key=secret"
 
         with aioresponses() as m:
-            m.post(UNIFI_CLIENT_LOGOUT_URL, exception=ConnectionResetError(secret_marker))
+            m.post(LOGOUT_URL, exception=ConnectionResetError(secret_marker))
             with caplog.at_level(
                 logging.WARNING, logger="custom_components.unifi_alerts.unifi_client"
             ):
@@ -701,12 +693,12 @@ class TestClose:
         """
         import aiohttp
 
-        client = make_unifi_client()
+        client = make_client()
         client._auth._method = "userpass"
         client._auth._authenticated = True
 
         with aioresponses() as m:
-            m.post(UNIFI_CLIENT_LOGOUT_URL, exception=aiohttp.ClientConnectionError("boom"))
+            m.post(LOGOUT_URL, exception=aiohttp.ClientConnectionError("boom"))
             # No pytest.raises — close() must absorb the failure.
             await client.close()
 
@@ -731,7 +723,7 @@ class TestSslFailOpen:
 
         # Config deliberately omits verify_ssl
         config = {"username": "admin", "password": "secret"}
-        client = make_unifi_client(config)
+        client = make_client(config)
         client._auth._authenticated = True
 
         with aioresponses() as m:
@@ -761,7 +753,7 @@ class TestSslCertificateError:
         """aiohttp.ClientConnectorCertificateError in _try_fetch_alarms must raise SslCertificateError."""
         from custom_components.unifi_alerts.unifi_client import SslCertificateError
 
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
         url = "https://192.168.1.1/api/alarm"
 
@@ -778,7 +770,7 @@ class TestSslCertificateError:
         """aiohttp.ClientConnectorCertificateError in fetch_system_log_alarms must raise SslCertificateError."""
         from custom_components.unifi_alerts.unifi_client import SslCertificateError
 
-        client = make_unifi_client()
+        client = make_client()
         client._auth._authenticated = True
 
         with aioresponses() as m:
