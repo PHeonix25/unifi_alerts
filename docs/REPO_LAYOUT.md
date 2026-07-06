@@ -2,7 +2,7 @@
 
 Per-file annotations describing what lives where, what each module is responsible for, and the load-bearing details that have caused regressions before. CLAUDE.md keeps the rules tight and points here for the detail.
 
-```
+```plain
 custom_components/unifi_alerts/   # integration source
   __init__.py                     # entry setup/teardown, platform forwarding; raises ConfigEntryNotReady on auth or first-refresh failure so HA retries; emits _LOGGER.warning when SSL verification is disabled; unload order: coordinator.async_shutdown() > unregister webhooks > client.close()
   manifest.json                   # HA metadata (domain, version, iot_class); do NOT add "homeassistant" min-version key - it is not in the HA manifest schema and breaks hassfest
@@ -30,15 +30,29 @@ tests/
       __init__.py
       conftest.py                 # shared flow helpers and mock builders (make_flow, make_options_flow, make_reauth_flow)
       test_setup.py               # initial setup flow: user, categories, finish steps
-      test_options.py             # options flow: credential changes, category toggles, regenerate secret
+      test_discovery.py           # SSDP discovery: async_step_ssdp URL pre-fill, dedup
+      test_options_credentials.py # options flow: credential/URL changes, verify_ssl, duplicate-entry guard
+      test_options_helpers.py     # pure options-flow helpers: form parsing, credential overrides, pending-data builders
+      test_options_rotation_validation.py # options flow: regenerate-secret rotation, controller-side validation paths
       test_reauth.py              # reauth flow: async_step_reauth, repair issue
-    test_coordinator.py
+    coordinator/                  # coordinator tests (split from monolithic test_coordinator.py)
+      __init__.py
+      conftest.py                 # shared coordinator fixtures
+      test_autoclear.py           # auto-clear scheduling, cancellation, async_shutdown
+      test_persistence.py         # watermark persist/restore, legacy string format, persist-failed repair issue
+      test_polling.py             # _async_update_data: v2/legacy dispatch, open_count, already-alerting guard, auth retry
+      test_push_dedup.py          # push_alert: apply_alert, webhook dedup window, optimistic open_count increment
+    unifi_client/                 # UniFiClient tests (split from monolithic test_unifi_client.py)
+      __init__.py
+      conftest.py                 # shared client fixtures
+      test_legacy.py              # _classify, fetch_alarms probe chain, categorise_alarms, authenticate, close
+      test_v2.py                  # probe_system_log_endpoint (cache/backoff), fetch_system_log_alarms (pagination, watermark)
+    test_console_helper.py        # tests scripts/_console.py UTF-8 stdout forcing on Windows
     test_diagnostics.py           # diagnostics platform: redaction, webhook URL exposure, coordinator state
     test_entities.py              # all entity property methods: binary_sensor, sensor, event, button
-    test_init.py                  # async_setup_entry / async_unload_entry lifecycle, teardown order
+    test_init.py                  # async_setup_entry / async_unload_entry lifecycle, teardown order, migration (v1->v2->v3)
     test_models.py
     test_services.py
-    test_unifi_client.py
     test_unifi_auth.py            # UniFiAuth in isolation via make_auth() - no full UniFiClient needed
     test_webhook_handler.py       # WebhookManager: register/unregister, token auth, alert dispatch
   integration/                    # full HA lifecycle tests using hass fixture
@@ -52,6 +66,10 @@ tests/
   version-check.yml               # enforces version format per branch: main=X.Y.Z stable, dev=X.Y.Z-preN; runs on push/PR to main and dev
   release.yml                     # triggered by version tags (v1.0.0 stable, v1.0.0-pre1 pre-release); validates tag matches manifest, packages the integration, and publishes via `gh release create --generate-notes` (NOT softprops/action-gh-release - that was removed; do not re-introduce it). Pre-release detection regex uses `grep -qE -- '-pre[0-9]+$'` (the `--` terminator is load-bearing).
   pr-labeler.yml                  # auto-applies a release-notes label to PRs based on Conventional Commit title prefix (feat/fix/docs/tests/ci/security). Manual labels always win. Eliminates the need to follow up `mcp__github__create_pull_request` with a manual `issue_write` label call.
+  pr-guards.yml                   # three PR checks on dev/main PRs: changelog-guard (custom_components/ edits need a CHANGELOG.md bullet), label-guard (PR must carry a release-notes label), history-guard (docs/HISTORY.md only changes on claude/bump-* branches)
+  codeql.yml                      # CodeQL workflow scaffold; Python SAST actually runs via GitHub's CodeQL default setup (Settings > Code security and analysis), not this workflow - see docs/DEVELOPING.md CI overview
+  dependency-audit.yml            # pip-audit dependency vulnerability scan; advisory only (continue-on-error on the audit step); runs on push/PR to dev and main plus a weekly Monday 06:00 UTC schedule
+  copilot-setup-steps.yml         # provisions .venv (make setup) before the GitHub Copilot coding agent starts a session
 .github/
   dependabot.yml                  # tracks the github-actions ecosystem only (weekly, Brisbane TZ); minor+patch grouped, major bumps individual. Required to keep the SHA pins fresh - do NOT remove. Python deps stay manual.
   release.yml                     # release-notes categories file used by `gh release create --generate-notes` to group merged PRs by label (Security / Bug Fixes / Features / Documentation / Tests / CI / Other). DIFFERENT FILE from .github/workflows/release.yml.

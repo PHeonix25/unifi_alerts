@@ -44,7 +44,7 @@ If you prefer raw commands:
 
 ```bash
 .venv/bin/pytest tests/ -v                                  # all tests (unit + integration)
-.venv/bin/pytest tests/unit/test_coordinator.py -v          # one file
+.venv/bin/pytest tests/unit/coordinator/test_polling.py -v  # one file
 .venv/bin/pytest tests/integration/ -v -m integration       # integration only
 .venv/bin/pytest tests/ --cov=custom_components/unifi_alerts --cov-report=term-missing
 ```
@@ -69,11 +69,11 @@ tests/integration/                # full HA lifecycle tests using the hass fixtu
 3. Add entries to `CATEGORY_ICONS` and `CATEGORY_ICONS_OK`.
 4. Add the per-category entity display-name keys (binary sensor, last message, open count, event, clear button) to `strings.json` and mirror them in `translations/en.json`. Run `scripts/check_translations.py` to validate.
 5. Map any known UniFi event keys to it in `UNIFI_KEY_TO_CATEGORY`.
-6. Add parametrised test cases to `tests/unit/test_unifi_client.py::TestClassify::test_known_keys`.
+6. Add parametrised test cases to `tests/unit/unifi_client/test_legacy.py::TestClassify::test_known_keys`.
 
 ## Adding new UniFi event keys
 
-When a user reports an unrecognised alert key, add it to `UNIFI_KEY_TO_CATEGORY` in `const.py` and add a corresponding entry to `tests/unit/test_unifi_client.py::TestClassify::test_known_keys`. See `docs/UNIFI.md` for the key taxonomy.
+When a user reports an unrecognised alert key, add it to `UNIFI_KEY_TO_CATEGORY` in `const.py` and add a corresponding entry to `tests/unit/unifi_client/test_legacy.py::TestClassify::test_known_keys`. See `docs/UNIFI.md` for the key taxonomy.
 
 **How users find unrecognised keys without DEBUG logging:** the integration accumulates event keys that could not be matched to any category and exposes them in the HA diagnostics download (Settings > Devices & Services > UniFi Alerts > Download diagnostics, look for `coordinator.unrecognised_keys`). Ask users reporting missed alerts to share their diagnostics file and look for entries there first.
 

@@ -2,9 +2,9 @@
 
 What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `main` as `X.Y.Z`. Completed work is removed from this file; the historical record lives in `docs/HISTORY.md`, and the user-visible release summary lives in `CHANGELOG.md`.
 
-> **Status (2026-06-19):** v1.8.0 stable shipped. Path to v2.0.0: v1.9.0 (Localisation and Scale), then v2.0.0 (HACS default catalogue). Item-level work is tracked in GitHub Issues, grouped by milestone: <https://github.com/PHeonix25/unifi_alerts/milestones>.
+> **Status (2026-07-06):** v1.9.0 (Localisation and Scale) pre-releases are in progress (currently `1.9.0-pre3`). v2.0.0 (HACS default catalogue) is next. Item-level work is tracked in GitHub Issues, grouped by milestone: <https://github.com/PHeonix25/unifi_alerts/milestones>.
 
-> **Branching model:** see `CLAUDE.md § Branching strategy and versioning`.
+> **Branching model:** see `CLAUDE.md § Branching and releasing`.
 
 ---
 

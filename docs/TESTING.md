@@ -39,7 +39,7 @@ Individual commands if you prefer to skip the Makefile:
 
 # Single file (passes on its own: the 95% whole-suite coverage gate lives in
 # `make test` and the CI test job, not in pytest addopts)
-.venv/bin/pytest tests/unit/test_coordinator.py -v
+.venv/bin/pytest tests/unit/coordinator/test_polling.py -v
 
 # Lint
 .venv/bin/ruff check custom_components/
@@ -92,14 +92,31 @@ tests/
   conftest.py              # root shared fixtures; Windows-only event-loop and socket workarounds (no-op on Linux/macOS)
   unit/                    # plain-mock unit tests - no real HA instance
     conftest.py            # MOCK_CONFIG, make_hass(), make_entry(), unit-test fixtures
-    test_coordinator.py
-    test_config_flow.py
+    config_flow/           # config flow tests, split by flow area
+      conftest.py
+      test_setup.py
+      test_discovery.py
+      test_options_credentials.py
+      test_options_helpers.py
+      test_options_rotation_validation.py
+      test_reauth.py
+    coordinator/           # coordinator tests, split by functional area
+      conftest.py
+      test_autoclear.py
+      test_persistence.py
+      test_polling.py
+      test_push_dedup.py
+    unifi_client/          # UniFiClient tests, split legacy vs v2
+      conftest.py
+      test_legacy.py
+      test_v2.py
+    test_console_helper.py
     test_diagnostics.py
     test_entities.py
     test_init.py
     test_models.py
     test_services.py
-    test_unifi_client.py
+    test_unifi_auth.py
     test_webhook_handler.py
   integration/             # full HA lifecycle tests using hass fixture
     __init__.py            # enables relative imports within the package
@@ -109,6 +126,8 @@ tests/
     test_multi_entry.py    # two config entries active simultaneously
     test_webhook.py        # webhook HTTP dispatch end-to-end
 ```
+
+See `docs/REPO_LAYOUT.md` for what each split-out test file covers.
 
 `tests/unit/` has **no** `__init__.py` so pytest adds it to `sys.path`, enabling bare `from conftest import` in unit test files.
 
@@ -132,13 +151,22 @@ Key conventions:
 
 | File | Coverage |
 |---|---|
-| `test_models.py` | `UniFiAlert` construction from webhook and API payloads, field fallback, 255-char truncation; `CategoryState` init, apply_alert, clear |
-| `test_coordinator.py` | Init; `push_alert`; rollup properties; `cancel_clear`; `async_shutdown`; polling path (no count increment, already-alerting guard); polling error paths (`InvalidAuthError` re-auth, `UpdateFailed`); `rollup_open_count`; `_auto_clear` state transition |
-| `test_unifi_client.py` | `_classify`, `_headers`, `_login_userpass`; `fetch_alarms` (probe-chain fallback, archived filter, 401, ClientError, SSL fail-closed); `categorise_alarms` (grouping, skip unknown, empty); `authenticate` (API key, fallback, no-fallback); `close` (UniFi OS logout, API key skip, unauthenticated skip, logout error logging); migration path from version 1 (`is_unifi_os` stripped) |
-| `test_config_flow.py` | All config-flow steps; duplicate URL guard; options flow defaults; webhook URL fields; error value preservation |
+| `test_models.py` | `UniFiAlert` construction from webhook, legacy API, and v2 system-log payloads, field fallback, 255-char truncation; `CategoryState` init, apply_alert, clear, `webhook_health` |
+| `coordinator/test_polling.py` | `_async_update_data` / `_fetch_categorised`: v2-vs-legacy dispatch, open_count, already-alerting guard; polling error paths (`InvalidAuthError` re-auth, `UpdateFailed`); rollup properties |
+| `coordinator/test_push_dedup.py` | `push_alert`: `apply_alert`, webhook dedup window, optimistic `open_count` increment, unknown-category guard |
+| `coordinator/test_autoclear.py` | `_schedule_clear`, `cancel_clear`, `async_shutdown`, `_auto_clear` state transition |
+| `coordinator/test_persistence.py` | Watermark persist/restore (current and legacy string format), `_build_persist_data`, persist-failed repair issue |
+| `unifi_client/test_legacy.py` | `_classify`, `_headers`, `_login_userpass`; `fetch_alarms` (probe-chain fallback, archived filter, 401, ClientError, SSL fail-closed); `categorise_alarms` (grouping, skip unknown, empty); `authenticate`; `close` |
+| `unifi_client/test_v2.py` | `probe_system_log_endpoint` (cache, 404, transient-failure backoff); `fetch_system_log_alarms` (pagination, `timestampFrom` watermark, `status=NEW` filter, page-cap warning) |
+| `config_flow/test_setup.py` | Initial setup steps: user, categories, finish |
+| `config_flow/test_discovery.py` | SSDP discovery: URL pre-fill, dedup |
+| `config_flow/test_options_credentials.py` | Options flow credential/URL changes, verify_ssl toggle, duplicate-entry guard |
+| `config_flow/test_options_helpers.py` | Pure options-flow helper functions (form parsing, credential overrides, pending-data builders) |
+| `config_flow/test_options_rotation_validation.py` | Options flow secret rotation and controller-side validation paths |
+| `config_flow/test_reauth.py` | Reauth flow: `async_step_reauth`, repair issue |
 | `test_diagnostics.py` | Redaction of sensitive fields; webhook URL exposure; coordinator state; missing-data handling |
-| `test_webhook_handler.py` | `register_all` (category filter, token URL, _registered list); `unregister_all` (cleanup, exception suppression); `_make_handler` (valid token, missing token > 401, wrong token > 401, no secret, malformed JSON fallback, payload field mapping) |
-| `test_init.py` | `async_setup_entry` (happy path, auth failure, first-refresh failure, SSL warning, platform forwarding); `async_unload_entry` (teardown order, failed-unload guard); `_async_update_listener` |
+| `test_webhook_handler.py` | `register_all` (category filter, token URL, _registered list); `unregister_all` (cleanup, exception suppression); `_make_handler` (valid token, missing token > 401, wrong token > 401, no secret > 500, malformed JSON > 400, payload field mapping) |
+| `test_init.py` | `async_setup_entry` (happy path, auth failure, first-refresh failure, SSL warning, platform forwarding); `async_unload_entry` (teardown order, failed-unload guard); `_async_update_listener`; `async_migrate_entry` (v1->v2->v3); `async_remove_entry` |
 | `test_entities.py` | All entity property methods across binary_sensor, sensor, event, button; event-entity increment guard; button press / clear-all logic |
 
 ---
@@ -178,7 +206,7 @@ Mark all integration tests with `@pytest.mark.integration`.
 
 ## Adding a test for a new event key
 
-When adding a new entry to `UNIFI_KEY_TO_CATEGORY`, add a corresponding parametrize case to `tests/unit/test_unifi_client.py::TestClassify::test_known_keys`:
+When adding a new entry to `UNIFI_KEY_TO_CATEGORY`, add a corresponding parametrize case to `tests/unit/unifi_client/test_legacy.py::TestClassify::test_known_keys`:
 
 ```python
 @pytest.mark.parametrize("key,expected", [
