@@ -480,7 +480,7 @@ class TestPollingErrorPaths:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "categorise_side_effect,authenticate_side_effect",
+        ("categorise_side_effect", "authenticate_side_effect"),
         [
             pytest.param(
                 "auth_error",
@@ -653,7 +653,7 @@ class TestPollingErrorPaths:
 
 class TestRollupOpenCount:
     @pytest.mark.parametrize(
-        "enabled,open_counts,expected_rollup",
+        ("enabled", "open_counts", "expected_rollup"),
         [
             pytest.param(
                 None,
@@ -851,7 +851,7 @@ class TestWatermarks:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "watermark,alarm_times,expected_open_count",
+        ("watermark", "alarm_times", "expected_open_count"),
         [
             pytest.param(
                 datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC),
@@ -906,7 +906,7 @@ class TestSiteConfig:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "site_configured,expected_site",
+        ("site_configured", "expected_site"),
         [
             pytest.param("secondary", "secondary", id="explicit-site-forwarded"),
             pytest.param(None, "default", id="absent-site-defaults-to-default"),
@@ -1019,7 +1019,7 @@ class TestWebhookMidPollRace:
 
         gate = asyncio.Event()  # held open until the test releases it
 
-        async def blocking_categorise_alarms(site):  # noqa: ARG001
+        async def blocking_categorise_alarms(site):
             # Block the poll mid-await until the test fires the webhook
             await gate.wait()
             # Return empty list — the regression scenario: poll sees no alarms
@@ -1081,7 +1081,7 @@ class TestPushAlertOptimisticOpenCount:
     """
 
     @pytest.mark.parametrize(
-        "watermark,expected_open_count",
+        ("watermark", "expected_open_count"),
         [
             pytest.param(None, 1, id="no-watermark"),
             pytest.param(datetime(2020, 1, 1, tzinfo=UTC), 1, id="alert-after-watermark"),
@@ -1315,7 +1315,12 @@ class TestCoordinatorV2Dispatch:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "probe_return_value,probe_side_effect,expected_fetch_count,expected_categorise_count",
+        (
+            "probe_return_value",
+            "probe_side_effect",
+            "expected_fetch_count",
+            "expected_categorise_count",
+        ),
         [
             pytest.param(True, None, 1, 0, id="system-log-available"),
             pytest.param(False, None, 0, 1, id="legacy-fallback-probe-false"),
@@ -1669,7 +1674,7 @@ class TestWatermarkPersistFailureRepair:
 
         with (
             patch("custom_components.unifi_alerts.coordinator.ir") as mock_ir,
-            pytest.raises(OSError),
+            pytest.raises(OSError, match="disk full"),
         ):
             await coord._async_persist_watermarks()
 
@@ -1705,7 +1710,7 @@ class TestWatermarkPersistFailureRepair:
         with patch("custom_components.unifi_alerts.coordinator.ir") as mock_ir:
             # First save raises - repair issue created.
             coord._store.async_save = AsyncMock(side_effect=OSError("disk full"))
-            with pytest.raises(OSError):
+            with pytest.raises(OSError, match="disk full"):
                 await coord._async_persist_watermarks()
             assert mock_ir.async_create_issue.call_count == 1
 

@@ -96,7 +96,7 @@ class TestUniFiCategoryBinarySensor:
         return entity
 
     @pytest.mark.parametrize(
-        "state,expected",
+        ("state", "expected"),
         [
             pytest.param(make_state(is_alerting=True), True, id="alerting"),
             pytest.param(make_state(is_alerting=False), False, id="not-alerting"),
@@ -108,7 +108,7 @@ class TestUniFiCategoryBinarySensor:
         assert entity.is_on is expected
 
     @pytest.mark.parametrize(
-        "state,expected",
+        ("state", "expected"),
         [
             pytest.param(make_state(enabled=True), True, id="enabled"),
             pytest.param(make_state(enabled=False), False, id="disabled"),
@@ -119,7 +119,7 @@ class TestUniFiCategoryBinarySensor:
         assert entity.available is expected
 
     @pytest.mark.parametrize(
-        "is_alerting,expected_icon",
+        ("is_alerting", "expected_icon"),
         [
             pytest.param(True, CATEGORY_ICONS[CATEGORY_NETWORK_WAN], id="alerting"),
             pytest.param(False, CATEGORY_ICONS_OK[CATEGORY_NETWORK_WAN], id="not-alerting"),
@@ -193,7 +193,7 @@ class TestUniFiRollupBinarySensor:
         return UniFiRollupBinarySensor(coord, entry)
 
     @pytest.mark.parametrize(
-        "is_alerting,expected",
+        ("is_alerting", "expected"),
         [
             pytest.param(True, True, id="alerting"),
             pytest.param(False, False, id="not-alerting"),
@@ -205,7 +205,7 @@ class TestUniFiRollupBinarySensor:
         assert entity.is_on is expected
 
     @pytest.mark.parametrize(
-        "states,expected_icon",
+        ("states", "expected_icon"),
         [
             pytest.param(
                 {CATEGORY_NETWORK_WAN: make_state(is_alerting=True)},
@@ -256,7 +256,7 @@ class TestUniFiCategoryMessageSensor:
         return UniFiCategoryMessageSensor(coord, entry, CATEGORY_NETWORK_WAN)
 
     @pytest.mark.parametrize(
-        "state,expected",
+        ("state", "expected"),
         [
             pytest.param(
                 make_state(last_alert=make_alert(message="WAN went down")),
@@ -272,7 +272,7 @@ class TestUniFiCategoryMessageSensor:
         assert entity.native_value == expected
 
     @pytest.mark.parametrize(
-        "state,expected",
+        ("state", "expected"),
         [
             pytest.param(make_state(enabled=True), True, id="enabled"),
             pytest.param(make_state(enabled=False), False, id="disabled"),
@@ -283,7 +283,7 @@ class TestUniFiCategoryMessageSensor:
         assert entity.available is expected
 
     @pytest.mark.parametrize(
-        "is_alerting,expected_icon",
+        ("is_alerting", "expected_icon"),
         [
             pytest.param(True, CATEGORY_ICONS[CATEGORY_NETWORK_WAN], id="alerting"),
             pytest.param(False, CATEGORY_ICONS_OK[CATEGORY_NETWORK_WAN], id="not-alerting"),
@@ -411,7 +411,7 @@ class TestUniFiAlertEventEntity:
         return entity
 
     @pytest.mark.parametrize(
-        "state,expected",
+        ("state", "expected"),
         [
             pytest.param(make_state(enabled=True), True, id="enabled"),
             pytest.param(make_state(enabled=False), False, id="disabled"),
@@ -546,7 +546,7 @@ class TestUniFiClearCategoryButton:
         assert entity.unique_id == f"entry-abc_{CATEGORY_NETWORK_WAN}_clear"
 
     @pytest.mark.parametrize(
-        "state,expected",
+        ("state", "expected"),
         [
             pytest.param(make_state(enabled=True), True, id="enabled"),
             pytest.param(make_state(enabled=False), False, id="disabled"),
@@ -595,7 +595,7 @@ class TestUniFiClearAllButton:
         entity.coordinator.async_clear_all.assert_awaited_once()
 
     @pytest.mark.parametrize(
-        "states,expected",
+        ("states", "expected"),
         [
             pytest.param(
                 {
@@ -686,7 +686,7 @@ class TestEntityCategories:
     """Verify entity_category assignments for the polish items bundled into v1.3."""
 
     @pytest.mark.parametrize(
-        "entity_cls_path,expected_category",
+        ("entity_cls_path", "expected_category"),
         [
             pytest.param("sensor.UniFiCategoryMessageSensor", "DIAGNOSTIC", id="message-sensor"),
             pytest.param("button.UniFiClearCategoryButton", "CONFIG", id="clear-category-button"),
@@ -745,7 +745,7 @@ class TestTranslationKeys:
     """Verify each entity exposes the expected translation key + placeholders."""
 
     @pytest.mark.parametrize(
-        "entity_cls_path,expected_key",
+        ("entity_cls_path", "expected_key"),
         [
             pytest.param(
                 "binary_sensor.UniFiCategoryBinarySensor",
@@ -788,7 +788,7 @@ class TestTranslationKeys:
         assert entity.translation_placeholders == {}
 
     @pytest.mark.parametrize(
-        "entity_cls_path,expected_key",
+        ("entity_cls_path", "expected_key"),
         [
             pytest.param(
                 "binary_sensor.UniFiRollupBinarySensor", "any_alert", id="rollup-binary-sensor"

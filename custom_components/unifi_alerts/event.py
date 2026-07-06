@@ -47,7 +47,9 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
 
     _attr_has_entity_name = True
     # Fixed at class level; HA requires declaring event types at init, not per-fire.
-    _attr_event_types = ["alert_received"]
+    # RUF012 is suppressed below: HA's EventEntity base types this as an instance
+    # attr, so a ClassVar override would fail mypy --strict (instance-vs-class-var).
+    _attr_event_types = ["alert_received"]  # noqa: RUF012
 
     def __init__(
         self,

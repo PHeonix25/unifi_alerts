@@ -189,7 +189,7 @@ class TestMakeHandler:
         req = make_request(token="tok123")
         await handler(manager._hass, "wh-id", req)
         push_cb.assert_called_once()
-        call_category, call_alert = push_cb.call_args[0]
+        call_category, _call_alert = push_cb.call_args[0]
         assert call_category == CATEGORY_NETWORK_WAN
 
     @pytest.mark.asyncio

@@ -188,7 +188,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 def _redact_webhook_token(url: str) -> str:
     """Strip ``?token=<secret>`` from a webhook URL for safe DEBUG logging."""
-    token_marker = "?token="
+    token_marker = "?token="  # noqa: S105  # URL query marker for redaction, not a secret
     idx = url.find(token_marker)
     if idx == -1:
         return url
