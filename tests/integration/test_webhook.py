@@ -130,6 +130,54 @@ async def test_get_request_does_not_dispatch_alert(hass, entry, hass_client):
 
 
 @pytest.mark.integration
+async def test_post_after_unload_does_not_dispatch_and_entity_is_gone(
+    hass, entry, hass_client, caplog
+):
+    """A webhook POST after the entry is unloaded must not reach our handler.
+
+    Regression guard for #265's setup-failure cleanup mechanism (which
+    unregisters webhooks via the same `unregister_all()` path unload uses):
+    without unregistration, a stale webhook_id would stay routable and its
+    handler closure would still be bound to a coordinator that no longer
+    exists in any live entry.
+
+    HA's real webhook dispatch (`async_handle_webhook`) deliberately returns
+    HTTP 200 for both a genuinely-processed webhook AND an unregistered one
+    ("Always respond successfully to not give away if a hook exists or not"),
+    so the HTTP status alone cannot prove the unload worked — a naive
+    `assert resp.status == 404` would be asserting behaviour HA does not
+    have. Instead assert on what unload actually changes: HA logs the
+    unregistered-webhook path, and the category's entity goes `unavailable`
+    (confirmed empirically — unload does not remove the state machine entry
+    outright, it marks it unavailable), so there is nothing live that could
+    have reflected a dispatched alert.
+    """
+    import logging
+
+    from homeassistant.const import STATE_UNAVAILABLE
+
+    uid = f"{ENTRY_ID}_{TEST_CATEGORY}_binary"
+    eid = entity_id_for(hass, "binary_sensor", uid)
+    assert hass.states.get(eid).state != STATE_UNAVAILABLE  # sanity: live before unload
+
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    client = await hass_client()
+    with caplog.at_level(logging.INFO, logger="homeassistant.components.webhook"):
+        resp = await client.post(
+            f"/api/webhook/{TEST_WEBHOOK_ID}?token={WEBHOOK_SECRET}",
+            json=TEST_PAYLOAD,
+        )
+        await resp.read()
+        await hass.async_block_till_done()
+
+    assert resp.status == 200  # HA always responds 200, registered or not — see docstring
+    assert "unregistered webhook" in caplog.text.lower()
+    assert hass.states.get(eid).state == STATE_UNAVAILABLE  # nothing live could have flipped
+
+
+@pytest.mark.integration
 async def test_no_secret_config_rejects_post_with_500(hass, mock_unifi_client, hass_client):
     """When CONF_WEBHOOK_SECRET is empty, any POST is rejected with HTTP 500.
 
