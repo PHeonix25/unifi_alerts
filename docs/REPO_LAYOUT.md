@@ -47,6 +47,7 @@ tests/
       conftest.py                 # shared client fixtures
       test_legacy.py              # _classify, fetch_alarms probe chain, categorise_alarms, authenticate, close
       test_v2.py                  # probe_system_log_endpoint (cache/backoff), fetch_system_log_alarms (pagination, watermark)
+    test_console_helper.py        # tests scripts/_console.py UTF-8 stdout forcing on Windows
     test_diagnostics.py           # diagnostics platform: redaction, webhook URL exposure, coordinator state
     test_entities.py              # all entity property methods: binary_sensor, sensor, event, button
     test_init.py                  # async_setup_entry / async_unload_entry lifecycle, teardown order, migration (v1->v2->v3)

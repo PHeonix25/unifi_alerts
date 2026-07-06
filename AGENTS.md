@@ -119,7 +119,7 @@ This is the most common extension task. Every step is required - missing any one
 2. **`strings.json`** - add `"cat_<name>"` key under each config step that lists categories (`categories.data`, `options.data`). Add webhook URL label under `finish.data` and `options.data`. Add the per-category entity display-name keys (binary sensor, last message, open count, event, clear button) under `entity` - these supply the localised entity names that used to come from `CATEGORY_LABELS`.
 3. **`translations/en.json`** - mirror every change made to `strings.json` exactly. Run `scripts/check_translations.py` to validate.
 4. **`binary_sensor.py`**, **`sensor.py`**, **`event.py`**, **`button.py`** - no code changes needed for most categories (platforms iterate `ALL_CATEGORIES` dynamically), but review each if adding a category with unusual display logic.
-5. **`tests/`** - add the new category key to fixtures in `tests/unit/conftest.py` and `tests/integration/conftest.py`. Check `test_coordinator.py` and `test_entities.py` for category-enumerated tests that need updating.
+5. **`tests/`** - add the new category key to fixtures in `tests/unit/conftest.py` and `tests/integration/conftest.py`. Check `tests/unit/coordinator/` and `test_entities.py` for category-enumerated tests that need updating.
 6. Run `make check` - this runs the translation drift check and all tests. Fix any failures before committing.
 
 ---

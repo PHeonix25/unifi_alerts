@@ -110,6 +110,7 @@ tests/
       conftest.py
       test_legacy.py
       test_v2.py
+    test_console_helper.py
     test_diagnostics.py
     test_entities.py
     test_init.py

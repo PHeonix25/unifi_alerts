@@ -71,7 +71,7 @@ Never remove the `?token=` validation check - it is a security hard requirement.
 | `custom_components/unifi_alerts/sensor.py` | Reads `coordinator.data` - check all `@property` accessors |
 | `custom_components/unifi_alerts/event.py` | Reads `coordinator.data` - check all `@property` accessors |
 | `custom_components/unifi_alerts/button.py` | Reads `coordinator.data` - check all `@property` accessors |
-| `tests/unit/test_coordinator.py` | Coordinator unit tests |
+| `tests/unit/coordinator/` | Coordinator unit tests |
 | `tests/integration/test_lifecycle.py` | Full lifecycle integration tests |
 
 ### Modifying `UniFiClientConfig` or `UniFiAlert`
