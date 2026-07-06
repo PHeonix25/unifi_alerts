@@ -38,6 +38,7 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 ## Requirements
 
 - **Home Assistant** 2025.1 or later
+- **The `webhook` component enabled** - ships with `default_config`, which almost all installs include. If you run a minimal Home Assistant configuration that hand-picks integrations instead of using `default_config`, add `webhook:` to `configuration.yaml` yourself; without it, webhook registration fails at setup. (`manifest.json` cannot declare this as a HACS dependency - see [#267](https://github.com/PHeonix25/unifi_alerts/issues/267).)
 - **UniFi OS console** - the classic self-hosted Network Application is not supported. The integration uses the `/proxy/network` API path, which is UniFi OS-only.
 - **Local network reachability** - your UniFi controller and HA must share a network. Webhook URLs are local-only and cannot be reached over Nabu Casa remote access or from cloud-hosted controllers.
 - **Credentials** - API key (recommended) or username + password.
@@ -169,6 +170,7 @@ Per-category entities (example uses `network_device`; the same pattern applies t
 | Binary sensor | `binary_sensor.unifi_alerts_network_device_offline_online` | ON = alert active |
 | Message sensor | `sensor.unifi_alerts_network_device_offline_online_last_message` | Last alert text |
 | Count sensor | `sensor.unifi_alerts_network_device_offline_online_open_count` | Open alarm count |
+| Webhook health sensor | `sensor.unifi_alerts_network_device_offline_online_webhook_health` | `never_received` / `healthy` / `stale` diagnostic |
 | Event entity | `event.unifi_alerts_network_device_offline_online_event` | Fires per alert |
 | Clear button | `button.unifi_alerts_clear_network_device_offline_online` | Manual clear |
 

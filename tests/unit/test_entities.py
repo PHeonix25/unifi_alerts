@@ -345,6 +345,69 @@ class TestUniFiCategoryCountSensor:
         assert entity.device_class is None
 
 
+class TestUniFiWebhookHealthSensor:
+    def _make(self, state: CategoryState | None):
+        from custom_components.unifi_alerts.sensor import UniFiWebhookHealthSensor
+
+        coord = make_coordinator({CATEGORY_NETWORK_WAN: state} if state else {})
+        entry = make_entry()
+        return UniFiWebhookHealthSensor(coord, entry, CATEGORY_NETWORK_WAN)
+
+    def test_native_value_never_received(self):
+        entity = self._make(make_state())
+        assert entity.native_value == "never_received"
+
+    def test_native_value_healthy(self):
+        state = make_state()
+        state.last_webhook_at = datetime.now(UTC)
+        entity = self._make(state)
+        assert entity.native_value == "healthy"
+
+    def test_native_value_stale(self):
+        state = make_state()
+        state.last_webhook_at = datetime(2020, 1, 1, tzinfo=UTC)
+        entity = self._make(state)
+        assert entity.native_value == "stale"
+
+    def test_native_value_none_when_state_missing(self):
+        entity = self._make(None)
+        assert entity.native_value is None
+
+    def test_available_reflects_enabled_state(self):
+        entity_on = self._make(make_state(enabled=True))
+        entity_off = self._make(make_state(enabled=False))
+        assert entity_on.available is True
+        assert entity_off.available is False
+
+    def test_extra_attrs_last_webhook_at_none(self):
+        entity = self._make(make_state())
+        assert entity.extra_state_attributes["last_webhook_at"] is None
+
+    def test_extra_attrs_last_webhook_at_set(self):
+        state = make_state()
+        state.last_webhook_at = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
+        entity = self._make(state)
+        assert entity.extra_state_attributes["last_webhook_at"] == state.last_webhook_at.isoformat()
+
+    def test_extra_attrs_empty_when_no_state(self):
+        entity = self._make(None)
+        assert entity.extra_state_attributes == {}
+
+    def test_device_class_is_enum(self):
+        from homeassistant.components.sensor import SensorDeviceClass
+
+        entity = self._make(make_state())
+        assert entity.device_class == SensorDeviceClass.ENUM
+
+    def test_options_cover_all_health_states(self):
+        entity = self._make(make_state())
+        assert entity.options == ["never_received", "healthy", "stale"]
+
+    def test_unique_id_format(self):
+        entity = self._make(make_state())
+        assert entity.unique_id.endswith(f"_{CATEGORY_NETWORK_WAN}_webhook_health")
+
+
 class TestUniFiRollupCountSensor:
     def _make(self, states: dict[str, CategoryState]):
         from custom_components.unifi_alerts.sensor import UniFiRollupCountSensor
@@ -689,6 +752,9 @@ class TestEntityCategories:
         ("entity_cls_path", "expected_category"),
         [
             pytest.param("sensor.UniFiCategoryMessageSensor", "DIAGNOSTIC", id="message-sensor"),
+            pytest.param(
+                "sensor.UniFiWebhookHealthSensor", "DIAGNOSTIC", id="webhook-health-sensor"
+            ),
             pytest.param("button.UniFiClearCategoryButton", "CONFIG", id="clear-category-button"),
             pytest.param("button.UniFiClearAllButton", "CONFIG", id="clear-all-button"),
         ],
@@ -763,6 +829,11 @@ class TestTranslationKeys:
                 id="count-sensor",
             ),
             pytest.param(
+                "sensor.UniFiWebhookHealthSensor",
+                f"webhook_health_{CATEGORY_NETWORK_WAN}",
+                id="webhook-health-sensor",
+            ),
+            pytest.param(
                 "event.UniFiAlertEventEntity", f"event_{CATEGORY_NETWORK_WAN}", id="event-entity"
             ),
             pytest.param(
@@ -826,6 +897,7 @@ class TestTranslationKeys:
             UniFiCategoryCountSensor,
             UniFiCategoryMessageSensor,
             UniFiRollupCountSensor,
+            UniFiWebhookHealthSensor,
         )
 
         coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state()})
@@ -846,6 +918,10 @@ class TestTranslationKeys:
             == f"{eid}_{CATEGORY_NETWORK_WAN}_count"
         )
         assert UniFiRollupCountSensor(coord, entry).unique_id == f"{eid}_rollup_count"
+        assert (
+            UniFiWebhookHealthSensor(coord, entry, CATEGORY_NETWORK_WAN).unique_id
+            == f"{eid}_{CATEGORY_NETWORK_WAN}_webhook_health"
+        )
         assert (
             UniFiAlertEventEntity(coord, entry, CATEGORY_NETWORK_WAN).unique_id
             == f"{eid}_{CATEGORY_NETWORK_WAN}_event"

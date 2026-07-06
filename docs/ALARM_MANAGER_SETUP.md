@@ -45,7 +45,7 @@ UniFi's **Test Alarm** action (available on a saved alarm) sends a synthetic web
 
 ## Verifying delivery
 
-You do not need to wait for a real alert to confirm the wiring works. Each category's binary sensor exposes a `webhook_health` attribute with three possible values:
+You do not need to wait for a real alert to confirm the wiring works. Each category has a dedicated diagnostic `sensor.*_webhook_health` entity (state: `never_received` / `healthy` / `stale`, with a `last_webhook_at` attribute), and the same value is also available as a `webhook_health` attribute on the category's binary sensor:
 
 - `never_received` - no webhook has ever arrived for this category since the integration was set up (or since the last restart that cleared in-memory state).
 - `healthy` - the most recent webhook arrived within the last 7 days (`WEBHOOK_STALE_AFTER_SECONDS`, in `const.py`).
@@ -56,7 +56,7 @@ The 7-day window is intentionally generous: some categories (honeypot, threat) l
 To verify a category after pasting its URL:
 
 1. Fire **Test Alarm** from that category's Alarm Manager rule (or wait for a real event).
-2. Check the category's binary sensor attributes - `webhook_health` should read `healthy` and `last_webhook_at` should show a recent UTC timestamp.
+2. Check the category's webhook health sensor - it should read `healthy`, with `last_webhook_at` showing a recent UTC timestamp.
 3. If it still reads `never_received`, see the failure modes below.
 
 The same `webhook_health` and `last_webhook_at` fields are included in the integration's diagnostics download (device page > **Download diagnostics**), which is the fastest way to check every category at once.

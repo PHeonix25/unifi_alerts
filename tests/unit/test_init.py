@@ -356,6 +356,105 @@ class TestAsyncSetupEntry:
 
         hass.config_entries.async_forward_entry_setups.assert_called_once()
 
+    @pytest.mark.parametrize(
+        "failing_call",
+        ["async_forward_entry_setups", "async_register_services"],
+    )
+    @pytest.mark.asyncio
+    async def test_failure_after_webhook_registration_unregisters_and_closes(self, failing_call):
+        """Any failure after register_all() must leave zero webhooks registered.
+
+        Otherwise the automatic setup retry finds every deterministic
+        webhook_id already taken, register_all() skips them all, and the
+        entry silently loads with an empty webhook URL map (#265).
+        """
+        from custom_components.unifi_alerts import async_setup_entry
+
+        hass = make_hass()
+        entry = make_entry()
+        mock_client, mock_coordinator, mock_wm = _patch_all()
+
+        if failing_call == "async_forward_entry_setups":
+            hass.config_entries.async_forward_entry_setups = AsyncMock(
+                side_effect=RuntimeError("boom")
+            )
+            register_services_patch = patch(
+                "custom_components.unifi_alerts.async_register_services"
+            )
+        else:
+            register_services_patch = patch(
+                "custom_components.unifi_alerts.async_register_services",
+                side_effect=RuntimeError("boom"),
+            )
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
+            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
+            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
+            register_services_patch,
+            pytest.raises(RuntimeError),
+        ):
+            await async_setup_entry(hass, entry)
+
+        mock_wm.unregister_all.assert_called_once()
+        mock_client.close.assert_awaited_once()
+        mock_coordinator.async_shutdown.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_retry_after_setup_failure_produces_full_webhook_url_map(self):
+        """The retry after a cleaned-up failure must re-register every webhook.
+
+        Simulates the fail-then-retry sequence directly: register_all() is
+        called twice against the same WebhookManager mock, and because the
+        first attempt's cleanup unregistered everything, the second call
+        returns the full URL map rather than an empty one.
+        """
+        from custom_components.unifi_alerts import async_setup_entry
+
+        mock_client, mock_coordinator, mock_wm = _patch_all()
+        full_urls = {cat: f"http://ha/hook/{cat}?token=x" for cat in ALL_CATEGORIES}
+        mock_wm.register_all.side_effect = [RuntimeError("first attempt never gets here")]
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.async_get_clientsession", return_value=MagicMock()
+            ),
+            patch("custom_components.unifi_alerts.UniFiClient", return_value=mock_client),
+            patch(
+                "custom_components.unifi_alerts.UniFiAlertsCoordinator",
+                return_value=mock_coordinator,
+            ),
+            patch("custom_components.unifi_alerts.WebhookManager", return_value=mock_wm),
+            patch("custom_components.unifi_alerts.dr.async_get", return_value=MagicMock()),
+        ):
+            # First attempt: forward setups fails after webhooks are registered.
+            first_hass = make_hass()
+            first_hass.config_entries.async_forward_entry_setups = AsyncMock(
+                side_effect=RuntimeError("boom")
+            )
+            entry = make_entry()
+            mock_wm.register_all.side_effect = None
+            mock_wm.register_all.return_value = full_urls
+            with pytest.raises(RuntimeError):
+                await async_setup_entry(first_hass, entry)
+            mock_wm.unregister_all.assert_called_once()
+
+            # Retry: a fresh hass/entry, same underlying WebhookManager mock —
+            # register_all() must return the full map again, not an empty one.
+            retry_hass = make_hass()
+            retry_entry = make_entry()
+            result = await async_setup_entry(retry_hass, retry_entry)
+
+        assert result is True
+        assert retry_entry.runtime_data.webhook_urls == full_urls
+
 
 # ── async_unload_entry ────────────────────────────────────────────────────────
 
