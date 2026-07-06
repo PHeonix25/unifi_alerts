@@ -5,6 +5,7 @@
 ### Changed
 
 - Category binary sensors now expose a `last_severity` attribute containing the severity string from the most recent alert (`"LOW"`, `"MEDIUM"`, `"HIGH"`, `"VERY_HIGH"` on v2 controllers; raw webhook severity on legacy controllers). The `any_alert` rollup sensor exposes the same attribute. Automations can condition on this to suppress or escalate alerts by severity without disabling the category. ([#135])
+- Raised the declared minimum supported Home Assistant version from 2024.5 to 2025.1, matching the version the test suite actually runs against. CI now runs the full suite against both the declared minimum HA (pinned) and the latest HA. ([#284])
 
 ### Added
 
@@ -316,4 +317,5 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#295]: https://github.com/PHeonix25/unifi_alerts/pull/295
 [#297]: https://github.com/PHeonix25/unifi_alerts/pull/297
 [#298]: https://github.com/PHeonix25/unifi_alerts/pull/298
+[#284]: https://github.com/PHeonix25/unifi_alerts/issues/284
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR

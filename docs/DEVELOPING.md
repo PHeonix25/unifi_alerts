@@ -111,7 +111,7 @@ Skip `make setup` for a doc-only branch on a fresh clone. The full setup install
 | `hacs-preflight` | Runs `scripts/validate_hacs.py` (pure-Python pre-flight) before the slower HACS action |
 | `hacs` | Validates `hacs.json` and repository structure for HACS listing |
 | `lint` | `ruff check` + `ruff format --check` + `mypy` + `strings.json`/`translations/en.json` drift diff |
-| `test` | `pytest` against `tests/unit/` and `tests/integration/` |
+| `test` | `pytest` against `tests/unit/` and `tests/integration/`, run twice via a matrix: once against the latest HA and once against the declared minimum HA floor |
 | `pip-audit` | Dependency vulnerability scan. Advisory only (`continue-on-error` on the audit step); currently non-blocking - see note below |
 
 Static security analysis (CodeQL SAST) for Python runs through GitHub's CodeQL **default setup**, configured in Settings > Code security and analysis, with findings in the repository Security tab. It is not a workflow in this repository: an advanced workflow-based CodeQL config cannot coexist with default setup (GitHub rejects the SARIF upload), so SAST lives in default setup and the workflow below owns dependency auditing only.
@@ -135,6 +135,18 @@ Three additional checks run on every pull request to `dev` or `main`:
 **Escaping the changelog guard:** apply the `skip-changelog` label if a code change genuinely has no user-visible effect (e.g. a coverage-only test change that incidentally touches a production file). The `ci`, `tests`, `documentation`, `dependencies`, and `github-actions` labels also bypass the guard automatically, since those categories of work rarely need a user-facing changelog entry.
 
 **Label timing:** `pr-labeler.yml` and `label-guard` run concurrently on PR open. If the auto-labeller wins first, both pass in a single round. If `label-guard` fires before the label is applied, it fails on the first run but re-runs on the `labeled` event and passes once the label is present. This is expected behaviour; the status check clears without any manual intervention. The self-heal flow depends on `pr-labeler.yml` having write access to apply the label, which is why that workflow uses the `pull_request_target` trigger: a plain `pull_request` trigger gets a read-only token on PRs from forks and cannot label them, leaving `label-guard` stuck red.
+
+## Minimum supported Home Assistant version
+
+The declared minimum HA version lives in three places that must always agree:
+
+1. `hacs.json` (`"homeassistant"`) - the floor HACS enforces for users installing the integration.
+2. The pinned minimum leg of the `test` job in `.github/workflows/ci.yml` - installs `homeassistant==<floor>` with the matching `pytest-homeassistant-custom-component` release so the floor is actually exercised by the suite.
+3. The README `## Requirements` section - the human-readable statement of the same floor.
+
+`requirements-dev.txt` uses `homeassistant>=` as a soft floor only. Pip resolves the latest version satisfying `>=`, not the floor, so that line does not test the minimum on its own; the pinned CI leg does.
+
+**Policy: when the floor moves, update all three in the same PR.** Pick the new floor, find the `pytest-homeassistant-custom-component` release that maps to it (each release title on the [p-h-c-c releases page](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component/releases) names its `homeassistant version`), and update `hacs.json`, the pinned CI leg (both the `homeassistant==` and `pytest-homeassistant-custom-component==` pins), and the README together. A floor that no CI leg installs is an unverified promise, so never lower the declared floor below the version the pinned leg tests.
 
 ## Branching and PRs
 

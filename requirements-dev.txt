@@ -9,8 +9,14 @@
 # - aiohttp uses >= because it is a runtime dependency that HA manages; the
 #   exact version is driven by pytest-homeassistant-custom-component's transitive
 #   requirements.
-# - homeassistant uses >= with a minimum floor so the integration is validated
-#   against the minimum supported HA release rather than whatever pip resolves.
+# - homeassistant uses >= as a soft floor for local dev installs. Note that pip
+#   resolves the LATEST version satisfying >=, NOT the floor, so this line does
+#   not by itself test the minimum supported release. The declared minimum
+#   (hacs.json "homeassistant") is exercised by a dedicated pinned leg in
+#   .github/workflows/ci.yml that installs homeassistant==<floor> together with
+#   the matching pytest-homeassistant-custom-component release. When the floor
+#   moves, update hacs.json, that CI leg, and the README requirements section in
+#   the same PR.
 aiohttp>=3.9.0
 aioresponses==0.7.9
 async-upnp-client>=0.42.0
