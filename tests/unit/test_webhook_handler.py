@@ -51,9 +51,77 @@ def make_request(token: str | None = "test-secret-123", json_body: dict | None =
 # ── register_all ─────────────────────────────────────────────────────────────
 
 
+def _assert_call_count_matches_all_categories(urls, manager, mock_reg):
+    assert mock_reg.call_count == len(ALL_CATEGORIES)
+
+
+def _assert_only_enabled_category_registered(urls, manager, mock_reg):
+    assert mock_reg.call_count == 1
+    assert CATEGORY_NETWORK_WAN in urls
+    assert CATEGORY_SECURITY_THREAT not in urls
+
+
+def _assert_url_has_token(urls, manager, mock_reg):
+    assert urls[CATEGORY_NETWORK_WAN] == "http://ha/hook/abc?token=mysecret"
+
+
+def _assert_url_has_no_token(urls, manager, mock_reg):
+    assert urls[CATEGORY_NETWORK_WAN] == "http://ha/hook/abc"
+
+
+def _assert_registered_list_populated(urls, manager, mock_reg):
+    assert len(manager._registered) == 1
+
+
+def _assert_returns_dict_mapping(urls, manager, mock_reg):
+    assert isinstance(urls, dict)
+    assert CATEGORY_NETWORK_WAN in urls
+
+
 class TestRegisterAll:
-    def test_registers_one_webhook_per_enabled_category(self):
-        manager, _ = make_manager()
+    @pytest.mark.parametrize(
+        ("enabled", "secret", "check"),
+        [
+            pytest.param(
+                None,
+                "test-secret-123",
+                _assert_call_count_matches_all_categories,
+                id="one-call-per-enabled-category",
+            ),
+            pytest.param(
+                [CATEGORY_NETWORK_WAN],
+                "test-secret-123",
+                _assert_only_enabled_category_registered,
+                id="skips-disabled-categories",
+            ),
+            pytest.param(
+                [CATEGORY_NETWORK_WAN],
+                "mysecret",
+                _assert_url_has_token,
+                id="url-includes-token-when-secret-set",
+            ),
+            pytest.param(
+                [CATEGORY_NETWORK_WAN],
+                "",
+                _assert_url_has_no_token,
+                id="url-has-no-token-when-secret-empty",
+            ),
+            pytest.param(
+                [CATEGORY_NETWORK_WAN],
+                "test-secret-123",
+                _assert_registered_list_populated,
+                id="registered-list-populated",
+            ),
+            pytest.param(
+                [CATEGORY_NETWORK_WAN],
+                "test-secret-123",
+                _assert_returns_dict_mapping,
+                id="returns-category-to-url-mapping",
+            ),
+        ],
+    )
+    def test_register_all(self, enabled, secret, check):
+        manager, _ = make_manager(enabled=enabled, secret=secret)
         with (
             patch("custom_components.unifi_alerts.webhook_handler.async_register") as mock_reg,
             patch(
@@ -61,72 +129,8 @@ class TestRegisterAll:
                 return_value="http://ha/hook/abc",
             ),
         ):
-            manager.register_all()
-        # One call per enabled category
-        assert mock_reg.call_count == len(ALL_CATEGORIES)
-
-    def test_skips_disabled_categories(self):
-        manager, _ = make_manager(enabled=[CATEGORY_NETWORK_WAN])
-        with (
-            patch("custom_components.unifi_alerts.webhook_handler.async_register") as mock_reg,
-            patch(
-                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
-                return_value="http://ha/hook/abc",
-            ),
-        ):
             urls = manager.register_all()
-        assert mock_reg.call_count == 1
-        assert CATEGORY_NETWORK_WAN in urls
-        assert CATEGORY_SECURITY_THREAT not in urls
-
-    def test_url_includes_token_when_secret_set(self):
-        manager, _ = make_manager(enabled=[CATEGORY_NETWORK_WAN], secret="mysecret")
-        with (
-            patch("custom_components.unifi_alerts.webhook_handler.async_register"),
-            patch(
-                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
-                return_value="http://ha/hook/abc",
-            ),
-        ):
-            urls = manager.register_all()
-        assert urls[CATEGORY_NETWORK_WAN] == "http://ha/hook/abc?token=mysecret"
-
-    def test_url_has_no_token_when_secret_empty(self):
-        manager, _ = make_manager(enabled=[CATEGORY_NETWORK_WAN], secret="")
-        with (
-            patch("custom_components.unifi_alerts.webhook_handler.async_register"),
-            patch(
-                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
-                return_value="http://ha/hook/abc",
-            ),
-        ):
-            urls = manager.register_all()
-        assert urls[CATEGORY_NETWORK_WAN] == "http://ha/hook/abc"
-
-    def test_registered_list_populated(self):
-        manager, _ = make_manager(enabled=[CATEGORY_NETWORK_WAN])
-        with (
-            patch("custom_components.unifi_alerts.webhook_handler.async_register"),
-            patch(
-                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
-                return_value="http://ha/hook/abc",
-            ),
-        ):
-            manager.register_all()
-        assert len(manager._registered) == 1
-
-    def test_returns_category_to_url_mapping(self):
-        manager, _ = make_manager(enabled=[CATEGORY_NETWORK_WAN])
-        with (
-            patch("custom_components.unifi_alerts.webhook_handler.async_register"),
-            patch(
-                "custom_components.unifi_alerts.webhook_handler.async_generate_url",
-                return_value="http://ha/hook/abc",
-            ),
-        ):
-            urls = manager.register_all()
-        assert isinstance(urls, dict)
-        assert CATEGORY_NETWORK_WAN in urls
+        check(urls, manager, mock_reg)
 
 
 # ── unregister_all ────────────────────────────────────────────────────────────
