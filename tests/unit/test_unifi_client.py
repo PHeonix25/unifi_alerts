@@ -12,6 +12,7 @@ behaviour, and assertions can be made against the outbound request itself
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
@@ -34,6 +35,13 @@ from custom_components.unifi_alerts.unifi_client import (
     UNIFI_OS_NETWORK_PREFIX,
     UniFiClient,
 )
+
+# Pinned business-rule value for the probe backoff window. Deliberately NOT
+# imported as `_PROBE_RETRY_AFTER` from unifi_client — importing the constant
+# under test would make any assertion against it tautological (change the
+# constant, both sides of the comparison move together, and a genuine
+# regression in the backoff duration would still pass).
+_EXPECTED_PROBE_RETRY_AFTER = timedelta(hours=1)
 
 BASE_URL = "https://192.168.1.1"
 LOGIN_URL = f"{BASE_URL}/api/auth/login"
@@ -999,19 +1007,31 @@ class TestProbeSystemLogEndpoint:
     async def test_probe_backoff_triggers_after_fail_limit(self):
         """After _PROBE_FAIL_LIMIT consecutive transient failures the probe caches False
         and sets a backoff deadline so subsequent polls skip the network entirely."""
+        from datetime import UTC, datetime
+
         client = make_client()
         client._auth._authenticated = True
 
+        before = datetime.now(UTC)
         with aioresponses() as m:
             m.post(_probe_url(), status=503, repeat=True)
             for _ in range(_PROBE_FAIL_LIMIT):
                 result = await client.probe_system_log_endpoint()
                 assert result is False
+        after = datetime.now(UTC)
 
         # After the threshold the cache must be False and a backoff deadline set.
         assert client._has_system_log is False
         assert client._probe_backoff_until is not None
         assert client._probe_fail_count == _PROBE_FAIL_LIMIT
+        # Assert the actual deadline duration, not just its presence — a wrong
+        # _PROBE_RETRY_AFTER value (e.g. minutes instead of hours) would still
+        # satisfy `is not None` and pass the rest of the suite.
+        assert (
+            before + _EXPECTED_PROBE_RETRY_AFTER
+            <= client._probe_backoff_until
+            <= after + _EXPECTED_PROBE_RETRY_AFTER
+        )
 
     @pytest.mark.asyncio
     async def test_probe_during_backoff_skips_network(self):
@@ -1069,9 +1089,12 @@ class TestProbeSystemLogEndpoint:
     async def test_probe_backoff_via_network_error(self):
         """Repeated aiohttp.ClientError failures must also trigger the backoff
         after reaching _PROBE_FAIL_LIMIT."""
+        from datetime import UTC, datetime
+
         client = make_client()
         client._auth._authenticated = True
 
+        before = datetime.now(UTC)
         with aioresponses() as m:
             m.post(
                 _probe_url(),
@@ -1081,9 +1104,15 @@ class TestProbeSystemLogEndpoint:
             for _ in range(_PROBE_FAIL_LIMIT):
                 result = await client.probe_system_log_endpoint()
                 assert result is False
+        after = datetime.now(UTC)
 
         assert client._has_system_log is False
         assert client._probe_backoff_until is not None
+        assert (
+            before + _EXPECTED_PROBE_RETRY_AFTER
+            <= client._probe_backoff_until
+            <= after + _EXPECTED_PROBE_RETRY_AFTER
+        )
 
     @pytest.mark.asyncio
     async def test_reauth_clears_probe_backoff(self):

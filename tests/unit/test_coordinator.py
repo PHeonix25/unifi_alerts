@@ -682,7 +682,18 @@ class TestAutoClear:
 
     @pytest.mark.asyncio
     async def test_auto_clear_clears_state_after_delay(self):
-        """_auto_clear must call state.clear() and notify listeners after sleeping."""
+        """_auto_clear must call state.clear() and notify listeners exactly once after sleeping.
+
+        Strengthened from a prior version that only checked `is_alerting is
+        False` plus `async_set_updated_data.assert_called()` (not `_once`) and
+        never checked `last_cleared_at` — a half-broken clear (e.g. one that
+        forgot to stamp `last_cleared_at`, or that notified twice) would have
+        passed. `open_count` is deliberately NOT asserted here: it is owned
+        exclusively by the polling path (see `CategoryState.open_count`'s
+        docstring), and `clear()` never touches it — this test pushes an
+        alert via webhook only (no poll involved), so open_count stays at its
+        initial 0 throughout regardless of whether auto-clear ran correctly.
+        """
         import asyncio
 
         hass = MagicMock()
@@ -704,13 +715,15 @@ class TestAutoClear:
         alert = make_alert(CATEGORY_NETWORK_WAN)
         state = coord.get_category_state(CATEGORY_NETWORK_WAN)
         state.apply_alert(alert)
+        assert state.last_cleared_at is None  # precondition: never cleared yet
 
         # Call _auto_clear directly with a very short delay
         with patch("asyncio.sleep", new_callable=AsyncMock):
             await coord._auto_clear(CATEGORY_NETWORK_WAN, 0)
 
         assert state.is_alerting is False
-        coord.async_set_updated_data.assert_called()
+        assert state.last_cleared_at is not None
+        coord.async_set_updated_data.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_auto_clear_noop_when_not_alerting(self):
@@ -754,6 +767,24 @@ class TestAutoClear:
         # for this category.
         saved = coord._store.async_save.await_args.args[0]
         assert CATEGORY_NETWORK_WAN in saved
+
+    def test_schedule_clear_converts_minutes_to_seconds(self):
+        """_schedule_clear must convert clear_timeout_minutes to seconds.
+
+        Regression guard for `delay = self._clear_timeout_minutes * 60`
+        (coordinator.py). Every other auto-clear test calls `_auto_clear`
+        directly with an explicit delay, or no-ops `asyncio.sleep` entirely,
+        so a minutes/seconds swap at that multiplication would pass the rest
+        of the suite (auto-clearing alerts 60x too fast, or never within any
+        test's patience) while CI stays green.
+        """
+        coord = make_coordinator()
+        coord._clear_timeout_minutes = 5
+        dummy_coro = MagicMock()
+        with patch.object(coord, "_auto_clear", return_value=dummy_coro) as mock_auto_clear:
+            coord._schedule_clear(CATEGORY_NETWORK_WAN)
+
+        mock_auto_clear.assert_called_once_with(CATEGORY_NETWORK_WAN, 300)
 
 
 class TestWatermarks:
@@ -1068,6 +1099,153 @@ class TestWebhookMidPollRace:
         await poll_task
 
         assert state.is_alerting is True
+
+    @pytest.mark.asyncio
+    async def test_clear_during_poll_is_not_undone_by_stale_poll_data(self):
+        """A manual clear while a poll is mid-flight must not be re-opened by that poll.
+
+        `_async_update_data` reads `state.last_cleared_at` only *after*
+        `await self._fetch_categorised()` resolves (coordinator.py, watermark
+        line inside the per-category loop), so a concurrent clear's fresh
+        watermark is visible by the time the poll filters its (now-stale)
+        alarm list. This test pins that ordering: the alarm the poll fetched
+        predates the clear, so it must be filtered out and must not
+        resurrect `is_alerting`. If the watermark were captured before the
+        await instead (the regression this guards), the stale alarm would
+        pass the filter and silently undo the user's clear.
+        """
+        import asyncio
+
+        gate = asyncio.Event()
+        stale_alert = make_alert(CATEGORY_NETWORK_WAN, "stale pre-clear alarm")
+        # UniFiAlert is frozen-ish only by convention; received_at is a plain
+        # field, so backdating it here is the simplest way to simulate an
+        # alarm that was already open when the poll started.
+        stale_alert.received_at = datetime(2020, 1, 1, tzinfo=UTC)
+
+        async def blocking_categorise_alarms(site):
+            await gate.wait()
+            return {CATEGORY_NETWORK_WAN: [stale_alert]}
+
+        hass = MagicMock()
+
+        def _create_task(coro, **kwargs):
+            coro.close()
+            return MagicMock()
+
+        hass.async_create_task = _create_task
+        hass.async_create_background_task = _create_task
+
+        client = MagicMock()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
+        client.categorise_alarms = blocking_categorise_alarms
+
+        config = {
+            CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+            CONF_POLL_INTERVAL: 60,
+            CONF_CLEAR_TIMEOUT: 30,
+        }
+        coord = UniFiAlertsCoordinator(hass, client, config)
+        coord.async_set_updated_data = MagicMock()
+        coord._store = MagicMock()
+        coord._store.async_save = AsyncMock()
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        state.apply_alert(stale_alert)  # the alarm was already open before the poll started
+        assert state.is_alerting is True
+
+        # Start the poll; it blocks on gate.wait() inside categorise_alarms,
+        # already holding the pre-clear alarm list it will apply once resumed.
+        poll_task = asyncio.ensure_future(coord._async_update_data())
+        await asyncio.sleep(0)
+
+        # Manually clear the category while the poll is still suspended.
+        # async_clear_category awaits _async_persist_watermarks(), a genuine
+        # yield point, so this interleaves with poll_task on the same loop.
+        await coord.async_clear_category(CATEGORY_NETWORK_WAN)
+        assert state.is_alerting is False
+        assert state.last_cleared_at is not None
+
+        # Resume the poll: it applies the stale alarm list fetched before
+        # the clear. Correct behaviour is to filter it out via the
+        # now-current watermark and leave is_alerting False.
+        gate.set()
+        await poll_task
+
+        assert state.is_alerting is False
+
+
+class TestConcurrentPushDedup:
+    """Two same-category webhook pushes becoming runnable at the same instant
+    must not corrupt the dedup map or double-count, even though they arrive
+    via genuinely concurrent tasks (the real shape of two overlapping HTTP
+    POSTs). push_alert() itself is fully synchronous with no internal await,
+    so once either task resumes past its own await point, it runs push_alert
+    to completion before the other task gets a turn — this test pins that
+    guarantee so a future change that makes push_alert (or its dedup-map
+    mutation) awaiting-and-interruptible can't silently reintroduce a race.
+    """
+
+    @pytest.mark.asyncio
+    async def test_concurrent_same_key_pushes_dedup_to_exactly_one(self):
+        import asyncio
+
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+        gate = asyncio.Event()
+
+        async def push_after_gate(alert):
+            await gate.wait()
+            coord.push_alert(CATEGORY_NETWORK_WAN, alert)
+
+        alert_a = make_alert(CATEGORY_NETWORK_WAN, "first", key="EVT_RACE")
+        alert_b = make_alert(CATEGORY_NETWORK_WAN, "second-same-key", key="EVT_RACE")
+
+        task_a = asyncio.ensure_future(push_after_gate(alert_a))
+        task_b = asyncio.ensure_future(push_after_gate(alert_b))
+        # Let both tasks reach gate.wait() and park there before releasing —
+        # so they become runnable at the same instant, not one after the other.
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        gate.set()
+        await asyncio.gather(task_a, task_b)
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        # Exactly one push must be recorded — the second is a dedup-window
+        # duplicate of the first regardless of which task the loop ran first.
+        assert state.alert_count == 1
+        assert len(coord._last_push_at) == 1
+
+    @pytest.mark.asyncio
+    async def test_concurrent_different_key_pushes_both_recorded(self):
+        """Distinct keys pushed concurrently must both be recorded independently."""
+        import asyncio
+
+        coord = make_coordinator()
+        coord.async_set_updated_data = MagicMock()
+        gate = asyncio.Event()
+
+        async def push_after_gate(alert):
+            await gate.wait()
+            coord.push_alert(CATEGORY_NETWORK_WAN, alert)
+
+        alert_a = make_alert(CATEGORY_NETWORK_WAN, "first", key="EVT_RACE_A")
+        alert_b = make_alert(CATEGORY_NETWORK_WAN, "second", key="EVT_RACE_B")
+
+        task_a = asyncio.ensure_future(push_after_gate(alert_a))
+        task_b = asyncio.ensure_future(push_after_gate(alert_b))
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        gate.set()
+        await asyncio.gather(task_a, task_b)
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        # Both distinct keys must be counted — neither dedup entry must have
+        # clobbered the other in the dict rebuild inside push_alert.
+        assert state.alert_count == 2
+        assert len(coord._last_push_at) == 2
 
 
 class TestPushAlertOptimisticOpenCount:
