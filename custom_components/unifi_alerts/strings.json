@@ -145,6 +145,13 @@
       "open_count_security_honeypot": {"name": "Security: Honeypot triggered: Open Count"},
       "open_count_security_firewall": {"name": "Security: Firewall block: Open Count"},
       "open_count_power": {"name": "Power: PoE / power loss: Open Count"},
+      "webhook_health_network_device": {"name": "Network: Device offline/online: Webhook Health", "state": {"never_received": "Never received", "healthy": "Healthy", "stale": "Stale"}},
+      "webhook_health_network_wan": {"name": "Network: WAN offline/latency: Webhook Health", "state": {"never_received": "Never received", "healthy": "Healthy", "stale": "Stale"}},
+      "webhook_health_network_client": {"name": "Network: Client connect/disconnect: Webhook Health", "state": {"never_received": "Never received", "healthy": "Healthy", "stale": "Stale"}},
+      "webhook_health_security_threat": {"name": "Security: Threat / IDS detected: Webhook Health", "state": {"never_received": "Never received", "healthy": "Healthy", "stale": "Stale"}},
+      "webhook_health_security_honeypot": {"name": "Security: Honeypot triggered: Webhook Health", "state": {"never_received": "Never received", "healthy": "Healthy", "stale": "Stale"}},
+      "webhook_health_security_firewall": {"name": "Security: Firewall block: Webhook Health", "state": {"never_received": "Never received", "healthy": "Healthy", "stale": "Stale"}},
+      "webhook_health_power": {"name": "Power: PoE / power loss: Webhook Health", "state": {"never_received": "Never received", "healthy": "Healthy", "stale": "Stale"}},
       "total_open": {"name": "Total Open Alerts"}
     },
     "event": {

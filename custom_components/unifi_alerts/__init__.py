@@ -166,10 +166,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         client=client,
     )
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    # Register domain services (idempotent — safe for multiple entries)
-    async_register_services(hass)
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        # Register domain services (idempotent — safe for multiple entries)
+        async_register_services(hass)
+    except Exception:
+        # HA never calls async_unload_entry for a setup that failed here, so
+        # the webhooks registered above would otherwise survive to the
+        # automatic retry, which then finds every deterministic webhook_id
+        # already taken and silently skips re-registering all of them.
+        await coordinator.async_shutdown()
+        webhook_manager.unregister_all()
+        await client.close()
+        raise
 
     # Re-register webhooks and reload options when the entry is updated
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))

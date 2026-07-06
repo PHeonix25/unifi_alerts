@@ -15,6 +15,7 @@
 - Unclassified event keys seen during polling are now collected and exposed under `unrecognised_keys` in the integration diagnostics (Settings > Devices & Services > UniFi Alerts > Download diagnostics). This makes previously-invisible unmapped events visible without enabling DEBUG logging, so users can identify and report missing keys to the issue tracker. ([#134])
 - A typo'd site name during setup now shows a dedicated error ("Site not found on the controller") on the categories step instead of creating a broken config entry stuck in "Not Ready". The default site (`default`) still proceeds without an extra network round-trip since reachability was already confirmed in the credentials step. The same validation runs in the options flow when changing to a non-default site. ([#171])
 - Category labels in entity names (e.g. "Network: WAN offline/latency") are now defined in `translations/en.json` instead of being hard-coded English strings, so translators can provide locale-specific versions without rebuilding the integration. Each entity now carries a per-category translation key rather than a generic key with a hard-coded English placeholder. ([#133])
+- Each category now has a diagnostic `sensor.*_webhook_health` entity (`never_received` / `healthy` / `stale`, with a `last_webhook_at` attribute), promoting the existing `webhook_health` signal from a buried binary-sensor attribute to a dashboardable, automatable entity with history. The attribute remains on the binary sensor for backward compatibility. ([#270])
 
 ### Fixed
 
@@ -25,6 +26,7 @@
 - Alert payloads with non-string `device_name` or `site` values no longer crash the webhook handler or the polling path; these fields are now always coerced to strings, matching how `message`/`key`/`severity` were already handled. ([#292])
 - The config entry's `unique_id` now updates when the controller URL is changed via the options flow, so duplicate-entry prevention and SSDP discovery matching stay correct after re-pointing an entry to a different controller. ([#295])
 - The options (reconfigure) flow's `cannot_connect`, `invalid_auth`, `invalid_ssl_cert`, `invalid_url_scheme`, and `at_least_one_category` errors, and the SSDP discovery flow's `cannot_connect` abort reason, now have translated text. Previously these were missing from `strings.json`'s `options.error` and `config.abort` sections, so a user hitting one of them while reconfiguring an entry or during a failed SSDP discovery would see the raw untranslated key instead of a readable message. ([#298])
+- A setup failure that occurs after webhooks were registered (for example a platform-forwarding error) now unregisters those webhooks and closes the client before re-raising. Previously the failed webhooks stayed registered, so Home Assistant's automatic setup retry hit a duplicate-id error for every category, silently loaded with an empty webhook URL map, and left real-time alerts routed to the dead coordinator from the first attempt until HA was restarted. ([#265])
 
 ### Internal
 
@@ -318,4 +320,6 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#297]: https://github.com/PHeonix25/unifi_alerts/pull/297
 [#298]: https://github.com/PHeonix25/unifi_alerts/pull/298
 [#284]: https://github.com/PHeonix25/unifi_alerts/issues/284
+[#265]: https://github.com/PHeonix25/unifi_alerts/issues/265
+[#270]: https://github.com/PHeonix25/unifi_alerts/issues/270
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR
