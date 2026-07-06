@@ -16,6 +16,18 @@ make setup                             # python3.12 -m venv .venv + pip install 
 
 `requirements-dev.txt` is the single source of truth for dev dependencies; both CI jobs install from the same file.
 
+## Agent session bootstrap
+
+AI coding agents start from a cold container each session. Before any test can run, the `.venv` (Home Assistant plus the full test stack, roughly 200 packages) has to be installed via `make setup`. Each agent surface provisions that environment through its own entry point, and all three run the identical `python3.12 -m venv .venv` + `pip install -r requirements-dev.txt` sequence so every surface matches CI:
+
+| Surface | Entry point | Behaviour |
+|---|---|---|
+| Claude Code (web / remote) | `SessionStart` hook in `.claude/settings.json` calling `scripts/bootstrap_venv.sh` | Runs `make setup` only when `.venv` is absent; a no-op otherwise. Registered as an async hook, so the session starts immediately while the install runs in the background. Gated on `$CLAUDE_CODE_REMOTE`, so local sessions are untouched. Tolerant: a failed install logs and exits 0 rather than breaking the session. |
+| GitHub Copilot coding agent | `.github/workflows/copilot-setup-steps.yml` | GitHub runs this workflow before the agent starts, creating `.venv` and installing `requirements-dev.txt`. |
+| Local developer | `make setup` (run manually, see [Local setup](#local-setup)) | Explicit and one-off. The Claude hook deliberately skips local sessions so it never installs behind your back. |
+
+Why not a slimmer `requirements-test.txt`? The install is dominated by Home Assistant, which `pytest-homeassistant-custom-component` pulls in transitively regardless of what else is trimmed. A pytest-only requirements file would still drag in the same heavy tree, so it would not meaningfully shorten setup. The full `requirements-dev.txt` install is required; the hook plus the container's pip cache is the mitigation, not a reduced dependency set.
+
 ## Running checks
 
 ```bash
