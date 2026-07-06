@@ -47,7 +47,7 @@ Pure data; no HA dependencies. Three dataclasses:
 
 Single source of truth for:
 
-- Category identifiers (`CATEGORY_*` string constants), `ALL_CATEGORIES` ordered list (defines display order), `CATEGORY_LABELS`, `CATEGORY_ICONS`, `CATEGORY_ICONS_OK` UI metadata.
+- Category identifiers (`CATEGORY_*` string constants), `ALL_CATEGORIES` ordered list (defines display order), `CATEGORY_ICONS`, `CATEGORY_ICONS_OK` UI metadata. Entity display labels live in `strings.json` / `translations/en.json` under per-category translation keys, not in `const.py`.
 - `UNIFI_KEY_TO_CATEGORY`: maps UniFi event-key prefixes to category identifiers. Community-sourced and deliberately incomplete; unrecognised keys are logged at DEBUG and skipped.
 - Config entry key names (`CONF_*`).
 - `webhook_id_for_category(category, suffix="")`: deterministic webhook ID generator. With a per-entry suffix it returns `unifi_alerts_{suffix}_{category}`; without one (legacy single-entry installs) it returns `unifi_alerts_{category}`.

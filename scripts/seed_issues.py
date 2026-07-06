@@ -426,8 +426,8 @@ ISSUES: list[Issue] = [
         labels=["feat", "size: M", "priority: high"],
         body=(
             "Entity name templates already use `_attr_translation_key`, but the "
-            "`{category}` placeholder is filled from the English-only "
-            "`CATEGORY_LABELS` dict (`const.py`), leaving entity names "
+            "`{category}` placeholder is filled from an English-only label map "
+            "in `const.py`, leaving entity names "
             "half-translated for non-English Home Assistant.\n\n"
             "**Approach:** give each category its own `translation_key` so the "
             "label resolves through the translation layer.\n\n"

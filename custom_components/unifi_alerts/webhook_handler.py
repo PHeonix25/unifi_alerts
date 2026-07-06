@@ -23,6 +23,7 @@ from .const import (
     CONF_WEBHOOK_ID_SUFFIX,
     CONF_WEBHOOK_SECRET,
     DOMAIN,
+    ISSUE_ID_WEBHOOK_SECRET_ROTATED,
     WEBHOOK_MAX_BODY_BYTES,
     webhook_id_for_category,
 )
@@ -86,7 +87,9 @@ class WebhookManager:
                     allowed_methods=["POST"],
                     local_only=True,
                 )
-            except Exception as err:  # noqa: BLE001
+            except ValueError as err:
+                # HA's async_register raises ValueError for a duplicate webhook_id
+                # or an unsupported HTTP method — the only failure modes it has.
                 _LOGGER.warning(
                     "Failed to register webhook for category %s (%s): %s",
                     category,
@@ -179,7 +182,9 @@ class WebhookManager:
             self._push_callback(category, alert)
             # First valid webhook after a secret rotation proves Alarm Manager
             # was updated with the new URLs. Clear the rotation repair issue.
-            ir.async_delete_issue(hass, DOMAIN, f"webhook_secret_rotated_{self._entry_id}")
+            ir.async_delete_issue(
+                hass, DOMAIN, f"{ISSUE_ID_WEBHOOK_SECRET_ROTATED}_{self._entry_id}"
+            )
             return None
 
         return handle_webhook

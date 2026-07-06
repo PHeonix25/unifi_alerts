@@ -39,6 +39,7 @@ def mock_unifi_client() -> Generator[MagicMock, None, None]:
         instance = mock_cls.return_value
         instance.authenticate = AsyncMock(return_value="userpass")
         instance.categorise_alarms = AsyncMock(return_value={})
+        instance.probe_system_log_endpoint = AsyncMock(return_value=False)
         instance.close = AsyncMock()
         yield instance
 

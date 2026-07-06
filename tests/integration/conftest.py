@@ -44,10 +44,10 @@ from custom_components.unifi_alerts.const import (
 @pytest.fixture(autouse=True, scope="session")
 def _prime_pycares_shutdown_thread() -> None:
     """Warm up the optional aiodns/pycares resolver stack before tests run."""
-    import asyncio  # noqa: PLC0415
+    import asyncio
 
     try:
-        import aiodns  # noqa: PLC0415
+        import aiodns
     except ImportError:
         return
 
@@ -101,6 +101,7 @@ def mock_unifi_client():
         instance = MagicMock()
         instance.authenticate = AsyncMock(return_value="userpass")
         instance.categorise_alarms = AsyncMock(return_value={})
+        instance.probe_system_log_endpoint = AsyncMock(return_value=False)
         instance.close = AsyncMock()
         mock_cls.return_value = instance
         yield instance

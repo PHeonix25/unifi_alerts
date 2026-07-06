@@ -2,6 +2,70 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-07-05
+
+- **release**: v1.9.0-pre3 tagged. Third checkpoint of the v1.9.0 cycle. Headline: five bug fixes closing out real defects found during triage (webhook dedup, non-string payload coercion, entry-removal cleanup, stale `unique_id` on controller URL change), CI now lints and type-checks the `tests/` tree, and all three remaining `v2.0-gate` documentation items land, closing out every `v2.0-gate` issue.
+- **chore**: repo hygiene quick wins from an agentic-delivery review: added the MIT `LICENSE` file (previously missing entirely, which would have blocked the HACS default catalogue submission), moved the pytest coverage gate off `addopts` onto `make test`/CI so single-file test runs no longer trip it, split cross-platform vs personal Claude Code settings, and fixed drifted references in `AGENTS.md`/`agentrc.eval.json` ([#290]).
+- **fix**: `push_alert()` no longer deduplicates two distinct keyless webhook alerts against each other; only genuine duplicate keys within the dedup window are still suppressed ([#291]). Closes #263.
+- **fix**: `UniFiAlert`'s three constructors now coerce `device_name`/`site` to `str` before use, matching the existing `message`/`key`/`severity` handling; a non-string value in either field previously raised `TypeError` and dropped the alert entirely ([#292]). Closes #266.
+- **ci**: CI's `lint` job now runs `ruff check`/`ruff format --check` against `tests/` as well as `custom_components/`, matching what `make lint` already enforced locally ([#293]). Closes #232.
+- **fix**: `async_remove_entry` now deletes the per-entry watermark storage file and all four repair issues when a config entry is removed, instead of leaving them behind permanently; the four issue-id strings were also promoted to shared `const.py` constants to prevent drift ([#294]). Closes #264.
+- **fix**: the config entry's `unique_id` now updates when the controller URL changes via the options flow, so duplicate-entry prevention and SSDP discovery matching stay correct after re-pointing an entry to a different controller ([#295]). Closes #276.
+- **docs**: added `docs/DATA_HANDLING.md`, the authoritative statement of what the integration persists, what stays memory-only, what appears in diagnostics downloads, and what is logged at DEBUG; linked from README and SECURITY.md ([#296]). Closes #273.
+- **docs**: added `docs/ALARM_MANAGER_SETUP.md`, a step-by-step guide for wiring UniFi Alarm Manager to the integration's webhook URLs, covering verification via `webhook_health` and the four most common failure modes ([#297]). Closes #274.
+- **docs**: closed out the v2.0 localisation-maturity gate: audited every translation-key surface (two gaps found and fixed, everything else clean), recorded the English-only decision for v2.0, documented the language-contribution path in `docs/LOCALISATION.md`, and removed the orphaned `config.error.unknown` translation key ([#298]). Closes #275.
+
+[#290]: https://github.com/PHeonix25/unifi_alerts/pull/290
+[#291]: https://github.com/PHeonix25/unifi_alerts/pull/291
+[#292]: https://github.com/PHeonix25/unifi_alerts/pull/292
+[#293]: https://github.com/PHeonix25/unifi_alerts/pull/293
+[#294]: https://github.com/PHeonix25/unifi_alerts/pull/294
+[#295]: https://github.com/PHeonix25/unifi_alerts/pull/295
+[#296]: https://github.com/PHeonix25/unifi_alerts/pull/296
+[#297]: https://github.com/PHeonix25/unifi_alerts/pull/297
+[#298]: https://github.com/PHeonix25/unifi_alerts/pull/298
+
+## 2026-07-03
+
+- **release**: v1.9.0-pre2 tagged. Second checkpoint of the v1.9.0 "Localisation and Scale" cycle. Headline: site validation against the controller (#205), unrecognised event keys surfaced in diagnostics (#207), severity exposed on binary sensors (#210), SSDP discovery for UniFi OS consoles (#212), plus a `UniFiAuth` extraction (#218), narrowed exception handling with a `ConfigEntryAuthFailed` reauth-repair fix (#257), and test-infrastructure hardening (#258, #260) alongside an options-flow refactor (#259). Closes the five PRs carried forward from pre1.
+- **feat**: non-default site names are now validated against the controller in both the config and options flow; a failed lookup shows an `invalid_site` field error instead of creating a broken entry; the default site skips the extra round-trip ([#205]). Closes #171.
+- **feat**: unclassified event keys seen during polling now accumulate and appear under `coordinator.unrecognised_keys` in the HA diagnostics download, sorted by occurrence count, from both the v2 system-log and legacy alarm paths ([#207]). Closes #134.
+- **feat**: `last_severity` is now exposed as an attribute on `UniFiCategoryBinarySensor` and `UniFiRollupBinarySensor`, not just the message sensor, so automations can condition on severity directly from the entity that triggers them ([#210]). Closes #135.
+- **feat**: SSDP discovery for UDM, UDM Pro, UDM SE, and UDM Pro Max consoles; `async_step_ssdp` pre-fills the controller URL and forwards to the credentials step ([#212]). Closes #172.
+- **refactor**: extract `UniFiAuth` from `UniFiClient` into its own module (`unifi_auth.py`) with no passthrough properties; production call sites import auth exceptions from `.unifi_auth` directly ([#218]). Closes #120.
+- **fix**: `coordinator.async_config_entry_first_refresh()` no longer wraps HA core's call in a blanket `except Exception`, which was silently misclassifying `ConfigEntryAuthFailed` as `ConfigEntryNotReady` and suppressing HA's reauth-repair flow; every other blind `except Exception` (BLE001) across the integration narrowed to the specific exceptions each call site can raise ([#257]). Closes #237.
+- **tests**: `test_unifi_client.py` now drives a real `aiohttp.ClientSession` through `aioresponses` instead of hand-built `MagicMock` response doubles, so tests assert on actual outbound HTTP rather than a fabricated aiohttp surface ([#258]). Closes #229.
+- **refactor**: `UniFiAlertsOptionsFlow.async_step_credentials` split from a ~135-line method into a thin orchestrator over standalone helpers (form parsing, duplicate-entry detection, staged-dict builders, credential validation); no behaviour change ([#259]). Closes #238.
+- **tests**: collapsed near-duplicate test-body clusters in `test_coordinator.py` and `test_entities.py` into `@pytest.mark.parametrize` cases with readable `ids`; test-item counts unchanged (90 and 84 respectively) ([#260]). Closes #231.
+
+[#205]: https://github.com/PHeonix25/unifi_alerts/pull/205
+[#207]: https://github.com/PHeonix25/unifi_alerts/pull/207
+[#210]: https://github.com/PHeonix25/unifi_alerts/pull/210
+[#212]: https://github.com/PHeonix25/unifi_alerts/pull/212
+[#218]: https://github.com/PHeonix25/unifi_alerts/pull/218
+[#257]: https://github.com/PHeonix25/unifi_alerts/pull/257
+[#258]: https://github.com/PHeonix25/unifi_alerts/pull/258
+[#259]: https://github.com/PHeonix25/unifi_alerts/pull/259
+[#260]: https://github.com/PHeonix25/unifi_alerts/pull/260
+
+## 2026-06-27
+
+- **release**: v1.9.0-pre1 tagged. First checkpoint of the v1.9.0 "Localisation and Scale" cycle. Headline: translatable per-category entity labels (#133) and the v2 system-log fetch-window clamp (#136), plus large-volume serialisation tests and CI/process hardening. Five further v1.9.0 PRs (#207, #210, #205, #212, #218) remain open and will land in a later checkpoint.
+- **feat**: entity display names now resolve through per-category `translation_key`s in `strings.json` / `translations/en.json` instead of a hard-coded English label map; the unused `CATEGORY_LABELS` dict was removed ([#208]). Closes #133.
+- **fix**: clamp the v2 system-log fetch window to `DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS` (24h) and warn when the page cap is hit, so a rarely-cleared category can no longer anchor every poll to an arbitrarily old timestamp and silently drop recent alarms ([#204]). Closes #136.
+- **tests**: add unicode round-trip and large-batch determinism coverage for `UniFiAlert` serialisation (emoji, CJK, and RTL survive `to_dict` / `from_dict`; 500-alert batches stay exact) ([#202]). Closes #140.
+- **ci**: bump `actions/checkout` 6.0.2 to 7.0.0 ([#248]); move pytest config into `pyproject.toml` ([#249]); add an advanced CodeQL workflow so config-only PRs are not blocked ([#251]); bump `codecov/codecov-action` 5.4.3 to 7.0.0 ([#247]); run `pr-labeler` on `pull_request_target` so fork PRs get labelled ([#250]); allow HISTORY.md edits on the dev-to-main release merge in `history-guard` ([#245]).
+
+[#202]: https://github.com/PHeonix25/unifi_alerts/pull/202
+[#204]: https://github.com/PHeonix25/unifi_alerts/pull/204
+[#208]: https://github.com/PHeonix25/unifi_alerts/pull/208
+[#245]: https://github.com/PHeonix25/unifi_alerts/pull/245
+[#247]: https://github.com/PHeonix25/unifi_alerts/pull/247
+[#248]: https://github.com/PHeonix25/unifi_alerts/pull/248
+[#249]: https://github.com/PHeonix25/unifi_alerts/pull/249
+[#250]: https://github.com/PHeonix25/unifi_alerts/pull/250
+[#251]: https://github.com/PHeonix25/unifi_alerts/pull/251
+
 ## 2026-06-19
 
 - **release**: v1.8.0 stable. Promotes the "Trust and Hardening" cycle to main. All pre1-pre3 items shipped; one additional fix (#242) landed after pre3.

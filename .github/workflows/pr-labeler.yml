@@ -15,8 +15,14 @@ name: PR Labeler
 # Other prefixes (chore, build, refactor, perf, style, etc.) intentionally fall
 # through to "Other Changes" in the release notes.
 
+# Uses pull_request_target (not pull_request) so the job runs in the base-repo
+# context and receives a write-capable GITHUB_TOKEN even for PRs from forks; a
+# plain pull_request trigger gets a read-only token on fork PRs and cannot apply
+# labels. Safe here because the workflow never checks out or runs PR code: it
+# only reads the PR title (via the PR_TITLE env var) and applies a label drawn
+# from a fixed case mapping, never from raw PR-controlled input.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, edited, reopened]
 
 permissions:

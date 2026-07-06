@@ -1,13 +1,15 @@
 # AGENTS.md - unifi_alerts
 
-> Full project context, hard constraints, conventions, and working style live in [`CLAUDE.md`](CLAUDE.md). Read it first.
-> Detailed architecture, HA patterns, UniFi API, testing, and TODO docs live in [`docs/`](docs/).
+> This file is the single home for the shared facts every agent needs: repo purpose, tech stack, build/test commands, and the repo map. Do not copy these blocks into [`CLAUDE.md`](CLAUDE.md) or [`.github/copilot-instructions.md`](.github/copilot-instructions.md); link here instead. `scripts/validate_docs.py` fails the build if the anchored blocks below are duplicated into another file.
+> Claude-specific working style and the full non-negotiable constraint list live in [`CLAUDE.md`](CLAUDE.md). Release and branching detail lives in [`docs/RELEASING.md`](docs/RELEASING.md). Extended docs (architecture, HA patterns, UniFi API, testing) live in [`docs/`](docs/).
 
 ---
 
 ## What this repo is
 
 A Home Assistant custom integration (`domain: unifi_alerts`) that aggregates UniFi Network controller alerts into HA sensors, binary sensors, event entities, and buttons. Distributed via HACS.
+
+This integration covers **UniFi Network** only (System Logs / SIEM events from the Network Application on UniFi OS). It does **not** support UniFi Protect (cameras, motion detection, NVR).
 
 Two data paths run in parallel:
 - **Webhook push** - UniFi Alarm Manager POSTs to per-category webhook URLs registered by HA. Real-time path.
@@ -30,6 +32,7 @@ Two data paths run in parallel:
 
 ## Tech stack
 
+<!-- shared:stack -->
 | Layer | Tool |
 | ----- | ---- |
 | Language | Python 3.12+ |
@@ -38,11 +41,13 @@ Two data paths run in parallel:
 | Type checking | `mypy` (strict) |
 | Tests | `pytest` + `MagicMock`/`AsyncMock` |
 | HA integration | `custom_components/unifi_alerts/` |
+<!-- /shared:stack -->
 
 ---
 
 ## Build & test commands
 
+<!-- shared:commands -->
 ```bash
 make check        # default: lint + typecheck + validate + test (run before every commit)
 make lint         # ruff check + format check
@@ -50,6 +55,7 @@ make typecheck    # mypy
 make validate     # HACS preflight + translation drift check
 make test         # pytest
 ```
+<!-- /shared:commands -->
 
 All commands use `.venv` in the repo root - never the system Python. Run `make setup` once after cloning to create it.
 
@@ -85,7 +91,10 @@ tests/
 
 docs/                             # extended documentation
 scripts/                          # validation helpers (validate_hacs.py, check_translations.py, etc.)
+agentrc.eval.json                 # agent planning-eval cases (see below)
 ```
+
+`agentrc.eval.json` holds planning-evaluation cases for agent harnesses: each case pairs a realistic task prompt with the expectations a good implementation plan must meet (files touched, constraints respected, tests updated). It is not executed by CI. If you rename a symbol or move a test file referenced in its expectations, update the case text in the same PR.
 
 ---
 
@@ -106,8 +115,8 @@ scripts/                          # validation helpers (validate_hacs.py, check_
 
 This is the most common extension task. Every step is required - missing any one breaks the integration silently or at runtime.
 
-1. **`const.py`** - add `CATEGORY_<NAME>: str = "<name>"` constant; add it to `ALL_CATEGORIES`; add entries to `CATEGORY_LABELS`, `CATEGORY_ICONS`, `CATEGORY_ICONS_OK`; add all relevant `EVT_*` keys to `UNIFI_KEY_TO_CATEGORY`.
-2. **`strings.json`** - add `"cat_<name>"` key under each config step that lists categories (`categories.data`, `options.data`). Add webhook URL label under `finish.data` and `options.data`.
+1. **`const.py`** - add `CATEGORY_<NAME>: str = "<name>"` constant; add it to `ALL_CATEGORIES`; add entries to `CATEGORY_ICONS`, `CATEGORY_ICONS_OK`; add all relevant `EVT_*` keys to `UNIFI_KEY_TO_CATEGORY`.
+2. **`strings.json`** - add `"cat_<name>"` key under each config step that lists categories (`categories.data`, `options.data`). Add webhook URL label under `finish.data` and `options.data`. Add the per-category entity display-name keys (binary sensor, last message, open count, event, clear button) under `entity` - these supply the localised entity names that used to come from `CATEGORY_LABELS`.
 3. **`translations/en.json`** - mirror every change made to `strings.json` exactly. Run `scripts/check_translations.py` to validate.
 4. **`binary_sensor.py`**, **`sensor.py`**, **`event.py`**, **`button.py`** - no code changes needed for most categories (platforms iterate `ALL_CATEGORIES` dynamically), but review each if adding a category with unusual display logic.
 5. **`tests/`** - add the new category key to fixtures in `tests/unit/conftest.py` and `tests/integration/conftest.py`. Check `test_coordinator.py` and `test_entities.py` for category-enumerated tests that need updating.

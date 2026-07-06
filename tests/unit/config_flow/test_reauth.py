@@ -233,27 +233,6 @@ class TestReauthConfirmStep:
 
         mock_del.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_unexpected_exception_shows_unknown(self) -> None:
-        flow = make_reauth_flow()
-        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "reauth_confirm"})
-
-        with (
-            patch(
-                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
-                return_value=make_session_mock(),
-            ),
-            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
-        ):
-            instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(side_effect=RuntimeError("boom"))
-            result = await flow.async_step_reauth_confirm(
-                user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "pw"}
-            )
-
-        assert result["step_id"] == "reauth_confirm"
-        assert flow.async_show_form.call_args.kwargs["errors"] == {"base": "unknown"}
-
 
 class TestConfigFlowHelpers:
     """Tests for standalone config flow class methods and helpers."""

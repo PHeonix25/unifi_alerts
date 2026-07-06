@@ -16,7 +16,6 @@ from .const import (
     ALL_CATEGORIES,
     CATEGORY_ICONS,
     CATEGORY_ICONS_OK,
-    CATEGORY_LABELS,
     CONF_CONTROLLER_URL,
     DOMAIN,
 )
@@ -56,8 +55,7 @@ class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sens
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_message"
-        self._attr_translation_key = "last_message"
-        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
+        self._attr_translation_key = f"last_message_{category}"
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -111,8 +109,7 @@ class UniFiCategoryCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sensor
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_count"
-        self._attr_translation_key = "open_count"
-        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
+        self._attr_translation_key = f"open_count_{category}"
         self._attr_device_info = _device_info(entry)
 
     @property

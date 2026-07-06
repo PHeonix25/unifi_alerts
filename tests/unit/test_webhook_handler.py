@@ -189,7 +189,7 @@ class TestMakeHandler:
         req = make_request(token="tok123")
         await handler(manager._hass, "wh-id", req)
         push_cb.assert_called_once()
-        call_category, call_alert = push_cb.call_args[0]
+        call_category, _call_alert = push_cb.call_args[0]
         assert call_category == CATEGORY_NETWORK_WAN
 
     @pytest.mark.asyncio
@@ -523,7 +523,7 @@ class TestRegisterAllRollback:
             # Fail on the second registration only
             call_count["n"] += 1
             if call_count["n"] == 2:
-                raise RuntimeError("boom: HA registry rejected this id")
+                raise ValueError("Handler is already defined!")
             return None
 
         with (
@@ -551,7 +551,7 @@ class TestRegisterAllRollback:
         with (
             patch(
                 "custom_components.unifi_alerts.webhook_handler.async_register",
-                side_effect=RuntimeError("nope"),
+                side_effect=ValueError("Handler is already defined!"),
             ),
             patch(
                 "custom_components.unifi_alerts.webhook_handler.async_generate_url",

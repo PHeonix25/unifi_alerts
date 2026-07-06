@@ -16,7 +16,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     ALL_CATEGORIES,
     CATEGORY_ICONS,
-    CATEGORY_LABELS,
     CONF_CONTROLLER_URL,
     DOMAIN,
 )
@@ -48,7 +47,9 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
 
     _attr_has_entity_name = True
     # Fixed at class level; HA requires declaring event types at init, not per-fire.
-    _attr_event_types = ["alert_received"]
+    # RUF012 is suppressed below: HA's EventEntity base types this as an instance
+    # attr, so a ClassVar override would fail mypy --strict (instance-vs-class-var).
+    _attr_event_types = ["alert_received"]  # noqa: RUF012
 
     def __init__(
         self,
@@ -59,8 +60,7 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
         super().__init__(coordinator)
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_event"
-        self._attr_translation_key = "event"
-        self._attr_translation_placeholders = {"category": CATEGORY_LABELS[category]}
+        self._attr_translation_key = f"event_{category}"
         self._attr_icon = CATEGORY_ICONS[category]
         self._attr_device_info = _device_info(entry)
         # Track alert_count to detect new alerts on coordinator update
