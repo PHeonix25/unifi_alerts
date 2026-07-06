@@ -4,7 +4,7 @@ Reference for Home Assistant-specific patterns used in this integration. Consult
 
 ## Minimum supported version
 
-**Home Assistant 2024.5** (requires Python 3.12). `ConfigEntry.runtime_data` (introduced in HA 2024.2), `ConfigFlowResult` return type annotation, and `Platform` enum usage require this version or newer.
+**Home Assistant 2025.1** (requires Python 3.12), enforced by `hacs.json` and the pinned minimum-version CI leg. `ConfigEntry.runtime_data` (introduced in HA 2024.2), `ConfigFlowResult` return type annotation, and `Platform` enum usage require this version or newer. See `docs/DEVELOPING.md` § "Minimum supported Home Assistant version" for how the floor is kept in sync across `hacs.json`, CI, and the README.
 
 ## Config entries
 
@@ -14,7 +14,7 @@ This integration uses config entries exclusively; no `configuration.yaml` suppor
 - Runtime state (coordinator, webhook URLs, unregister callable, HTTP client) is stored on `entry.runtime_data` as a `RuntimeData` dataclass (see `models.py`). Do **not** use `hass.data` for per-entry state.
 - `async_unload_entry` must cleanly reverse everything `async_setup_entry` does: unload platforms, unregister webhooks, close the HTTP client.
 - Options changes trigger `_async_update_listener`, which calls `async_reload`; this tears down and re-sets-up the entry cleanly. No partial reload logic needed.
-- Config entry `VERSION = 2` (in `config_flow.py`). `async_migrate_entry` in `__init__.py` strips the legacy `is_unifi_os` key from version-1 entries on first load. Bump `VERSION` and add a migration if the data schema changes again in a breaking way.
+- Config entry `VERSION = 3` (in `config_flow.py`). `async_migrate_entry` in `__init__.py` runs migrations sequentially: v1->v2 strips the legacy `is_unifi_os` key; v2->v3 backfills `webhook_secret`/`webhook_id_suffix` and raises a repair issue if the suffix changed. Bump `VERSION` and add a migration if the data schema changes again in a breaking way.
 
 ## DataUpdateCoordinator
 
