@@ -33,7 +33,7 @@ async def async_setup_entry(
     entities = [
         UniFiAlertEventEntity(coordinator, entry, category)
         for category in ALL_CATEGORIES
-        if coordinator.get_category_state(category) is not None
+        if (state := coordinator.get_category_state(category)) is not None and state.enabled
     ]
     async_add_entities(entities)
 
