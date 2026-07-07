@@ -11,12 +11,14 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.storage import Store
 
 from .const import (
+    ALL_CATEGORIES,
     CONF_CONTROLLER_URL,
     CONF_VERIFY_SSL,
     DEFAULT_VERIFY_SSL,
@@ -84,6 +86,29 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         return True
 
     return True
+
+
+def _prune_disabled_category_entities(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: UniFiAlertsCoordinator
+) -> None:
+    """Remove registry entries for categories the user did not select.
+
+    Entity creation is gated on the enabled set, but entities registered by a
+    previous configuration - or before this behaviour existed - would otherwise
+    linger as orphaned, unavailable entries. This runs on every setup and reload,
+    so it also cleans up a category the user deselects later.
+    """
+    disabled_prefixes = tuple(
+        f"{entry.entry_id}_{cat}_"
+        for cat in ALL_CATEGORIES
+        if (state := coordinator.get_category_state(cat)) is None or not state.enabled
+    )
+    if not disabled_prefixes:
+        return
+    registry = er.async_get(hass)
+    for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if reg_entry.unique_id.startswith(disabled_prefixes):
+            registry.async_remove(reg_entry.entity_id)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -165,6 +190,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         unregister_webhooks=webhook_manager.unregister_all,
         client=client,
     )
+
+    _prune_disabled_category_entities(hass, entry, coordinator)
 
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

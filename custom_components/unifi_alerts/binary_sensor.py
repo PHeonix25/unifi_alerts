@@ -35,7 +35,7 @@ async def async_setup_entry(
     entities: list[BinarySensorEntity] = [
         UniFiCategoryBinarySensor(coordinator, entry, category)
         for category in ALL_CATEGORIES
-        if coordinator.get_category_state(category) is not None
+        if (state := coordinator.get_category_state(category)) is not None and state.enabled
     ]
     entities.append(UniFiRollupBinarySensor(coordinator, entry))
     async_add_entities(entities)

@@ -81,7 +81,7 @@ async def test_clear_buttons_created(hass, entry):
 
 @pytest.mark.integration
 async def test_options_disable_category_makes_sensor_unavailable(hass, entry, mock_unifi_client):
-    """Disabling a category via options + reload → that binary sensor is unavailable."""
+    """Disabling a category via options + reload → that binary sensor is removed."""
     uid = f"{ENTRY_ID}_{CATEGORY_NETWORK_WAN}_binary"
     eid = entity_id_for(hass, "binary_sensor", uid)
     assert hass.states.get(eid).state == "off"  # starts available
@@ -91,4 +91,4 @@ async def test_options_disable_category_makes_sensor_unavailable(hass, entry, mo
     await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert hass.states.get(eid).state == "unavailable"
+    assert hass.states.get(eid) is None  # entity is pruned, not just unavailable

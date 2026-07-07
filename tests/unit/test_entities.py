@@ -931,3 +931,144 @@ class TestTranslationKeys:
             == f"{eid}_{CATEGORY_NETWORK_WAN}_clear"
         )
         assert UniFiClearAllButton(coord, entry).unique_id == f"{eid}_clear_all"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Platform setup honours enabled flag
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestPlatformSetupHonoursEnabled:
+    """Test that entity platforms only create entities for enabled categories."""
+
+    @pytest.mark.asyncio
+    async def test_binary_sensor_setup_skips_disabled(self):
+        """Disabled categories should not create binary sensor entities."""
+        from custom_components.unifi_alerts import binary_sensor
+
+        states = {
+            CATEGORY_NETWORK_WAN: make_state(category=CATEGORY_NETWORK_WAN, enabled=True),
+            CATEGORY_SECURITY_THREAT: make_state(category=CATEGORY_SECURITY_THREAT, enabled=False),
+        }
+        coord = make_coordinator(states)
+        entry = make_entry()
+        entry.runtime_data = MagicMock(coordinator=coord)
+
+        added: list = []
+        await binary_sensor.async_setup_entry(MagicMock(), entry, lambda e: added.extend(e))
+
+        uids = [e.unique_id for e in added]
+        # enabled category present, disabled absent, aggregate present
+        assert any(CATEGORY_NETWORK_WAN in u for u in uids)
+        assert not any(CATEGORY_SECURITY_THREAT in u for u in uids)
+        assert any(u.endswith("_rollup_binary") for u in uids)
+
+    @pytest.mark.asyncio
+    async def test_sensor_setup_skips_disabled(self):
+        """Disabled categories should not create sensor entities."""
+        from custom_components.unifi_alerts import sensor
+
+        states = {
+            CATEGORY_NETWORK_WAN: make_state(category=CATEGORY_NETWORK_WAN, enabled=True),
+            CATEGORY_SECURITY_THREAT: make_state(category=CATEGORY_SECURITY_THREAT, enabled=False),
+        }
+        coord = make_coordinator(states)
+        entry = make_entry()
+        entry.runtime_data = MagicMock(coordinator=coord)
+
+        added: list = []
+        await sensor.async_setup_entry(MagicMock(), entry, lambda e: added.extend(e))
+
+        uids = [e.unique_id for e in added]
+        # enabled category present (3 entities), disabled absent, aggregate present
+        assert any(CATEGORY_NETWORK_WAN in u for u in uids)
+        assert not any(CATEGORY_SECURITY_THREAT in u for u in uids)
+        assert any(u.endswith("_rollup_count") for u in uids)
+
+    @pytest.mark.asyncio
+    async def test_event_setup_skips_disabled(self):
+        """Disabled categories should not create event entities."""
+        from custom_components.unifi_alerts import event
+
+        states = {
+            CATEGORY_NETWORK_WAN: make_state(category=CATEGORY_NETWORK_WAN, enabled=True),
+            CATEGORY_SECURITY_THREAT: make_state(category=CATEGORY_SECURITY_THREAT, enabled=False),
+        }
+        coord = make_coordinator(states)
+        entry = make_entry()
+        entry.runtime_data = MagicMock(coordinator=coord)
+
+        added: list = []
+        await event.async_setup_entry(MagicMock(), entry, lambda e: added.extend(e))
+
+        uids = [e.unique_id for e in added]
+        # enabled category present, disabled absent
+        assert any(CATEGORY_NETWORK_WAN in u for u in uids)
+        assert not any(CATEGORY_SECURITY_THREAT in u for u in uids)
+
+    @pytest.mark.asyncio
+    async def test_button_setup_skips_disabled(self):
+        """Disabled categories should not create button entities."""
+        from custom_components.unifi_alerts import button
+
+        states = {
+            CATEGORY_NETWORK_WAN: make_state(category=CATEGORY_NETWORK_WAN, enabled=True),
+            CATEGORY_SECURITY_THREAT: make_state(category=CATEGORY_SECURITY_THREAT, enabled=False),
+        }
+        coord = make_coordinator(states)
+        entry = make_entry()
+        entry.runtime_data = MagicMock(coordinator=coord)
+
+        added: list = []
+        await button.async_setup_entry(MagicMock(), entry, lambda e: added.extend(e))
+
+        uids = [e.unique_id for e in added]
+        # enabled category present, disabled absent, aggregate present
+        assert any(CATEGORY_NETWORK_WAN in u for u in uids)
+        assert not any(CATEGORY_SECURITY_THREAT in u for u in uids)
+        assert any(u.endswith("_clear_all") for u in uids)
+
+    def test_prune_removes_disabled_and_keeps_enabled_and_aggregate(self):
+        """The prune function should remove only disabled-category registry entries."""
+        from unittest.mock import patch
+
+        from custom_components.unifi_alerts import _prune_disabled_category_entities
+
+        coord = make_coordinator(
+            {
+                CATEGORY_NETWORK_WAN: make_state(category=CATEGORY_NETWORK_WAN, enabled=True),
+                CATEGORY_SECURITY_THREAT: make_state(
+                    category=CATEGORY_SECURITY_THREAT, enabled=False
+                ),
+            }
+        )
+        entry = make_entry()
+
+        def reg_entry(uid: str):
+            m = MagicMock()
+            m.unique_id = uid
+            m.entity_id = uid
+            return m
+
+        entries = [
+            reg_entry(f"{entry.entry_id}_{CATEGORY_NETWORK_WAN}_binary"),  # keep
+            reg_entry(f"{entry.entry_id}_{CATEGORY_SECURITY_THREAT}_binary"),  # remove
+            reg_entry(f"{entry.entry_id}_{CATEGORY_SECURITY_THREAT}_count"),  # remove
+            reg_entry(f"{entry.entry_id}_rollup_binary"),  # keep (aggregate)
+        ]
+        registry = MagicMock()
+        registry.async_remove = MagicMock()
+
+        import custom_components.unifi_alerts as init_mod
+
+        with (
+            patch.object(init_mod.er, "async_get", return_value=registry),
+            patch.object(init_mod.er, "async_entries_for_config_entry", return_value=entries),
+        ):
+            _prune_disabled_category_entities(MagicMock(), entry, coord)
+
+        removed = {c.args[0] for c in registry.async_remove.call_args_list}
+        assert removed == {
+            f"{entry.entry_id}_{CATEGORY_SECURITY_THREAT}_binary",
+            f"{entry.entry_id}_{CATEGORY_SECURITY_THREAT}_count",
+        }

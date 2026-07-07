@@ -35,7 +35,8 @@ async def async_setup_entry(
 
     entities: list[SensorEntity] = []
     for category in ALL_CATEGORIES:
-        if coordinator.get_category_state(category) is not None:
+        state = coordinator.get_category_state(category)
+        if state is not None and state.enabled:
             entities.append(UniFiCategoryMessageSensor(coordinator, entry, category))
             entities.append(UniFiCategoryCountSensor(coordinator, entry, category))
             entities.append(UniFiWebhookHealthSensor(coordinator, entry, category))
