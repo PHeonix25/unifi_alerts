@@ -1,0 +1,33 @@
+[
+  {
+    "name": "github-gpt-4o-mini",
+    "provider": "openai-compatible",
+    "base_url": "https://models.github.ai/inference",
+    "model": "openai/gpt-4o-mini",
+    "token_env": "GITHUB_TOKEN"
+  },
+  {
+    "name": "claude-opus-4-8",
+    "provider": "anthropic",
+    "model": "claude-opus-4-8",
+    "token_env": "ANTHROPIC_API_KEY"
+  },
+  {
+    "name": "claude-sonnet-5",
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "token_env": "ANTHROPIC_API_KEY"
+  },
+  {
+    "name": "claude-haiku-4-5",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+    "token_env": "ANTHROPIC_API_KEY"
+  },
+  {
+    "name": "claude-fable-5",
+    "provider": "anthropic",
+    "model": "claude-fable-5",
+    "token_env": "ANTHROPIC_API_KEY"
+  }
+]

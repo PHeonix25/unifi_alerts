@@ -18,9 +18,10 @@ Defaults to GitHub Models (https://docs.github.com/en/github-models) as the
 free, no-extra-secret path: in GitHub Actions the default `GITHUB_TOKEN`
 already carries `models: read`; locally, export a token with that scope as
 GITHUB_TOKEN (or pass --token). Any other OpenAI-chat-completions-compatible
-endpoint works via --base-url/--model/--token, which is what phase 2
-(cross-model validation) will loop over - this script takes one model per
-invocation on purpose, run it multiple times to compare.
+endpoint works via --base-url/--model/--token. This script takes one model
+per invocation on purpose; run_agentrc_eval_cross_model.py (phase 2) is the
+multi-model wrapper - it imports run_case()/ChatClient from here and loops
+over a configured model list, including non-OpenAI-compatible providers.
 
 Pure stdlib (urllib) - no SDK dependency, matching this repo's
 minimal-dependency preference.
@@ -37,6 +38,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 from _console import use_utf8_console
 
@@ -74,6 +76,18 @@ class CaseResult:
     plan_text: str = ""
     verdicts: list[dict[str, object]] = field(default_factory=list)
     error: str | None = None
+
+
+class ChatClient(Protocol):
+    """Structural interface run_case() needs from any model client.
+
+    scripts/run_agentrc_eval_cross_model.py (phase 2) plugs in other
+    providers (e.g. Anthropic's Messages API) that satisfy this shape
+    without inheriting from ModelClient - run_case() only ever calls
+    .complete(), so any object with that method works.
+    """
+
+    def complete(self, system_prompt: str, user_prompt: str) -> str: ...
 
 
 class ModelClient:
@@ -128,8 +142,19 @@ def _extract_json_array(text: str) -> list[dict[str, object]] | None:
     return parsed if isinstance(parsed, list) else None
 
 
+def load_eval_data() -> tuple[str, list[dict[str, object]]]:
+    """Return (instructions text, cases) loaded from agentrc.eval.json.
+
+    Shared by both the single-model (this script) and cross-model
+    (run_agentrc_eval_cross_model.py) entry points.
+    """
+    data = json.loads(EVAL_FILE.read_text(encoding="utf-8"))
+    instructions = (REPO_ROOT / data["instructionFile"]).read_text(encoding="utf-8")
+    return instructions, data["cases"]
+
+
 def run_case(
-    client: ModelClient, case: dict[str, object], instructions: str
+    client: ChatClient, case: dict[str, object], instructions: str
 ) -> CaseResult:
     """Run one case: generate a plan, then grade it against its checklist."""
     case_id = str(case["id"])
@@ -248,9 +273,7 @@ def main() -> int:
         )
         return 1
 
-    data = json.loads(EVAL_FILE.read_text(encoding="utf-8"))
-    instructions = (REPO_ROOT / data["instructionFile"]).read_text(encoding="utf-8")
-    cases = data["cases"]
+    instructions, cases = load_eval_data()
     if args.case:
         cases = [c for c in cases if c["id"] == args.case]
         if not cases:

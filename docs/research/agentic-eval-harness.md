@@ -169,10 +169,34 @@ This phase also resolved case-1's semantic-staleness problem (see "Where things 
 now asks for a per-category configurable dedup window - a real, currently-unimplemented gap in the
 shipped dedup design - instead of a scenario the codebase had already outgrown.
 
-**Phase 2 - cross-model validation.** Extend phase 1 to loop over a configured model list
-(GitHub Models for the default/free path, named-model secrets for Claude/others), run each case
-per model, and report agreement/disagreement. Scheduled (e.g. weekly), not per-PR, per the cost
-argument in Q5.
+**Phase 2 - cross-model validation (done).** `scripts/run_agentrc_eval_cross_model.py` wraps phase
+1: it imports `run_case()`/`ChatClient`/`load_eval_data()` from `run_agentrc_eval.py` rather than
+duplicating them, loops over the model list in `scripts/agentrc_eval_models.json` (plain JSON - one
+line per model, no script/workflow edit needed to add or remove one), and runs every case against
+every model that has a credential available. The default list has five entries: GitHub Models'
+`openai/gpt-4o-mini` (ambient `GITHUB_TOKEN`, no extra secret) plus four Anthropic models - Opus
+4.8, Sonnet 5, Haiku 4.5, Fable 5 - all sharing one `ANTHROPIC_API_KEY` repo secret (one secret per
+*provider*, not per model, per Q5). A model whose `token_env` isn't set is skipped with a stderr
+warning, never a hard failure - a missing/expired credential for one provider doesn't block the
+rest of the comparison (Q5's skip-not-fail requirement). Output: per-`(case, model)` raw plan and
+verdicts (`.agentrc-eval-out/cross-model/<case-id>__<model-name>.md`), plus a `comparison.md`
+report with a per-case checklist x model matrix and a disagreement count per case - a checklist
+item where models don't unanimously agree is flagged, which is the actual cross-model signal (Q3's
+warning that a single judge's consistency isn't validity; seeing several models diverge on the same
+item is a much stronger "this plan is ambiguous here" signal than one model's opinion).
+
+Wired into `.github/workflows/agentrc-eval-cross-model.yml`: `workflow_dispatch` (optional
+`case`/`models` inputs) plus a weekly `schedule` (Monday 06:00 UTC), never on push/PR. Same
+`models: read` permission as phase 1's workflow; `ANTHROPIC_API_KEY` is read from secrets only if
+present - nothing to configure if it isn't (the run just skips those four models and reports on
+GitHub Models alone).
+
+**Gotcha that affects both phase 1 and phase 2's workflows:** `workflow_dispatch` and `schedule`
+triggers only fire for a workflow file that exists on the repository's default branch - `main`
+here, not `dev`. Both `agentrc-eval.yml` and `agentrc-eval-cross-model.yml` will sit inert (not
+listed in the Actions tab, cron silently not firing) until the next `dev -> main` stable release
+carries them across. Until then, run either script locally - same code path, same output format,
+just on your own machine instead of a runner.
 
 **Phase 3 - advisory CI quality score.** Wire a cheap single-model pass-rate check into PR CI
 (non-blocking, PR-comment + step-summary output only, per Q4's composite table). Only after
@@ -187,8 +211,10 @@ rate. No branch-protection requirement without an explicit follow-up decision.
 - **Model drift.** A case that passes today may fail after a model version bump with no code
   change on our side - the harness needs to tolerate (and report, not alarm on) that rather than
   reading it as a regression.
-- **Secret sprawl.** Each named model in Q5 is a new repo secret; needs a documented rotation/removal
-  process before phase 2, not after.
+- **Secret sprawl.** Phase 2 landed with exactly one new secret (`ANTHROPIC_API_KEY`, shared by all
+  four Claude entries) rather than one per model, which keeps this manageable for now - but adding
+  a second non-Anthropic named provider means a second secret, and there's still no documented
+  rotation/removal process for any of them.
 - **Who maintains the rubric?** Resolved in phase 1: checklist authoring is now part of "add a
   case" (`AGENTS.md`). It's still manual, human work per case and doesn't scale automatically -
   worth revisiting if the case count grows well past five.
@@ -203,10 +229,10 @@ rate. No branch-protection requirement without an explicit follow-up decision.
 
 ## Suggested follow-up issues
 
-1. **Phase 2: cross-model comparison** (model list config, GitHub Models default path, named-model
-   secrets, scheduled `workflow_dispatch`/weekly trigger, skip-not-fail on provider errors).
-2. **Phase 3: advisory quality-score CI job** (PR comment + step-summary composite table per Q4;
+1. **Phase 3: advisory quality-score CI job** (PR comment + step-summary composite table per Q4;
    explicitly non-blocking; revisit branch-protection only as a separate, later decision).
-3. **Judge reliability check** - run phase 1's harness 3-5x against a fixed case/model pair and
+2. **Judge reliability check** - run phase 1's harness 3-5x against a fixed case/model pair and
    measure verdict agreement, per Q3's reliability recommendation; currently undocumented in
    practice, only in principle.
+3. **Secret rotation/removal process** for `ANTHROPIC_API_KEY` and any future named-provider
+   secrets phase 2 accumulates (see "Secret sprawl" above) - currently undocumented.

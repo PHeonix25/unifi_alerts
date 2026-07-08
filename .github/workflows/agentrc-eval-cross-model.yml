@@ -1,0 +1,63 @@
+name: Agentrc Eval Harness (cross-model)
+
+# Phase 2 of the agentic-eval-harness plan (docs/research/agentic-eval-harness.md,
+# #287). Runs scripts/run_agentrc_eval_cross_model.py: every case against every
+# model in scripts/agentrc_eval_models.json, then uploads the per-model plans,
+# verdicts, and a comparison report as a build artifact.
+#
+# Scheduled weekly, not per-PR - N models x 5 cases x 2 calls (plan + judge)
+# per case adds up fast if it ran on every push. Advisory: never gates a PR.
+#
+# Secrets: the GitHub Models entry in the default model list needs no extra
+# secret (ambient GITHUB_TOKEN, `models: read`). The Anthropic entries need a
+# repo secret named ANTHROPIC_API_KEY; if it isn't set, those models are
+# skipped with a warning rather than failing the run (see
+# scripts/run_agentrc_eval_cross_model.py's skip-not-fail handling).
+#
+# Note: like any workflow_dispatch/schedule trigger, this only actually fires
+# once the workflow file is on the repository's default branch (main) - not
+# while it lives only on dev. It will start firing at the next dev -> main
+# release; until then, run it locally.
+
+on:
+  workflow_dispatch:
+    inputs:
+      case:
+        description: "Only run this case id (e.g. case-1); leave blank for all cases"
+        required: false
+        default: ""
+      models:
+        description: "Comma-separated model names to restrict to; leave blank for all configured models"
+        required: false
+        default: ""
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  run-eval:
+    name: Run agentrc.eval.json across configured models
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3
+        with:
+          python-version: "3.14"
+
+      - name: Run cross-model harness
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python scripts/run_agentrc_eval_cross_model.py \
+            ${{ inputs.case && format('--case {0}', inputs.case) || '' }} \
+            ${{ inputs.models && format('--models {0}', inputs.models) || '' }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: agentrc-eval-cross-model-results
+          path: .agentrc-eval-out/cross-model/
+          retention-days: 30
