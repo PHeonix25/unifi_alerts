@@ -48,7 +48,7 @@ version it like any other file in `custom_components/`, and let `scripts/check_a
 | **microsoft/agentrc** | CLI that generates + measures agent instruction files | Experimental, "expect breaking changes" | Low - we'd be adopting a moving target to maintain one JSON file | Medium - proprietary schema, Microsoft roadmap |
 | **githubnext/agentics** | Sample pack of workflows built on gh-aw (issue triage, CI doctor, repo assist) | Research demonstrator from GitHub Next, actively developed | Low for our narrow need - these are general repo-maintenance bots, not a plan-scoring harness | High - built specifically for gh-aw's frontmatter format |
 | **GitHub Agentic Workflows (gh-aw)** | `gh` CLI extension: author agents as Markdown + YAML frontmatter, compiled to a `.lock.yml` GitHub Actions workflow | Public Preview as of June 2026 ("may change significantly") | Medium - genuinely well-engineered for *running* agents in CI (auto SHA-pins actions, runs actionlint/zizmor/poutine, sandboxes the agent behind an egress firewall), but it's a new authoring format, a new CLI dependency, and a new artifact type (`.lock.yml`) layered on top of the workflows we already hand-write | High - Markdown-frontmatter DSL, compiled output, GitHub-specific |
-| **Native GitHub (Actions + GitHub Models)** | Plain workflow calling the GitHub Models inference API with `GITHUB_TOKEN` (`models: read` scope, free tier) | Stable, no extra CLI | High - it's just an HTTP call from a workflow step, no new DSL, keeps the repo's existing "hand-written YAML, SHA-pinned" convention | Low - swappable for any HTTP-based model API |
+| **Native GitHub (Actions + GitHub Models)** | Plain workflow calling the GitHub Models inference API with `GITHUB_TOKEN` (`models: read` scope, free tier) | **Retiring 2026-07-30** (announced after this row was written - closed to new customers June 2026; see the risk entry below) | High while it lasted - it's just an HTTP call from a workflow step, no new DSL, keeps the repo's existing "hand-written YAML, SHA-pinned" convention. The *pattern* (plain HTTP call, no SDK) outlives the specific service - `ModelClient` in `scripts/run_agentrc_eval.py` works against any OpenAI-chat-completions-compatible endpoint, not just this one | Low - swappable for any HTTP-based model API, which is exactly what has to happen now |
 
 Recommendation: **build the harness as a plain Python script under `scripts/`, called from a
 hand-written, SHA-pinned GitHub Actions workflow, calling model APIs directly over HTTP** (GitHub
@@ -117,8 +117,11 @@ deterministic in the same way, so it earns "advisory" status for longer, possibl
 - **Default/cheap path:** GitHub Models via the workflow's own `GITHUB_TOKEN` (`models: read`
   scope is available with no extra secret). Free tier is rate-limited (roughly 10 RPM, tens to
   ~150 RPD depending on model tier) - fine for 5 cases run occasionally, not for running on every
-  PR against multiple models.
-- **Named-model path (Claude Opus 4.8 / Sonnet 5 / Haiku 4.5 / Fable 5, and any non-Anthropic
+  PR against multiple models. **Superseded: GitHub Models retires 2026-07-30** (see the risk entry
+  below) - this stops being available at all, not just rate-limited, within weeks of this being
+  written. Kept here as the historical rationale for the original design; a replacement default
+  hasn't been chosen yet.
+- **Named-model path (Claude Opus 4.8 / Sonnet 5 / Haiku 4.5, and any non-Anthropic
   model the maintainer wants in the comparison):** one repo secret per provider
   (`ANTHROPIC_API_KEY`, etc.), injected only into the harness job, never logged. Keep the model
   list in a small config (JSON or a constants module under `scripts/`) so adding/removing a model
@@ -169,10 +172,44 @@ This phase also resolved case-1's semantic-staleness problem (see "Where things 
 now asks for a per-category configurable dedup window - a real, currently-unimplemented gap in the
 shipped dedup design - instead of a scenario the codebase had already outgrown.
 
-**Phase 2 - cross-model validation.** Extend phase 1 to loop over a configured model list
-(GitHub Models for the default/free path, named-model secrets for Claude/others), run each case
-per model, and report agreement/disagreement. Scheduled (e.g. weekly), not per-PR, per the cost
-argument in Q5.
+**Phase 2 - cross-model validation (done).** `scripts/run_agentrc_eval_cross_model.py` wraps phase
+1: it imports `run_case()`/`ChatClient`/`load_eval_data()` from `run_agentrc_eval.py` rather than
+duplicating them, loops over the model list in `scripts/agentrc_eval_models.json` (plain JSON - one
+line per model, no script/workflow edit needed to add or remove one), and runs every case against
+every model that has a credential available. The default list has four entries: GitHub Models'
+`openai/gpt-4o-mini` (ambient `GITHUB_TOKEN`, no extra secret) plus three Anthropic models - Opus
+4.8, Sonnet 5, Haiku 4.5 - sharing one `ANTHROPIC_API_KEY` repo secret (one secret per *provider*,
+not per model, per Q5). Each entry (both providers) carries its own `base_url`, so pointing a model
+at a proxy or a different region is a config change, not a code change. A model whose `token_env`
+isn't set is skipped with a stderr warning, never a hard failure - a missing/expired credential for
+one provider doesn't block the rest of the comparison (Q5's skip-not-fail requirement). Output:
+per-`(case, model)` raw plan and verdicts
+(`.agentrc-eval-out/cross-model/<case-id>__<model-name>.md`), plus a `comparison.md` report with a
+per-case checklist x model matrix and a disagreement count per case - a checklist item where models
+don't unanimously agree is flagged, which is the actual cross-model signal (Q3's warning that a
+single judge's consistency isn't validity; seeing several models diverge on the same item is a much
+stronger "this plan is ambiguous here" signal than one model's opinion).
+
+Wired into `.github/workflows/agentrc-eval-cross-model.yml`: `workflow_dispatch` (optional
+`case`/`models` inputs) only for now - the weekly `schedule` this was designed for is commented out
+in the workflow pending a decision on run cadence/cost, never on push/PR either way. Same
+`models: read` permission as phase 1's workflow; `ANTHROPIC_API_KEY` is read from secrets only if
+present - nothing to configure if it isn't (the run just skips those three models and reports on
+GitHub Models alone).
+
+**GitHub Models is being retired 2026-07-30** (announced after this phase's initial implementation
+- confirmed via GitHub's changelog, closed to new customers June 2026, brownouts July 16/23). This
+breaks the "free, no-extra-secret default path" premise this phase (and phase 1) were built on: the
+`github-gpt-4o-mini` entry, `run_agentrc_eval.py`'s own defaults, and both harness workflows'
+`models: read` permission all assume an inference API that stops existing within the month. Not yet
+resolved here - see the risk entry and follow-up below.
+
+**Gotcha that affects both phase 1 and phase 2's workflows:** `workflow_dispatch` and `schedule`
+triggers only fire for a workflow file that exists on the repository's default branch - `main`
+here, not `dev`. Both `agentrc-eval.yml` and `agentrc-eval-cross-model.yml` will sit inert (not
+listed in the Actions tab, cron silently not firing) until the next `dev -> main` stable release
+carries them across. Until then, run either script locally - same code path, same output format,
+just on your own machine instead of a runner.
 
 **Phase 3 - advisory CI quality score.** Wire a cheap single-model pass-rate check into PR CI
 (non-blocking, PR-comment + step-summary output only, per Q4's composite table). Only after
@@ -181,14 +218,24 @@ rate. No branch-protection requirement without an explicit follow-up decision.
 
 ## Risks / open questions
 
+- **GitHub Models retires 2026-07-30.** The single biggest open item: the "no extra secret" default
+  path both phases were built around stops working within weeks of this being written. Options -
+  pick a new no-secret default (there may not be one), make a named-provider entry (e.g.
+  `claude-haiku-4-5`, already cheapest of the three configured) the default instead and accept that
+  phase 1's zero-secret pitch no longer holds, or drop the "free default" framing from Q2/Q5
+  entirely and document that a secret is now always required. Needs a decision before phase 3 (or
+  any real usage) - not resolved in this phase; tracked as
+  [#319](https://github.com/PHeonix25/unifi_alerts/issues/319).
 - **LLM-judge cost creep.** Even "advisory" CI can quietly become expensive if scope grows past
   5 cases or per-PR triggering happens by accident. Keep phase 3 scheduled/opt-in until proven
   cheap.
 - **Model drift.** A case that passes today may fail after a model version bump with no code
   change on our side - the harness needs to tolerate (and report, not alarm on) that rather than
   reading it as a regression.
-- **Secret sprawl.** Each named model in Q5 is a new repo secret; needs a documented rotation/removal
-  process before phase 2, not after.
+- **Secret sprawl.** Phase 2 landed with exactly one new secret (`ANTHROPIC_API_KEY`, shared by all
+  four Claude entries) rather than one per model, which keeps this manageable for now - but adding
+  a second non-Anthropic named provider means a second secret, and there's still no documented
+  rotation/removal process for any of them.
 - **Who maintains the rubric?** Resolved in phase 1: checklist authoring is now part of "add a
   case" (`AGENTS.md`). It's still manual, human work per case and doesn't scale automatically -
   worth revisiting if the case count grows well past five.
@@ -203,10 +250,17 @@ rate. No branch-protection requirement without an explicit follow-up decision.
 
 ## Suggested follow-up issues
 
-1. **Phase 2: cross-model comparison** (model list config, GitHub Models default path, named-model
-   secrets, scheduled `workflow_dispatch`/weekly trigger, skip-not-fail on provider errors).
+1. **Replace the GitHub Models default path before 2026-07-30** - filed as
+   [#319](https://github.com/PHeonix25/unifi_alerts/issues/319). Decide the new default (see the
+   risk above), update `run_agentrc_eval.py`'s `DEFAULT_BASE_URL`/`DEFAULT_MODEL`,
+   `scripts/agentrc_eval_models.json`, both workflows' `models: read` permission, and the Q2/Q5
+   "no extra secret" framing in this document. Time-sensitive - the brownouts start 2026-07-16.
 2. **Phase 3: advisory quality-score CI job** (PR comment + step-summary composite table per Q4;
    explicitly non-blocking; revisit branch-protection only as a separate, later decision).
 3. **Judge reliability check** - run phase 1's harness 3-5x against a fixed case/model pair and
    measure verdict agreement, per Q3's reliability recommendation; currently undocumented in
    practice, only in principle.
+4. **Secret rotation/removal process** for `ANTHROPIC_API_KEY` and any future named-provider
+   secrets phase 2 accumulates (see "Secret sprawl" above) - currently undocumented.
+5. **Reintroduce the weekly `schedule` trigger** in `agentrc-eval-cross-model.yml` (currently
+   commented out per review feedback) once the harness has proven itself worth running unattended.
