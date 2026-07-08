@@ -16,11 +16,13 @@ and `tests/unit/config_flow/test_options.py` was split into three files - the ex
 #287 predicted. Phase 0 below (already implemented on this branch) fixes the second drift and
 adds a mechanical guard against a third.
 
-Case-1 also has a **semantic** staleness problem a path guard cannot catch: it asks for webhook/poll
-dedup keyed on `CategoryState`, but dedup already shipped (`coordinator.py`'s `_last_push_at` dict,
-keyed on `(category, alert.key)`, not a `CategoryState` field) via #263. The case's proposed design
-no longer matches the codebase it's supposed to be evaluated against. That needs a content review,
-not a script - see Phase 1.
+Case-1 also had a **semantic** staleness problem a path guard cannot catch: it asked for webhook/poll
+dedup keyed on `CategoryState`, but dedup had already shipped (`coordinator.py`'s `_last_push_at`
+dict, keyed on `(category, alert.key)`, not a `CategoryState` field, and webhook-only - polling
+never touches `alert_count`) via #263. The case's proposed design no longer matched the codebase it
+was supposed to be evaluated against. Fixed in Phase 1 (below): case-1 now asks for a currently-true
+gap (the dedup window is a single fixed constant, not configurable per category) instead of a
+scenario that no longer applies.
 
 ## Q1: Is Microsoft AgentRC the right foundation?
 
@@ -142,13 +144,30 @@ accuracy (see case-1 above). Fixed the drifted references found during this inve
 same PR that introduces the guard, matching AGENTS.md's existing "update case text in the same
 PR" rule.
 
-**Phase 1 - local single-model harness.** A `scripts/run_agentrc_eval.py` that: loads
-`agentrc.eval.json`, sends each `prompt` (plus `CLAUDE.md`/`AGENTS.md` context) to one model in
-plan-only mode (no repo write access), and grades the response against a checklist derived from
-`expectation` (see Q3 - binary criteria, not a single score). Runs locally / on `workflow_dispatch`
-only, never blocking. Output: a per-case pass/fail table plus the raw plan text for manual review.
-This phase also forces the semantic-staleness question for case-1 - fixing the case content
-belongs here, not in phase 0.
+**Phase 1 - local single-model harness (done).** `scripts/run_agentrc_eval.py`: loads
+`agentrc.eval.json`, sends each `prompt` (plus the file named in the eval file's `instructionFile`
+field, currently `CLAUDE.md`) to one model as a single chat completion in plan-only mode (no tool
+access, so it cannot touch the repo either way), then asks the same model to grade the plan against
+that case's new `checklist` array as independent binary criteria (see Q3 - pass/fail per item, not
+one aggregate score). Writes each case's raw plan and verdicts to `.agentrc-eval-out/<case-id>.md`
+for manual review, and prints/appends a per-case pass-rate summary table
+(`$GITHUB_STEP_SUMMARY` when running in Actions). Pure stdlib (`urllib` for the HTTP call - no SDK
+dependency). Defaults to GitHub Models via the ambient `GITHUB_TOKEN` (`models: read`, no extra
+secret); `--model`/`--base-url`/`--token` point it at any other OpenAI-chat-completions-compatible
+endpoint, which is the seam phase 2 will loop over. Wired into a `workflow_dispatch`-only workflow
+(`.github/workflows/agentrc-eval.yml`) that uploads the output directory as a build artifact - never
+runs on push/PR, never blocks anything.
+
+Each case now carries a `checklist` array alongside `prompt`/`expectation` - the binary rubric Q3
+recommends, authored by hand per case. This is the rubric-authoring convention flagged as an open
+question below: **new cases must ship with a `checklist`, not prose alone** (documented in
+`AGENTS.md`). `scripts/check_agentrc_refs.py` (phase 0) does not validate the checklist field's
+presence or shape; that is left to human review when a case is added or changed, same as case
+content generally.
+
+This phase also resolved case-1's semantic-staleness problem (see "Where things stand" above): it
+now asks for a per-category configurable dedup window - a real, currently-unimplemented gap in the
+shipped dedup design - instead of a scenario the codebase had already outgrown.
 
 **Phase 2 - cross-model validation.** Extend phase 1 to loop over a configured model list
 (GitHub Models for the default/free path, named-model secrets for Claude/others), run each case
@@ -170,9 +189,13 @@ rate. No branch-protection requirement without an explicit follow-up decision.
   reading it as a regression.
 - **Secret sprawl.** Each named model in Q5 is a new repo secret; needs a documented rotation/removal
   process before phase 2, not after.
-- **Who maintains the rubric?** Splitting `expectation` prose into binary checklist items (Q3) is
-  manual, human work per case. This doesn't scale automatically as more cases are added - worth
-  deciding in phase 1 whether checklist authoring is part of "add a case" going forward.
+- **Who maintains the rubric?** Resolved in phase 1: checklist authoring is now part of "add a
+  case" (`AGENTS.md`). It's still manual, human work per case and doesn't scale automatically -
+  worth revisiting if the case count grows well past five.
+- **Judge reliability hasn't been measured yet.** Phase 1 runs the plan and the judge as two calls
+  to the same model at temperature 0, but nothing in this repo yet checks the judge's own
+  consistency (Q3's "run 3-5x and require majority agreement" is documented, not automated). Do
+  that before leaning on phase 1's output for anything beyond "does this look plausible".
 - **gh-aw re-evaluation trigger.** If GitHub Agentic Workflows exits Public Preview and the
   maintainer wants sandboxed general-purpose repo-maintenance agents (issue triage, CI doctor)
   for reasons beyond this harness, that's a separate decision from this one - don't let "we
@@ -180,12 +203,10 @@ rate. No branch-protection requirement without an explicit follow-up decision.
 
 ## Suggested follow-up issues
 
-1. **Phase 1: local single-model plan-eval harness** (`scripts/run_agentrc_eval.py` + checklist
-   rubric derived from each case's `expectation`; fix case-1's stale dedup premise in the same PR).
-2. **Phase 2: cross-model comparison** (model list config, GitHub Models default path, named-model
+1. **Phase 2: cross-model comparison** (model list config, GitHub Models default path, named-model
    secrets, scheduled `workflow_dispatch`/weekly trigger, skip-not-fail on provider errors).
-3. **Phase 3: advisory quality-score CI job** (PR comment + step-summary composite table per Q4;
+2. **Phase 3: advisory quality-score CI job** (PR comment + step-summary composite table per Q4;
    explicitly non-blocking; revisit branch-protection only as a separate, later decision).
-4. **Rubric-authoring convention** for `agentrc.eval.json` - document (in AGENTS.md, alongside the
-   existing "update case text in the same PR" rule) that new cases must ship with a binary
-   checklist, not prose alone.
+3. **Judge reliability check** - run phase 1's harness 3-5x against a fixed case/model pair and
+   measure verdict agreement, per Q3's reliability recommendation; currently undocumented in
+   practice, only in principle.
