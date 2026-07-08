@@ -75,17 +75,14 @@ jobs:
             ha_pin: ""
           # Minimum supported HA: the floor declared in hacs.json. The pinned
           # pytest-homeassistant-custom-component release must match this HA
-          # version (0.13.345 maps to homeassistant 2026.7.1). When the floor
-          # moves, bump both pins here alongside hacs.json and the README.
-          #
-          # This currently pins the same release as "latest HA" above: the
-          # Python 3.14 floor (#228) forced hacs.json's minimum forward to the
-          # first HA release actually exercised on 3.14, so there is no longer
-          # a genuinely older supported floor. The two legs will diverge again
-          # the next time requirements-dev.txt bumps without also moving
-          # hacs.json.
-          - name: minimum HA (2026.7.1)
-            ha_pin: "homeassistant==2026.7.1 pytest-homeassistant-custom-component==0.13.345"
+          # version (0.13.317 maps to homeassistant 2026.3.1) - the first
+          # PHACC/HA pairing that requires Python 3.14 (#228); HA supports
+          # only a single Python minor at a time, so this is the earliest
+          # release actually compatible with the ruff/mypy/CI 3.14 floor.
+          # When the floor moves, bump both pins here alongside hacs.json
+          # and the README.
+          - name: minimum HA (2026.3.1)
+            ha_pin: "homeassistant==2026.3.1 pytest-homeassistant-custom-component==0.13.317"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3

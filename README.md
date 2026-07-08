@@ -37,7 +37,7 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 
 ## Requirements
 
-- **Home Assistant** 2026.7 or later (requires Python 3.14)
+- **Home Assistant** 2026.3 or later (requires Python 3.14)
 - **The `webhook` component enabled** - ships with `default_config`, which almost all installs include. If you run a minimal Home Assistant configuration that hand-picks integrations instead of using `default_config`, add `webhook:` to `configuration.yaml` yourself; without it, webhook registration fails at setup. (`manifest.json` cannot declare this as a HACS dependency - see [#267](https://github.com/PHeonix25/unifi_alerts/issues/267).)
 - **UniFi OS console** - the classic self-hosted Network Application is not supported. The integration uses the `/proxy/network` API path, which is UniFi OS-only.
 - **Local network reachability** - your UniFi controller and HA must share a network. Webhook URLs are local-only and cannot be reached over Nabu Casa remote access or from cloud-hosted controllers.

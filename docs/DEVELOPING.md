@@ -146,7 +146,9 @@ The declared minimum HA version lives in three places that must always agree:
 
 `requirements-dev.txt` uses `homeassistant>=` as a soft floor only. Pip resolves the latest version satisfying `>=`, not the floor, so that line does not test the minimum on its own; the pinned CI leg does.
 
-**Policy: when the floor moves, update all three in the same PR.** Pick the new floor, find the `pytest-homeassistant-custom-component` release that maps to it (each release title on the [p-h-c-c releases page](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component/releases) names its `homeassistant version`), and update `hacs.json`, the pinned CI leg (both the `homeassistant==` and `pytest-homeassistant-custom-component==` pins), and the README together. A floor that no CI leg installs is an unverified promise, so never lower the declared floor below the version the pinned leg tests.
+**Policy: when the floor moves, update all three in the same PR**, plus the mirror in the Makefile below. Pick the new floor, find the `pytest-homeassistant-custom-component` release that maps to it (each release title on the [p-h-c-c releases page](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component/releases) names its `homeassistant version`), and update `hacs.json`, the pinned CI leg (both the `homeassistant==` and `pytest-homeassistant-custom-component==` pins), and the README together. A floor that no CI leg installs is an unverified promise, so never lower the declared floor below the version the pinned leg tests.
+
+**Validating the floor locally:** `make test-min-ha` reruns the full suite in the existing `.venv` with `homeassistant`/`pytest-homeassistant-custom-component` overridden down to the same pin as the CI minimum-HA leg (run `make setup` first if you haven't). This is the local equivalent of the "minimum HA" CI job and needs a real Python 3.14 interpreter, same as `make test`. `make test` on its own only exercises the "latest HA" leg (whatever `requirements-dev.txt` resolves).
 
 ## Branching and PRs
 

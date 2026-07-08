@@ -4,7 +4,7 @@
 
 ### Changed
 
-- Raised the tooling and CI baseline to Python 3.14 and the declared minimum supported Home Assistant version to 2026.7, matching current HA's Python floor. `DataUpdateCoordinator` now receives `config_entry` explicitly instead of a bare `entry_id` string, and SSDP discovery imports `SsdpServiceInfo` from its new `homeassistant.helpers.service_info.ssdp` location. ([#228], [#311])
+- Raised the tooling and CI baseline to Python 3.14 and the declared minimum supported Home Assistant version to 2026.3.1, the first HA release that requires Python 3.14. `DataUpdateCoordinator` now receives `config_entry` explicitly instead of a bare `entry_id` string, and SSDP discovery imports `SsdpServiceInfo` from its new `homeassistant.helpers.service_info.ssdp` location. ([#228], [#311])
 
 ### Fixed
 

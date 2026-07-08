@@ -1,4 +1,4 @@
-.PHONY: help setup setup-lint test lint typecheck validate doc-check check
+.PHONY: help setup setup-lint test test-min-ha lint typecheck validate doc-check check
 
 # OS-aware paths so the Makefile works on Windows (cmd.exe / PowerShell) as
 # well as Linux/macOS. On Windows, Python's venv puts binaries in Scripts/
@@ -25,7 +25,8 @@ help:
 	@echo "  make lint       - ruff check + format check"
 	@echo "  make typecheck  - mypy"
 	@echo "  make validate   - HACS manifest preflight + docs prose linter"
-	@echo "  make test       - full pytest suite with coverage (fail below 95%)"
+	@echo "  make test       - full pytest suite with coverage (fail below 95%), against latest HA"
+	@echo "  make test-min-ha - full pytest suite against the declared minimum HA (hacs.json floor)"
 	@echo "  make coverage   - open HTML coverage report in browser after running tests"
 
 setup:
@@ -39,6 +40,16 @@ setup-lint:
 # The whole-suite coverage gate lives here (and in the CI test job), not in
 # pytest addopts, so a targeted single-file pytest run still passes.
 test:
+	$(VENV)/pytest$(EXE) tests/ -v --cov-fail-under=95
+
+# Mirrors the "minimum HA" leg of the `test` job in .github/workflows/ci.yml:
+# overrides homeassistant + pytest-homeassistant-custom-component in the
+# existing .venv down to the declared floor (hacs.json "homeassistant"),
+# then runs the same suite against it. Requires `make setup` first. When the
+# floor moves, update this pin alongside hacs.json, the ci.yml minimum-HA
+# leg, and the README requirements section in the same PR.
+test-min-ha:
+	$(VENV)/pip$(EXE) install --quiet "homeassistant==2026.3.1" "pytest-homeassistant-custom-component==0.13.317"
 	$(VENV)/pytest$(EXE) tests/ -v --cov-fail-under=95
 
 coverage:
