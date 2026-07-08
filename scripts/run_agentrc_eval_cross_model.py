@@ -44,7 +44,11 @@ use_utf8_console()
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODELS_CONFIG = REPO_ROOT / "scripts" / "agentrc_eval_models.json"
 
-ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
+# Anthropic's request-format version, not an endpoint - this changes far less
+# often than any given entry's base_url/model, so it stays a script constant
+# rather than a per-entry config field. entry["base_url"] (host only, e.g.
+# https://api.anthropic.com) IS per-entry, mirroring the openai-compatible
+# provider's base_url field - see AnthropicClient below.
 ANTHROPIC_API_VERSION = "2023-06-01"
 ANTHROPIC_MAX_TOKENS = 4096
 
@@ -58,7 +62,8 @@ class AnthropicClient:
     without needing to import or subclass anything from that module.
     """
 
-    def __init__(self, model: str, token: str) -> None:
+    def __init__(self, base_url: str, model: str, token: str) -> None:
+        self._url = base_url.rstrip("/") + "/v1/messages"
         self._model = model
         self._token = token
 
@@ -74,7 +79,7 @@ class AnthropicClient:
             }
         ).encode("utf-8")
         request = urllib.request.Request(
-            ANTHROPIC_MESSAGES_URL,
+            self._url,
             data=body,
             method="POST",
             headers={
@@ -102,7 +107,7 @@ def _build_client(entry: dict[str, str]) -> run_agentrc_eval.ChatClient | None:
     if provider == "openai-compatible":
         return run_agentrc_eval.ModelClient(entry["base_url"], entry["model"], token)
     if provider == "anthropic":
-        return AnthropicClient(entry["model"], token)
+        return AnthropicClient(entry["base_url"], entry["model"], token)
 
     print(
         f"skipping '{name}': unknown provider '{provider}' (expected one of "

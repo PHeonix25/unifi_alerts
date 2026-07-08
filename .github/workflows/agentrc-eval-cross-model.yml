@@ -5,8 +5,10 @@ name: Agentrc Eval Harness (cross-model)
 # model in scripts/agentrc_eval_models.json, then uploads the per-model plans,
 # verdicts, and a comparison report as a build artifact.
 #
-# Scheduled weekly, not per-PR - N models x 5 cases x 2 calls (plan + judge)
-# per case adds up fast if it ran on every push. Advisory: never gates a PR.
+# Manual-only for now (schedule commented out below - reintroduce once the
+# harness has proven itself worth running unattended). N models x 5 cases x 2
+# calls (plan + judge) per case adds up fast, so keep it opt-in until then.
+# Advisory either way: never gates a PR.
 #
 # Secrets: the GitHub Models entry in the default model list needs no extra
 # secret (ambient GITHUB_TOKEN, `models: read`). The Anthropic entries need a
@@ -30,8 +32,8 @@ on:
         description: "Comma-separated model names to restrict to; leave blank for all configured models"
         required: false
         default: ""
-  schedule:
-    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+  # schedule:
+  #   - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC - reintroduce later
 
 permissions:
   contents: read

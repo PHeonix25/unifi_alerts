@@ -81,10 +81,18 @@ class CaseResult:
 class ChatClient(Protocol):
     """Structural interface run_case() needs from any model client.
 
-    scripts/run_agentrc_eval_cross_model.py (phase 2) plugs in other
-    providers (e.g. Anthropic's Messages API) that satisfy this shape
-    without inheriting from ModelClient - run_case() only ever calls
-    .complete(), so any object with that method works.
+    This is a typing.Protocol, not a base class - nothing inherits from it
+    and it is never instantiated, so the `...` body below is correct and
+    complete, not a stub someone forgot to fill in. It exists purely so
+    run_case()'s `client` parameter documents what it actually calls
+    (`.complete()`) without forcing every provider to subclass one type.
+    ModelClient (below) and run_agentrc_eval_cross_model.py's AnthropicClient
+    (a different wire format - Anthropic's Messages API, not OpenAI chat
+    completions) both satisfy this just by having a matching method; mypy
+    checks that structurally wherever this type hint is used, but note
+    scripts/ isn't in this repo's mypy scope (pyproject.toml's [tool.mypy]
+    only covers custom_components/unifi_alerts), so nothing enforces it here
+    today - it's documentation-as-code, not a hard guarantee.
     """
 
     def complete(self, system_prompt: str, user_prompt: str) -> str: ...
