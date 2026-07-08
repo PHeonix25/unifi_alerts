@@ -224,7 +224,8 @@ rate. No branch-protection requirement without an explicit follow-up decision.
   `claude-haiku-4-5`, already cheapest of the three configured) the default instead and accept that
   phase 1's zero-secret pitch no longer holds, or drop the "free default" framing from Q2/Q5
   entirely and document that a secret is now always required. Needs a decision before phase 3 (or
-  any real usage) - not resolved in this phase.
+  any real usage) - not resolved in this phase; tracked as
+  [#319](https://github.com/PHeonix25/unifi_alerts/issues/319).
 - **LLM-judge cost creep.** Even "advisory" CI can quietly become expensive if scope grows past
   5 cases or per-PR triggering happens by accident. Keep phase 3 scheduled/opt-in until proven
   cheap.
@@ -249,7 +250,8 @@ rate. No branch-protection requirement without an explicit follow-up decision.
 
 ## Suggested follow-up issues
 
-1. **Replace the GitHub Models default path before 2026-07-30** - decide the new default (see the
+1. **Replace the GitHub Models default path before 2026-07-30** - filed as
+   [#319](https://github.com/PHeonix25/unifi_alerts/issues/319). Decide the new default (see the
    risk above), update `run_agentrc_eval.py`'s `DEFAULT_BASE_URL`/`DEFAULT_MODEL`,
    `scripts/agentrc_eval_models.json`, both workflows' `models: read` permission, and the Q2/Q5
    "no extra secret" framing in this document. Time-sensitive - the brownouts start 2026-07-16.
