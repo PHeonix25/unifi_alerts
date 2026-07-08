@@ -35,7 +35,8 @@ def make_coordinator(hass: MagicMock | None = None, enabled: list[str] | None = 
         CONF_POLL_INTERVAL: 60,
         CONF_CLEAR_TIMEOUT: 30,
     }
-    coord = UniFiAlertsCoordinator(hass, client, config)
+    config_entry = MagicMock(entry_id="test-entry")
+    coord = UniFiAlertsCoordinator(hass, client, config, config_entry)
     # Persistence is exercised in dedicated tests; default to a mock Store so
     # push_alert's debounced async_delay_save is a harmless no-op here (the
     # real Store needs a live event loop the MagicMock hass does not provide).
@@ -100,6 +101,7 @@ def make_full_coordinator(hass: MagicMock, client: MagicMock) -> UniFiAlertsCoor
         CONF_POLL_INTERVAL: 60,
         CONF_CLEAR_TIMEOUT: 30,
     }
-    coord = UniFiAlertsCoordinator(hass, client, config)
+    config_entry = MagicMock(entry_id="test-entry")
+    coord = UniFiAlertsCoordinator(hass, client, config, config_entry)
     coord.async_set_updated_data = MagicMock()
     return coord

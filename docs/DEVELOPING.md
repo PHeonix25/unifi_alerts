@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Python 3.12 or newer
+- Python 3.14 or newer
 - Git
 
 ## Local setup
@@ -11,14 +11,14 @@
 git clone https://github.com/PHeonix25/unifi_alerts
 cd unifi_alerts
 git config core.hooksPath .githooks   # enable the pre-push gate
-make setup                             # python3.12 -m venv .venv + pip install -r requirements-dev.txt
+make setup                             # python3.14 -m venv .venv + pip install -r requirements-dev.txt
 ```
 
 `requirements-dev.txt` is the single source of truth for dev dependencies; both CI jobs install from the same file.
 
 ## Agent session bootstrap
 
-AI coding agents start from a cold container each session. Before any test can run, the `.venv` (Home Assistant plus the full test stack, roughly 200 packages) has to be installed via `make setup`. Each agent surface provisions that environment through its own entry point, and all three run the identical `python3.12 -m venv .venv` + `pip install -r requirements-dev.txt` sequence so every surface matches CI:
+AI coding agents start from a cold container each session. Before any test can run, the `.venv` (Home Assistant plus the full test stack, roughly 200 packages) has to be installed via `make setup`. Each agent surface provisions that environment through its own entry point, and all three run the identical `python3.14 -m venv .venv` + `pip install -r requirements-dev.txt` sequence so every surface matches CI:
 
 | Surface | Entry point | Behaviour |
 |---|---|---|

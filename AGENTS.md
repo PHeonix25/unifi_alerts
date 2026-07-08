@@ -35,7 +35,7 @@ Two data paths run in parallel:
 <!-- shared:stack -->
 | Layer | Tool |
 | ----- | ---- |
-| Language | Python 3.12+ |
+| Language | Python 3.14+ |
 | Async HTTP | `aiohttp` |
 | Lint + format | `ruff` |
 | Type checking | `mypy` (strict) |

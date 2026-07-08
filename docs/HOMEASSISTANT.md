@@ -4,7 +4,7 @@ Reference for Home Assistant-specific patterns used in this integration. Consult
 
 ## Minimum supported version
 
-**Home Assistant 2025.1** (requires Python 3.12), enforced by `hacs.json` and the pinned minimum-version CI leg. `ConfigEntry.runtime_data` (introduced in HA 2024.2), `ConfigFlowResult` return type annotation, and `Platform` enum usage require this version or newer. See `docs/DEVELOPING.md` § "Minimum supported Home Assistant version" for how the floor is kept in sync across `hacs.json`, CI, and the README.
+**Home Assistant 2026.7** (requires Python 3.14), enforced by `hacs.json` and the pinned minimum-version CI leg. `ConfigEntry.runtime_data` (introduced in HA 2024.2), `ConfigFlowResult` return type annotation, and `Platform` enum usage require this version or newer. See `docs/DEVELOPING.md` § "Minimum supported Home Assistant version" for how the floor is kept in sync across `hacs.json`, CI, and the README.
 
 ## Config entries
 

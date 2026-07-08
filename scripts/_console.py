@@ -29,7 +29,7 @@ def use_utf8_console() -> None:
     """Reconfigure sys.stdout and sys.stderr to UTF-8 if possible.
 
     `TextIOWrapper.reconfigure` is available on Python 3.7+; this project
-    floors at 3.12 so the `hasattr` guard is purely defensive (covers
+    floors at 3.14 so the `hasattr` guard is purely defensive (covers
     streams that have already been replaced with non-TextIOWrapper
     objects, e.g. by a test harness or a CI runner).
     """

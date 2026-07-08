@@ -6,8 +6,8 @@ import contextlib
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.components import ssdp
 from homeassistant.data_entry_flow import AbortFlow
+from homeassistant.helpers.service_info import ssdp
 
 from .conftest import make_flow
 

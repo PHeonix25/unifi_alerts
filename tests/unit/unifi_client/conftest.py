@@ -62,7 +62,7 @@ def make_client(config: dict | None = None) -> UniFiClient:
 
 
 @pytest.fixture(autouse=True)
-async def _close_client_sessions() -> Generator[None, None, None]:
+async def _close_client_sessions() -> Generator[None]:
     """Close every aiohttp.ClientSession created via make_client() this test."""
     yield
     while _created_sessions:
