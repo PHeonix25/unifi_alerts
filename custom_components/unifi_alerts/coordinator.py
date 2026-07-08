@@ -31,7 +31,7 @@ from .const import (
     STORAGE_VERSION_WATERMARKS,
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
-from .models import CategoryState, UniFiAlert, UniFiClientConfig
+from .models import CategoryState, UniFiAlert, UniFiClientConfig, ensure_aware
 from .unifi_auth import CannotConnectError, InvalidAuthError
 from .unifi_client import UniFiClient
 
@@ -195,7 +195,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         """
         if not alerts:
             return
-        newest_seen = max(a.received_at for a in alerts)
+        newest_seen = max(ensure_aware(a.received_at) for a in alerts)
         if state.last_alarm_received_at is None or newest_seen > state.last_alarm_received_at:
             state.last_alarm_received_at = newest_seen
 

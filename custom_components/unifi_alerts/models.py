@@ -42,6 +42,17 @@ class UniFiClientConfig(TypedDict, total=False):
     site: str
 
 
+def ensure_aware(dt: datetime) -> datetime:
+    """Treat a naive datetime as UTC.
+
+    Real alarms are always tz-aware (`from_api_alarm`, `from_system_log_event`,
+    and `from_webhook_payload` all stamp UTC-aware timestamps); this only
+    guards the `last_alarm_received_at` comparisons against a naive value
+    slipping in (e.g. from a test fixture) and raising on `>` comparison.
+    """
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
 def _render_message_raw(message_raw: str, parameters: dict[str, Any]) -> str:
     """Substitute {KEY} placeholders in message_raw with values from parameters.
 
@@ -286,8 +297,9 @@ class CategoryState:
         self.is_alerting = True
         self.last_alert = alert
         self.alert_count += 1
-        if self.last_alarm_received_at is None or alert.received_at > self.last_alarm_received_at:
-            self.last_alarm_received_at = alert.received_at
+        received_at = ensure_aware(alert.received_at)
+        if self.last_alarm_received_at is None or received_at > self.last_alarm_received_at:
+            self.last_alarm_received_at = received_at
 
     def clear(self) -> None:
         """Acknowledge everything seen so far for this category.

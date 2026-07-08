@@ -19,7 +19,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.unifi_alerts.const import CATEGORY_NETWORK_WAN
-from custom_components.unifi_alerts.models import UniFiAlert
+from custom_components.unifi_alerts.coordinator import UniFiAlertsCoordinator
+from custom_components.unifi_alerts.models import CategoryState, UniFiAlert
 
 from .conftest import make_alert, make_coordinator, make_full_coordinator, make_hass_and_client
 
@@ -135,3 +136,65 @@ class TestClockSkewAcrossClear:
 
         state = coord.get_category_state(CATEGORY_NETWORK_WAN)
         assert state.last_cleared_at == alert.received_at
+
+    @pytest.mark.asyncio
+    async def test_naive_polled_timestamp_does_not_crash_watermark_tracking(self):
+        """A naive (tz-less) ``received_at`` from a polled alarm must not raise
+        when compared against an already-aware ``last_alarm_received_at``.
+
+        Regression: production alarms are always tz-aware, but polling after
+        an already-alerting webhook push exercised a bare `>` comparison
+        between whatever the poll returned and the webhook-derived (aware)
+        watermark source, raising ``TypeError: can't compare offset-naive and
+        offset-aware datetimes`` if the two ever disagreed on tzinfo.
+        """
+        hass, client = make_hass_and_client()
+        naive_alert = UniFiAlert(
+            category=CATEGORY_NETWORK_WAN,
+            message="naive timestamp",
+            received_at=datetime(2024, 1, 1, 10, 0),  # no tzinfo
+        )
+        client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: [naive_alert]})
+        coord = make_full_coordinator(hass, client)
+
+        webhook_alert = make_alert(CATEGORY_NETWORK_WAN, "webhook alert")
+        coord.push_alert(CATEGORY_NETWORK_WAN, webhook_alert)
+
+        # Must not raise.
+        await coord._async_update_data()
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.last_alarm_received_at == webhook_alert.received_at
+
+
+class TestWatermarkSourceEdgeCases:
+    """Direct coverage of the branches that only trigger on out-of-order timestamps."""
+
+    def test_apply_alert_does_not_regress_last_alarm_received_at_on_older_alert(self):
+        """A later-arriving alert with an older received_at must not move
+        last_alarm_received_at backwards."""
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        newer = UniFiAlert(
+            category=CATEGORY_NETWORK_WAN,
+            message="newer",
+            received_at=datetime(2024, 6, 1, 12, 0, tzinfo=UTC),
+        )
+        older = UniFiAlert(
+            category=CATEGORY_NETWORK_WAN,
+            message="older",
+            received_at=datetime(2024, 6, 1, 11, 0, tzinfo=UTC),
+        )
+
+        state.apply_alert(newer)
+        state.apply_alert(older)
+
+        assert state.last_alarm_received_at == newer.received_at
+
+    def test_track_newest_seen_noop_on_empty_alerts(self):
+        """_track_newest_seen must leave last_alarm_received_at untouched
+        when handed an empty alert list."""
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+
+        UniFiAlertsCoordinator._track_newest_seen(state, [])
+
+        assert state.last_alarm_received_at is None
