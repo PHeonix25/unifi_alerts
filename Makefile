@@ -69,10 +69,12 @@ typecheck:
 validate:
 	$(PY314) scripts/validate_hacs.py
 	$(PY314) scripts/validate_docs.py
+	$(PY314) scripts/check_agentrc_refs.py
 
 doc-check:
 	$(PY314) scripts/validate_docs.py
 	$(PY314) scripts/check_translations.py
+	$(PY314) scripts/check_agentrc_refs.py
 
 check: lint typecheck validate test
 	@echo All checks passed.

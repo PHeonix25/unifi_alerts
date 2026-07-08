@@ -33,6 +33,8 @@ jobs:
         run: python scripts/validate_hacs.py
       - name: Run docs prose checks
         run: python scripts/validate_docs.py
+      - name: Check agentrc.eval.json file references
+        run: python scripts/check_agentrc_refs.py
 
   hacs:
     name: Validate with HACS Action
