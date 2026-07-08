@@ -208,16 +208,17 @@ All data stays on your local network; the integration does not communicate with 
 
 ## Contributing
 
-Issues and PRs welcome. The full developer guide lives in [docs/DEVELOPING.md](docs/DEVELOPING.md): local setup, running checks, the CI pipeline, branching strategy, and release process.
+Issues and pull requests welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, branch rules, and PR requirements. We are committed to maintaining a respectful community - see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
-A short tour of the rest of the documentation:
+For deeper dives:
 
-| Document | When to read |
+| Document | Purpose |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the modules fit together |
-| [docs/HOMEASSISTANT.md](docs/HOMEASSISTANT.md) | HA-specific patterns: coordinators, entities, config flow |
-| [docs/UNIFI.md](docs/UNIFI.md) | UniFi API, auth methods, alarm payload taxonomy |
+| [docs/DEVELOPING.md](docs/DEVELOPING.md) | Full developer guide: setup, CI overview, branching strategy, release process |
 | [docs/TESTING.md](docs/TESTING.md) | Test layout and conventions |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the modules fit together |
+| [docs/HOMEASSISTANT.md](docs/HOMEASSISTANT.md) | Home Assistant specific patterns |
+| [docs/UNIFI.md](docs/UNIFI.md) | UniFi API and alarm payload taxonomy |
 | [docs/REPO_LAYOUT.md](docs/REPO_LAYOUT.md) | Per-file responsibilities |
-| [docs/LOCALISATION.md](docs/LOCALISATION.md) | Localisation maturity bar, audit history, and how to contribute a new language |
+| [docs/LOCALISATION.md](docs/LOCALISATION.md) | Contributing a new language |
 | [CLAUDE.md](CLAUDE.md) | Non-negotiable constraints and coding conventions |
