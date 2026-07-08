@@ -16,6 +16,7 @@ This is the primary context file for Claude Code. Read this first, then follow t
 | `docs/UNIFI.md` | Understand the UniFi API, auth methods, alarm payloads, and event key taxonomy |
 | `docs/TESTING.md` | Run, write, or extend tests |
 | `docs/DEVELOPING.md` | Set up a local dev environment, run tests, contribute changes |
+| `docs/AGENTIC_EVAL_HARNESS.md` | Understand the plan for `agentrc.eval.json`: recommendation vs. Microsoft AgentRC/githubnext/agentics/gh-aw, the phased harness/quality-score design, and the mechanical guard already in place ([#287](https://github.com/PHeonix25/unifi_alerts/issues/287)). |
 | GitHub Issues | Find the outstanding-work backlog. Work is tracked in Issues (filter by milestone, sort by `priority:`, pick by `size:`), not in a file. `docs/TODO.md` is a pointer that documents the label and milestone taxonomy. Historical record lives in `docs/HISTORY.md`; per-release plan lives in `docs/ROADMAP.md`. |
 | `docs/ROADMAP.md` | See what's planned next per release (v1.8.0, v1.9.0, v2.0.0). Open items only; completed releases are removed once they ship. |
 | `docs/RELEASING.md` | Cut a release or bump a version: the two-branch model, version formats, the pre-release/stable/next-cycle workflow, the merge-commit-vs-squash rationale, the no-sync-merge note, tag-convention reminder, CI enforcement, and branch protection. |

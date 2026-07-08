@@ -94,7 +94,7 @@ scripts/                          # validation helpers (validate_hacs.py, check_
 agentrc.eval.json                 # agent planning-eval cases (see below)
 ```
 
-`agentrc.eval.json` holds planning-evaluation cases for agent harnesses: each case pairs a realistic task prompt with the expectations a good implementation plan must meet (files touched, constraints respected, tests updated). It is not executed by CI. If you rename a symbol or move a test file referenced in its expectations, update the case text in the same PR.
+`agentrc.eval.json` holds planning-evaluation cases for agent harnesses: each case pairs a realistic task prompt with the expectations a good implementation plan must meet (files touched, constraints respected, tests updated). The cases are not run against a model in CI yet (tracked in #287); `scripts/check_agentrc_refs.py` (wired into `make doc-check`/`make validate` and CI) only checks that file paths named in the case text still exist. If you rename a symbol or move a test file referenced in its expectations, update the case text in the same PR - the guard catches stale paths but not stale premises.
 
 ---
 
