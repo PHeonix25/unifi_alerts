@@ -12,7 +12,7 @@ import voluptuous as vol
 from homeassistant.components.webhook import async_generate_url
 
 if TYPE_CHECKING:
-    from homeassistant.components import ssdp
+    from homeassistant.helpers.service_info import ssdp
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers import issue_registry as ir

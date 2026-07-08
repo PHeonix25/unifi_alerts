@@ -9,6 +9,7 @@ from collections.abc import Coroutine
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import issue_registry as ir
@@ -60,12 +61,13 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         hass: HomeAssistant,
         client: UniFiClient,
         config: UniFiClientConfig,
-        entry_id: str = "",
+        config_entry: ConfigEntry,
     ) -> None:
         poll_interval = config.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=poll_interval),
         )
@@ -74,9 +76,9 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._clear_timeout_minutes: int = config.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT)
         self._enabled_categories: list[str] = config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         self._site: str = config.get(CONF_SITE, DEFAULT_SITE)
-        self._entry_id: str = entry_id
+        self._entry_id: str = config_entry.entry_id
         self._store: Store[dict[str, Any]] = Store(
-            hass, STORAGE_VERSION_WATERMARKS, f"{DOMAIN}_watermarks_{entry_id}"
+            hass, STORAGE_VERSION_WATERMARKS, f"{DOMAIN}_watermarks_{self._entry_id}"
         )
 
         # Category state is long-lived; do NOT reset between coordinator refreshes
@@ -386,27 +388,27 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 # Legacy format: bare ISO string watermark only.
                 try:
                     state.last_cleared_at = datetime.fromisoformat(entry)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, entry)
             elif isinstance(entry, dict):
                 ts_str = entry.get("last_cleared_at")
                 if ts_str is not None:
                     try:
                         state.last_cleared_at = datetime.fromisoformat(ts_str)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, ts_str)
                 state.alert_count = int(entry.get("alert_count", 0))
                 raw_alert = entry.get("last_alert")
                 if raw_alert is not None:
                     try:
                         state.last_alert = UniFiAlert.from_dict(raw_alert)
-                    except (KeyError, TypeError, ValueError):
+                    except KeyError, TypeError, ValueError:
                         _LOGGER.warning("Ignoring invalid stored last_alert for %s", cat)
                 webhook_ts = entry.get("last_webhook_at")
                 if webhook_ts is not None:
                     try:
                         state.last_webhook_at = datetime.fromisoformat(webhook_ts)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning(
                             "Ignoring invalid stored last_webhook_at for %s: %r", cat, webhook_ts
                         )

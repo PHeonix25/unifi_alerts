@@ -12,14 +12,36 @@ behaviour, and assertions can be made against the outbound request itself
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Generator
+from types import SimpleNamespace
 
 import aiohttp
+import aioresponses.core as _aioresponses_core
 import pytest
 from aiohttp.resolver import ThreadedResolver
 from aioresponses import aioresponses
 
 from custom_components.unifi_alerts.unifi_client import UNIFI_OS_NETWORK_PREFIX, UniFiClient
+
+# aiohttp>=3.14 made `stream_writer` a required keyword-only argument on
+# ClientResponse.__init__ (previously `writer` served double duty for both the
+# streaming task and the output-size lookup). aioresponses 0.7.9 - the latest
+# release on PyPI - still only passes `writer=None`, which raises
+# `TypeError: ClientResponse.__init__() missing 1 required keyword-only
+# argument: 'stream_writer'` on aiohttp>=3.14. The CI test matrix runs both a
+# "latest HA" leg (aiohttp>=3.14, needs the shim) and a "minimum HA" leg
+# (older aiohttp, does NOT accept stream_writer at all - passing it there
+# would itself raise a TypeError), so detect the parameter instead of
+# assuming either way. Remove once aioresponses ships a fix upstream.
+if "stream_writer" in inspect.signature(_aioresponses_core.ClientResponse.__init__).parameters:
+
+    class _ClientResponseCompat(_aioresponses_core.ClientResponse):
+        def __init__(self, *args, **kwargs):
+            kwargs.setdefault("stream_writer", SimpleNamespace(output_size=0))
+            super().__init__(*args, **kwargs)
+
+    _aioresponses_core.ClientResponse = _ClientResponseCompat
 
 BASE_URL = "https://192.168.1.1"
 LOGIN_URL = f"{BASE_URL}/api/auth/login"
@@ -62,7 +84,7 @@ def make_client(config: dict | None = None) -> UniFiClient:
 
 
 @pytest.fixture(autouse=True)
-async def _close_client_sessions() -> Generator[None, None, None]:
+async def _close_client_sessions() -> Generator[None]:
     """Close every aiohttp.ClientSession created via make_client() this test."""
     yield
     while _created_sessions:

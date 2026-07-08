@@ -30,7 +30,7 @@ Per-file annotations and load-bearing details live in [`docs/REPO_LAYOUT.md`](do
 
 ## Non-negotiable constraints
 
-- **Python 3.12 only (matching the HA baseline).** Use modern type hints (`list[str]` not `List[str]`, `X | None` not `Optional[X]`).
+- **Python 3.14 only (matching the HA baseline).** Use modern type hints (`list[str]` not `List[str]`, `X | None` not `Optional[X]`).
 - **All I/O is async.** No blocking calls anywhere. Use `aiohttp` for HTTP, never `requests`.
 - **No YAML configuration.** Everything goes through the config flow. Do not add `async_setup` or `configuration.yaml` support.
 - **`iot_class: local_push`** must stay in `manifest.json` - this is accurate and affects HA's energy/performance classification.
@@ -88,8 +88,8 @@ Interruptions (timeouts, hibernation, re-login) are common. When a new conversat
 3. **Check the open GitHub Issues** for the active milestone (highest `priority:` first) - that is the likely in-flight work. `docs/TODO.md` describes the taxonomy.
 4. **If a version-bump PR is in flight, audit its HISTORY block** - run `git log <prev-tag>..HEAD --merges --oneline` and confirm every merge appears in the new `docs/HISTORY.md` date block. Missing entries are the most common gap left by an interrupted release-prep session. Feature/fix PRs do NOT need HISTORY entries (HISTORY is written at tag time only); skip this step unless a `claude/bump-*` branch is active.
 5. **Check the venv** - on Linux/Mac: `ls .venv/bin/pytest`; on Windows PowerShell: `Test-Path .venv\Scripts\pytest.exe`. If missing, recreate it:
-   - **Linux/Mac:** `make setup` (or manually: `python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt --quiet`)
-   - **Windows:** `py -3.12 -m venv .venv && .venv\Scripts\pip install -r requirements-dev.txt --quiet`
+   - **Linux/Mac:** `make setup` (or manually: `python3.14 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt --quiet`)
+   - **Windows:** `py -3.14 -m venv .venv && .venv\Scripts\pip install -r requirements-dev.txt --quiet`
 6. **Resume from where the diff left off** - do not re-do already-applied changes. Pick up at the next pending step (usually: run tests, fix lint, commit).
 
 ## Before making changes

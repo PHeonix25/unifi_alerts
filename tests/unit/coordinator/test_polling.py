@@ -230,7 +230,8 @@ class TestSiteConfig:
         }
         if site_configured is not None:
             config[CONF_SITE] = site_configured
-        coord = UniFiAlertsCoordinator(hass, client, config)
+        config_entry = MagicMock(entry_id="test-entry")
+        coord = UniFiAlertsCoordinator(hass, client, config, config_entry)
         coord.async_set_updated_data = MagicMock()
 
         await coord._async_update_data()

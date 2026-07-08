@@ -34,7 +34,7 @@ MOCK_CONFIG = {
 
 
 @pytest.fixture
-def mock_unifi_client() -> Generator[MagicMock, None, None]:
+def mock_unifi_client() -> Generator[MagicMock]:
     """Mock UniFiClient so tests never make real HTTP calls."""
     with patch("custom_components.unifi_alerts.unifi_client.UniFiClient") as mock_cls:
         instance = mock_cls.return_value

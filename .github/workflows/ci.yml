@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Run HACS manifest checks
         run: python scripts/validate_hacs.py
       - name: Run docs prose checks
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
@@ -75,15 +75,19 @@ jobs:
             ha_pin: ""
           # Minimum supported HA: the floor declared in hacs.json. The pinned
           # pytest-homeassistant-custom-component release must match this HA
-          # version (0.13.201 maps to homeassistant 2025.1.0). When the floor
-          # moves, bump both pins here alongside hacs.json and the README.
-          - name: minimum HA (2025.1.0)
-            ha_pin: "homeassistant==2025.1.0 pytest-homeassistant-custom-component==0.13.201"
+          # version (0.13.317 maps to homeassistant 2026.3.1) - the first
+          # PHACC/HA pairing that requires Python 3.14 (#228); HA supports
+          # only a single Python minor at a time, so this is the earliest
+          # release actually compatible with the ruff/mypy/CI 3.14 floor.
+          # When the floor moves, bump both pins here alongside hacs.json
+          # and the README.
+          - name: minimum HA (2026.3.1)
+            ha_pin: "homeassistant==2026.3.1 pytest-homeassistant-custom-component==0.13.317"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
       - name: Install test dependencies
         run: pip install -r requirements-dev.txt

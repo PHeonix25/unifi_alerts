@@ -159,7 +159,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass,
         client,
         cast(UniFiClientConfig, dict(entry.data) | dict(entry.options)),
-        entry.entry_id,
+        entry,
     )
 
     # Restore persisted acknowledgement watermarks before first poll so that

@@ -149,7 +149,7 @@ class UniFiAuth:
                     )
                     raise InvalidAuthError("Invalid API key", login_url=endpoint)
                 resp.raise_for_status()
-        except (CannotConnectError, InvalidAuthError):
+        except CannotConnectError, InvalidAuthError:
             raise
         except aiohttp.ClientConnectorCertificateError as err:
             raise SslCertificateError(type(err).__name__) from err
