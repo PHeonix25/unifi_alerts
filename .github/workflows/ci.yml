@@ -44,8 +44,8 @@ jobs:
         with:
           category: integration
 
-  lint:
-    name: Lint & type-check
+  ruff:
+    name: Ruff lint & format check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -53,14 +53,28 @@ jobs:
         with:
           python-version: "3.14"
           cache: pip
-      - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+      - name: Install lint dependencies
+        run: pip install -r requirements-lint.txt
       - name: Ruff lint & format check (custom_components/ + tests/)
         run: python scripts/run_lint.py
-      - name: Mypy type check
-        run: mypy custom_components/unifi_alerts --ignore-missing-imports
       - name: Check strings.json matches translations/en.json
         run: python scripts/check_translations.py
+
+  typecheck:
+    name: Mypy type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3
+        with:
+          python-version: "3.14"
+          cache: pip
+      # mypy needs the full Home Assistant stack installed so it type-checks
+      # against real HA types rather than falling back to `Any` everywhere.
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Mypy type check
+        run: python scripts/run_typecheck.py
 
   test:
     name: Run tests (${{ matrix.name }})
