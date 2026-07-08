@@ -13,13 +13,32 @@ behaviour, and assertions can be made against the outbound request itself
 from __future__ import annotations
 
 from collections.abc import Generator
+from types import SimpleNamespace
 
 import aiohttp
+import aioresponses.core as _aioresponses_core
 import pytest
 from aiohttp.resolver import ThreadedResolver
 from aioresponses import aioresponses
 
 from custom_components.unifi_alerts.unifi_client import UNIFI_OS_NETWORK_PREFIX, UniFiClient
+
+
+# aiohttp>=3.14 made `stream_writer` a required keyword-only argument on
+# ClientResponse.__init__ (previously `writer` served double duty for both the
+# streaming task and the output-size lookup). aioresponses 0.7.9 - the latest
+# release on PyPI - still only passes `writer=None`, which now raises
+# `TypeError: ClientResponse.__init__() missing 1 required keyword-only
+# argument: 'stream_writer'`. Patch in a stub exposing the `output_size`
+# attribute aiohttp reads off it in that branch. Remove once aioresponses
+# ships a fix upstream.
+class _ClientResponseCompat(_aioresponses_core.ClientResponse):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("stream_writer", SimpleNamespace(output_size=0))
+        super().__init__(*args, **kwargs)
+
+
+_aioresponses_core.ClientResponse = _ClientResponseCompat
 
 BASE_URL = "https://192.168.1.1"
 LOGIN_URL = f"{BASE_URL}/api/auth/login"
