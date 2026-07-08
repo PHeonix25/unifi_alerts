@@ -257,9 +257,11 @@ What the integration **cannot** do (controller-side state is read-only):
 
 - There is no documented write API to archive individual Network alarms. The community-discovered `POST /cmd/evtmgt {"cmd":"archive-all-alarms"}` returns `api.err.NotFound` on current firmware.
 - There is no UI option to dismiss or archive individual alarms.
-- Pressing Clear in HA resets HA-local state only (`is_alerting -> false`, `alert_count -> 0`, `last_cleared_at -> now`). The underlying alarms remain on the controller indefinitely. Without the watermark, `open_count` would grow to thousands without ever decreasing.
+- Pressing Clear in HA resets HA-local state only (`is_alerting -> false`, `alert_count -> 0`, `last_cleared_at -> newest known alarm, or now if none seen yet`). The underlying alarms remain on the controller indefinitely. Without the watermark, `open_count` would grow to thousands without ever decreasing.
 
-> **Design implication:** `open_count` without a watermark is a meaningless lifetime counter. The integration persists `last_cleared_at` per category via `homeassistant.helpers.storage.Store`. Polling counts only alarms newer than that timestamp; pressing Clear advances the timestamp to now.
+> **Design implication:** `open_count` without a watermark is a meaningless lifetime counter. The integration persists `last_cleared_at` per category via `homeassistant.helpers.storage.Store`. Polling counts only alarms newer than that timestamp.
+>
+> **Clock assumption:** `last_cleared_at` is anchored to the controller's own clock, not the HA host clock. On Clear, the watermark is set to the newest `received_at` among alarms already known for that category (poll or webhook), falling back to `datetime.now(UTC)` only when no alarm has ever been seen. This keeps the `open_count` comparison controller-clock vs controller-clock, so it is unaffected by clock skew between HA and the controller. The webhook path is the one exception: a webhook's `received_at` is stamped by HA at receipt time (there is no controller timestamp in the Alarm Manager payload), so a webhook-only alert's watermark contribution is still HA-clock-based by necessity.
 
 ### Event entities and webhooks
 
