@@ -6,11 +6,12 @@ name: Agentrc Eval Harness
 # checklist verdicts as a build artifact. Advisory: never gates a PR, never
 # runs on push, and costs a model API call per case.
 #
-# Uses GitHub Models via the default GITHUB_TOKEN (`models: read`), so no
-# extra secret is required for the default model. Point --model/--base-url
-# at another OpenAI-chat-completions-compatible endpoint (with a repo secret
-# as the token) to try a different model - phase 2 will loop this over
-# several models.
+# Needs an ANTHROPIC_API_KEY repo secret (the default --provider anthropic
+# has no zero-secret option - GitHub Models, the original free default, was
+# retired 2026-07-30; see docs/research/agentic-eval-harness.md and #319).
+# Point --provider/--model/--base-url at another endpoint (with a matching
+# secret as the token) to try a different model - phase 2
+# (agentrc-eval-cross-model.yml) loops this over several models at once.
 
 on:
   workflow_dispatch:
@@ -22,11 +23,10 @@ on:
       model:
         description: "Model id"
         required: false
-        default: "openai/gpt-4o-mini"
+        default: "claude-haiku-4-5-20251001"
 
 permissions:
   contents: read
-  models: read
 
 jobs:
   run-eval:
@@ -40,7 +40,7 @@ jobs:
 
       - name: Run harness
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           python scripts/run_agentrc_eval.py \
             --model "${{ inputs.model }}" \

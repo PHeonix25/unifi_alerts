@@ -10,11 +10,13 @@ name: Agentrc Eval Harness (cross-model)
 # calls (plan + judge) per case adds up fast, so keep it opt-in until then.
 # Advisory either way: never gates a PR.
 #
-# Secrets: the GitHub Models entry in the default model list needs no extra
-# secret (ambient GITHUB_TOKEN, `models: read`). The Anthropic entries need a
-# repo secret named ANTHROPIC_API_KEY; if it isn't set, those models are
-# skipped with a warning rather than failing the run (see
-# scripts/run_agentrc_eval_cross_model.py's skip-not-fail handling).
+# Secrets: every configured model is Anthropic, sharing one repo secret
+# named ANTHROPIC_API_KEY (one secret per provider, not per model). If it
+# isn't set, all models are skipped with a warning rather than failing the
+# run (see scripts/run_agentrc_eval_cross_model.py's skip-not-fail handling)
+# - there is no zero-secret entry any more (GitHub Models, the original free
+# default, was retired 2026-07-30; see docs/research/agentic-eval-harness.md
+# and #319).
 #
 # Note: like any workflow_dispatch/schedule trigger, this only actually fires
 # once the workflow file is on the repository's default branch (main) - not
@@ -37,7 +39,6 @@ on:
 
 permissions:
   contents: read
-  models: read
 
 jobs:
   run-eval:
@@ -51,7 +52,6 @@ jobs:
 
       - name: Run cross-model harness
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           python scripts/run_agentrc_eval_cross_model.py \
