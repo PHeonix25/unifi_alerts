@@ -9,6 +9,7 @@
 ### Fixed
 
 - Unselected alert categories no longer create entities that sit at Unknown; entities are created only for chosen categories, and orphaned entities from deselected categories are removed on reload.
+- Clearing a category now anchors the acknowledgement watermark to the newest alarm timestamp already known for that category (falling back to the HA clock only when none has ever been seen), instead of the HA host clock. This keeps `open_count` correct when the UniFi controller's clock and the HA host clock drift apart. ([#268])
 
 ## [1.9.0] - 2026-07-06
 
@@ -336,6 +337,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#265]: https://github.com/PHeonix25/unifi_alerts/issues/265
 [#270]: https://github.com/PHeonix25/unifi_alerts/issues/270
 [#282]: https://github.com/PHeonix25/unifi_alerts/issues/282
+[#268]: https://github.com/PHeonix25/unifi_alerts/issues/268
 [#283]: https://github.com/PHeonix25/unifi_alerts/issues/283
 [#228]: https://github.com/PHeonix25/unifi_alerts/issues/228
 [#311]: https://github.com/PHeonix25/unifi_alerts/pull/311

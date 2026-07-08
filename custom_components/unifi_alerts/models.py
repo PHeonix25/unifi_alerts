@@ -42,6 +42,17 @@ class UniFiClientConfig(TypedDict, total=False):
     site: str
 
 
+def ensure_aware(dt: datetime) -> datetime:
+    """Treat a naive datetime as UTC.
+
+    Real alarms are always tz-aware (`from_api_alarm`, `from_system_log_event`,
+    and `from_webhook_payload` all stamp UTC-aware timestamps); this only
+    guards the `last_alarm_received_at` comparisons against a naive value
+    slipping in (e.g. from a test fixture) and raising on `>` comparison.
+    """
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
 def _render_message_raw(message_raw: str, parameters: dict[str, Any]) -> str:
     """Substitute {KEY} placeholders in message_raw with values from parameters.
 
@@ -275,15 +286,35 @@ class CategoryState:
     # only on the push path (never by polling) so it reflects webhook
     # connectivity specifically, which powers the onboarding/health signal.
     last_webhook_at: datetime | None = None
+    # Newest `received_at` seen for this category, from either the push or
+    # polling path. Tracked so Clear can anchor `last_cleared_at` to the
+    # controller's own timeline instead of the HA host clock (#268): using
+    # this as the watermark keeps the open_count comparison
+    # controller-clock vs controller-clock, immune to HA/controller skew.
+    last_alarm_received_at: datetime | None = None
 
     def apply_alert(self, alert: UniFiAlert) -> None:
         self.is_alerting = True
         self.last_alert = alert
         self.alert_count += 1
+        received_at = ensure_aware(alert.received_at)
+        if self.last_alarm_received_at is None or received_at > self.last_alarm_received_at:
+            self.last_alarm_received_at = received_at
 
     def clear(self) -> None:
+        """Acknowledge everything seen so far for this category.
+
+        The watermark is anchored to the controller's own timeline: it is set
+        to the newest `received_at` already observed for this category (via
+        push or poll), falling back to the HA host clock only when no alarm
+        has ever been seen. See docs/UNIFI.md "Clock assumption".
+        """
         self.is_alerting = False
-        self.last_cleared_at = datetime.now(UTC)
+        self.last_cleared_at = (
+            self.last_alarm_received_at
+            if self.last_alarm_received_at is not None
+            else datetime.now(UTC)
+        )
 
     def webhook_health(self, now: datetime | None = None) -> str:
         """Classify webhook delivery health for this category.

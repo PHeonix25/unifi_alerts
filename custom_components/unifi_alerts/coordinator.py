@@ -31,7 +31,7 @@ from .const import (
     STORAGE_VERSION_WATERMARKS,
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
-from .models import CategoryState, UniFiAlert, UniFiClientConfig
+from .models import CategoryState, UniFiAlert, UniFiClientConfig, ensure_aware
 from .unifi_auth import CannotConnectError, InvalidAuthError
 from .unifi_client import UniFiClient
 
@@ -153,6 +153,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 state = self._category_states[cat]
                 if not state.enabled:
                     continue
+                self._track_newest_seen(state, alerts)
                 # Count only alarms newer than last_cleared_at so open_count reads as
                 # "since last Clear", not a lifetime total.
                 watermark = state.last_cleared_at
@@ -183,6 +184,20 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 state.open_count = 0
 
         return self._category_states
+
+    @staticmethod
+    def _track_newest_seen(state: CategoryState, alerts: list[UniFiAlert]) -> None:
+        """Advance ``last_alarm_received_at`` to the newest polled alarm, if any.
+
+        Feeds the Clear watermark (see ``CategoryState.clear()``) so it can be
+        anchored to the controller's own timeline instead of the HA host
+        clock (#268).
+        """
+        if not alerts:
+            return
+        newest_seen = max(ensure_aware(a.received_at) for a in alerts)
+        if state.last_alarm_received_at is None or newest_seen > state.last_alarm_received_at:
+            state.last_alarm_received_at = newest_seen
 
     async def _fetch_categorised(self) -> dict[str, list[UniFiAlert]]:
         """Fetch and categorise alarms using v2 or legacy path as appropriate.
