@@ -18,8 +18,10 @@ removing a model is a one-line data change, not a script/workflow edit. Each
 entry names a `token_env` - a model whose token isn't set in the environment
 is skipped with a warning, not a hard failure (a single missing/expired
 provider credential should not block the rest of the comparison). The
-default list's GitHub Models entry needs no extra secret (ambient
-GITHUB_TOKEN); the Anthropic entries need ANTHROPIC_API_KEY.
+default list is all Anthropic models sharing one ANTHROPIC_API_KEY secret
+(one secret per provider, not per model); there is no zero-secret entry any
+more (GitHub Models, the original free default, was retired 2026-07-30 -
+see docs/research/agentic-eval-harness.md and #319).
 
 Pure stdlib (urllib) - no SDK dependency, matching this repo's
 minimal-dependency preference and run_agentrc_eval.py's approach.
@@ -32,7 +34,6 @@ import json
 import os
 import sys
 import urllib.error
-import urllib.request
 from dataclasses import replace
 from pathlib import Path
 
@@ -44,55 +45,7 @@ use_utf8_console()
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODELS_CONFIG = REPO_ROOT / "scripts" / "agentrc_eval_models.json"
 
-# Anthropic's request-format version, not an endpoint - this changes far less
-# often than any given entry's base_url/model, so it stays a script constant
-# rather than a per-entry config field. entry["base_url"] (host only, e.g.
-# https://api.anthropic.com) IS per-entry, mirroring the openai-compatible
-# provider's base_url field - see AnthropicClient below.
-ANTHROPIC_API_VERSION = "2023-06-01"
-ANTHROPIC_MAX_TOKENS = 4096
-
 KNOWN_PROVIDERS = {"openai-compatible", "anthropic"}
-
-
-class AnthropicClient:
-    """Minimal Anthropic Messages API client over urllib.
-
-    Satisfies run_agentrc_eval.ChatClient structurally (a .complete() method)
-    without needing to import or subclass anything from that module.
-    """
-
-    def __init__(self, base_url: str, model: str, token: str) -> None:
-        self._url = base_url.rstrip("/") + "/v1/messages"
-        self._model = model
-        self._token = token
-
-    def complete(self, system_prompt: str, user_prompt: str) -> str:
-        """Return the assistant text for one Messages API call."""
-        body = json.dumps(
-            {
-                "model": self._model,
-                "max_tokens": ANTHROPIC_MAX_TOKENS,
-                "temperature": 0,
-                "system": system_prompt,
-                "messages": [{"role": "user", "content": user_prompt}],
-            }
-        ).encode("utf-8")
-        request = urllib.request.Request(
-            self._url,
-            data=body,
-            method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": self._token,
-                "anthropic-version": ANTHROPIC_API_VERSION,
-            },
-        )
-        with urllib.request.urlopen(
-            request, timeout=run_agentrc_eval.REQUEST_TIMEOUT_SECONDS
-        ) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-        return "".join(block.get("text", "") for block in payload.get("content", []))
 
 
 def _build_client(entry: dict[str, str]) -> run_agentrc_eval.ChatClient | None:
@@ -107,7 +60,7 @@ def _build_client(entry: dict[str, str]) -> run_agentrc_eval.ChatClient | None:
     if provider == "openai-compatible":
         return run_agentrc_eval.ModelClient(entry["base_url"], entry["model"], token)
     if provider == "anthropic":
-        return AnthropicClient(entry["base_url"], entry["model"], token)
+        return run_agentrc_eval.AnthropicClient(entry["base_url"], entry["model"], token)
 
     print(
         f"skipping '{name}': unknown provider '{provider}' (expected one of "

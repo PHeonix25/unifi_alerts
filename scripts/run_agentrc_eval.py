@@ -9,19 +9,23 @@ binary criteria (pass/fail per item, not one aggregate score - see the design
 note's LLM-as-judge section for why). Writes each case's raw plan and verdict
 to an output directory for manual review, and prints a summary table.
 
-This is advisory and manual only: it is not wired into `make check` or any
-PR-blocking CI job, and costs a model API call per case (plan) plus one more
-(judge). Run it locally, or via the `workflow_dispatch`-only
-`.github/workflows/agentrc-eval.yml` workflow.
+This is advisory: it is not wired into `make check`, and any PR-triggered use
+of it (phase 3, `.github/workflows/agentrc-quality-score.yml`) only ever
+posts a comment/step-summary, never a blocking check. Costs a model API call
+per case (plan) plus one more (judge). Run it locally, via the
+`workflow_dispatch`-only `.github/workflows/agentrc-eval.yml`, or via phase
+3's PR-triggered workflow.
 
-Defaults to GitHub Models (https://docs.github.com/en/github-models) as the
-free, no-extra-secret path: in GitHub Actions the default `GITHUB_TOKEN`
-already carries `models: read`; locally, export a token with that scope as
-GITHUB_TOKEN (or pass --token). Any other OpenAI-chat-completions-compatible
-endpoint works via --base-url/--model/--token. This script takes one model
+Defaults to Anthropic's Messages API (--provider anthropic, model
+claude-haiku-4-5-20251001 - the cheapest of the three Anthropic models this
+repo has evaluated so far). Needs an ANTHROPIC_API_KEY with API access; there is no
+zero-secret default any more (GitHub Models, the original default, was
+retired 2026-07-30 - see docs/research/agentic-eval-harness.md and #319).
+--provider openai-compatible switches to any OpenAI-chat-completions-shaped
+endpoint via --base-url/--model/--token instead. This script takes one model
 per invocation on purpose; run_agentrc_eval_cross_model.py (phase 2) is the
-multi-model wrapper - it imports run_case()/ChatClient from here and loops
-over a configured model list, including non-OpenAI-compatible providers.
+multi-model wrapper - it imports run_case()/ChatClient/AnthropicClient from
+here and loops over a configured model list.
 
 Pure stdlib (urllib) - no SDK dependency, matching this repo's
 minimal-dependency preference.
@@ -47,8 +51,11 @@ use_utf8_console()
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EVAL_FILE = REPO_ROOT / "agentrc.eval.json"
 
-DEFAULT_BASE_URL = "https://models.github.ai/inference"
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+DEFAULT_PROVIDER = "anthropic"
+DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
+ANTHROPIC_API_VERSION = "2023-06-01"
+ANTHROPIC_MAX_TOKENS = 4096
 REQUEST_TIMEOUT_SECONDS = 120
 
 PLAN_SYSTEM_PROMPT = """\
@@ -130,6 +137,47 @@ class ModelClient:
         with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         return str(payload["choices"][0]["message"]["content"])
+
+
+class AnthropicClient:
+    """Minimal Anthropic Messages API client over urllib.
+
+    A different wire format than ModelClient (Anthropic's Messages API, not
+    OpenAI chat completions), but satisfies ChatClient the same way - just by
+    having a matching .complete() method. This is the default provider (see
+    DEFAULT_PROVIDER); run_agentrc_eval_cross_model.py (phase 2) imports this
+    class rather than defining its own copy.
+    """
+
+    def __init__(self, base_url: str, model: str, token: str) -> None:
+        self._url = base_url.rstrip("/") + "/v1/messages"
+        self._model = model
+        self._token = token
+
+    def complete(self, system_prompt: str, user_prompt: str) -> str:
+        """Return the assistant text for one Messages API call."""
+        body = json.dumps(
+            {
+                "model": self._model,
+                "max_tokens": ANTHROPIC_MAX_TOKENS,
+                "temperature": 0,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": user_prompt}],
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            self._url,
+            data=body,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": self._token,
+                "anthropic-version": ANTHROPIC_API_VERSION,
+            },
+        )
+        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        return "".join(block.get("text", "") for block in payload.get("content", []))
 
 
 def _extract_json_array(text: str) -> list[dict[str, object]] | None:
@@ -225,8 +273,8 @@ def write_case_output(out_dir: Path, result: CaseResult, checklist: list[str]) -
     (out_dir / f"{result.case_id}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def print_summary(results: list[CaseResult], checklists: dict[str, list[str]]) -> None:
-    """Print a per-case pass-rate table and write it to $GITHUB_STEP_SUMMARY if set."""
+def build_summary_table(results: list[CaseResult], checklists: dict[str, list[str]]) -> str:
+    """Render a per-case pass-rate table as markdown."""
     lines = ["| Case | Pass rate | Status |", "| --- | --- | --- |"]
     for result in results:
         checklist = checklists.get(result.case_id, [])
@@ -236,9 +284,19 @@ def print_summary(results: list[CaseResult], checklists: dict[str, list[str]]) -
         passed = sum(1 for v in result.verdicts if v.get("pass"))
         total = len(checklist)
         lines.append(f"| {result.case_id} | {passed}/{total} | ok |")
+    return "\n".join(lines)
 
-    table = "\n".join(lines)
+
+def print_summary(
+    results: list[CaseResult], checklists: dict[str, list[str]], out_dir: Path
+) -> None:
+    """Print the pass-rate table, and write it to out_dir/summary.md and
+    $GITHUB_STEP_SUMMARY (if set) for downstream consumers (e.g. phase 3's
+    PR-comment step)."""
+    table = build_summary_table(results, checklists)
     print(table)
+
+    (out_dir / "summary.md").write_text(table + "\n", encoding="utf-8")
 
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
@@ -250,19 +308,33 @@ def main() -> int:
     """Run the harness against every case (or one, via --case)."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--provider",
+        choices=["anthropic", "openai-compatible"],
+        default=os.environ.get("AGENTRC_EVAL_PROVIDER", DEFAULT_PROVIDER),
+        help=f"Which wire format to speak (default: {DEFAULT_PROVIDER})",
+    )
+    parser.add_argument(
         "--model",
         default=os.environ.get("AGENTRC_EVAL_MODEL", DEFAULT_MODEL),
         help=f"Model id (default: {DEFAULT_MODEL}, or $AGENTRC_EVAL_MODEL)",
     )
     parser.add_argument(
         "--base-url",
-        default=os.environ.get("AGENTRC_EVAL_BASE_URL", DEFAULT_BASE_URL),
-        help=f"OpenAI-chat-completions-compatible base URL (default: {DEFAULT_BASE_URL})",
+        default=os.environ.get("AGENTRC_EVAL_BASE_URL"),
+        help=(
+            f"API base URL (default: {DEFAULT_ANTHROPIC_BASE_URL} for "
+            "--provider anthropic; required for --provider openai-compatible, "
+            "no default - there is no free/standard endpoint every user shares)"
+        ),
     )
     parser.add_argument(
         "--token",
-        default=os.environ.get("GITHUB_TOKEN") or os.environ.get("AGENTRC_EVAL_TOKEN"),
-        help="Bearer token (default: $GITHUB_TOKEN, then $AGENTRC_EVAL_TOKEN)",
+        default=(
+            os.environ.get("ANTHROPIC_API_KEY")
+            or os.environ.get("GITHUB_TOKEN")
+            or os.environ.get("AGENTRC_EVAL_TOKEN")
+        ),
+        help="API key/bearer token (default: $ANTHROPIC_API_KEY, then $GITHUB_TOKEN, then $AGENTRC_EVAL_TOKEN)",
     )
     parser.add_argument("--case", help="Only run this case id (e.g. case-1)")
     parser.add_argument(
@@ -275,11 +347,20 @@ def main() -> int:
 
     if not args.token:
         print(
-            "error: no token available - set GITHUB_TOKEN (needs `models: read`) "
-            "or pass --token",
+            "error: no token available - set ANTHROPIC_API_KEY (for the default "
+            "--provider anthropic) or pass --token",
             file=sys.stderr,
         )
         return 1
+
+    if args.provider == "openai-compatible" and not args.base_url:
+        print(
+            "error: --provider openai-compatible needs --base-url (or "
+            "$AGENTRC_EVAL_BASE_URL) - there is no shared default endpoint",
+            file=sys.stderr,
+        )
+        return 1
+    base_url = args.base_url or DEFAULT_ANTHROPIC_BASE_URL
 
     instructions, cases = load_eval_data()
     if args.case:
@@ -289,7 +370,11 @@ def main() -> int:
             return 1
 
     args.out.mkdir(parents=True, exist_ok=True)
-    client = ModelClient(args.base_url, args.model, args.token)
+    client: ChatClient = (
+        AnthropicClient(base_url, args.model, args.token)
+        if args.provider == "anthropic"
+        else ModelClient(base_url, args.model, args.token)
+    )
 
     checklists = {str(c["id"]): list(c.get("checklist", [])) for c in cases}
     results = []
@@ -299,13 +384,13 @@ def main() -> int:
         write_case_output(args.out, result, checklists[result.case_id])
         results.append(result)
 
-    print_summary(results, checklists)
+    print_summary(results, checklists, args.out)
     print(f"\nRaw plans and verdicts written to {args.out}", file=sys.stderr)
 
     # Advisory only: never fail the run, but surface a non-zero-looking hint
     # in the log if every case errored (likely a config/auth problem).
     if results and all(r.error for r in results):
-        print("warning: every case errored - check --model/--base-url/--token", file=sys.stderr)
+        print("warning: every case errored - check --provider/--model/--base-url/--token", file=sys.stderr)
     return 0
 
 
