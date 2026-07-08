@@ -1,0 +1,53 @@
+name: Agentrc Eval Harness
+
+# Manual-only. Runs scripts/run_agentrc_eval.py (phase 1 of the
+# agentic-eval-harness plan, docs/research/agentic-eval-harness.md, #287)
+# against agentrc.eval.json's planning cases and writes the raw plans and
+# checklist verdicts as a build artifact. Advisory: never gates a PR, never
+# runs on push, and costs a model API call per case.
+#
+# Uses GitHub Models via the default GITHUB_TOKEN (`models: read`), so no
+# extra secret is required for the default model. Point --model/--base-url
+# at another OpenAI-chat-completions-compatible endpoint (with a repo secret
+# as the token) to try a different model - phase 2 will loop this over
+# several models.
+
+on:
+  workflow_dispatch:
+    inputs:
+      case:
+        description: "Only run this case id (e.g. case-1); leave blank for all cases"
+        required: false
+        default: ""
+      model:
+        description: "Model id"
+        required: false
+        default: "openai/gpt-4o-mini"
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  run-eval:
+    name: Run agentrc.eval.json against ${{ inputs.model }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3
+        with:
+          python-version: "3.14"
+
+      - name: Run harness
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/run_agentrc_eval.py \
+            --model "${{ inputs.model }}" \
+            ${{ inputs.case != '' && format('--case {0}', inputs.case) || '' }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: agentrc-eval-results
+          path: .agentrc-eval-out/
+          retention-days: 30

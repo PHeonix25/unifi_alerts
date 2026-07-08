@@ -3,28 +3,78 @@
   "cases": [
     {
       "id": "case-1",
-      "prompt": "Add alert deduplication between the webhook push path and the REST polling path so the same alarm doesn't increment alert_count twice.",
-      "expectation": "The plan must identify that `coordinator.py` is the sole place where both paths land: `push_alert()` (webhook) and the polling loop that sets `is_alerting`/`last_alert` directly. It should propose adding a deduplication key (e.g. alert ID or hash of key+timestamp) to `CategoryState` in `models.py`, storing a short-lived seen-set or last-seen ID per category in the coordinator, and checking it in `push_alert()` before incrementing `alert_count`. The plan must cover: updating `CategoryState` dataclass in `models.py`; adding dedup logic in `coordinator.py`'s `push_alert()` and the polling branch; adding `CONF_DEDUP_WINDOW` or a similar constant to `const.py` if a time-window approach is used; updating `tests/unit/coordinator/test_push_dedup.py` to assert duplicate payloads do not double-increment `alert_count`; and verifying with `make check` (ruff + mypy + pytest)."
+      "prompt": "The webhook dedup window (`WEBHOOK_DEDUP_WINDOW_SECONDS` in `const.py`) that suppresses duplicate `(category, alert_key)` webhook pushes in `coordinator.py`'s `push_alert()` is currently a single fixed value shared by every category. Make it configurable per category via the options flow, keeping the existing value as the default for categories that don't override it.",
+      "expectation": "The plan must identify that `WEBHOOK_DEDUP_WINDOW_SECONDS` in `const.py` is the current fixed constant and that `coordinator.py`'s `push_alert()` (via the `_last_push_at` dict keyed on `(category, alert.key)`) is its sole consumer. It should propose: a per-category dedup-window config value (a new constant plus an options-flow field) collected in `config_flow.py`'s options flow step, reading `entry.options` first with fallback to `entry.data` and `WEBHOOK_DEDUP_WINDOW_SECONDS` as the default; updating `push_alert()` to look up the window for the alert's category instead of the module constant; adding the new field to both `strings.json` and `translations/en.json` (which must stay identical or CI fails); and covering the change in `tests/unit/coordinator/test_push_dedup.py` (per-category window behaviour) and `tests/unit/config_flow/` (the new options-flow field). Verification: `make check`.",
+      "checklist": [
+        "Identifies WEBHOOK_DEDUP_WINDOW_SECONDS in const.py as the current fixed, single-value constant",
+        "Identifies coordinator.py's push_alert() (the _last_push_at dict) as the sole consumer of the dedup window",
+        "Proposes a per-category dedup-window config value (new constant plus an options-flow field), not a single new global constant",
+        "Reads entry.options with fallback to entry.data, defaulting to the existing WEBHOOK_DEDUP_WINDOW_SECONDS value",
+        "Updates push_alert() to look up the window per category instead of using the module constant directly",
+        "Adds the new field to both strings.json and translations/en.json and notes they must stay identical",
+        "Calls out tests/unit/coordinator/test_push_dedup.py for the per-category window behaviour",
+        "Calls out tests/unit/config_flow/ for the new options-flow field",
+        "Mentions verifying with make check"
+      ]
     },
     {
       "id": "case-2",
       "prompt": "Support configuring the polling interval per category instead of using a single global interval.",
-      "expectation": "The plan must span `config_flow.py` (options flow step that collects per-category intervals, reading `entry.options` first with fallback to `entry.data`), `const.py` (new `CONF_CATEGORY_POLL_INTERVAL` constant and a default per-category mapping), `coordinator.py` (replacing or wrapping the single `DataUpdateCoordinator` update interval with per-category scheduling), `strings.json` and `translations/en.json` (new UI strings for the options flow — both files must stay identical or CI fails), and the test suite. The plan must call out `tests/unit/config_flow/` for options-flow coverage, `tests/unit/coordinator/test_polling.py` for scheduling behaviour, and must note that `strings.json` <-> `translations/en.json` drift is enforced by `make validate` and will break CI if they diverge."
+      "expectation": "The plan must span `config_flow.py` (options flow step that collects per-category intervals, reading `entry.options` first with fallback to `entry.data`), `const.py` (new `CONF_CATEGORY_POLL_INTERVAL` constant and a default per-category mapping), `coordinator.py` (replacing or wrapping the single `DataUpdateCoordinator` update interval with per-category scheduling), `strings.json` and `translations/en.json` (new UI strings for the options flow — both files must stay identical or CI fails), and the test suite. The plan must call out `tests/unit/config_flow/` for options-flow coverage, `tests/unit/coordinator/test_polling.py` for scheduling behaviour, and must note that `strings.json` <-> `translations/en.json` drift is enforced by `make validate` and will break CI if they diverge.",
+      "checklist": [
+        "Touches config_flow.py's options flow to collect a per-category interval, reading entry.options with fallback to entry.data",
+        "Adds a new constant (e.g. CONF_CATEGORY_POLL_INTERVAL) and a default per-category mapping to const.py",
+        "Addresses coordinator.py's single DataUpdateCoordinator update interval, replacing or wrapping it for per-category scheduling",
+        "Adds new UI strings to both strings.json and translations/en.json",
+        "Calls out tests/unit/config_flow/ for options-flow coverage",
+        "Calls out tests/unit/coordinator/test_polling.py for scheduling behaviour",
+        "Notes that strings.json <-> translations/en.json drift is enforced by make validate and breaks CI if they diverge"
+      ]
     },
     {
       "id": "case-3",
       "prompt": "Add exponential-backoff retry logic to the UniFi client so transient HTTP errors don't immediately fail the coordinator refresh.",
-      "expectation": "The plan must identify `unifi_client.py` as the HTTP layer and `coordinator.py`'s `_async_update_data()` as the caller. It should propose: adding a `_async_request_with_retry()` private method in `unifi_client.py` (or a decorator/helper) with configurable `max_retries` and backoff constants sourced from `const.py`; ensuring all retry delays use `asyncio.sleep` (never blocking); propagating non-retryable auth errors (401/403) immediately without retrying; updating `coordinator.py` so `ConfigEntryNotReady` is still raised on exhausted retries (preserving the existing `__init__.py` contract); adding `CONF_MAX_RETRIES` / `DEFAULT_MAX_RETRIES` to `const.py`; exposing retry config optionally in the options flow in `config_flow.py`; and adding/extending `tests/unit/unifi_client/test_legacy.py` to assert retry count, backoff sequencing, and immediate failure on auth errors. Verification: `make check`."
+      "expectation": "The plan must identify `unifi_client.py` as the HTTP layer and `coordinator.py`'s `_async_update_data()` as the caller. It should propose: adding a `_async_request_with_retry()` private method in `unifi_client.py` (or a decorator/helper) with configurable `max_retries` and backoff constants sourced from `const.py`; ensuring all retry delays use `asyncio.sleep` (never blocking); propagating non-retryable auth errors (401/403) immediately without retrying; updating `coordinator.py` so `ConfigEntryNotReady` is still raised on exhausted retries (preserving the existing `__init__.py` contract); adding `CONF_MAX_RETRIES` / `DEFAULT_MAX_RETRIES` to `const.py`; exposing retry config optionally in the options flow in `config_flow.py`; and adding/extending `tests/unit/unifi_client/test_legacy.py` to assert retry count, backoff sequencing, and immediate failure on auth errors. Verification: `make check`.",
+      "checklist": [
+        "Identifies unifi_client.py as the HTTP layer and coordinator.py's _async_update_data() as the caller",
+        "Proposes a retry helper (method or decorator) with configurable max_retries and backoff constants sourced from const.py",
+        "Ensures all retry delays use asyncio.sleep, never a blocking sleep",
+        "Propagates non-retryable auth errors (401/403) immediately without retrying",
+        "Preserves the existing ConfigEntryNotReady contract on exhausted retries",
+        "Adds CONF_MAX_RETRIES / DEFAULT_MAX_RETRIES to const.py",
+        "Mentions exposing retry config in the options flow in config_flow.py",
+        "Calls out tests/unit/unifi_client/test_legacy.py to assert retry count, backoff sequencing, and immediate auth failure",
+        "Mentions verifying with make check"
+      ]
     },
     {
       "id": "case-4",
       "prompt": "Add a diagnostics sensor that exposes webhook delivery health — how many webhook POSTs were received, rejected (bad token), and processed successfully per category.",
-      "expectation": "The plan must cover: adding webhook counters (`received`, `rejected`, `processed`) to `coordinator.py` state (likely as new fields on `CategoryState` in `models.py` or a separate `WebhookStats` dataclass); incrementing them in `webhook_handler.py` — `rejected` on HTTP 401 (bad/missing `?token=`), `processed` on successful `coordinator.push_alert()` dispatch; exposing the counters through `diagnostics.py`'s existing diagnostics platform (the `async_get_config_entry_diagnostics` function) without leaking the webhook secret; optionally adding new `SensorEntity` subclasses in `sensor.py` for HA-visible stats sensors; updating `test_webhook_handler.py` to assert counter increments on good and bad token requests; updating `test_diagnostics.py` to assert the stats appear (and the token is redacted); and running `make check` to validate."
+      "expectation": "The plan must cover: adding webhook counters (`received`, `rejected`, `processed`) to `coordinator.py` state (likely as new fields on `CategoryState` in `models.py` or a separate `WebhookStats` dataclass); incrementing them in `webhook_handler.py` — `rejected` on HTTP 401 (bad/missing `?token=`), `processed` on successful `coordinator.push_alert()` dispatch; exposing the counters through `diagnostics.py`'s existing diagnostics platform (the `async_get_config_entry_diagnostics` function) without leaking the webhook secret; optionally adding new `SensorEntity` subclasses in `sensor.py` for HA-visible stats sensors; updating `test_webhook_handler.py` to assert counter increments on good and bad token requests; updating `test_diagnostics.py` to assert the stats appear (and the token is redacted); and running `make check` to validate.",
+      "checklist": [
+        "Adds webhook counters (received, rejected, processed) to coordinator state, e.g. on CategoryState or a new WebhookStats dataclass",
+        "Increments the rejected counter on HTTP 401 (bad/missing ?token=) in webhook_handler.py",
+        "Increments the processed counter on successful coordinator.push_alert() dispatch",
+        "Exposes the counters through diagnostics.py's async_get_config_entry_diagnostics without leaking the webhook secret",
+        "Mentions optionally adding new SensorEntity subclasses in sensor.py for the counters",
+        "Updates test_webhook_handler.py to assert counter increments on good and bad token requests",
+        "Updates test_diagnostics.py to assert the stats appear and the token stays redacted",
+        "Mentions running make check to validate"
+      ]
     },
     {
       "id": "case-5",
       "prompt": "Allow the integration to support multiple UniFi controllers simultaneously, each as a separate config entry with independent coordinators.",
-      "expectation": "The plan must recognise that the existing architecture already uses `ConfigEntry` per integration instance but must audit for any global/shared state that would break multi-entry. It must cover: checking `const.py` for any module-level mutable globals shared across entries; verifying `__init__.py`'s `async_setup_entry` / `async_unload_entry` lifecycle correctly scopes `DataUpdateCoordinator`, `WebhookManager`, and `UniFiClient` to the entry (not module-level singletons); checking `webhook_handler.py` that webhook IDs are entry-scoped (e.g. include `entry.entry_id` in the webhook path) to avoid URL collisions between two controllers; checking `config_flow.py` for any uniqueness constraint (`async_set_unique_id`) so the same controller host cannot be added twice; updating `test_init.py` to set up two entries in parallel and assert independent teardown order (`coordinator.async_shutdown()` → unregister webhooks → `client.close()` per entry); and confirming `make check` passes with the new tests."
+      "expectation": "The plan must recognise that the existing architecture already uses `ConfigEntry` per integration instance but must audit for any global/shared state that would break multi-entry. It must cover: checking `const.py` for any module-level mutable globals shared across entries; verifying `__init__.py`'s `async_setup_entry` / `async_unload_entry` lifecycle correctly scopes `DataUpdateCoordinator`, `WebhookManager`, and `UniFiClient` to the entry (not module-level singletons); checking `webhook_handler.py` that webhook IDs are entry-scoped (e.g. include `entry.entry_id` in the webhook path) to avoid URL collisions between two controllers; checking `config_flow.py` for any uniqueness constraint (`async_set_unique_id`) so the same controller host cannot be added twice; updating `test_init.py` to set up two entries in parallel and assert independent teardown order (`coordinator.async_shutdown()` → unregister webhooks → `client.close()` per entry); and confirming `make check` passes with the new tests.",
+      "checklist": [
+        "Recognises ConfigEntry-per-instance already exists and frames the task as auditing for shared/global state, not a rearchitecture",
+        "Checks const.py for module-level mutable globals shared across entries",
+        "Verifies __init__.py's async_setup_entry/async_unload_entry scope DataUpdateCoordinator, WebhookManager, and UniFiClient to the entry, not module-level singletons",
+        "Checks that webhook_handler.py's webhook IDs are entry-scoped (e.g. include entry.entry_id) to avoid URL collisions between controllers",
+        "Checks config_flow.py for a uniqueness constraint (async_set_unique_id) so the same controller host cannot be added twice",
+        "Updates test_init.py to set up two entries in parallel and assert independent teardown order per entry",
+        "Mentions confirming make check passes with the new tests"
+      ]
     }
   ]
 }
