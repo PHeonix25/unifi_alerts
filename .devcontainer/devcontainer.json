@@ -1,7 +1,10 @@
 {
   "name": "unifi_alerts",
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.14",
-  "postCreateCommand": "make setup",
+  "image": "mcr.microsoft.com/devcontainers/python:3.14",
+  "postCreateCommand": "sudo chown vscode:vscode .venv && make setup",
+  "mounts": [
+    "source=unifi-alerts-venv,target=${containerWorkspaceFolder}/.venv,type=volume"
+  ],
   "customizations": {
     "vscode": {
       "extensions": [
