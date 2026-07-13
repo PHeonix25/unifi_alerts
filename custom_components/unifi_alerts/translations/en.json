@@ -46,11 +46,9 @@
       },
       "reauth_confirm": {
         "title": "Re-authenticate UniFi Alerts",
-        "description": "Your UniFi controller credentials for **{name}** are no longer valid. Enter new credentials to restore the connection.",
+        "description": "Enter a UniFi API key for **{name}** to restore the connection.\n\nUsername and password authentication has been removed. Generate an API key in the UniFi OS web UI (the exact path varies by firmware): **Settings > Admins & Users > API Keys**, **Integrations > New API Key**, or **Settings > Control Plane > API Keys**. See the integration README on GitHub for device-specific instructions.",
         "data": {
-          "username": "Username (leave blank if using API key)",
-          "password": "Password",
-          "api_key": "API Key (UniFi OS only — leave blank if using username/password)"
+          "api_key": "API Key"
         }
       }
     },
@@ -76,6 +74,17 @@
           "confirm": {
             "title": "Re-authenticate UniFi Alerts",
             "description": "The credentials for **{name}** are no longer valid (e.g. the password or API key was changed). Enter new credentials to restore the connection."
+          }
+        }
+      }
+    },
+    "apikey_migration_required": {
+      "title": "UniFi Alerts: API key required for {name} after upgrade",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Re-authenticate UniFi Alerts",
+            "description": "Username and password authentication has been removed. **{name}** was set up with a username and password, so an API key is now required to keep it working.\n\nGenerate an API key in the UniFi OS web UI (the exact path varies by firmware): **Settings > Admins & Users > API Keys**, **Integrations > New API Key**, or **Settings > Control Plane > API Keys**. Then enter it to restore the connection. Your existing sensors, history, and Alarm Manager webhook URLs are preserved."
           }
         }
       }

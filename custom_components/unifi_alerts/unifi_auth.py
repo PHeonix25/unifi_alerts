@@ -149,7 +149,10 @@ class UniFiAuth:
                     )
                     raise InvalidAuthError("Invalid API key", login_url=endpoint)
                 resp.raise_for_status()
-        except CannotConnectError, InvalidAuthError:
+        # fmt: skip below: the pinned ruff formatter (0.15.x, target py314)
+        # incorrectly strips the parentheses from a multi-type except clause,
+        # producing invalid Python. The guard keeps the required parens.
+        except (CannotConnectError, InvalidAuthError):  # fmt: skip
             raise
         except aiohttp.ClientConnectorCertificateError as err:
             raise SslCertificateError(type(err).__name__) from err

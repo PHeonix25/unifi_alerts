@@ -128,7 +128,9 @@ class UniFiAlert:
         if ts is not None:
             try:
                 epoch_ms = int(ts)
-            except ValueError, TypeError:
+            # fmt: skip below: pinned ruff (0.15.x, target py314) strips the
+            # parens off a multi-type except clause, yielding invalid Python.
+            except (ValueError, TypeError):  # fmt: skip
                 epoch_ms = None
             if epoch_ms is not None:
                 with suppress(OverflowError, OSError, ValueError):
@@ -257,7 +259,7 @@ class UniFiAlert:
         received_at_raw = data.get("received_at", "")
         try:
             received_at = datetime.fromisoformat(received_at_raw)
-        except ValueError, TypeError:
+        except (ValueError, TypeError):  # fmt: skip
             received_at = datetime.now(UTC)
         return cls(
             category=data.get("category", ""),

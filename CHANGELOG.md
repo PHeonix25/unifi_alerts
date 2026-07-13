@@ -4,6 +4,7 @@
 
 ### Changed
 
+- **Breaking:** username and password authentication is being removed in favour of API keys. Config entries are migrated to a new version-4 schema on upgrade. Entries that already have an API key stored migrate silently and keep working. Entries set up with only a username and password are walked through re-authentication: a repair notice explains that an API key is now required and a single-field form accepts it. The entry is updated in place, so existing sensors, history, and Alarm Manager webhook URLs are preserved. Generate an API key in the UniFi OS web UI (**Settings > Admins & Users > API Keys**, **Integrations > New API Key**, or **Settings > Control Plane > API Keys**, depending on firmware). ([#278])
 - Raised the tooling and CI baseline to Python 3.14 and the declared minimum supported Home Assistant version to 2026.3.1, the first HA release that requires Python 3.14. `DataUpdateCoordinator` now receives `config_entry` explicitly instead of a bare `entry_id` string, and SSDP discovery imports `SsdpServiceInfo` from its new `homeassistant.helpers.service_info.ssdp` location. ([#228], [#311])
 
 ### Fixed
@@ -341,4 +342,5 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#283]: https://github.com/PHeonix25/unifi_alerts/issues/283
 [#228]: https://github.com/PHeonix25/unifi_alerts/issues/228
 [#311]: https://github.com/PHeonix25/unifi_alerts/pull/311
+[#278]: https://github.com/PHeonix25/unifi_alerts/issues/278
 [#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR

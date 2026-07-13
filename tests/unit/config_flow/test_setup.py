@@ -601,10 +601,11 @@ class TestMigration:
 
     @pytest.mark.asyncio
     async def test_strips_conf_is_unifi_os(self) -> None:
-        """async_migrate_entry must remove is_unifi_os and ultimately reach version 3.
+        """async_migrate_entry must remove is_unifi_os and ultimately reach version 4.
 
-        A v1 entry passes through v1->2 (strip is_unifi_os) and then v2->3
-        (backfill webhook_secret / webhook_id_suffix) in the same call.
+        A v1 entry passes through v1->2 (strip is_unifi_os), v2->3 (backfill
+        webhook_secret / webhook_id_suffix), and v3->4 (API-key migration) in
+        the same call.
         """
         from custom_components.unifi_alerts import async_migrate_entry
 
@@ -632,8 +633,11 @@ class TestMigration:
         result = await async_migrate_entry(hass, entry)
 
         assert result is True
-        # v1->2->3: the chained migration ends at version 3
-        assert entry.version == 3
+        # v1->2->3->4: the chained migration ends at version 4
+        assert entry.version == 4
         assert "is_unifi_os" not in entry.data
         # Remaining fields must be preserved
         assert entry.data[CONF_CONTROLLER_URL] == "https://192.168.1.1"
+        # v3->4 dropped the legacy userpass credentials and pinned apikey auth
+        assert CONF_USERNAME not in entry.data
+        assert CONF_PASSWORD not in entry.data
