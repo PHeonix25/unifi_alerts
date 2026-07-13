@@ -46,7 +46,7 @@
       },
       "reauth_confirm": {
         "title": "Re-authenticate UniFi Alerts",
-        "description": "Enter a UniFi API key for **{name}** to restore the connection.\n\nUsername and password authentication has been removed. Generate an API key in the UniFi OS web UI (the exact path varies by firmware): **Settings > Admins & Users > API Keys**, **Integrations > New API Key**, or **Settings > Control Plane > API Keys**. See the integration README on GitHub for device-specific instructions.",
+        "description": "Enter a UniFi API key for **{name}** to restore the connection.\n\nGenerate an API key in the UniFi OS web UI (the exact path varies by firmware): **Settings > Admins & Users > API Keys**, **Integrations > New API Key**, or **Settings > Control Plane > API Keys**. See the integration README on GitHub for device-specific instructions.",
         "data": {
           "api_key": "API Key"
         }

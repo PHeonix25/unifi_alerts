@@ -89,8 +89,6 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
                 )
         else:
             hass.config_entries.async_update_entry(config_entry, version=3)
-        # Fall through: HA calls async_migrate_entry once, so a version-2 entry
-        # must be walked all the way to the current version in this single call.
 
     if config_entry.version == 3:
         _migrate_v3_to_v4(hass, config_entry)
@@ -126,8 +124,7 @@ def _migrate_v3_to_v4(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
     hass.config_entries.async_update_entry(config_entry, data=new_data, version=4)
     if had_api_key:
         _LOGGER.info(
-            "Migrated config entry %s to version 4: API key present, dropped legacy "
-            "username/password credentials. No action required.",
+            "Migrated config entry %s to version 4: API key present, no action required.",
             config_entry.entry_id,
         )
     else:
