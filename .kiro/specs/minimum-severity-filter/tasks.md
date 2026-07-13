@@ -201,7 +201,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
   - Run `make check` (lint + typecheck + validate + test) and confirm every check passes, including every property test, unit test, and integration test added in this plan. This is a mandatory gate - fix any failures and re-run until all checks pass. The feature is not complete until this fully passes.
   - _Requirements: 10.1, 10.4_
 
-- [ ] 18. Remove all references to "Requirements" or any numbering featured in this plan
+- [x] 18. Remove all references to "Requirements" or any numbering featured in this plan
   - Scan the codebase for any references to this specification, including "Requirement X.X" or "Wave X" or "Task X" and refactor the comment/documentation to exclude the reference; leave the commentary and description ONLY if it makes sense.
 
 ## Notes

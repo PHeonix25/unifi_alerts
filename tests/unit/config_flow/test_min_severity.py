@@ -29,11 +29,9 @@ from .conftest import _VALID_INPUT, make_flow, make_options_flow
 
 
 class TestConfigFlowMinSeverity:
-    """Property 5: Config_Flow categories-step submission round-trips per
-    category, defaulting omitted categories to No_Filter."""
+    """Config_Flow categories-step submission round-trips per category,
+    defaulting omitted categories to No_Filter."""
 
-    # Feature: minimum-severity-filter, Property 5: Config_Flow categories-step
-    # submission round-trips per category, defaulting omitted categories to No_Filter
     @given(
         submitted=st.dictionaries(
             keys=st.sampled_from(ALL_CATEGORIES),
@@ -76,11 +74,9 @@ class TestConfigFlowMinSeverity:
 
 
 class TestOptionsFlowMinSeverity:
-    """Property 6: Options_Flow categories-step submission round-trips
-    independent of pre-fill."""
+    """Options_Flow categories-step submission round-trips independent of
+    pre-fill."""
 
-    # Feature: minimum-severity-filter, Property 6: Options_Flow categories-step
-    # submission round-trips independent of pre-fill
     @given(
         stored=st.dictionaries(
             keys=st.sampled_from(ALL_CATEGORIES),
@@ -136,8 +132,7 @@ class TestOptionsFlowMinSeverity:
         expected = {cat: submitted.get(cat, MIN_SEVERITY_NO_FILTER) for cat in ALL_CATEGORIES}
         assert persisted == expected
 
-    # Feature: minimum-severity-filter, Task 10.4: Options_Flow categories-step
-    # pre-fill (mandatory unit test, not a property test)
+    # Options_Flow categories-step pre-fill.
     def test_categories_step_prefill_legacy_entry_defaults_to_no_filter(self) -> None:
         """A legacy entry with no stored `min_severity` in either `.options` or
         `.data` must pre-fill every category's selector to No_Filter."""

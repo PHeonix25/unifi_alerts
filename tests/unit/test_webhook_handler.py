@@ -568,11 +568,8 @@ class TestRegisterAllRollback:
 
 
 class TestSeverityGateUnreachableBeforeAuth:
-    """Feature: minimum-severity-filter — token auth must reject before the
-    severity gate (which lives in coordinator.push_alert) is ever reached.
-
-    Validates: Requirements 9.1, 9.2
-    """
+    """Token auth must reject before the severity gate (which lives in
+    coordinator.push_alert) is ever reached."""
 
     @pytest.mark.asyncio
     async def test_invalid_token_with_otherwise_accepted_alert_returns_401_and_skips_push(self):

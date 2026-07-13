@@ -296,7 +296,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         minimum = get_effective_min_severity(self._config, category)
         if not meets_minimum(alert.severity_level, minimum):
-            # True no-op except for the webhook-health signal (Requirement 8.1):
+            # True no-op except for the webhook-health signal:
             # is_alerting / alert_count / open_count / last_alert are untouched.
             state.last_webhook_at = alert.received_at
             self._schedule_persist()

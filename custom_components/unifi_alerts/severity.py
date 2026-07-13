@@ -45,8 +45,11 @@ SEVERITY_ORDER: Final[list[str]] = [
 # ──────────────────────────────────────────────
 # Sentinel for "gate disabled for this category". Deliberately NOT one of the
 # four SEVERITY_* values above (and lowercase, unlike them) so it can never be
-# confused with an alert's own normalized severity — see Requirement 5's
-# rationale for why No_Filter, not LOW, is the backward-compatible default.
+# confused with an alert's own normalized severity. No_Filter, not LOW, is the
+# backward-compatible default because it carries no assumption about how an
+# alert's severity was normalized — a stored LOW default would silently start
+# gating alerts for every existing installation the moment this feature
+# shipped, whereas No_Filter preserves prior behavior until a user opts in.
 MIN_SEVERITY_NO_FILTER: Final = "no_filter"
 
 # Selector ordering only: No_Filter sits below LOW for UI purposes but is not

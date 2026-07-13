@@ -483,8 +483,8 @@ class TestCoordinatorV2Dispatch:
 class TestPollingSeverityGate:
     """Minimum_Severity_Setting gate on the polling path (_async_update_data)."""
 
-    # Feature: minimum-severity-filter, Property 12: Severity-filtered polling drives
-    # open_count, alerting selection, and the newest-seen watermark consistently
+    # Severity-filtered polling must drive open_count, alerting selection, and
+    # the newest-seen watermark consistently from the same eligible subset.
     @given(
         category=st.sampled_from(ALL_CATEGORIES),
         minimum=st.sampled_from(MIN_SEVERITY_ORDER),
@@ -559,8 +559,8 @@ class TestPollingSeverityGate:
         else:
             assert state.last_alarm_received_at is None
 
-    # Feature: minimum-severity-filter, Property 13: Disabled category is untouched
-    # by a poll cycle regardless of severity content
+    # A disabled category must be untouched by a poll cycle regardless of
+    # severity content
     @given(
         category=st.sampled_from(ALL_CATEGORIES),
         minimum=st.sampled_from(MIN_SEVERITY_ORDER),

@@ -144,8 +144,6 @@ async def test_min_severity_survives_reload_and_still_gates_alerts(hass, mock_un
     both pushes behave identically again on the freshly-created coordinator —
     confirming the setting is read from the reloaded entry, not left over from
     the previous coordinator instance.
-
-    Validates Requirements 5.1, 5.2, 3.2, 4.2.
     """
     from homeassistant.setup import async_setup_component
     from pytest_homeassistant_custom_component.common import MockConfigEntry

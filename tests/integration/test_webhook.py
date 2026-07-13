@@ -228,8 +228,8 @@ async def test_below_threshold_push_then_at_or_above_threshold_push(
     before this feature existed.
 
     Full config-entry setup with a non-default ``min_severity`` for one
-    category (network_device -> HIGH). Validates Requirements 6.1, 6.2, 6.3,
-    6.5, 8.1 end to end via the real HTTP webhook path.
+    category (network_device -> HIGH), exercised end to end via the real
+    HTTP webhook path.
     """
     category = CATEGORY_NETWORK_DEVICE
     min_sev_suffix = "minsev"
@@ -244,7 +244,7 @@ async def test_below_threshold_push_then_at_or_above_threshold_push(
 
     # Below-threshold push (LOW < HIGH): must not flip the sensor, must not
     # touch alert_count/open_count/last_alert, but must still advance the
-    # webhook health signal (last_webhook_at) per Requirement 8.1.
+    # webhook health signal (last_webhook_at).
     below_payload = {
         "key": "EVT_AP_Disconnected",
         "message": "AP offline (low severity)",

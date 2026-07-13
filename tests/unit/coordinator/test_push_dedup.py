@@ -546,7 +546,7 @@ class TestPushAlertOptimisticOpenCount:
 class TestPushAlertSeverityGate:
     """Minimum_Severity_Setting gate on the webhook push path (push_alert)."""
 
-    # Feature: minimum-severity-filter, Property 8: Below-threshold push on an enabled category is a true no-op
+    # Below-threshold push on an Enabled Category must be a true no-op.
     @given(
         minimum=st.sampled_from(_BELOW_THRESHOLD_MINIMUMS),
         prior_is_alerting=st.booleans(),
@@ -593,7 +593,7 @@ class TestPushAlertSeverityGate:
         assert state.open_count == prior_open_count
         assert state.last_alert is prior_last_alert
 
-    # Feature: minimum-severity-filter, Property 11: last_webhook_at still advances on a gated push
+    # last_webhook_at must still advance on a gated (below-threshold) push.
     @given(
         minimum=st.sampled_from(_BELOW_THRESHOLD_MINIMUMS),
         prior_is_alerting=st.booleans(),
@@ -642,7 +642,8 @@ class TestPushAlertSeverityGate:
         assert state.open_count == prior_open_count
         assert state.last_alert is prior_last_alert
 
-    # Feature: minimum-severity-filter, Property 10: At-or-above-threshold or No_Filter push is accepted exactly as before this feature
+    # An at/above-threshold push, or a push under No_Filter, must be accepted
+    # exactly as before this feature existed.
     @given(
         gate_mode=st.sampled_from(["at_or_above", "no_filter"]),
         prior_is_alerting=st.booleans(),
@@ -711,7 +712,7 @@ class TestPushAlertSeverityGate:
         )
         assert state.open_count == expected_open_count
 
-    # Feature: minimum-severity-filter, Property 9: Disabled category never evaluates the gate
+    # A disabled category must never evaluate the severity gate.
     @given(
         category=st.sampled_from(ALL_CATEGORIES),
         minimum=st.sampled_from(MIN_SEVERITY_ORDER),

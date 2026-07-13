@@ -45,7 +45,8 @@ def _padded(name: str) -> st.SearchStrategy[str]:
     return st.tuples(whitespace, whitespace).map(lambda pad: f"{pad[0]}{name}{pad[1]}")
 
 
-# Feature: minimum-severity-filter, Property 1: Normalizer totality
+# Normalizer totality: normalize_severity must be a total function over
+# arbitrary string input, never raising and never returning the sentinel.
 @given(raw=st.text())
 @settings(max_examples=25)
 def test_normalize_severity_totality(raw: str) -> None:
@@ -56,7 +57,7 @@ def test_normalize_severity_totality(raw: str) -> None:
     assert result != MIN_SEVERITY_NO_FILTER
 
 
-# Feature: minimum-severity-filter, Property 2: Canonical and synonym matching is case- and whitespace-insensitive
+# Canonical and synonym matching must be case- and whitespace-insensitive.
 @given(
     name=st.sampled_from(_ALL_MATCHED_NAMES),
     data=st.data(),
@@ -73,7 +74,7 @@ def test_normalize_severity_case_and_whitespace_insensitive(name: str, data: st.
     assert normalize_severity(padded) == expected
 
 
-# Feature: minimum-severity-filter, Property 3: Unmatched or empty input falls back to LOW
+# Unmatched or empty input must fall back to LOW.
 @given(
     raw=st.text().filter(
         lambda s: (
@@ -90,7 +91,7 @@ def test_normalize_severity_unmatched_or_empty_falls_back_to_low(raw: str) -> No
     assert normalize_severity(raw) == SEVERITY_LOW
 
 
-# Feature: minimum-severity-filter, Property 7: Effective-setting resolution defaults missing data to No_Filter
+# Effective-setting resolution must default missing data to No_Filter.
 @given(
     category=st.text(min_size=1),
     other_categories=st.dictionaries(st.text(min_size=1), st.sampled_from(MIN_SEVERITY_ORDER)),
@@ -124,7 +125,7 @@ def test_get_effective_min_severity_defaults_missing_data_to_no_filter(
     assert get_effective_min_severity(config_with_key, category) == stored_value
 
 
-# Feature: minimum-severity-filter, Property 4: Raw severity is preserved independent of normalization
+# Raw severity must be preserved independent of normalization.
 @given(raw=st.text())
 @settings(max_examples=25)
 def test_alert_severity_preserved_independent_of_normalization(raw: str) -> None:
