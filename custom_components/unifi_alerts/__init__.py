@@ -19,10 +19,16 @@ from homeassistant.helpers.storage import Store
 
 from .const import (
     ALL_CATEGORIES,
+    AUTH_METHOD_APIKEY,
+    CONF_API_KEY,
+    CONF_AUTH_METHOD,
     CONF_CONTROLLER_URL,
+    CONF_PASSWORD,
+    CONF_USERNAME,
     CONF_VERIFY_SSL,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
+    ISSUE_ID_APIKEY_MIGRATION,
     ISSUE_ID_AUTH_FAILED,
     ISSUE_ID_PERSIST_FAILED,
     ISSUE_ID_WEBHOOK_SECRET_ROTATED,
@@ -83,9 +89,51 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
                 )
         else:
             hass.config_entries.async_update_entry(config_entry, version=3)
-        return True
+
+    if config_entry.version == 3:
+        _migrate_v3_to_v4(hass, config_entry)
 
     return True
+
+
+def _migrate_v3_to_v4(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    """Migrate a version-3 entry to the API-key-only version-4 schema.
+
+    Username/password auth is being removed (epic #277). Every version-3 entry
+    is moved to version 4 with any stored ``username``/``password`` dropped and
+    ``auth_method`` pinned to apikey:
+
+    - Entries that already carry a non-empty ``api_key`` migrate silently and
+      keep working with no user action.
+    - Entries with only username/password lose their credentials here, so
+      ``async_setup_entry`` raises ``ConfigEntryAuthFailed`` and Home Assistant
+      launches the reauth flow, which asks for a single API key. The reauth
+      entry point (config_flow.async_step_reauth) raises an explanatory repair
+      issue for these entries so the prompt does not look like a credential
+      failure.
+
+    The entry is updated in place, so entry_id, unique_id, the webhook id
+    suffix, and the webhook secret are all untouched: entities, history, and
+    Alarm Manager URLs survive the migration.
+    """
+    new_data = dict(config_entry.data)
+    had_api_key = bool(new_data.get(CONF_API_KEY))
+    new_data.pop(CONF_USERNAME, None)
+    new_data.pop(CONF_PASSWORD, None)
+    new_data[CONF_AUTH_METHOD] = AUTH_METHOD_APIKEY
+    hass.config_entries.async_update_entry(config_entry, data=new_data, version=4)
+    if had_api_key:
+        _LOGGER.info(
+            "Migrated config entry %s to version 4: API key present, no action required.",
+            config_entry.entry_id,
+        )
+    else:
+        _LOGGER.warning(
+            "Migrated config entry %s to version 4: no API key stored. Username/password "
+            "authentication has been removed, so re-authentication with an API key will be "
+            "requested. See the integration README for how to create an API key.",
+            config_entry.entry_id,
+        )
 
 
 def _prune_disabled_category_entities(
@@ -266,6 +314,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         ISSUE_ID_WEBHOOK_SECRET_ROTATED,
         ISSUE_ID_WEBHOOK_URLS_CHANGED,
         ISSUE_ID_PERSIST_FAILED,
+        ISSUE_ID_APIKEY_MIGRATION,
     ):
         ir.async_delete_issue(hass, DOMAIN, f"{issue_id_base}_{entry.entry_id}")
 

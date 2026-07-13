@@ -77,6 +77,11 @@ ISSUE_ID_AUTH_FAILED: Final = "auth_failed"
 ISSUE_ID_WEBHOOK_SECRET_ROTATED: Final = "webhook_secret_rotated"
 ISSUE_ID_WEBHOOK_URLS_CHANGED: Final = "webhook_urls_changed"
 ISSUE_ID_PERSIST_FAILED: Final = "watermark_persist_failed"
+# Raised when a username/password entry is migrated to the API-key-only schema
+# (version 4) and needs an API key supplied via reauth. Distinct from
+# ISSUE_ID_AUTH_FAILED so the repair card explains the upgrade rather than
+# looking like a credential failure.
+ISSUE_ID_APIKEY_MIGRATION: Final = "apikey_migration_required"
 
 # ──────────────────────────────────────────────
 # Category identifiers

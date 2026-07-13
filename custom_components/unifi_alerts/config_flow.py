@@ -40,6 +40,7 @@ from .const import (
     DEFAULT_SITE,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
+    ISSUE_ID_APIKEY_MIGRATION,
     ISSUE_ID_AUTH_FAILED,
     ISSUE_ID_WEBHOOK_SECRET_ROTATED,
     webhook_id_for_category,
@@ -64,10 +65,40 @@ def _create_auth_failed_issue(hass: Any, entry: Any) -> None:
     )
 
 
+def _create_apikey_migration_issue(hass: Any, entry: Any) -> None:
+    """Create a repair issue explaining that reauth is an API-key migration.
+
+    Raised when a username/password entry has been migrated to the version-4
+    API-key-only schema (see __init__._migrate_v3_to_v4). Distinct from the
+    generic auth-failed issue so the repair card explains the upgrade instead
+    of reading like a credential failure.
+    """
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"{ISSUE_ID_APIKEY_MIGRATION}_{entry.entry_id}",
+        is_fixable=True,
+        severity=ir.IssueSeverity.ERROR,
+        translation_key=ISSUE_ID_APIKEY_MIGRATION,
+        translation_placeholders={"name": entry.title},
+    )
+
+
+def _entry_needs_apikey_migration(entry: Any) -> bool:
+    """Return True when an entry is in reauth because of the API-key migration.
+
+    After __init__._migrate_v3_to_v4 strips username/password from a userpass
+    entry, it has no API key stored. A genuine credential failure, by contrast,
+    still has its api_key in entry.data. The absence of an API key therefore
+    distinguishes a migration-driven reauth from an ordinary one.
+    """
+    return not entry.data.get(CONF_API_KEY)
+
+
 class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the initial setup flow shown in Settings → Integrations."""
 
-    VERSION = 3
+    VERSION = 4
 
     def __init__(self) -> None:
         self._controller_url: str = ""
@@ -282,12 +313,17 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         """Entry point called by HA when ConfigEntryAuthFailed is raised.
 
         Creates a repair issue so users see a repair card even if the standard
-        reauth notification is missed.
+        reauth notification is missed. An entry that has just been migrated to
+        the API-key-only schema (no api_key stored) gets a dedicated
+        migration-explanation issue instead of the generic auth-failed one.
         """
         self._reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         # Surface a repair card in addition to the standard reauth prompt
         if self._reauth_entry is not None:
-            _create_auth_failed_issue(self.hass, self._reauth_entry)
+            if _entry_needs_apikey_migration(self._reauth_entry):
+                _create_apikey_migration_issue(self.hass, self._reauth_entry)
+            else:
+                _create_auth_failed_issue(self.hass, self._reauth_entry)
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -314,25 +350,31 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.error("Cannot reach controller during reauth: %s", err)
                 errors["base"] = "cannot_connect"
             else:
-                # Merge updated credentials into the entry
+                # Merge the new API key into the entry. Any legacy
+                # username/password were already dropped by the version-4
+                # migration; the entry is updated in place so entry_id,
+                # unique_id, webhook suffix, and webhook secret are preserved.
                 new_data = {
                     **entry.data,
                     **user_input,
                     CONF_AUTH_METHOD: auth_method,
                 }
                 self.hass.config_entries.async_update_entry(entry, data=new_data)
-                # Clear the repair issue now that auth is restored
-                ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_ID_AUTH_FAILED}_{entry.entry_id}")
+                # Clear both possible repair issues now that auth is restored.
+                # Deleting a non-existent issue is a no-op, so it is safe to
+                # clear both the generic auth-failed and the migration issue
+                # without first working out which one was raised.
+                for issue_base in (ISSUE_ID_AUTH_FAILED, ISSUE_ID_APIKEY_MIGRATION):
+                    ir.async_delete_issue(self.hass, DOMAIN, f"{issue_base}_{entry.entry_id}")
                 await self.hass.config_entries.async_reload(entry.entry_id)
                 return self.async_abort(reason="reauth_successful")
 
-        _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+        # API-key-only form: username/password auth is being removed (#277), so
+        # reauth restores the connection with a single API key.
         _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         schema = vol.Schema(
             {
-                vol.Optional(CONF_USERNAME): str,
-                vol.Optional(CONF_PASSWORD): _password_selector,
-                vol.Optional(CONF_API_KEY): _api_key_selector,
+                vol.Required(CONF_API_KEY): _api_key_selector,
             }
         )
         return self.async_show_form(
