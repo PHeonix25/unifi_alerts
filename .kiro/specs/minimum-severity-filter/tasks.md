@@ -61,7 +61,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
   - _Requirements: 3.2, 4.2, 5.1_
 
 - [x] 4. Checkpoint - Run the test suite (mandatory gate, not optional)
-  - Run the full test suite and confirm every test passes before proceeding. This is a mandatory gate, including all property tests written so far — do not proceed to subsequent tasks until all tests pass. If a test fails, fix the implementation or the test before moving on.
+  - Run the full test suite and confirm every test passes before proceeding. This is a mandatory gate, including all property tests written so far - do not proceed to subsequent tasks until all tests pass. If a test fails, fix the implementation or the test before moving on.
 
 - [x] 5. Add `severity_level` property and config typing to `models.py`
   - [x] 5.1 Add `UniFiAlert.severity_level` computed property
@@ -124,7 +124,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     - In `tests/unit/coordinator/test_polling.py`, generate a disabled category with arbitrary prior `is_alerting`/`last_alert`/`open_count`, arbitrary polled alarms, and arbitrary minimum; assert all three fields unchanged after a poll cycle
 
 - [x] 8. Checkpoint - Run the test suite (mandatory gate, not optional)
-  - Run the full test suite and confirm every test passes before proceeding. This is a mandatory gate, including all property tests written so far — do not proceed to subsequent tasks until all tests pass. If a test fails, fix the implementation or the test before moving on.
+  - Run the full test suite and confirm every test passes before proceeding. This is a mandatory gate, including all property tests written so far - do not proceed to subsequent tasks until all tests pass. If a test fails, fix the implementation or the test before moving on.
 
 - [x] 9. Add Minimum_Severity_Setting selector to `config_flow.py` Config_Flow
   - [x] 9.1 Define `_MIN_SEVERITY_OPTIONS` and `_min_severity_selector`
@@ -167,24 +167,24 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     - In `tests/unit/config_flow/test_min_severity.py`, assert pre-fill resolves correctly both from a legacy entry (no stored `min_severity`) and from an entry with an explicit stored value
     - _Requirements: 4.1_
 
-- [-] 11. Checkpoint - Run the test suite (mandatory gate, not optional)
-  - Run the full test suite and confirm every test passes before proceeding. This is a mandatory gate, including all property tests and unit tests written so far — do not proceed to subsequent tasks until all tests pass. If a test fails, fix the implementation or the test before moving on.
+- [x] 11. Checkpoint - Run the test suite (mandatory gate, not optional)
+  - Run the full test suite and confirm every test passes before proceeding. This is a mandatory gate, including all property tests and unit tests written so far - do not proceed to subsequent tasks until all tests pass. If a test fails, fix the implementation or the test before moving on.
 
 - [x] 12. Verify webhook auth-before-gate ordering
   - [x] 12.1 Write unit test: severity gate is unreachable before token auth succeeds (mandatory)
     - Extend `tests/unit/test_webhook_handler.py`: an invalid-token request carrying an otherwise-accepted alert never invokes `push_alert` and still returns HTTP 401
     - _Requirements: 9.1, 9.2_
 
-- [ ] 13. Add localization keys to `strings.json` and `translations/en.json`
+- [x] 13. Add localization keys to `strings.json` and `translations/en.json`
   - Add the 14 `min_severity_{category}` keys under both `config.step.categories.data` and `options.step.categories.data` in `strings.json`
   - Mirror every key byte-identically into `translations/en.json`
   - _Requirements: 10.1_
 
-- [ ] 14. Document severity normalization in `docs/UNIFI.md`
+- [x] 14. Document severity normalization in `docs/UNIFI.md`
   - Add a "Severity normalization" section covering the four-level ordering, the `No_Filter` sentinel and its position outside that ordering, the full synonym table, and the empty/unmatched fallback to `LOW`
   - _Requirements: 10.2_
 
-- [ ] 15. Add `CHANGELOG.md` entry
+- [x] 15. Add `CHANGELOG.md` entry
   - Add one `### Added` bullet under `[Unreleased]` describing the per-category minimum-severity option, referencing issue #135
   - _Requirements: 10.3, 10.4_
 
@@ -198,7 +198,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     - _Requirements: 5.1, 5.2, 3.2, 4.2_
 
 - [ ] 17. Final checkpoint - Run full validation suite (mandatory gate, not optional)
-  - Run `make check` (lint + typecheck + validate + test) and confirm every check passes, including every property test, unit test, and integration test added in this plan. This is a mandatory gate — fix any failures and re-run until all checks pass. The feature is not complete until this fully passes.
+  - Run `make check` (lint + typecheck + validate + test) and confirm every check passes, including every property test, unit test, and integration test added in this plan. This is a mandatory gate - fix any failures and re-run until all checks pass. The feature is not complete until this fully passes.
   - _Requirements: 10.1, 10.4_
 
 ## Notes
@@ -207,8 +207,8 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
 - Checkpoint tasks (4, 8, 11, 17) are hard gates, not optional check-ins: all tests (and, for Task 17, the full `make check` suite) must pass before moving on to the next task.
 - `severity.py` and the `CONF_MIN_SEVERITY` constant (Tasks 2-3) must land before any consumer changes (Tasks 5-10), since `models.py`, `coordinator.py`, and `config_flow.py` all import from `severity.py`/`const.py`.
 - `models.py` (Task 5) must land before `coordinator.py` (Tasks 6-7), since the push/poll gates call `alert.severity_level`.
-- `coordinator.py` and `config_flow.py` changes (Tasks 6-10) are independent of each other and their relative order may vary, but both sets of tasks are required — neither is optional regardless of sequencing. They are sequenced coordinator-first here since the poll/push gates are the core behavior and the config UI is how users set the values consumed by that behavior.
-- Documentation/changelog/localization tasks (13-15) have no code dependencies on each other and their relative order may vary, but all three are required — none may be skipped. They are sequenced after the behavior they document is implemented.
+- `coordinator.py` and `config_flow.py` changes (Tasks 6-10) are independent of each other and their relative order may vary, but both sets of tasks are required - neither is optional regardless of sequencing. They are sequenced coordinator-first here since the poll/push gates are the core behavior and the config UI is how users set the values consumed by that behavior.
+- Documentation/changelog/localization tasks (13-15) have no code dependencies on each other and their relative order may vary, but all three are required - none may be skipped. They are sequenced after the behavior they document is implemented.
 - Integration tests (Task 16) depend on both the coordinator gating (Tasks 6-7) and the config flow selectors (Tasks 9-10) since they exercise full entry setup plus webhook push. Both integration test sub-tasks (16.1, 16.2) are mandatory.
 
 ## Task Dependency Graph

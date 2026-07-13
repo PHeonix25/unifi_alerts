@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a per-category minimum-severity option (Config Flow and Options Flow), with an explicit "No Filter" value, so noisy categories can be enabled without accepting every low-value alert. Alerts below a category's configured minimum severity are a true no-op on both the webhook push path and the polling paths. Raw severity strings from all ingestion paths (webhooks, legacy alarms, v2 system-log events) are now normalized onto a consistent `LOW`/`MEDIUM`/`HIGH`/`VERY_HIGH` scale for the comparison, closing the remaining scope of the severity-visibility issue. ([#135])
+
 ### Changed
 
 - **Breaking:** username and password authentication is being removed in favour of API keys. Config entries are migrated to a new version-4 schema on upgrade. Entries that already have an API key stored migrate silently and keep working. Entries set up with only a username and password are walked through re-authentication: a repair notice explains that an API key is now required and a single-field form accepts it. The entry is updated in place, so existing sensors, history, and Alarm Manager webhook URLs are preserved. Generate an API key in the UniFi OS web UI (**Settings > Admins & Users > API Keys**, **Integrations > New API Key**, or **Settings > Control Plane > API Keys**, depending on firmware). ([#278])

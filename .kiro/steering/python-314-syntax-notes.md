@@ -18,7 +18,7 @@ This repo targets Python 3.14+ (see AGENTS.md tech stack table). Some syntax tha
 
   Do not "fix" the parenthesis-free form by adding parentheses, and do not
   flag it as a syntax error or Python-2-style mistake. Only `except X, Y:`
-  meaning "catch X as Y" (the actual Python 2 syntax) is gone — that
+  meaning "catch X as Y" (the actual Python 2 syntax) is gone; that
   ambiguity is resolved by 3.14's grammar because `as` is now required for
   binding a name.
 
