@@ -75,95 +75,26 @@ class TestPollingErrorPaths:
     """Tests for _async_update_data error handling."""
 
     @pytest.mark.asyncio
-    async def test_invalid_auth_triggers_re_auth_and_retries(self):
-        """On InvalidAuthError the coordinator re-authenticates once and retries."""
-        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
+    async def test_invalid_auth_raises_config_entry_auth_failed(self):
+        """A 401 on a static API key must raise ConfigEntryAuthFailed directly, no retry.
 
-        hass, client = make_hass_and_client()
-        # First call raises InvalidAuthError; after re-auth the second call succeeds
-        client.categorise_alarms = AsyncMock(side_effect=[InvalidAuthError("expired"), {}])
-        client.authenticate = AsyncMock()
-        coord = make_full_coordinator(hass, client)
-
-        # Should not raise
-        await coord._async_update_data()
-        client.authenticate.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        ("categorise_side_effect", "authenticate_side_effect"),
-        [
-            pytest.param(
-                "auth_error",
-                "auth_error",
-                id="reauth-itself-raises-invalid-auth",
-            ),
-            pytest.param(
-                "auth_error",
-                "cannot_connect",
-                id="reauth-itself-raises-cannot-connect",
-            ),
-            pytest.param(
-                "auth_error_twice",
-                None,
-                id="reauth-succeeds-but-retry-still-401",
-            ),
-        ],
-    )
-    async def test_reauth_failure_paths_raise_config_entry_auth_failed(
-        self, categorise_side_effect, authenticate_side_effect
-    ):
-        """Every path that ends without a valid session must raise ConfigEntryAuthFailed.
-
-        Covers: re-auth itself raising InvalidAuthError, re-auth itself raising
-        CannotConnectError, and re-auth succeeding but the retried fetch still
-        returning 401.
+        The API key has no session to refresh, so a rejected key means it was
+        revoked/regenerated: surface reauth immediately rather than re-attempting.
         """
         from homeassistant.exceptions import ConfigEntryAuthFailed
 
-        from custom_components.unifi_alerts.unifi_client import CannotConnectError, InvalidAuthError
-
-        categorise_effects = {
-            "auth_error": InvalidAuthError("expired"),
-            "auth_error_twice": [InvalidAuthError("expired"), InvalidAuthError("still 401")],
-        }
-        authenticate_effects = {
-            None: None,
-            "auth_error": InvalidAuthError("still bad"),
-            "cannot_connect": CannotConnectError("unreachable during reauth"),
-        }
+        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
 
         hass, client = make_hass_and_client()
-        client.categorise_alarms = AsyncMock(side_effect=categorise_effects[categorise_side_effect])
-        client.authenticate = AsyncMock(side_effect=authenticate_effects[authenticate_side_effect])
+        client.categorise_alarms = AsyncMock(side_effect=InvalidAuthError("revoked"))
+        client.authenticate = AsyncMock()
         coord = make_full_coordinator(hass, client)
 
         with pytest.raises(ConfigEntryAuthFailed):
             await coord._async_update_data()
 
-        client.authenticate.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_reauth_succeeds_but_retry_fails_raises_update_failed_with_distinctive_message(
-        self,
-    ):
-        """Re-auth succeeds but retried categorise_alarms fails → UpdateFailed with 'after re-authentication'."""
-        from homeassistant.helpers.update_coordinator import UpdateFailed
-
-        from custom_components.unifi_alerts.unifi_client import CannotConnectError, InvalidAuthError
-
-        hass, client = make_hass_and_client()
-        # First categorise_alarms call fails with auth error; re-auth succeeds; second call fails
-        client.categorise_alarms = AsyncMock(
-            side_effect=[InvalidAuthError("expired"), CannotConnectError("controller 500")]
-        )
-        client.authenticate = AsyncMock()  # re-auth succeeds
-        coord = make_full_coordinator(hass, client)
-
-        with pytest.raises(UpdateFailed) as exc_info:
-            await coord._async_update_data()
-
-        assert "after re-authentication" in str(exc_info.value)
+        # No re-authentication is attempted for a static key.
+        client.authenticate.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_cannot_connect_raises_update_failed(self):

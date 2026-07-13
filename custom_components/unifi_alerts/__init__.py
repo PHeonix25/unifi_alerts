@@ -19,12 +19,8 @@ from homeassistant.helpers.storage import Store
 
 from .const import (
     ALL_CATEGORIES,
-    AUTH_METHOD_APIKEY,
     CONF_API_KEY,
-    CONF_AUTH_METHOD,
     CONF_CONTROLLER_URL,
-    CONF_PASSWORD,
-    CONF_USERNAME,
     CONF_VERIFY_SSL,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
@@ -99,9 +95,9 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 def _migrate_v3_to_v4(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
     """Migrate a version-3 entry to the API-key-only version-4 schema.
 
-    Username/password auth is being removed (epic #277). Every version-3 entry
-    is moved to version 4 with any stored ``username``/``password`` dropped and
-    ``auth_method`` pinned to apikey:
+    Username/password auth has been removed (epic #277). Every version-3 entry
+    is moved to version 4 with any stored username/password (and the now-unused
+    auth_method marker) dropped:
 
     - Entries that already carry a non-empty ``api_key`` migrate silently and
       keep working with no user action.
@@ -118,9 +114,11 @@ def _migrate_v3_to_v4(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
     """
     new_data = dict(config_entry.data)
     had_api_key = bool(new_data.get(CONF_API_KEY))
-    new_data.pop(CONF_USERNAME, None)
-    new_data.pop(CONF_PASSWORD, None)
-    new_data[CONF_AUTH_METHOD] = AUTH_METHOD_APIKEY
+    # "username"/"password"/"auth_method" are legacy version-3 keys. The auth
+    # constants were removed with the userpass code (#279), so these are dropped
+    # by literal key; nothing reads auth_method any more.
+    for legacy_key in ("username", "password", "auth_method"):
+        new_data.pop(legacy_key, None)
     hass.config_entries.async_update_entry(config_entry, data=new_data, version=4)
     if had_api_key:
         _LOGGER.info(

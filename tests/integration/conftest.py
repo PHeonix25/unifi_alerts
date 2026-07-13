@@ -16,6 +16,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
+    CONF_API_KEY,
     CONF_CLEAR_TIMEOUT,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
@@ -67,15 +68,13 @@ HA_TEST_URL = "http://homeassistant.test:8123"
 
 BASE_CONFIG: dict = {
     CONF_CONTROLLER_URL: "https://192.168.1.1",
-    "username": "admin",
-    "password": "password",
+    CONF_API_KEY: "test-api-key",
     CONF_ENABLED_CATEGORIES: list(ALL_CATEGORIES),
     CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
     CONF_CLEAR_TIMEOUT: DEFAULT_CLEAR_TIMEOUT,
     CONF_VERIFY_SSL: False,
     CONF_WEBHOOK_SECRET: WEBHOOK_SECRET,
     CONF_WEBHOOK_ID_SUFFIX: WEBHOOK_ID_SUFFIX,
-    "auth_method": "userpass",
     CONF_SITE: "default",
 }
 
@@ -99,7 +98,7 @@ def mock_unifi_client():
     """
     with patch("custom_components.unifi_alerts.UniFiClient") as mock_cls:
         instance = MagicMock()
-        instance.authenticate = AsyncMock(return_value="userpass")
+        instance.authenticate = AsyncMock(return_value=None)
         instance.categorise_alarms = AsyncMock(return_value={})
         instance.probe_system_log_endpoint = AsyncMock(return_value=False)
         instance.close = AsyncMock()
@@ -127,7 +126,7 @@ async def entry(hass, mock_unifi_client):
         domain=DOMAIN,
         data=dict(BASE_CONFIG),
         entry_id=ENTRY_ID,
-        version=3,
+        version=4,
     )
     config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(config_entry.entry_id)

@@ -10,7 +10,6 @@ from typing import Any
 import aiohttp
 
 from .const import (
-    AUTH_METHOD_USERPASS,
     CONF_VERIFY_SSL,
     DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS,
     DEFAULT_VERIFY_SSL,
@@ -46,16 +45,14 @@ class InvalidSiteError(CannotConnectError):
 class UniFiClient:
     """Minimal async client for fetching alarms from a UniFi controller.
 
-    Supports:
-      - Username/password auth (session cookie)
-      - API key auth (X-API-Key header)
-      - Auto-detection: tries API key first, falls back to user/pass
+    Authenticates with an API key (X-API-Key header). API keys are stateless,
+    so there is no session bootstrap, cookie, or logout to manage.
 
-    Requires UniFi OS (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+).
-    Classic self-hosted Network Application controllers are not supported.
+    Requires UniFi OS (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+)
+    running Network Application 8.x+ (for API key support). Classic self-hosted
+    Network Application controllers are not supported.
 
-    Auth concerns are composed via a UniFiAuth instance (self._auth); this
-    class does not duplicate or proxy its state.
+    Auth concerns are composed via a UniFiAuth instance (self._auth).
     """
 
     def __init__(
@@ -81,16 +78,15 @@ class UniFiClient:
 
     # ── Public interface ──────────────────────────────────────────────────
 
-    async def authenticate(self) -> str:
-        """Authenticate to the UniFi OS controller. Returns the auth method used.
+    async def authenticate(self) -> None:
+        """Verify the configured API key against the UniFi OS controller.
 
         Auth itself is delegated to UniFiAuth; the probe-backoff reset is a
         client concern (probe state lives on the client, not on the auth seam),
-        so it runs here on every successful authentication.
+        so it runs here on every successful verification.
         """
-        method = await self._auth.authenticate()
+        await self._auth.authenticate()
         self._clear_probe_backoff()
-        return method
 
     def _clear_probe_backoff(self) -> None:
         """Reset probe-backoff state after successful authentication.
@@ -106,10 +102,11 @@ class UniFiClient:
             self._has_system_log = None
 
     async def fetch_alarms(self, site: str = "default") -> list[dict[str, Any]]:
-        """Return all unarchived alarms from the controller."""
-        if not self._auth.authenticated:
-            await self.authenticate()
+        """Return all unarchived alarms from the controller.
 
+        The API key is a stateless header (see UniFiAuth), so there is no
+        session to bootstrap here; the key is verified once at setup.
+        """
         # Different firmware versions expose the alarm endpoint at different paths.
         # Try the newest path first so modern firmware succeeds in one call; fall
         # back to older variants for backwards compatibility. Order matters —
@@ -149,8 +146,7 @@ class UniFiClient:
                         "request; refusing to follow to protect credentials"
                     )
                 if resp.status == 401:
-                    self._auth.invalidate()
-                    raise InvalidAuthError("Session expired")
+                    raise InvalidAuthError("API key rejected (HTTP 401)")
                 if resp.status == 404:
                     _LOGGER.debug("Alarm URL %s returned 404 — trying next URL", url)
                     return None
@@ -225,9 +221,6 @@ class UniFiClient:
                     return False
             else:
                 return self._has_system_log
-
-        if not self._auth.authenticated:
-            await self.authenticate()
 
         url = f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/v2/api/site/{site}/system-log/count"
         _LOGGER.debug("Probing v2 system-log endpoint: %s", url)
@@ -310,9 +303,6 @@ class UniFiClient:
         Only events with status="NEW" are returned (equivalent to the legacy
         archived=False filter). Events with any other status are skipped.
         """
-        if not self._auth.authenticated:
-            await self.authenticate()
-
         now = datetime.now(UTC)
         if since is not None:
             from_dt = since
@@ -352,8 +342,9 @@ class UniFiClient:
                             "request; refusing to follow to protect credentials"
                         )
                     if resp.status == 401:
-                        self._auth.invalidate()
-                        raise InvalidAuthError("Session expired during system-log fetch")
+                        raise InvalidAuthError(
+                            "API key rejected during system-log fetch (HTTP 401)"
+                        )
                     resp.raise_for_status()
                     data = await resp.json()
             except aiohttp.ClientConnectorCertificateError as err:
@@ -414,16 +405,13 @@ class UniFiClient:
         return result
 
     async def close(self) -> None:
-        if self._auth.method == AUTH_METHOD_USERPASS and self._auth.authenticated:
-            try:
-                await self._session.post(
-                    f"{self._base}/api/auth/logout",
-                    ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
-                    timeout=aiohttp.ClientTimeout(total=5),
-                    allow_redirects=False,
-                )
-            except (aiohttp.ClientError, OSError, TimeoutError) as err:
-                _LOGGER.warning("UniFi logout failed: %s", type(err).__name__)
+        """Release client resources.
+
+        API-key auth is stateless (no session to log out) and the aiohttp
+        session is owned by Home Assistant, so there is nothing to tear down.
+        Kept as an awaitable no-op so call sites (setup teardown, unload) need
+        no special-casing.
+        """
 
     # ── Private helpers ───────────────────────────────────────────────────
 
