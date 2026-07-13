@@ -126,7 +126,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
 - [x] 8. Checkpoint - Run the test suite (mandatory gate, not optional)
   - Run the full test suite and confirm every test passes before proceeding. This is a mandatory gate, including all property tests written so far — do not proceed to subsequent tasks until all tests pass. If a test fails, fix the implementation or the test before moving on.
 
-- [ ] 9. Add Minimum_Severity_Setting selector to `config_flow.py` Config_Flow
+- [x] 9. Add Minimum_Severity_Setting selector to `config_flow.py` Config_Flow
   - [x] 9.1 Define `_MIN_SEVERITY_OPTIONS` and `_min_severity_selector`
     - `SelectOptionDict` entries for `No_Filter`/`LOW`/`MEDIUM`/`HIGH`/`VERY_HIGH` with display labels; shared `SelectSelector` instance
     - _Requirements: 3.1_
@@ -140,16 +140,16 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     - Store into `self._entry_data[CONF_MIN_SEVERITY]`
     - _Requirements: 3.2, 3.3_
 
-  - [ ] 9.4 Write property test: Config_Flow categories-step submission round-trips, defaulting omitted categories to No_Filter (mandatory)
+  - [x] 9.4 Write property test: Config_Flow categories-step submission round-trips, defaulting omitted categories to No_Filter (mandatory)
     - **Property 5: Config_Flow categories-step submission round-trips per category, defaulting omitted categories to No_Filter**
     - **Validates: Requirements 3.2, 3.3**
     - In `tests/unit/config_flow/test_min_severity.py`, generate arbitrary mappings from a subset of the 7 categories to one of the 5 settings; assert the created entry's stored per-category setting matches submitted values and defaults omitted categories to `No_Filter`
 
-  - [ ] 9.5 Write unit test: Config_Flow categories-step rendering (mandatory)
+  - [x] 9.5 Write unit test: Config_Flow categories-step rendering (mandatory)
     - In `tests/unit/config_flow/test_setup.py`, assert each of the 7 categories exposes a `min_severity_{cat}` selector offering the 5 expected options, defaulted to `No_Filter`
     - _Requirements: 3.1_
 
-- [ ] 10. Add Minimum_Severity_Setting selector to `config_flow.py` Options_Flow
+- [x] 10. Add Minimum_Severity_Setting selector to `config_flow.py` Options_Flow
   - [x] 10.1 Add `min_severity_{category}` field to `UniFiAlertsOptionsFlow.async_step_categories` schema
     - Pre-fill default via `current_min_severity.get(cat, MIN_SEVERITY_NO_FILTER)`, following the existing options→data→default fallback chain
     - _Requirements: 4.1_
@@ -158,16 +158,16 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     - Build the same `min_severity` mapping shape as Config_Flow; store into `self._pending_options[CONF_MIN_SEVERITY]`
     - _Requirements: 4.2, 4.3_
 
-  - [ ] 10.3 Write property test: Options_Flow categories-step submission round-trips independent of pre-fill (mandatory)
+  - [x] 10.3 Write property test: Options_Flow categories-step submission round-trips independent of pre-fill (mandatory)
     - **Property 6: Options_Flow categories-step submission round-trips independent of pre-fill**
     - **Validates: Requirements 4.2, 4.3**
     - In `tests/unit/config_flow/test_min_severity.py`, generate arbitrary previously-stored mappings and arbitrary newly-submitted mappings (which may differ arbitrarily, including omitted categories); assert persisted values match the submission, defaulting omitted categories to `No_Filter`, regardless of pre-fill
 
-  - [ ] 10.4 Write unit test: Options_Flow categories-step pre-fill (mandatory)
+  - [x] 10.4 Write unit test: Options_Flow categories-step pre-fill (mandatory)
     - In `tests/unit/config_flow/test_min_severity.py`, assert pre-fill resolves correctly both from a legacy entry (no stored `min_severity`) and from an entry with an explicit stored value
     - _Requirements: 4.1_
 
-- [ ] 11. Checkpoint - Run the test suite (mandatory gate, not optional)
+- [-] 11. Checkpoint - Run the test suite (mandatory gate, not optional)
   - Run the full test suite and confirm every test passes before proceeding. This is a mandatory gate, including all property tests and unit tests written so far — do not proceed to subsequent tasks until all tests pass. If a test fails, fix the implementation or the test before moving on.
 
 - [x] 12. Verify webhook auth-before-gate ordering
