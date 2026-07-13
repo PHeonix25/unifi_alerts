@@ -100,6 +100,39 @@ async def test_options_disable_category_makes_sensor_unavailable(hass, entry, mo
     assert hass.states.get(eid) is None  # entity is pruned, not just unavailable
 
 
+def _below_threshold_alert(category: str) -> UniFiAlert:
+    return UniFiAlert(
+        category=category,
+        message="below threshold",
+        received_at=datetime.now(UTC),
+        key="EVT_AP_Disconnected",
+        severity=SEVERITY_LOW,
+    )
+
+
+def _at_threshold_alert(category: str) -> UniFiAlert:
+    return UniFiAlert(
+        category=category,
+        message="at threshold",
+        received_at=datetime.now(UTC),
+        key="EVT_AP_Disconnected",
+        severity=SEVERITY_HIGH,
+    )
+
+
+async def _assert_min_severity_gate_behavior(hass, coordinator, category, eid):
+    """A below-threshold push is a no-op; an at/above-threshold push is accepted."""
+    coordinator.push_alert(category, _below_threshold_alert(category))
+    await hass.async_block_till_done()
+    assert hass.states.get(eid).state == "off"
+    assert coordinator.get_category_state(category).alert_count == 0
+
+    coordinator.push_alert(category, _at_threshold_alert(category))
+    await hass.async_block_till_done()
+    assert hass.states.get(eid).state == "on"
+    assert coordinator.get_category_state(category).alert_count == 1
+
+
 @pytest.mark.integration
 async def test_min_severity_survives_reload_and_still_gates_alerts(hass, mock_unifi_client):
     """A non-default per-category min_severity must survive a config-entry
@@ -145,35 +178,9 @@ async def test_min_severity_survives_reload_and_still_gates_alerts(hass, mock_un
     eid = entity_id_for(hass, "binary_sensor", uid)
     assert hass.states.get(eid).state == "off"
 
-    def _below_threshold_alert() -> UniFiAlert:
-        return UniFiAlert(
-            category=category,
-            message="below threshold",
-            received_at=datetime.now(UTC),
-            key="EVT_AP_Disconnected",
-            severity=SEVERITY_LOW,
-        )
-
-    def _at_threshold_alert() -> UniFiAlert:
-        return UniFiAlert(
-            category=category,
-            message="at threshold",
-            received_at=datetime.now(UTC),
-            key="EVT_AP_Disconnected",
-            severity=SEVERITY_HIGH,
-        )
-
     # Before reload: below-threshold push is a no-op; at/above-threshold push is accepted.
     coordinator = get_coordinator(hass, config_entry)
-    coordinator.push_alert(category, _below_threshold_alert())
-    await hass.async_block_till_done()
-    assert hass.states.get(eid).state == "off"
-    assert coordinator.get_category_state(category).alert_count == 0
-
-    coordinator.push_alert(category, _at_threshold_alert())
-    await hass.async_block_till_done()
-    assert hass.states.get(eid).state == "on"
-    assert coordinator.get_category_state(category).alert_count == 1
+    await _assert_min_severity_gate_behavior(hass, coordinator, category, eid)
 
     # Reload the entry — this rebuilds the coordinator from entry.data, exercising
     # the persistence path a config-entry reload takes (options change, secret
@@ -185,21 +192,11 @@ async def test_min_severity_survives_reload_and_still_gates_alerts(hass, mock_un
     assert config_entry.data[CONF_MIN_SEVERITY] == {category: SEVERITY_HIGH}
 
     # After reload: the setting must still gate alerts identically on the
-    # freshly-created coordinator — a below-threshold push is still a no-op...
+    # freshly-created coordinator.
     reloaded_coordinator = get_coordinator(hass, config_entry)
     reloaded_eid = entity_id_for(hass, "binary_sensor", uid)
     assert hass.states.get(reloaded_eid).state == "off"
-
-    reloaded_coordinator.push_alert(category, _below_threshold_alert())
-    await hass.async_block_till_done()
-    assert hass.states.get(reloaded_eid).state == "off"
-    assert reloaded_coordinator.get_category_state(category).alert_count == 0
-
-    # ...and an at/above-threshold push is still accepted exactly as before.
-    reloaded_coordinator.push_alert(category, _at_threshold_alert())
-    await hass.async_block_till_done()
-    assert hass.states.get(reloaded_eid).state == "on"
-    assert reloaded_coordinator.get_category_state(category).alert_count == 1
+    await _assert_min_severity_gate_behavior(hass, reloaded_coordinator, category, reloaded_eid)
 
     await hass.config_entries.async_unload(config_entry.entry_id)
     await hass.async_block_till_done()

@@ -646,8 +646,6 @@ class TestPushAlertSeverityGate:
     @given(
         gate_mode=st.sampled_from(["at_or_above", "no_filter"]),
         prior_is_alerting=st.booleans(),
-        prior_alert_count=st.integers(min_value=0, max_value=1000),
-        prior_open_count=st.integers(min_value=0, max_value=1000),
         has_prior_alert=st.booleans(),
         watermark_case=st.sampled_from(["none", "past", "future"]),
         data=st.data(),
@@ -657,8 +655,6 @@ class TestPushAlertSeverityGate:
         self,
         gate_mode: str,
         prior_is_alerting: bool,
-        prior_alert_count: int,
-        prior_open_count: int,
         has_prior_alert: bool,
         watermark_case: str,
         data: st.DataObject,
@@ -670,6 +666,8 @@ class TestPushAlertSeverityGate:
         open_count incremented by 1 only when the alert is newer than the
         watermark."""
         category = CATEGORY_NETWORK_WAN
+        prior_alert_count = data.draw(st.integers(min_value=0, max_value=1000))
+        prior_open_count = data.draw(st.integers(min_value=0, max_value=1000))
 
         if gate_mode == "no_filter":
             minimum = MIN_SEVERITY_NO_FILTER
@@ -719,12 +717,8 @@ class TestPushAlertSeverityGate:
         minimum=st.sampled_from(MIN_SEVERITY_ORDER),
         severity=st.sampled_from(SEVERITY_ORDER),
         prior_is_alerting=st.booleans(),
-        prior_alert_count=st.integers(min_value=0, max_value=1000),
-        prior_open_count=st.integers(min_value=0, max_value=1000),
-        prior_last_webhook_offset=st.one_of(
-            st.none(), st.integers(min_value=-100_000, max_value=100_000)
-        ),
         has_prior_alert=st.booleans(),
+        data=st.data(),
     )
     @settings(max_examples=25)
     def test_disabled_category_never_evaluates_gate(
@@ -733,16 +727,19 @@ class TestPushAlertSeverityGate:
         minimum: str,
         severity: str,
         prior_is_alerting: bool,
-        prior_alert_count: int,
-        prior_open_count: int,
-        prior_last_webhook_offset: int | None,
         has_prior_alert: bool,
+        data: st.DataObject,
     ) -> None:
         """A push to a disabled category must never reach the severity gate at
         all — the category's entire state (including last_webhook_at, which
         the gate itself would otherwise update on a below-threshold push)
         must remain unchanged, regardless of the configured minimum or the
         alert's severity."""
+        prior_alert_count = data.draw(st.integers(min_value=0, max_value=1000))
+        prior_open_count = data.draw(st.integers(min_value=0, max_value=1000))
+        prior_last_webhook_offset = data.draw(
+            st.one_of(st.none(), st.integers(min_value=-100_000, max_value=100_000))
+        )
         base_time = datetime(2024, 1, 1, tzinfo=UTC)
         prior_last_webhook_at = (
             base_time + timedelta(seconds=prior_last_webhook_offset)

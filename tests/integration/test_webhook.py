@@ -180,6 +180,45 @@ async def test_post_after_unload_does_not_dispatch_and_entity_is_gone(
     assert hass.states.get(eid).state == STATE_UNAVAILABLE  # nothing live could have flipped
 
 
+async def _setup_min_severity_entry(hass, category, min_sev_suffix):
+    """Set up a config entry with min_severity=HIGH on the given category."""
+    from homeassistant.setup import async_setup_component
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.unifi_alerts.const import CONF_WEBHOOK_ID_SUFFIX, DOMAIN
+
+    await hass.config.async_update(internal_url="http://homeassistant.test:8123")
+    await async_setup_component(hass, "webhook", {})
+    await hass.async_block_till_done()
+
+    min_sev_config = {
+        **BASE_CONFIG,
+        CONF_WEBHOOK_ID_SUFFIX: min_sev_suffix,
+        CONF_MIN_SEVERITY: {category: SEVERITY_HIGH},
+    }
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=min_sev_config,
+        entry_id="test-entry-min-severity",
+        version=3,
+    )
+    config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    return config_entry
+
+
+async def _post_webhook(hass_client, webhook_id, payload):
+    client = await hass_client()
+    resp = await client.post(
+        f"/api/webhook/{webhook_id}?token={WEBHOOK_SECRET}",
+        json=payload,
+    )
+    assert resp.status == 200
+    await resp.read()
+    return resp
+
+
 @pytest.mark.integration
 async def test_below_threshold_push_then_at_or_above_threshold_push(
     hass, mock_unifi_client, hass_client
@@ -192,41 +231,16 @@ async def test_below_threshold_push_then_at_or_above_threshold_push(
     category (network_device -> HIGH). Validates Requirements 6.1, 6.2, 6.3,
     6.5, 8.1 end to end via the real HTTP webhook path.
     """
-    from homeassistant.setup import async_setup_component
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
-
-    from custom_components.unifi_alerts.const import CONF_WEBHOOK_ID_SUFFIX, DOMAIN
-
-    await hass.config.async_update(internal_url="http://homeassistant.test:8123")
-    await async_setup_component(hass, "webhook", {})
-    await hass.async_block_till_done()
-
     category = CATEGORY_NETWORK_DEVICE
     min_sev_suffix = "minsev"
-    min_sev_config = {
-        **BASE_CONFIG,
-        CONF_WEBHOOK_ID_SUFFIX: min_sev_suffix,
-        CONF_MIN_SEVERITY: {category: SEVERITY_HIGH},
-    }
-    min_sev_entry_id = "test-entry-min-severity"
+    config_entry = await _setup_min_severity_entry(hass, category, min_sev_suffix)
 
-    config_entry = MockConfigEntry(
-        domain=DOMAIN,
-        data=min_sev_config,
-        entry_id=min_sev_entry_id,
-        version=3,
-    )
-    config_entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
-
-    uid = f"{min_sev_entry_id}_{category}_binary"
+    uid = f"{config_entry.entry_id}_{category}_binary"
     eid = entity_id_for(hass, "binary_sensor", uid)
     assert hass.states.get(eid).state == "off"
 
     coordinator = get_coordinator(hass, config_entry)
     webhook_id = webhook_id_for_category(category, min_sev_suffix)
-    client = await hass_client()
 
     # Below-threshold push (LOW < HIGH): must not flip the sensor, must not
     # touch alert_count/open_count/last_alert, but must still advance the
@@ -236,12 +250,7 @@ async def test_below_threshold_push_then_at_or_above_threshold_push(
         "message": "AP offline (low severity)",
         "severity": SEVERITY_LOW,
     }
-    resp = await client.post(
-        f"/api/webhook/{webhook_id}?token={WEBHOOK_SECRET}",
-        json=below_payload,
-    )
-    assert resp.status == 200
-    await resp.read()
+    await _post_webhook(hass_client, webhook_id, below_payload)
     await hass.async_block_till_done()
 
     state = coordinator.get_category_state(category)
@@ -258,12 +267,7 @@ async def test_below_threshold_push_then_at_or_above_threshold_push(
         "message": "AP offline (high severity)",
         "severity": SEVERITY_HIGH,
     }
-    resp = await client.post(
-        f"/api/webhook/{webhook_id}?token={WEBHOOK_SECRET}",
-        json=above_payload,
-    )
-    assert resp.status == 200
-    await resp.read()
+    await _post_webhook(hass_client, webhook_id, above_payload)
     await hass.async_block_till_done()
 
     assert hass.states.get(eid).state == "on"

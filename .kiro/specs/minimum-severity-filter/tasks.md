@@ -197,7 +197,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     - Extend `tests/integration/test_lifecycle.py`: full config-entry setup/reload with a non-default `min_severity` for one category, confirming the stored setting survives entry lifecycle operations and gates alerts accordingly
     - _Requirements: 5.1, 5.2, 3.2, 4.2_
 
-- [ ] 17. Final checkpoint - Run full validation suite (mandatory gate, not optional)
+- [x] 17. Final checkpoint - Run full validation suite (mandatory gate, not optional)
   - Run `make check` (lint + typecheck + validate + test) and confirm every check passes, including every property test, unit test, and integration test added in this plan. This is a mandatory gate - fix any failures and re-run until all checks pass. The feature is not complete until this fully passes.
   - _Requirements: 10.1, 10.4_
 

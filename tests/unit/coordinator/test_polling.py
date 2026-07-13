@@ -25,7 +25,11 @@ from custom_components.unifi_alerts.const import (
 )
 from custom_components.unifi_alerts.coordinator import UniFiAlertsCoordinator
 from custom_components.unifi_alerts.models import UniFiAlert, ensure_aware
-from custom_components.unifi_alerts.severity import MIN_SEVERITY_ORDER, SEVERITY_ORDER, meets_minimum
+from custom_components.unifi_alerts.severity import (
+    MIN_SEVERITY_ORDER,
+    SEVERITY_ORDER,
+    meets_minimum,
+)
 
 from .conftest import make_alert, make_full_coordinator, make_hass_and_client
 
@@ -507,7 +511,9 @@ class TestPollingSeverityGate:
         watermark-eligible portion of that subset."""
         base_time = datetime(2024, 1, 1, tzinfo=UTC)
         watermark = (
-            base_time + timedelta(seconds=watermark_offset) if watermark_offset is not None else None
+            base_time + timedelta(seconds=watermark_offset)
+            if watermark_offset is not None
+            else None
         )
         alerts = [
             UniFiAlert(
@@ -532,7 +538,9 @@ class TestPollingSeverityGate:
         # (further restricted by the watermark) and the newest-seen watermark.
         eligible = [a for a in alerts if meets_minimum(a.severity_level, minimum)]
         counted = (
-            [a for a in eligible if a.received_at > watermark] if watermark is not None else eligible
+            [a for a in eligible if a.received_at > watermark]
+            if watermark is not None
+            else eligible
         )
 
         assert state.open_count == len(counted)
