@@ -403,27 +403,27 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 # Legacy format: bare ISO string watermark only.
                 try:
                     state.last_cleared_at = datetime.fromisoformat(entry)
-                except ValueError, TypeError:
+                except (ValueError, TypeError):  # fmt: skip
                     _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, entry)
             elif isinstance(entry, dict):
                 ts_str = entry.get("last_cleared_at")
                 if ts_str is not None:
                     try:
                         state.last_cleared_at = datetime.fromisoformat(ts_str)
-                    except ValueError, TypeError:
+                    except (ValueError, TypeError):  # fmt: skip
                         _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, ts_str)
                 state.alert_count = int(entry.get("alert_count", 0))
                 raw_alert = entry.get("last_alert")
                 if raw_alert is not None:
                     try:
                         state.last_alert = UniFiAlert.from_dict(raw_alert)
-                    except KeyError, TypeError, ValueError:
+                    except (KeyError, TypeError, ValueError):  # fmt: skip
                         _LOGGER.warning("Ignoring invalid stored last_alert for %s", cat)
                 webhook_ts = entry.get("last_webhook_at")
                 if webhook_ts is not None:
                     try:
                         state.last_webhook_at = datetime.fromisoformat(webhook_ts)
-                    except ValueError, TypeError:
+                    except (ValueError, TypeError):  # fmt: skip
                         _LOGGER.warning(
                             "Ignoring invalid stored last_webhook_at for %s: %r", cat, webhook_ts
                         )
