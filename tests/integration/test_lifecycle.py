@@ -13,15 +13,21 @@ Run only these tests:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
+    CATEGORY_NETWORK_DEVICE,
     CATEGORY_NETWORK_WAN,
     CONF_ENABLED_CATEGORIES,
+    CONF_MIN_SEVERITY,
 )
+from custom_components.unifi_alerts.models import UniFiAlert
+from custom_components.unifi_alerts.severity import SEVERITY_HIGH, SEVERITY_LOW
 
-from .conftest import ENTRY_ID, entity_id_for
+from .conftest import BASE_CONFIG, ENTRY_ID, entity_id_for, get_coordinator
 
 
 @pytest.mark.integration
@@ -92,3 +98,108 @@ async def test_options_disable_category_makes_sensor_unavailable(hass, entry, mo
     await hass.async_block_till_done()
 
     assert hass.states.get(eid) is None  # entity is pruned, not just unavailable
+
+
+@pytest.mark.integration
+async def test_min_severity_survives_reload_and_still_gates_alerts(hass, mock_unifi_client):
+    """A non-default per-category min_severity must survive a config-entry
+    reload and keep gating alerts identically before and after.
+
+    Full config-entry setup with min_severity=HIGH on network_device. Before
+    reload: a below-threshold push is a no-op, an at/above-threshold push is
+    accepted. After reload: entry.data still carries the stored setting, and
+    both pushes behave identically again on the freshly-created coordinator —
+    confirming the setting is read from the reloaded entry, not left over from
+    the previous coordinator instance.
+
+    Validates Requirements 5.1, 5.2, 3.2, 4.2.
+    """
+    from homeassistant.setup import async_setup_component
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.unifi_alerts.const import CONF_WEBHOOK_ID_SUFFIX, DOMAIN
+
+    category = CATEGORY_NETWORK_DEVICE
+    min_sev_entry_id = "test-entry-min-severity-lifecycle"
+    min_sev_config = {
+        **BASE_CONFIG,
+        CONF_WEBHOOK_ID_SUFFIX: "minsevlifecycle",
+        CONF_MIN_SEVERITY: {category: SEVERITY_HIGH},
+    }
+
+    await hass.config.async_update(internal_url="http://homeassistant.test:8123")
+    await async_setup_component(hass, "webhook", {})
+    await hass.async_block_till_done()
+
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=min_sev_config,
+        entry_id=min_sev_entry_id,
+        version=3,
+    )
+    config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    uid = f"{min_sev_entry_id}_{category}_binary"
+    eid = entity_id_for(hass, "binary_sensor", uid)
+    assert hass.states.get(eid).state == "off"
+
+    def _below_threshold_alert() -> UniFiAlert:
+        return UniFiAlert(
+            category=category,
+            message="below threshold",
+            received_at=datetime.now(UTC),
+            key="EVT_AP_Disconnected",
+            severity=SEVERITY_LOW,
+        )
+
+    def _at_threshold_alert() -> UniFiAlert:
+        return UniFiAlert(
+            category=category,
+            message="at threshold",
+            received_at=datetime.now(UTC),
+            key="EVT_AP_Disconnected",
+            severity=SEVERITY_HIGH,
+        )
+
+    # Before reload: below-threshold push is a no-op; at/above-threshold push is accepted.
+    coordinator = get_coordinator(hass, config_entry)
+    coordinator.push_alert(category, _below_threshold_alert())
+    await hass.async_block_till_done()
+    assert hass.states.get(eid).state == "off"
+    assert coordinator.get_category_state(category).alert_count == 0
+
+    coordinator.push_alert(category, _at_threshold_alert())
+    await hass.async_block_till_done()
+    assert hass.states.get(eid).state == "on"
+    assert coordinator.get_category_state(category).alert_count == 1
+
+    # Reload the entry — this rebuilds the coordinator from entry.data, exercising
+    # the persistence path a config-entry reload takes (options change, secret
+    # rotation, HA restart-equivalent), without touching the stored min_severity.
+    await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # The stored setting itself must still be present on the reloaded entry.
+    assert config_entry.data[CONF_MIN_SEVERITY] == {category: SEVERITY_HIGH}
+
+    # After reload: the setting must still gate alerts identically on the
+    # freshly-created coordinator — a below-threshold push is still a no-op...
+    reloaded_coordinator = get_coordinator(hass, config_entry)
+    reloaded_eid = entity_id_for(hass, "binary_sensor", uid)
+    assert hass.states.get(reloaded_eid).state == "off"
+
+    reloaded_coordinator.push_alert(category, _below_threshold_alert())
+    await hass.async_block_till_done()
+    assert hass.states.get(reloaded_eid).state == "off"
+    assert reloaded_coordinator.get_category_state(category).alert_count == 0
+
+    # ...and an at/above-threshold push is still accepted exactly as before.
+    reloaded_coordinator.push_alert(category, _at_threshold_alert())
+    await hass.async_block_till_done()
+    assert hass.states.get(reloaded_eid).state == "on"
+    assert reloaded_coordinator.get_category_state(category).alert_count == 1
+
+    await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.async_block_till_done()

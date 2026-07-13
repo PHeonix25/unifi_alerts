@@ -6,9 +6,9 @@ This feature adds a per-category **minimum severity filter** on top of the exist
 
 Three new pieces of behavior are introduced:
 
-1. **Severity_Normalizer** — a pure function that maps the raw, ingestion-path-specific severity string (webhook payload, legacy `/list/alarm` record, or v2 `system-log` event) onto one of exactly four ordered levels: `LOW < MEDIUM < HIGH < VERY_HIGH`. This gives every alert a consistent severity regardless of which of the three ingestion paths produced it.
-2. **Minimum_Severity_Setting** — a new per-category config value, `No_Filter < LOW < MEDIUM < HIGH < VERY_HIGH`, configurable in both the initial `Config_Flow` and the `Options_Flow`. `No_Filter` (stored as `"no_filter"`) is a distinct sentinel, not a Severity_Level — it disables the gate entirely for that category.
-3. **Severity gating** — both the webhook push path (`push_alert`) and the polling path (`_async_update_data`) consult the effective `Minimum_Severity_Setting` for a category and treat a below-threshold alert as a true no-op: no state change, no event fire, no count increment.
+1. **Severity_Normalizer** - a pure function that maps the raw, ingestion-path-specific severity string (webhook payload, legacy `/list/alarm` record, or v2 `system-log` event) onto one of exactly four ordered levels: `LOW < MEDIUM < HIGH < VERY_HIGH`. This gives every alert a consistent severity regardless of which of the three ingestion paths produced it.
+2. **Minimum_Severity_Setting** - a new per-category config value, `No_Filter < LOW < MEDIUM < HIGH < VERY_HIGH`, configurable in both the initial `Config_Flow` and the `Options_Flow`. `No_Filter` (stored as `"no_filter"`) is a distinct sentinel, not a Severity_Level - it disables the gate entirely for that category.
+3. **Severity gating** - both the webhook push path (`push_alert`) and the polling path (`_async_update_data`) consult the effective `Minimum_Severity_Setting` for a category and treat a below-threshold alert as a true no-op: no state change, no event fire, no count increment.
 
 Backward compatibility is structural, not migrational: nothing is written to existing config entries. An entry with no stored `min_severity` map (or one missing a specific category key) resolves to `No_Filter` for that category via the same lookup helper used everywhere else, so every alert a user received before this feature shipped keeps being accepted after upgrade.
 
@@ -49,7 +49,7 @@ flowchart TD
     EFF --> FILTER
 ```
 
-Severity normalization and comparison logic is pure and side-effect-free, living in a new `severity.py` module — none of the existing modules (`const.py`, `models.py`, `coordinator.py`) currently own this kind of standalone lookup/comparison logic, and none of the three ingestion paths should each re-implement it. `const.py` gains only the new config key and the raw severity synonym table lives alongside the normalizer in `severity.py` rather than `const.py`, since it is exclusively consumed by, and documented next to, `normalize_severity()`.
+Severity normalization and comparison logic is pure and side-effect-free, living in a new `severity.py` module - none of the existing modules (`const.py`, `models.py`, `coordinator.py`) currently own this kind of standalone lookup/comparison logic, and none of the three ingestion paths should each re-implement it. `const.py` gains only the new config key and the raw severity synonym table lives alongside the normalizer in `severity.py` rather than `const.py`, since it is exclusively consumed by, and documented next to, `normalize_severity()`.
 
 ## Components and Interfaces
 
@@ -64,7 +64,7 @@ SEVERITY_ORDER: Final[list[str]] = [SEVERITY_LOW, SEVERITY_MEDIUM, SEVERITY_HIGH
 
 # Sentinel for "gate disabled for this category". Deliberately NOT one of the
 # four SEVERITY_* values above (and lowercase, unlike them) so it can never be
-# confused with an alert's own normalized severity — see Requirement 5's
+# confused with an alert's own normalized severity - see Requirement 5's
 # rationale for why No_Filter, not LOW, is the backward-compatible default.
 MIN_SEVERITY_NO_FILTER: Final = "no_filter"
 
@@ -73,7 +73,7 @@ MIN_SEVERITY_NO_FILTER: Final = "no_filter"
 MIN_SEVERITY_ORDER: Final[list[str]] = [MIN_SEVERITY_NO_FILTER, *SEVERITY_ORDER]
 
 # Documented legacy-severity synonym table (case-insensitive, whitespace-trimmed
-# at lookup time — see normalize_severity()). Expand this the same way
+# at lookup time - see normalize_severity()). Expand this the same way
 # UNIFI_KEY_TO_CATEGORY is expanded: when a user reports an unmapped legacy
 # severity string, add a synonym entry and a doc/UNIFI.md update.
 _SEVERITY_SYNONYMS: Final[dict[str, str]] = {
@@ -91,7 +91,7 @@ def normalize_severity(raw: str) -> str:
     Matches case-insensitively and ignores leading/trailing whitespace against
     both the canonical Severity_Level names and _SEVERITY_SYNONYMS. Falls back
     to SEVERITY_LOW for an empty string or any unmatched value. Always returns
-    one of SEVERITY_LOW/MEDIUM/HIGH/VERY_HIGH — never MIN_SEVERITY_NO_FILTER.
+    one of SEVERITY_LOW/MEDIUM/HIGH/VERY_HIGH - never MIN_SEVERITY_NO_FILTER.
     """
 
 def meets_minimum(severity_level: str, minimum: str) -> bool:
@@ -108,15 +108,15 @@ def get_effective_min_severity(config: Mapping[str, Any], category: str) -> str:
     Reads config[CONF_MIN_SEVERITY] (a dict[category, setting]); returns
     MIN_SEVERITY_NO_FILTER when the map itself is absent (legacy entry) or the
     category key is absent from it (new category added after the entry was
-    last saved). Centralised here — rather than inlined at each of the two
-    call sites (push path, poll path) — so the "missing means No_Filter"
+    last saved). Centralised here - rather than inlined at each of the two
+    call sites (push path, poll path) - so the "missing means No_Filter"
     default can never drift between them.
     """
 
 def filter_by_min_severity(alerts: list[UniFiAlert], minimum: str) -> list[UniFiAlert]:
     """Return the subset of alerts whose normalized severity meets minimum.
 
-    Pure function with no dependency on CategoryState.enabled — the poll path
+    Pure function with no dependency on CategoryState.enabled - the poll path
     calls this only for categories it has already decided to process; the
     helper itself has no opinion on enabled/disabled and returns `alerts`
     unchanged whenever minimum == MIN_SEVERITY_NO_FILTER.
@@ -132,7 +132,7 @@ def severity_level(self) -> str:
     return normalize_severity(self.severity)
 ```
 
-Deriving it on demand — instead of computing it once in each `from_*` classmethod and storing it as a dataclass field — means it can never drift from `self.severity` (satisfies Requirement 1.3 structurally: the raw string and the normalized level are always independently, correctly related, because one is computed from the other) and needs no entry in `to_dict()`/`from_dict()`. Persisted alerts recompute `severity_level` from the persisted raw `severity` string on restore, using whatever synonym table is current at load time — consistent with treating the synonym table as documentation-grade lookup data, not part of the persisted schema.
+Deriving it on demand - instead of computing it once in each `from_*` classmethod and storing it as a dataclass field - means it can never drift from `self.severity` (satisfies Requirement 1.3 structurally: the raw string and the normalized level are always independently, correctly related, because one is computed from the other) and needs no entry in `to_dict()`/`from_dict()`. Persisted alerts recompute `severity_level` from the persisted raw `severity` string on restore, using whatever synonym table is current at load time - consistent with treating the synonym table as documentation-grade lookup data, not part of the persisted schema.
 
 ### `const.py`
 
@@ -160,7 +160,7 @@ min_severity: dict[str, str]
 self._min_severity: dict[str, str] = config.get(CONF_MIN_SEVERITY, {})
 ```
 
-**`push_alert(category, alert)`** — the gate is inserted immediately after the existing `enabled` check and before the dedup/`apply_alert` logic, so a disabled category still short-circuits before the gate is ever evaluated (Requirement 6.4) and a webhook that failed token auth never reaches this method at all (Requirement 9 — enforced structurally, since `webhook_handler.py` only calls the `push_callback` after `hmac.compare_digest` succeeds):
+**`push_alert(category, alert)`** - the gate is inserted immediately after the existing `enabled` check and before the dedup/`apply_alert` logic, so a disabled category still short-circuits before the gate is ever evaluated (Requirement 6.4) and a webhook that failed token auth never reaches this method at all (Requirement 9 - enforced structurally, since `webhook_handler.py` only calls the `push_callback` after `hmac.compare_digest` succeeds):
 
 ```python
 state = self._category_states[category]
@@ -179,9 +179,9 @@ if not meets_minimum(alert.severity_level, minimum):
 # ... existing dedup + apply_alert + open_count + persist + schedule_clear logic, unchanged
 ```
 
-Notifying entities (`async_set_updated_data`) on the gated path is intentional: the `webhook_health` sensor reads `last_webhook_at` and should reflect the gated push immediately rather than waiting for the next poll — this is exactly the connectivity signal Requirement 8 is about. The dedup window (`_last_push_at`) is deliberately **not** consulted for gated alerts: dedup exists to bound `alert_count` growth and event-entity fire rate, neither of which a gated alert touches, so skipping it avoids one more piece of state a below-threshold alert would otherwise need to mutate.
+Notifying entities (`async_set_updated_data`) on the gated path is intentional: the `webhook_health` sensor reads `last_webhook_at` and should reflect the gated push immediately rather than waiting for the next poll - this is exactly the connectivity signal Requirement 8 is about. The dedup window (`_last_push_at`) is deliberately **not** consulted for gated alerts: dedup exists to bound `alert_count` growth and event-entity fire rate, neither of which a gated alert touches, so skipping it avoids one more piece of state a below-threshold alert would otherwise need to mutate.
 
-**`_async_update_data(...)`** — the per-category loop gains a severity filter step before the existing watermark filter, and `_track_newest_seen` is called with the severity-filtered list instead of the raw list:
+**`_async_update_data(...)`** - the per-category loop gains a severity filter step before the existing watermark filter, and `_track_newest_seen` is called with the severity-filtered list instead of the raw list:
 
 ```python
 for cat, alerts in categorised.items():
@@ -206,7 +206,7 @@ for cat, alerts in categorised.items():
             self._schedule_clear(cat)
 ```
 
-Because the `if not state.enabled: continue` guard is unchanged and still runs before the new severity filter, a disabled category's `is_alerting`/`last_alert`/`open_count` are left completely untouched by a poll cycle regardless of what severities are present in `categorised[cat]` (Requirement 7.5) — the severity filter only ever executes for categories the loop has already decided to process. `filter_by_min_severity` itself takes no `enabled` parameter, so it behaves identically regardless of the category's enabled state (Requirement 7.4) as a structural property of its signature, not a runtime branch.
+Because the `if not state.enabled: continue` guard is unchanged and still runs before the new severity filter, a disabled category's `is_alerting`/`last_alert`/`open_count` are left completely untouched by a poll cycle regardless of what severities are present in `categorised[cat]` (Requirement 7.5) - the severity filter only ever executes for categories the loop has already decided to process. `filter_by_min_severity` itself takes no `enabled` parameter, so it behaves identically regardless of the category's enabled state (Requirement 7.4) as a structural property of its signature, not a runtime branch.
 
 ### `config_flow.py`
 
@@ -230,7 +230,7 @@ for cat in ALL_CATEGORIES:
     )
 ```
 
-Inline `SelectOptionDict` labels are used instead of a `selector.*` translation-key section, matching the level of ceremony already used for the password/API-key `TextSelector` fields — this keeps the new localization surface to one field-label string per category per flow (14 keys total) instead of also requiring five `selector.min_severity.options.*` entries per flow.
+Inline `SelectOptionDict` labels are used instead of a `selector.*` translation-key section, matching the level of ceremony already used for the password/API-key `TextSelector` fields - this keeps the new localization surface to one field-label string per category per flow (14 keys total) instead of also requiring five `selector.min_severity.options.*` entries per flow.
 
 **Submission (both flows), same shape as the existing `cat_{cat}` collection:**
 
@@ -240,9 +240,9 @@ min_severity = {
 }
 ```
 
-`Config_Flow` stores this into `self._entry_data[CONF_MIN_SEVERITY]`. `Options_Flow` stores it into `self._pending_options[CONF_MIN_SEVERITY]`, following the identical `_pending_options` staging pattern already used for `CONF_ENABLED_CATEGORIES`/`CONF_POLL_INTERVAL`/`CONF_CLEAR_TIMEOUT` — nothing is persisted until the user submits the `finish` step.
+`Config_Flow` stores this into `self._entry_data[CONF_MIN_SEVERITY]`. `Options_Flow` stores it into `self._pending_options[CONF_MIN_SEVERITY]`, following the identical `_pending_options` staging pattern already used for `CONF_ENABLED_CATEGORIES`/`CONF_POLL_INTERVAL`/`CONF_CLEAR_TIMEOUT` - nothing is persisted until the user submits the `finish` step.
 
-**Options_Flow pre-fill**, mirroring the existing `current_enabled`/`current_poll` fallback chain (options → data → default):
+**Options_Flow pre-fill**, mirroring the existing `current_enabled`/`current_poll` fallback chain (options -> data -> default):
 
 ```python
 current_min_severity: dict[str, str] = self._config_entry.options.get(
@@ -257,15 +257,15 @@ fields[vol.Optional(
 
 ### `strings.json` / `translations/en.json`
 
-Fourteen new `data` keys — `min_severity_{category}` under both `config.step.categories.data` and `options.step.categories.data`, mirrored byte-identically into `translations/en.json` per the existing hard rule. Example addition (categories step, both files identically):
+Fourteen new `data` keys - `min_severity_{category}` under both `config.step.categories.data` and `options.step.categories.data`, mirrored byte-identically into `translations/en.json` per the existing hard rule. Example addition (categories step, both files identically):
 
 ```json
-"min_severity_network_device": "Network: Device offline/online — Minimum severity",
+"min_severity_network_device": "Network: Device offline/online - Minimum severity",
 ```
 
 ### `docs/UNIFI.md`
 
-A new "Severity normalization" section documents: the four-level ordering, the `No_Filter` sentinel and its position outside that ordering, the full synonym table, and the empty/unmatched fallback to `LOW` — satisfying Requirement 10.2.
+A new "Severity normalization" section documents: the four-level ordering, the `No_Filter` sentinel and its position outside that ordering, the full synonym table, and the empty/unmatched fallback to `LOW` - satisfying Requirement 10.2.
 
 ### `CHANGELOG.md`
 
@@ -279,9 +279,9 @@ No new dataclasses. Changes to existing types:
 | --- | --- |
 | `UniFiAlert` (models.py) | New computed property `severity_level -> str`, derived from `self.severity` via `severity.normalize_severity()`. Not a dataclass field; not serialized by `to_dict`/`from_dict`. |
 | `UniFiClientConfig` (models.py, TypedDict) | New optional key `min_severity: dict[str, str]`. |
-| Config entry `data` / `options` | New key `CONF_MIN_SEVERITY = "min_severity"` → `dict[category: str, setting: str]`, where `setting` is one of `{"no_filter", "LOW", "MEDIUM", "HIGH", "VERY_HIGH"}`. Absent map or absent category key both resolve to `"no_filter"` via `get_effective_min_severity()`. |
+| Config entry `data` / `options` | New key `CONF_MIN_SEVERITY = "min_severity"` -> `dict[category: str, setting: str]`, where `setting` is one of `{"no_filter", "LOW", "MEDIUM", "HIGH", "VERY_HIGH"}`. Absent map or absent category key both resolve to `"no_filter"` via `get_effective_min_severity()`. |
 
-`CategoryState` (models.py) is **unchanged** — the gate is evaluated entirely at the call sites (`push_alert`, `_async_update_data`) using the alert(s) being considered plus the resolved `Minimum_Severity_Setting`; no new per-category runtime field is needed since "effective minimum severity" is a config lookup, not runtime state.
+`CategoryState` (models.py) is **unchanged** - the gate is evaluated entirely at the call sites (`push_alert`, `_async_update_data`) using the alert(s) being considered plus the resolved `Minimum_Severity_Setting`; no new per-category runtime field is needed since "effective minimum severity" is a config lookup, not runtime state.
 
 ## Correctness Properties
 
@@ -289,7 +289,7 @@ No new dataclasses. Changes to existing types:
 
 ### Property 1: Normalizer totality
 
-*For any* raw severity string (including empty, arbitrary Unicode, or arbitrary length), `normalize_severity(raw)` SHALL return exactly one of `LOW`, `MEDIUM`, `HIGH`, or `VERY_HIGH` — never `No_Filter`, never any other value.
+*For any* raw severity string (including empty, arbitrary Unicode, or arbitrary length), `normalize_severity(raw)` SHALL return exactly one of `LOW`, `MEDIUM`, `HIGH`, or `VERY_HIGH` - never `No_Filter`, never any other value.
 
 **Validates: Requirements 1.1**
 
@@ -367,13 +367,13 @@ No new dataclasses. Changes to existing types:
 
 ## Error Handling
 
-Severity normalization and the gate are pure, total functions over strings and in-memory state — they have no I/O and cannot raise:
+Severity normalization and the gate are pure, total functions over strings and in-memory state - they have no I/O and cannot raise:
 
 - `normalize_severity` never raises: every branch (canonical match, synonym match, fallback) returns a value; there is no code path that reaches an unhandled case.
 - `get_effective_min_severity` never raises: `dict.get` with defaults handles every combination of an absent map, an absent key, or a present key.
-- `meets_minimum`/`filter_by_min_severity` never raise for any severity/minimum pair drawn from the finite fixed vocabularies above, including a `minimum` value inherited from a legacy or hand-edited config entry that is not itself one of the five known values — treated the same as `No_Filter` is not the chosen behavior; instead, an unrecognised `minimum` string safely falls through to `SEVERITY_ORDER.index(minimum)` raising `ValueError`. To avoid this, `get_effective_min_severity` validates the stored value against `MIN_SEVERITY_ORDER` and coerces anything unrecognised back to `MIN_SEVERITY_NO_FILTER` (logged once at WARNING via the coordinator's existing `_LOGGER`), so a hand-edited or future-downgraded config entry degrades to "no filtering" rather than crashing the poll loop or webhook handler.
-- Config-flow submissions constrain the selector to the five known `SelectOptionDict` values, so a value outside the vocabulary can only reach the config entry via manual editing of the underlying storage — the coercion above is the safety net for that case, consistent with how the rest of the integration already treats malformed persisted data (e.g. `async_restore_watermarks`'s `ValueError`/`TypeError` guards).
-- No new exception types are introduced. No existing exception handling in `webhook_handler.py` (token auth, JSON parsing) or `coordinator.py` (`InvalidAuthError`/`CannotConnectError`/`UpdateFailed`) changes — the severity gate sits entirely after those existing error paths.
+- `meets_minimum`/`filter_by_min_severity` never raise for any severity/minimum pair drawn from the finite fixed vocabularies above, including a `minimum` value inherited from a legacy or hand-edited config entry that is not itself one of the five known values - treated the same as `No_Filter` is not the chosen behavior; instead, an unrecognised `minimum` string safely falls through to `SEVERITY_ORDER.index(minimum)` raising `ValueError`. To avoid this, `get_effective_min_severity` validates the stored value against `MIN_SEVERITY_ORDER` and coerces anything unrecognised back to `MIN_SEVERITY_NO_FILTER` (logged once at WARNING via the coordinator's existing `_LOGGER`), so a hand-edited or future-downgraded config entry degrades to "no filtering" rather than crashing the poll loop or webhook handler.
+- Config-flow submissions constrain the selector to the five known `SelectOptionDict` values, so a value outside the vocabulary can only reach the config entry via manual editing of the underlying storage - the coercion above is the safety net for that case, consistent with how the rest of the integration already treats malformed persisted data (e.g. `async_restore_watermarks`'s `ValueError`/`TypeError` guards).
+- No new exception types are introduced. No existing exception handling in `webhook_handler.py` (token auth, JSON parsing) or `coordinator.py` (`InvalidAuthError`/`CannotConnectError`/`UpdateFailed`) changes - the severity gate sits entirely after those existing error paths.
 
 ## Testing Strategy
 
@@ -388,10 +388,10 @@ def test_push_below_threshold_is_noop(...): ...
 
 **Unit/example-based tests** cover the acceptance criteria classified as EXAMPLE or SMOKE during prework, since they describe a fixed rendering shape or a one-time ordering/documentation check rather than a universal property:
 
-- Config_Flow categories-step rendering: each of the 7 categories exposes a `min_severity_{cat}` selector offering the 5 expected options, defaulted to `No_Filter` (Requirement 3.1) — `tests/unit/config_flow/test_setup.py`.
-- Options_Flow categories-step rendering pre-fills from a legacy entry (no stored `min_severity`) and from an entry with an explicit stored value (Requirement 4.1) — `tests/unit/config_flow/test_min_severity.py`.
-- Webhook token/secret validation always runs, and rejects, before the severity gate is ever reached: an invalid-token request carrying an otherwise-accepted alert never invokes `push_alert` and still returns HTTP 401 (Requirements 9.1, 9.2) — extends `tests/unit/test_webhook_handler.py`.
-- `strings.json`/`translations/en.json` parity for the 14 new `min_severity_*` keys is covered by the existing `scripts/check_translations.py`, run via `make validate`/`make doc-check` (Requirement 10.1) — no new test needed.
+- Config_Flow categories-step rendering: each of the 7 categories exposes a `min_severity_{cat}` selector offering the 5 expected options, defaulted to `No_Filter` (Requirement 3.1) - `tests/unit/config_flow/test_setup.py`.
+- Options_Flow categories-step rendering pre-fills from a legacy entry (no stored `min_severity`) and from an entry with an explicit stored value (Requirement 4.1) - `tests/unit/config_flow/test_min_severity.py`.
+- Webhook token/secret validation always runs, and rejects, before the severity gate is ever reached: an invalid-token request carrying an otherwise-accepted alert never invokes `push_alert` and still returns HTTP 401 (Requirements 9.1, 9.2) - extends `tests/unit/test_webhook_handler.py`.
+- `strings.json`/`translations/en.json` parity for the 14 new `min_severity_*` keys is covered by the existing `scripts/check_translations.py`, run via `make validate`/`make doc-check` (Requirement 10.1) - no new test needed.
 - `docs/UNIFI.md` severity-ordering/synonym/fallback documentation and the `CHANGELOG.md` `[Unreleased]` bullet (Requirements 10.2, 10.3, 10.4) are manual-review / doc-lint items, not automated tests, consistent with how the rest of the repo treats documentation-content requirements.
 
-**Integration tests** (`tests/integration/test_webhook.py`, `tests/integration/test_lifecycle.py`) gain one representative end-to-end case each: a full config-entry setup with a non-default `min_severity` for one category, a webhook push below threshold followed by one at/above threshold, confirming entity state only changes on the second push — exercising the real `hass`/entity-registry wiring that the property tests (which operate on `CategoryState`/`UniFiAlertsCoordinator` directly) do not cover.
+**Integration tests** (`tests/integration/test_webhook.py`, `tests/integration/test_lifecycle.py`) gain one representative end-to-end case each: a full config-entry setup with a non-default `min_severity` for one category, a webhook push below threshold followed by one at/above threshold, confirming entity state only changes on the second push - exercising the real `hass`/entity-registry wiring that the property tests (which operate on `CategoryState`/`UniFiAlertsCoordinator` directly) do not cover.

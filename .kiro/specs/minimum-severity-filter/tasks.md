@@ -14,7 +14,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
   - [x] 2.1 Create `custom_components/unifi_alerts/severity.py` with constants
     - Define `SEVERITY_LOW`, `SEVERITY_MEDIUM`, `SEVERITY_HIGH`, `SEVERITY_VERY_HIGH`, `SEVERITY_ORDER`
     - Define `MIN_SEVERITY_NO_FILTER = "no_filter"` and `MIN_SEVERITY_ORDER`
-    - Define the `_SEVERITY_SYNONYMS` mapping (critical/urgent→VERY_HIGH, error/high→HIGH, warning/medium→MEDIUM, info/low/notice→LOW)
+    - Define the `_SEVERITY_SYNONYMS` mapping (critical/urgent -> VERY_HIGH, error/high->HIGH, warning/medium->MEDIUM, info/low/notice->LOW)
     - _Requirements: 1.1, 2.1_
 
   - [x] 2.2 Implement `normalize_severity(raw: str) -> str`
@@ -151,7 +151,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
 
 - [x] 10. Add Minimum_Severity_Setting selector to `config_flow.py` Options_Flow
   - [x] 10.1 Add `min_severity_{category}` field to `UniFiAlertsOptionsFlow.async_step_categories` schema
-    - Pre-fill default via `current_min_severity.get(cat, MIN_SEVERITY_NO_FILTER)`, following the existing options→data→default fallback chain
+    - Pre-fill default via `current_min_severity.get(cat, MIN_SEVERITY_NO_FILTER)`, following the existing options->data->default fallback chain
     - _Requirements: 4.1_
 
   - [x] 10.2 Collect and stage submitted values on Options_Flow submission
@@ -188,18 +188,21 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
   - Add one `### Added` bullet under `[Unreleased]` describing the per-category minimum-severity option, referencing issue #135
   - _Requirements: 10.3, 10.4_
 
-- [ ] 16. Add integration test coverage (mandatory)
-  - [ ] 16.1 Write integration test: webhook push below then at/above threshold (mandatory)
+- [x] 16. Add integration test coverage (mandatory)
+  - [x] 16.1 Write integration test: webhook push below then at/above threshold (mandatory)
     - Extend `tests/integration/test_webhook.py`: full config-entry setup with a non-default `min_severity` for one category, a webhook push below threshold followed by one at/above threshold, confirming entity state only changes on the second push
     - _Requirements: 6.1, 6.2, 6.3, 6.5, 8.1_
 
-  - [ ] 16.2 Write integration test: config-entry lifecycle with non-default min_severity (mandatory)
+  - [x] 16.2 Write integration test: config-entry lifecycle with non-default min_severity (mandatory)
     - Extend `tests/integration/test_lifecycle.py`: full config-entry setup/reload with a non-default `min_severity` for one category, confirming the stored setting survives entry lifecycle operations and gates alerts accordingly
     - _Requirements: 5.1, 5.2, 3.2, 4.2_
 
 - [ ] 17. Final checkpoint - Run full validation suite (mandatory gate, not optional)
   - Run `make check` (lint + typecheck + validate + test) and confirm every check passes, including every property test, unit test, and integration test added in this plan. This is a mandatory gate - fix any failures and re-run until all checks pass. The feature is not complete until this fully passes.
   - _Requirements: 10.1, 10.4_
+
+- [ ] 18. Remove all references to "Requirements" or any numbering featured in this plan
+  - Scan the codebase for any references to this specification, including "Requirement X.X" or "Wave X" or "Task X" and refactor the comment/documentation to exclude the reference; leave the commentary and description ONLY if it makes sense.
 
 ## Notes
 
@@ -225,7 +228,8 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     { "id": 6, "tasks": ["6.3", "6.4", "6.5", "6.6", "7.2", "7.3", "9.3", "10.2", "12.1"] },
     { "id": 7, "tasks": ["9.4", "9.5", "10.3", "10.4"] },
     { "id": 8, "tasks": ["13", "14", "15"] },
-    { "id": 9, "tasks": ["16.1", "16.2"] }
+    { "id": 9, "tasks": ["16.1", "16.2"] },
+    { "id": 10, "tasks": ["17", "18"] }
   ]
 }
 ```
