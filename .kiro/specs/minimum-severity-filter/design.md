@@ -22,28 +22,28 @@ flowchart TD
         SL[v2 system-log event] --> A3["UniFiAlert.from_system_log_event()"]
     end
 
-    A1 --> SEV["alert.severity_level\n(severity.normalize_severity)"]
+    A1 --> SEV["alert.severity_level<br/>(severity.normalize_severity)"]
     A2 --> SEV
     A3 --> SEV
 
     subgraph Push path
-        WHH[webhook_handler.py\ntoken auth] --> PA["coordinator.push_alert()"]
-        PA --> GATE1{"meets_minimum(\nseverity_level,\neffective_min)?"}
-        GATE1 -- no --> NOOP1["no-op:\nonly last_webhook_at updates"]
-        GATE1 -- yes --> APPLY["state.apply_alert()\n+ open_count/notify"]
+        WHH[webhook_handler.py<br/>token auth] --> PA["coordinator.push_alert()"]
+        PA --> GATE1{"meets_minimum(<br/>severity_level,<br/>effective_min)?"}
+        GATE1 -- no --> NOOP1["no-op:<br/>only last_webhook_at updates"]
+        GATE1 -- yes --> APPLY["state.apply_alert()<br/>+ open_count/notify"]
     end
 
     subgraph Poll path
         POLL["coordinator._async_update_data()"] --> FILTER["severity.filter_by_min_severity()"]
-        FILTER --> COUNT["open_count\n(watermark + severity filtered)"]
-        FILTER --> ALERTING["is_alerting / last_alert\n(enabled categories only)"]
+        FILTER --> COUNT["open_count<br/>(watermark + severity filtered)"]
+        FILTER --> ALERTING["is_alerting / last_alert<br/>(enabled categories only)"]
         FILTER --> WATERMARK["newest-seen watermark"]
     end
 
     SEV --> GATE1
     SEV --> FILTER
 
-    CFG["config_flow.py\nCategories step\n(Config_Flow + Options_Flow)"] --> MINSEV[("entry.data /\nentry.options\nCONF_MIN_SEVERITY")]
+    CFG["config_flow.py<br/>Categories step<br/>(Config_Flow + Options_Flow)"] --> MINSEV[("entry.data /<br/>entry.options<br/>CONF_MIN_SEVERITY")]
     MINSEV --> EFF["severity.get_effective_min_severity()"]
     EFF --> GATE1
     EFF --> FILTER
@@ -276,7 +276,7 @@ One `### Added` bullet under `[Unreleased]` describing the per-category minimum-
 No new dataclasses. Changes to existing types:
 
 | Type | Change |
-|---|---|
+| --- | --- |
 | `UniFiAlert` (models.py) | New computed property `severity_level -> str`, derived from `self.severity` via `severity.normalize_severity()`. Not a dataclass field; not serialized by `to_dict`/`from_dict`. |
 | `UniFiClientConfig` (models.py, TypedDict) | New optional key `min_severity: dict[str, str]`. |
 | Config entry `data` / `options` | New key `CONF_MIN_SEVERITY = "min_severity"` → `dict[category: str, setting: str]`, where `setting` is one of `{"no_filter", "LOW", "MEDIUM", "HIGH", "VERY_HIGH"}`. Absent map or absent category key both resolve to `"no_filter"` via `get_effective_min_severity()`. |
