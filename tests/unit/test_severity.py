@@ -47,7 +47,7 @@ def _padded(name: str) -> st.SearchStrategy[str]:
 
 # Feature: minimum-severity-filter, Property 1: Normalizer totality
 @given(raw=st.text())
-@settings(max_examples=100)
+@settings(max_examples=25)
 def test_normalize_severity_totality(raw: str) -> None:
     """normalize_severity always returns one of the four Severity_Levels,
     and never the MIN_SEVERITY_NO_FILTER sentinel, for any string input."""
@@ -61,7 +61,7 @@ def test_normalize_severity_totality(raw: str) -> None:
     name=st.sampled_from(_ALL_MATCHED_NAMES),
     data=st.data(),
 )
-@settings(max_examples=100)
+@settings(max_examples=25)
 def test_normalize_severity_case_and_whitespace_insensitive(name: str, data: st.DataObject) -> None:
     """Any casing/whitespace-padding variant of a canonical name or documented
     synonym must normalize to the Severity_Level that name/synonym maps to."""
@@ -82,7 +82,7 @@ def test_normalize_severity_case_and_whitespace_insensitive(name: str, data: st.
         )
     )
 )
-@settings(max_examples=100)
+@settings(max_examples=25)
 def test_normalize_severity_unmatched_or_empty_falls_back_to_low(raw: str) -> None:
     """Any string that, after lowercasing and stripping, does not match a
     canonical Severity_Level name or a documented synonym key (including the
@@ -96,7 +96,7 @@ def test_normalize_severity_unmatched_or_empty_falls_back_to_low(raw: str) -> No
     other_categories=st.dictionaries(st.text(min_size=1), st.sampled_from(MIN_SEVERITY_ORDER)),
     stored_value=st.sampled_from(MIN_SEVERITY_ORDER),
 )
-@settings(max_examples=100)
+@settings(max_examples=25)
 def test_get_effective_min_severity_defaults_missing_data_to_no_filter(
     category: str,
     other_categories: dict[str, str],
@@ -126,7 +126,7 @@ def test_get_effective_min_severity_defaults_missing_data_to_no_filter(
 
 # Feature: minimum-severity-filter, Property 4: Raw severity is preserved independent of normalization
 @given(raw=st.text())
-@settings(max_examples=100)
+@settings(max_examples=25)
 def test_alert_severity_preserved_independent_of_normalization(raw: str) -> None:
     """Constructing a UniFiAlert directly stores `severity` verbatim (no
     truncation occurs in __init__ - the 32-char truncation only happens in

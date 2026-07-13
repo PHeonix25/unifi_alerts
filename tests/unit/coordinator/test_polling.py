@@ -6,10 +6,13 @@ test_persistence.py, and test_autoclear.py in this package.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import asyncio
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
@@ -17,10 +20,12 @@ from custom_components.unifi_alerts.const import (
     CATEGORY_SECURITY_THREAT,
     CONF_CLEAR_TIMEOUT,
     CONF_ENABLED_CATEGORIES,
+    CONF_MIN_SEVERITY,
     CONF_POLL_INTERVAL,
 )
 from custom_components.unifi_alerts.coordinator import UniFiAlertsCoordinator
-from custom_components.unifi_alerts.models import UniFiAlert
+from custom_components.unifi_alerts.models import UniFiAlert, ensure_aware
+from custom_components.unifi_alerts.severity import MIN_SEVERITY_ORDER, SEVERITY_ORDER, meets_minimum
 
 from .conftest import make_alert, make_full_coordinator, make_hass_and_client
 
@@ -469,6 +474,149 @@ class TestCoordinatorV2Dispatch:
         client.fetch_system_log_alarms.assert_awaited_once()
         _, kwargs = client.fetch_system_log_alarms.call_args
         assert kwargs.get("since") is None
+
+
+class TestPollingSeverityGate:
+    """Minimum_Severity_Setting gate on the polling path (_async_update_data)."""
+
+    # Feature: minimum-severity-filter, Property 12: Severity-filtered polling drives
+    # open_count, alerting selection, and the newest-seen watermark consistently
+    @given(
+        category=st.sampled_from(ALL_CATEGORIES),
+        minimum=st.sampled_from(MIN_SEVERITY_ORDER),
+        watermark_offset=st.one_of(st.none(), st.integers(min_value=-100_000, max_value=100_000)),
+        alert_specs=st.lists(
+            st.tuples(
+                st.sampled_from(SEVERITY_ORDER),
+                st.integers(min_value=-100_000, max_value=100_000),
+            ),
+            max_size=8,
+        ),
+    )
+    @settings(max_examples=25, deadline=None)
+    def test_severity_filtered_polling_drives_open_count_alerting_and_watermark(
+        self,
+        category: str,
+        minimum: str,
+        watermark_offset: int | None,
+        alert_specs: list[tuple[str, int]],
+    ) -> None:
+        """open_count, is_alerting/last_alert selection, and the newest-seen
+        watermark must all derive from the same severity-eligible subset,
+        with open_count/is_alerting/last_alert further restricted to the
+        watermark-eligible portion of that subset."""
+        base_time = datetime(2024, 1, 1, tzinfo=UTC)
+        watermark = (
+            base_time + timedelta(seconds=watermark_offset) if watermark_offset is not None else None
+        )
+        alerts = [
+            UniFiAlert(
+                category=category,
+                message=f"alert-{idx}",
+                received_at=base_time + timedelta(seconds=offset),
+                severity=severity,
+            )
+            for idx, (severity, offset) in enumerate(alert_specs)
+        ]
+
+        hass, client = make_hass_and_client()
+        client.categorise_alarms = AsyncMock(return_value={category: alerts})
+        coord = make_full_coordinator(hass, client)
+        coord._config[CONF_MIN_SEVERITY] = {category: minimum}
+        state = coord.get_category_state(category)
+        state.last_cleared_at = watermark
+
+        asyncio.run(coord._async_update_data())
+
+        # Same severity-eligible subset feeds both open_count/alerting selection
+        # (further restricted by the watermark) and the newest-seen watermark.
+        eligible = [a for a in alerts if meets_minimum(a.severity_level, minimum)]
+        counted = (
+            [a for a in eligible if a.received_at > watermark] if watermark is not None else eligible
+        )
+
+        assert state.open_count == len(counted)
+
+        if counted:
+            expected_last_alert = max(counted, key=lambda a: a.received_at)
+            assert state.is_alerting is True
+            assert state.last_alert is expected_last_alert
+        else:
+            assert state.is_alerting is False
+            assert state.last_alert is None
+
+        if eligible:
+            expected_newest_seen = max(ensure_aware(a.received_at) for a in eligible)
+            assert state.last_alarm_received_at == expected_newest_seen
+        else:
+            assert state.last_alarm_received_at is None
+
+    # Feature: minimum-severity-filter, Property 13: Disabled category is untouched
+    # by a poll cycle regardless of severity content
+    @given(
+        category=st.sampled_from(ALL_CATEGORIES),
+        minimum=st.sampled_from(MIN_SEVERITY_ORDER),
+        prior_is_alerting=st.booleans(),
+        prior_open_count=st.integers(min_value=0, max_value=1000),
+        prior_last_alert_offset=st.one_of(
+            st.none(), st.integers(min_value=-100_000, max_value=100_000)
+        ),
+        alert_specs=st.lists(
+            st.tuples(
+                st.sampled_from(SEVERITY_ORDER),
+                st.integers(min_value=-100_000, max_value=100_000),
+            ),
+            max_size=8,
+        ),
+    )
+    @settings(max_examples=25, deadline=None)
+    def test_disabled_category_untouched_by_poll_cycle(
+        self,
+        category: str,
+        minimum: str,
+        prior_is_alerting: bool,
+        prior_open_count: int,
+        prior_last_alert_offset: int | None,
+        alert_specs: list[tuple[str, int]],
+    ) -> None:
+        """A disabled category's is_alerting/last_alert/open_count must never be
+        touched by a poll cycle, no matter what severities are polled or what
+        Minimum_Severity_Setting is configured for it."""
+        base_time = datetime(2024, 1, 1, tzinfo=UTC)
+        prior_last_alert = (
+            UniFiAlert(
+                category=category,
+                message="prior alert",
+                received_at=base_time + timedelta(seconds=prior_last_alert_offset),
+            )
+            if prior_last_alert_offset is not None
+            else None
+        )
+        alerts = [
+            UniFiAlert(
+                category=category,
+                message=f"alert-{idx}",
+                received_at=base_time + timedelta(seconds=offset),
+                severity=severity,
+            )
+            for idx, (severity, offset) in enumerate(alert_specs)
+        ]
+
+        hass, client = make_hass_and_client()
+        client.categorise_alarms = AsyncMock(return_value={category: alerts})
+        coord = make_full_coordinator(hass, client)
+        coord._config[CONF_MIN_SEVERITY] = {category: minimum}
+        state = coord.get_category_state(category)
+        state.enabled = False
+        state.is_alerting = prior_is_alerting
+        state.open_count = prior_open_count
+        state.last_alert = prior_last_alert
+
+        asyncio.run(coord._async_update_data())
+
+        assert state.is_alerting is prior_is_alerting
+        assert state.last_alert is prior_last_alert
+        assert state.open_count == prior_open_count
 
 
 class TestUnrecognisedKeys:

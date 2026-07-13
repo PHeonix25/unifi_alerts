@@ -253,6 +253,10 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             enabled = [cat for cat in ALL_CATEGORIES if user_input.get(f"cat_{cat}", False)]
+            min_severity = {
+                cat: user_input.get(f"min_severity_{cat}", MIN_SEVERITY_NO_FILTER)
+                for cat in ALL_CATEGORIES
+            }
             if not enabled:
                 errors["base"] = "at_least_one_category"
             else:
@@ -287,6 +291,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                         ),
                         CONF_SITE: site,
                         CONF_AUTH_METHOD: self._detected_auth_method,
+                        CONF_MIN_SEVERITY: min_severity,
                     }
                     return await self.async_step_finish()
 
@@ -693,6 +698,10 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
 
         if user_input is not None:
             enabled = [cat for cat in ALL_CATEGORIES if user_input.get(f"cat_{cat}", False)]
+            min_severity = {
+                cat: user_input.get(f"min_severity_{cat}", MIN_SEVERITY_NO_FILTER)
+                for cat in ALL_CATEGORIES
+            }
             if not enabled:
                 errors["base"] = "at_least_one_category"
             else:
@@ -723,6 +732,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                             CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT
                         ),
                         CONF_SITE: site,
+                        CONF_MIN_SEVERITY: min_severity,
                     }
                     return await self.async_step_finish()
 

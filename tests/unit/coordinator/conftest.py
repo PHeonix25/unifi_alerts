@@ -31,7 +31,7 @@ def make_coordinator(hass: MagicMock | None = None, enabled: list[str] | None = 
     client.probe_system_log_endpoint = AsyncMock(return_value=False)
 
     config = {
-        CONF_ENABLED_CATEGORIES: enabled or ALL_CATEGORIES,
+        CONF_ENABLED_CATEGORIES: enabled if enabled is not None else ALL_CATEGORIES,
         CONF_POLL_INTERVAL: 60,
         CONF_CLEAR_TIMEOUT: 30,
     }

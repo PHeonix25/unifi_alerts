@@ -76,7 +76,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     - **Validates: Requirements 1.3**
     - In `tests/unit/test_severity.py` (constructing `UniFiAlert` instances directly), assert `alert.severity` equals the original raw string (subject to existing 32-char truncation) regardless of `severity_level`
 
-- [ ] 6. Wire severity gating into `coordinator.py` push path
+- [x] 6. Wire severity gating into `coordinator.py` push path
   - [x] 6.1 Read `_min_severity` config in `UniFiAlertsCoordinator.__init__`
     - `self._min_severity: dict[str, str] = config.get(CONF_MIN_SEVERITY, {})`
     - _Requirements: 3.2, 5.1_
@@ -87,43 +87,43 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     - On at/above-threshold or `No_Filter`: proceed with existing unchanged acceptance logic
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 8.1, 9.1, 9.2_
 
-  - [ ] 6.3 Write property test: Below-threshold push on an enabled category is a true no-op (mandatory)
+  - [x] 6.3 Write property test: Below-threshold push on an enabled category is a true no-op (mandatory)
     - **Property 8: Below-threshold push on an enabled category is a true no-op**
     - **Validates: Requirements 6.1, 6.2**
     - In `tests/unit/coordinator/test_push_dedup.py`, generate arbitrary prior `CategoryState`, a minimum from `{LOW, MEDIUM, HIGH, VERY_HIGH}`, and a strictly-below alert; assert `is_alerting`/`alert_count`/`open_count`/`last_alert` unchanged
 
-  - [ ] 6.4 Write property test: Disabled category never evaluates the gate (mandatory)
+  - [x] 6.4 Write property test: Disabled category never evaluates the gate (mandatory)
     - **Property 9: Disabled category never evaluates the gate**
     - **Validates: Requirements 6.4**
     - In `tests/unit/coordinator/test_push_dedup.py`, generate arbitrary disabled `CategoryState`, arbitrary minimum, arbitrary-severity alert; assert entire state unchanged after `push_alert`
 
-  - [ ] 6.5 Write property test: At-or-above-threshold or No_Filter push is accepted exactly as before (mandatory)
+  - [x] 6.5 Write property test: At-or-above-threshold or No_Filter push is accepted exactly as before (mandatory)
     - **Property 10: At-or-above-threshold or No_Filter push is accepted exactly as before this feature**
     - **Validates: Requirements 6.3, 6.5**
     - In `tests/unit/coordinator/test_push_dedup.py`, generate arbitrary prior state and either an at/above-threshold alert or a `No_Filter` setting with arbitrary severity; assert `is_alerting=True`, `alert_count` incremented, `last_alert` updated, `open_count` incremented when newer than watermark
 
-  - [ ] 6.6 Write property test: `last_webhook_at` still advances on a gated push (mandatory)
+  - [x] 6.6 Write property test: `last_webhook_at` still advances on a gated push (mandatory)
     - **Property 11: `last_webhook_at` still advances on a gated push**
     - **Validates: Requirements 8.1**
     - In `tests/unit/coordinator/test_push_dedup.py`, generate an enabled category, a minimum from `{LOW, MEDIUM, HIGH, VERY_HIGH}`, and a below-threshold alert; assert `last_webhook_at` updates to `received_at` while other fields stay unchanged
 
-- [ ] 7. Wire severity gating into `coordinator.py` poll path
+- [x] 7. Wire severity gating into `coordinator.py` poll path
   - [x] 7.1 Insert severity filter step into `_async_update_data`
     - Apply `filter_by_min_severity` before the existing watermark filter; call `_track_newest_seen` with the severity-filtered list
     - Keep the existing `if not state.enabled: continue` guard unchanged and preceding the new filter step
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7_
 
-  - [ ] 7.2 Write property test: Severity-filtered polling drives open_count, alerting selection, and watermark consistently (mandatory)
+  - [x] 7.2 Write property test: Severity-filtered polling drives open_count, alerting selection, and watermark consistently (mandatory)
     - **Property 12: Severity-filtered polling drives open_count, alerting selection, and the newest-seen watermark consistently**
     - **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.6, 7.7**
     - In `tests/unit/coordinator/test_polling.py`, generate an enabled category, arbitrary polled alarms with varying severities, and a minimum from `{No_Filter, LOW, MEDIUM, HIGH, VERY_HIGH}`; assert `open_count`, `is_alerting`/`last_alert` selection, and the newest-seen watermark all derive from the same severity-eligible, watermark-eligible subset
 
-  - [ ] 7.3 Write property test: Disabled category is untouched by a poll cycle regardless of severity content (mandatory)
+  - [x] 7.3 Write property test: Disabled category is untouched by a poll cycle regardless of severity content (mandatory)
     - **Property 13: Disabled category is untouched by a poll cycle regardless of severity content**
     - **Validates: Requirements 7.5**
     - In `tests/unit/coordinator/test_polling.py`, generate a disabled category with arbitrary prior `is_alerting`/`last_alert`/`open_count`, arbitrary polled alarms, and arbitrary minimum; assert all three fields unchanged after a poll cycle
 
-- [ ] 8. Checkpoint - Run the test suite (mandatory gate, not optional)
+- [x] 8. Checkpoint - Run the test suite (mandatory gate, not optional)
   - Run the full test suite and confirm every test passes before proceeding. This is a mandatory gate, including all property tests written so far — do not proceed to subsequent tasks until all tests pass. If a test fails, fix the implementation or the test before moving on.
 
 - [ ] 9. Add Minimum_Severity_Setting selector to `config_flow.py` Config_Flow
@@ -135,7 +135,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     - One field per category in `ALL_CATEGORIES`, defaulted to `MIN_SEVERITY_NO_FILTER`, alongside existing `cat_{category}` boolean field
     - _Requirements: 3.1_
 
-  - [ ] 9.3 Collect and store submitted values on Config_Flow submission
+  - [x] 9.3 Collect and store submitted values on Config_Flow submission
     - Build `min_severity = {cat: user_input.get(f"min_severity_{cat}", MIN_SEVERITY_NO_FILTER) for cat in ALL_CATEGORIES}`
     - Store into `self._entry_data[CONF_MIN_SEVERITY]`
     - _Requirements: 3.2, 3.3_
@@ -154,7 +154,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     - Pre-fill default via `current_min_severity.get(cat, MIN_SEVERITY_NO_FILTER)`, following the existing options→data→default fallback chain
     - _Requirements: 4.1_
 
-  - [ ] 10.2 Collect and stage submitted values on Options_Flow submission
+  - [x] 10.2 Collect and stage submitted values on Options_Flow submission
     - Build the same `min_severity` mapping shape as Config_Flow; store into `self._pending_options[CONF_MIN_SEVERITY]`
     - _Requirements: 4.2, 4.3_
 
@@ -170,8 +170,8 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
 - [ ] 11. Checkpoint - Run the test suite (mandatory gate, not optional)
   - Run the full test suite and confirm every test passes before proceeding. This is a mandatory gate, including all property tests and unit tests written so far — do not proceed to subsequent tasks until all tests pass. If a test fails, fix the implementation or the test before moving on.
 
-- [ ] 12. Verify webhook auth-before-gate ordering
-  - [ ] 12.1 Write unit test: severity gate is unreachable before token auth succeeds (mandatory)
+- [x] 12. Verify webhook auth-before-gate ordering
+  - [x] 12.1 Write unit test: severity gate is unreachable before token auth succeeds (mandatory)
     - Extend `tests/unit/test_webhook_handler.py`: an invalid-token request carrying an otherwise-accepted alert never invokes `push_alert` and still returns HTTP 401
     - _Requirements: 9.1, 9.2_
 

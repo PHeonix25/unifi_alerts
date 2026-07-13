@@ -567,6 +567,34 @@ class TestRegisterAllRollback:
         assert urls == {}
 
 
+class TestSeverityGateUnreachableBeforeAuth:
+    """Feature: minimum-severity-filter — token auth must reject before the
+    severity gate (which lives in coordinator.push_alert) is ever reached.
+
+    Validates: Requirements 9.1, 9.2
+    """
+
+    @pytest.mark.asyncio
+    async def test_invalid_token_with_otherwise_accepted_alert_returns_401_and_skips_push(self):
+        """An invalid-token request carrying a high-severity (otherwise-accepted)
+        alert must still be rejected with 401 before push_callback (and therefore
+        the coordinator's severity gate) is ever invoked."""
+        manager, push_cb = make_manager(secret="tok123")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok123")
+        req = make_request(
+            token="wrong-token",
+            json_body={
+                "key": "EVT_GW_WANTransition",
+                "message": "WAN down",
+                "severity": "VERY_HIGH",
+            },
+        )
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is not None
+        assert response.status == 401
+        push_cb.assert_not_called()
+
+
 class TestWebhookSecretRotatedRepairIssue:
     """Repair issue lifecycle: created on rotation, cleared on first successful webhook."""
 

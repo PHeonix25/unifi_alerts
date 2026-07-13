@@ -7,19 +7,32 @@ test_persistence.py, and test_autoclear.py in this package.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
     CATEGORY_NETWORK_WAN,
     CATEGORY_SECURITY_THREAT,
+    CONF_MIN_SEVERITY,
 )
 from custom_components.unifi_alerts.models import UniFiAlert
+from custom_components.unifi_alerts.severity import (
+    MIN_SEVERITY_NO_FILTER,
+    MIN_SEVERITY_ORDER,
+    SEVERITY_ORDER,
+)
 
 from .conftest import make_alert, make_coordinator, make_full_coordinator, make_hass_and_client
+
+# Minimum_Severity_Setting values that have at least one Severity_Level
+# strictly below them. LOW is excluded — it is the lowest Severity_Level, so
+# no alert can ever be "strictly below" a minimum of LOW.
+_BELOW_THRESHOLD_MINIMUMS: list[str] = SEVERITY_ORDER[1:]
 
 
 class TestCoordinatorInit:
@@ -528,3 +541,238 @@ class TestPushAlertOptimisticOpenCount:
         await coord._async_update_data()
 
         assert coord.get_category_state(CATEGORY_NETWORK_WAN).open_count == 0
+
+
+class TestPushAlertSeverityGate:
+    """Minimum_Severity_Setting gate on the webhook push path (push_alert)."""
+
+    # Feature: minimum-severity-filter, Property 8: Below-threshold push on an enabled category is a true no-op
+    @given(
+        minimum=st.sampled_from(_BELOW_THRESHOLD_MINIMUMS),
+        prior_is_alerting=st.booleans(),
+        prior_alert_count=st.integers(min_value=0, max_value=1000),
+        prior_open_count=st.integers(min_value=0, max_value=1000),
+        has_prior_alert=st.booleans(),
+        data=st.data(),
+    )
+    @settings(max_examples=25)
+    def test_below_threshold_push_is_noop(
+        self,
+        minimum: str,
+        prior_is_alerting: bool,
+        prior_alert_count: int,
+        prior_open_count: int,
+        has_prior_alert: bool,
+        data: st.DataObject,
+    ) -> None:
+        """A below-threshold push on an Enabled Category must leave is_alerting,
+        alert_count, open_count, and last_alert unchanged from their values
+        immediately before the call."""
+        category = CATEGORY_NETWORK_WAN
+        below_severities = SEVERITY_ORDER[: SEVERITY_ORDER.index(minimum)]
+        severity = data.draw(st.sampled_from(below_severities))
+
+        coord = make_coordinator(enabled=[category])
+        coord.async_set_updated_data = MagicMock()
+        coord._config[CONF_MIN_SEVERITY] = {category: minimum}
+
+        state = coord.get_category_state(category)
+        prior_last_alert = make_alert(category, "prior alert") if has_prior_alert else None
+        state.is_alerting = prior_is_alerting
+        state.alert_count = prior_alert_count
+        state.open_count = prior_open_count
+        state.last_alert = prior_last_alert
+
+        alert = make_alert(category, "below-threshold alert")
+        alert.severity = severity
+
+        coord.push_alert(category, alert)
+
+        assert state.is_alerting == prior_is_alerting
+        assert state.alert_count == prior_alert_count
+        assert state.open_count == prior_open_count
+        assert state.last_alert is prior_last_alert
+
+    # Feature: minimum-severity-filter, Property 11: last_webhook_at still advances on a gated push
+    @given(
+        minimum=st.sampled_from(_BELOW_THRESHOLD_MINIMUMS),
+        prior_is_alerting=st.booleans(),
+        prior_alert_count=st.integers(min_value=0, max_value=1000),
+        prior_open_count=st.integers(min_value=0, max_value=1000),
+        has_prior_alert=st.booleans(),
+        data=st.data(),
+    )
+    @settings(max_examples=25)
+    def test_below_threshold_push_still_advances_last_webhook_at(
+        self,
+        minimum: str,
+        prior_is_alerting: bool,
+        prior_alert_count: int,
+        prior_open_count: int,
+        has_prior_alert: bool,
+        data: st.DataObject,
+    ) -> None:
+        """A below-threshold push on an Enabled Category must still update
+        last_webhook_at to the alert's received_at, even though is_alerting,
+        alert_count, open_count, and last_alert remain unchanged."""
+        category = CATEGORY_NETWORK_WAN
+        below_severities = SEVERITY_ORDER[: SEVERITY_ORDER.index(minimum)]
+        severity = data.draw(st.sampled_from(below_severities))
+
+        coord = make_coordinator(enabled=[category])
+        coord.async_set_updated_data = MagicMock()
+        coord._config[CONF_MIN_SEVERITY] = {category: minimum}
+
+        state = coord.get_category_state(category)
+        prior_last_alert = make_alert(category, "prior alert") if has_prior_alert else None
+        state.is_alerting = prior_is_alerting
+        state.alert_count = prior_alert_count
+        state.open_count = prior_open_count
+        state.last_alert = prior_last_alert
+        state.last_webhook_at = None
+
+        alert = make_alert(category, "below-threshold alert")
+        alert.severity = severity
+
+        coord.push_alert(category, alert)
+
+        assert state.last_webhook_at == alert.received_at
+        assert state.is_alerting == prior_is_alerting
+        assert state.alert_count == prior_alert_count
+        assert state.open_count == prior_open_count
+        assert state.last_alert is prior_last_alert
+
+    # Feature: minimum-severity-filter, Property 10: At-or-above-threshold or No_Filter push is accepted exactly as before this feature
+    @given(
+        gate_mode=st.sampled_from(["at_or_above", "no_filter"]),
+        prior_is_alerting=st.booleans(),
+        prior_alert_count=st.integers(min_value=0, max_value=1000),
+        prior_open_count=st.integers(min_value=0, max_value=1000),
+        has_prior_alert=st.booleans(),
+        watermark_case=st.sampled_from(["none", "past", "future"]),
+        data=st.data(),
+    )
+    @settings(max_examples=25)
+    def test_at_or_above_threshold_or_no_filter_push_is_accepted(
+        self,
+        gate_mode: str,
+        prior_is_alerting: bool,
+        prior_alert_count: int,
+        prior_open_count: int,
+        has_prior_alert: bool,
+        watermark_case: str,
+        data: st.DataObject,
+    ) -> None:
+        """An at/above-threshold push, or any push when the category's
+        Minimum_Severity_Setting is No_Filter, must be accepted exactly as it
+        was before this feature: is_alerting set True, alert_count
+        incremented by 1, last_alert updated to the pushed alert, and
+        open_count incremented by 1 only when the alert is newer than the
+        watermark."""
+        category = CATEGORY_NETWORK_WAN
+
+        if gate_mode == "no_filter":
+            minimum = MIN_SEVERITY_NO_FILTER
+            severity = data.draw(st.sampled_from(SEVERITY_ORDER))
+        else:
+            minimum = data.draw(st.sampled_from(SEVERITY_ORDER))
+            at_or_above_severities = SEVERITY_ORDER[SEVERITY_ORDER.index(minimum) :]
+            severity = data.draw(st.sampled_from(at_or_above_severities))
+
+        coord = make_coordinator(enabled=[category])
+        coord.async_set_updated_data = MagicMock()
+        coord._config[CONF_MIN_SEVERITY] = {category: minimum}
+
+        state = coord.get_category_state(category)
+        prior_last_alert = make_alert(category, "prior alert") if has_prior_alert else None
+        state.is_alerting = prior_is_alerting
+        state.alert_count = prior_alert_count
+        state.open_count = prior_open_count
+        state.last_alert = prior_last_alert
+
+        alert = make_alert(category, "accepted alert")
+        alert.severity = severity
+
+        if watermark_case == "none":
+            state.last_cleared_at = None
+            expect_open_count_incremented = True
+        elif watermark_case == "past":
+            state.last_cleared_at = alert.received_at - timedelta(seconds=1)
+            expect_open_count_incremented = True
+        else:  # "future"
+            state.last_cleared_at = alert.received_at + timedelta(seconds=1)
+            expect_open_count_incremented = False
+
+        coord.push_alert(category, alert)
+
+        assert state.is_alerting is True
+        assert state.alert_count == prior_alert_count + 1
+        assert state.last_alert is alert
+        expected_open_count = (
+            prior_open_count + 1 if expect_open_count_incremented else prior_open_count
+        )
+        assert state.open_count == expected_open_count
+
+    # Feature: minimum-severity-filter, Property 9: Disabled category never evaluates the gate
+    @given(
+        category=st.sampled_from(ALL_CATEGORIES),
+        minimum=st.sampled_from(MIN_SEVERITY_ORDER),
+        severity=st.sampled_from(SEVERITY_ORDER),
+        prior_is_alerting=st.booleans(),
+        prior_alert_count=st.integers(min_value=0, max_value=1000),
+        prior_open_count=st.integers(min_value=0, max_value=1000),
+        prior_last_webhook_offset=st.one_of(
+            st.none(), st.integers(min_value=-100_000, max_value=100_000)
+        ),
+        has_prior_alert=st.booleans(),
+    )
+    @settings(max_examples=25)
+    def test_disabled_category_never_evaluates_gate(
+        self,
+        category: str,
+        minimum: str,
+        severity: str,
+        prior_is_alerting: bool,
+        prior_alert_count: int,
+        prior_open_count: int,
+        prior_last_webhook_offset: int | None,
+        has_prior_alert: bool,
+    ) -> None:
+        """A push to a disabled category must never reach the severity gate at
+        all — the category's entire state (including last_webhook_at, which
+        the gate itself would otherwise update on a below-threshold push)
+        must remain unchanged, regardless of the configured minimum or the
+        alert's severity."""
+        base_time = datetime(2024, 1, 1, tzinfo=UTC)
+        prior_last_webhook_at = (
+            base_time + timedelta(seconds=prior_last_webhook_offset)
+            if prior_last_webhook_offset is not None
+            else None
+        )
+
+        coord = make_coordinator(enabled=[])  # category starts disabled
+        coord.async_set_updated_data = MagicMock()
+        coord._config[CONF_MIN_SEVERITY] = {category: minimum}
+
+        state = coord.get_category_state(category)
+        assert state.enabled is False
+        prior_last_alert = make_alert(category, "prior alert") if has_prior_alert else None
+        state.is_alerting = prior_is_alerting
+        state.alert_count = prior_alert_count
+        state.open_count = prior_open_count
+        state.last_alert = prior_last_alert
+        state.last_webhook_at = prior_last_webhook_at
+
+        alert = make_alert(category, "arbitrary-severity alert")
+        alert.severity = severity
+
+        coord.push_alert(category, alert)
+
+        assert state.enabled is False
+        assert state.is_alerting == prior_is_alerting
+        assert state.alert_count == prior_alert_count
+        assert state.open_count == prior_open_count
+        assert state.last_alert is prior_last_alert
+        assert state.last_webhook_at == prior_last_webhook_at
+        # No notification either — a disabled-category push is a full no-op.
+        coord.async_set_updated_data.assert_not_called()
