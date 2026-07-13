@@ -273,6 +273,12 @@ def write_case_output(out_dir: Path, result: CaseResult, checklist: list[str]) -
     (out_dir / f"{result.case_id}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def print_inline_result(result: CaseResult, checks: int) -> None:
+    """Print an in-line summary of the results"""
+    passes = sum(1 for v in result.verdicts if v.get("pass"))
+    print(f" ({passes}/{checks})", file=sys.stderr)
+
+
 def build_summary_table(results: list[CaseResult], checklists: dict[str, list[str]]) -> str:
     """Render a per-case pass-rate table as markdown."""
     lines = ["| Case | Pass rate | Status |", "| --- | --- | --- |"]
@@ -283,7 +289,7 @@ def build_summary_table(results: list[CaseResult], checklists: dict[str, list[st
             continue
         passed = sum(1 for v in result.verdicts if v.get("pass"))
         total = len(checklist)
-        lines.append(f"| {result.case_id} | {passed}/{total} | ok |")
+        lines.append(f"| {result.case_id} | {passed}/{total} | completed |")
     return "\n".join(lines)
 
 
@@ -379,8 +385,9 @@ def main() -> int:
     checklists = {str(c["id"]): list(c.get("checklist", [])) for c in cases}
     results = []
     for case in cases:
-        print(f"Running {case['id']} against {args.model}...", file=sys.stderr)
+        print(f"Running {case['id']} against {args.model}...", file=sys.stderr, end="")
         result = run_case(client, case, instructions)
+        print_inline_result(result, len(checklists[result.case_id]))
         write_case_output(args.out, result, checklists[result.case_id])
         results.append(result)
 
