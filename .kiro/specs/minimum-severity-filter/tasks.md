@@ -6,82 +6,82 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
 
 ## Tasks
 
-- [ ] 1. Add `hypothesis` as a pinned dev dependency
+- [x] 1. Add `hypothesis` as a pinned dev dependency
   - Add `hypothesis==6.153.1` to `requirements-dev.txt`
   - _Requirements: Testing Strategy (design.md)_
 
-- [ ] 2. Implement `severity.py` normalization and gating module
-  - [ ] 2.1 Create `custom_components/unifi_alerts/severity.py` with constants
+- [x] 2. Implement `severity.py` normalization and gating module
+  - [x] 2.1 Create `custom_components/unifi_alerts/severity.py` with constants
     - Define `SEVERITY_LOW`, `SEVERITY_MEDIUM`, `SEVERITY_HIGH`, `SEVERITY_VERY_HIGH`, `SEVERITY_ORDER`
     - Define `MIN_SEVERITY_NO_FILTER = "no_filter"` and `MIN_SEVERITY_ORDER`
     - Define the `_SEVERITY_SYNONYMS` mapping (critical/urgent→VERY_HIGH, error/high→HIGH, warning/medium→MEDIUM, info/low/notice→LOW)
     - _Requirements: 1.1, 2.1_
 
-  - [ ] 2.2 Implement `normalize_severity(raw: str) -> str`
+  - [x] 2.2 Implement `normalize_severity(raw: str) -> str`
     - Case-insensitive, whitespace-trimmed match against canonical Severity_Level names, then against `_SEVERITY_SYNONYMS`
     - Fall back to `SEVERITY_LOW` for empty or unmatched input
     - _Requirements: 1.1, 1.2, 2.1, 2.2, 2.3_
 
-  - [ ] 2.3 Write property test: Normalizer totality (mandatory)
+  - [x] 2.3 Write property test: Normalizer totality (mandatory)
     - **Property 1: Normalizer totality**
     - **Validates: Requirements 1.1**
     - In `tests/unit/test_severity.py`, using `hypothesis` with arbitrary strings (including empty/Unicode), assert `normalize_severity` always returns one of the four Severity_Levels and never `MIN_SEVERITY_NO_FILTER`
 
-  - [ ] 2.4 Write property test: Canonical and synonym matching is case- and whitespace-insensitive (mandatory)
+  - [x] 2.4 Write property test: Canonical and synonym matching is case- and whitespace-insensitive (mandatory)
     - **Property 2: Canonical and synonym matching is case- and whitespace-insensitive**
     - **Validates: Requirements 1.2, 2.1, 2.3**
     - In `tests/unit/test_severity.py`, generate arbitrary casing/whitespace-padding variants of each canonical name and synonym, assert correct mapped Severity_Level
 
-  - [ ] 2.5 Write property test: Unmatched or empty input falls back to LOW (mandatory)
+  - [x] 2.5 Write property test: Unmatched or empty input falls back to LOW (mandatory)
     - **Property 3: Unmatched or empty input falls back to LOW**
     - **Validates: Requirements 2.2**
     - In `tests/unit/test_severity.py`, generate arbitrary strings filtered to exclude canonical names/synonyms (after lowercase+strip), assert result is `SEVERITY_LOW`
 
-  - [ ] 2.6 Implement `meets_minimum(severity_level: str, minimum: str) -> bool`
+  - [x] 2.6 Implement `meets_minimum(severity_level: str, minimum: str) -> bool`
     - Always `True` when `minimum == MIN_SEVERITY_NO_FILTER`
     - Otherwise compare `SEVERITY_ORDER` indices
     - _Requirements: 6.3, 6.5, 7.6_
 
-  - [ ] 2.7 Implement `get_effective_min_severity(config, category) -> str`
+  - [x] 2.7 Implement `get_effective_min_severity(config, category) -> str`
     - Resolve `config[CONF_MIN_SEVERITY]` dict lookup with `No_Filter` default for absent map or absent category key
     - Validate the resolved value against `MIN_SEVERITY_ORDER`, coercing any unrecognised stored value back to `MIN_SEVERITY_NO_FILTER` (per Error Handling in design.md)
     - _Requirements: 5.1, 5.2_
 
-  - [ ] 2.8 Write property test: Effective-setting resolution defaults missing data to No_Filter (mandatory)
+  - [x] 2.8 Write property test: Effective-setting resolution defaults missing data to No_Filter (mandatory)
     - **Property 7: Effective-setting resolution defaults missing data to No_Filter**
     - **Validates: Requirements 5.1, 5.2**
     - In `tests/unit/test_severity.py`, generate configs with the `min_severity` map absent, present-but-missing-key, and present-with-key, assert correct resolution in each case
 
-  - [ ] 2.9 Implement `filter_by_min_severity(alerts, minimum) -> list[UniFiAlert]`
+  - [x] 2.9 Implement `filter_by_min_severity(alerts, minimum) -> list[UniFiAlert]`
     - Pure filter with no `enabled` dependency; returns `alerts` unchanged when `minimum == MIN_SEVERITY_NO_FILTER`
     - _Requirements: 7.1, 7.4, 7.6_
 
-- [ ] 3. Add `CONF_MIN_SEVERITY` config key to `const.py`
+- [x] 3. Add `CONF_MIN_SEVERITY` config key to `const.py`
   - Add `CONF_MIN_SEVERITY: Final = "min_severity"`
   - _Requirements: 3.2, 4.2, 5.1_
 
-- [ ] 4. Checkpoint - Run the test suite (mandatory gate, not optional)
+- [x] 4. Checkpoint - Run the test suite (mandatory gate, not optional)
   - Run the full test suite and confirm every test passes before proceeding. This is a mandatory gate, including all property tests written so far — do not proceed to subsequent tasks until all tests pass. If a test fails, fix the implementation or the test before moving on.
 
-- [ ] 5. Add `severity_level` property and config typing to `models.py`
-  - [ ] 5.1 Add `UniFiAlert.severity_level` computed property
+- [x] 5. Add `severity_level` property and config typing to `models.py`
+  - [x] 5.1 Add `UniFiAlert.severity_level` computed property
     - Returns `normalize_severity(self.severity)`; not a dataclass field, not touched by `to_dict`/`from_dict`
     - _Requirements: 1.1, 1.3_
 
-  - [ ] 5.2 Add `min_severity: dict[str, str]` key to `UniFiClientConfig` TypedDict
+  - [x] 5.2 Add `min_severity: dict[str, str]` key to `UniFiClientConfig` TypedDict
     - _Requirements: 3.2, 4.2_
 
-  - [ ] 5.3 Write property test: Raw severity is preserved independent of normalization (mandatory)
+  - [x] 5.3 Write property test: Raw severity is preserved independent of normalization (mandatory)
     - **Property 4: Raw severity is preserved independent of normalization**
     - **Validates: Requirements 1.3**
     - In `tests/unit/test_severity.py` (constructing `UniFiAlert` instances directly), assert `alert.severity` equals the original raw string (subject to existing 32-char truncation) regardless of `severity_level`
 
 - [ ] 6. Wire severity gating into `coordinator.py` push path
-  - [ ] 6.1 Read `_min_severity` config in `UniFiAlertsCoordinator.__init__`
+  - [x] 6.1 Read `_min_severity` config in `UniFiAlertsCoordinator.__init__`
     - `self._min_severity: dict[str, str] = config.get(CONF_MIN_SEVERITY, {})`
     - _Requirements: 3.2, 5.1_
 
-  - [ ] 6.2 Insert severity gate into `push_alert`
+  - [x] 6.2 Insert severity gate into `push_alert`
     - Gate placed after the existing `enabled` check and before dedup/`apply_alert`
     - On below-threshold: update only `last_webhook_at`, call `_schedule_persist()` and `async_set_updated_data`, then return (no dedup window touched)
     - On at/above-threshold or `No_Filter`: proceed with existing unchanged acceptance logic
@@ -108,7 +108,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     - In `tests/unit/coordinator/test_push_dedup.py`, generate an enabled category, a minimum from `{LOW, MEDIUM, HIGH, VERY_HIGH}`, and a below-threshold alert; assert `last_webhook_at` updates to `received_at` while other fields stay unchanged
 
 - [ ] 7. Wire severity gating into `coordinator.py` poll path
-  - [ ] 7.1 Insert severity filter step into `_async_update_data`
+  - [x] 7.1 Insert severity filter step into `_async_update_data`
     - Apply `filter_by_min_severity` before the existing watermark filter; call `_track_newest_seen` with the severity-filtered list
     - Keep the existing `if not state.enabled: continue` guard unchanged and preceding the new filter step
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7_
@@ -127,11 +127,11 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
   - Run the full test suite and confirm every test passes before proceeding. This is a mandatory gate, including all property tests written so far — do not proceed to subsequent tasks until all tests pass. If a test fails, fix the implementation or the test before moving on.
 
 - [ ] 9. Add Minimum_Severity_Setting selector to `config_flow.py` Config_Flow
-  - [ ] 9.1 Define `_MIN_SEVERITY_OPTIONS` and `_min_severity_selector`
+  - [x] 9.1 Define `_MIN_SEVERITY_OPTIONS` and `_min_severity_selector`
     - `SelectOptionDict` entries for `No_Filter`/`LOW`/`MEDIUM`/`HIGH`/`VERY_HIGH` with display labels; shared `SelectSelector` instance
     - _Requirements: 3.1_
 
-  - [ ] 9.2 Add `min_severity_{category}` field to `async_step_categories` schema
+  - [x] 9.2 Add `min_severity_{category}` field to `async_step_categories` schema
     - One field per category in `ALL_CATEGORIES`, defaulted to `MIN_SEVERITY_NO_FILTER`, alongside existing `cat_{category}` boolean field
     - _Requirements: 3.1_
 
@@ -150,7 +150,7 @@ Convert the minimum-severity-filter design into incremental coding steps. Work p
     - _Requirements: 3.1_
 
 - [ ] 10. Add Minimum_Severity_Setting selector to `config_flow.py` Options_Flow
-  - [ ] 10.1 Add `min_severity_{category}` field to `UniFiAlertsOptionsFlow.async_step_categories` schema
+  - [x] 10.1 Add `min_severity_{category}` field to `UniFiAlertsOptionsFlow.async_step_categories` schema
     - Pre-fill default via `current_min_severity.get(cat, MIN_SEVERITY_NO_FILTER)`, following the existing options→data→default fallback chain
     - _Requirements: 4.1_
 

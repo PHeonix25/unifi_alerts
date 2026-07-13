@@ -6,7 +6,7 @@ import logging
 import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Final, cast
 
 import voluptuous as vol
 from homeassistant.components.webhook import async_generate_url
@@ -17,7 +17,14 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResu
 from homeassistant.core import callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
+from homeassistant.helpers.selector import (
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 from yarl import URL
 
 from .const import (
@@ -27,6 +34,7 @@ from .const import (
     CONF_CLEAR_TIMEOUT,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
+    CONF_MIN_SEVERITY,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
     CONF_REGENERATE_WEBHOOK_SECRET,
@@ -46,10 +54,31 @@ from .const import (
     webhook_id_for_category,
 )
 from .models import UniFiClientConfig
+from .severity import (
+    MIN_SEVERITY_NO_FILTER,
+    SEVERITY_HIGH,
+    SEVERITY_LOW,
+    SEVERITY_MEDIUM,
+    SEVERITY_VERY_HIGH,
+)
 from .unifi_auth import CannotConnectError, InvalidAuthError, SslCertificateError
 from .unifi_client import InvalidSiteError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
+
+# Minimum_Severity_Setting selector, shared by the Config_Flow and
+# Options_Flow categories steps (see design.md's config_flow.py section).
+# Inline SelectOptionDict labels are used instead of a `selector.*`
+# translation-key section, matching the level of ceremony already used for
+# the password/API-key TextSelector fields above.
+_MIN_SEVERITY_OPTIONS: Final[list[SelectOptionDict]] = [
+    SelectOptionDict(value=MIN_SEVERITY_NO_FILTER, label="No Filter"),
+    SelectOptionDict(value=SEVERITY_LOW, label="Low"),
+    SelectOptionDict(value=SEVERITY_MEDIUM, label="Medium"),
+    SelectOptionDict(value=SEVERITY_HIGH, label="High"),
+    SelectOptionDict(value=SEVERITY_VERY_HIGH, label="Very High"),
+]
+_min_severity_selector = SelectSelector(SelectSelectorConfig(options=_MIN_SEVERITY_OPTIONS))
 
 
 def _create_auth_failed_issue(hass: Any, entry: Any) -> None:
@@ -267,6 +296,9 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         _chatty = {"network_device", "network_client"}
         for cat in ALL_CATEGORIES:
             fields[vol.Optional(f"cat_{cat}", default=(cat not in _chatty))] = bool
+            fields[vol.Optional(f"min_severity_{cat}", default=MIN_SEVERITY_NO_FILTER)] = (
+                _min_severity_selector
+            )
 
         fields[vol.Optional(CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL)] = vol.All(
             int, vol.Range(min=10, max=3600)
@@ -710,10 +742,20 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             CONF_SITE,
             self._config_entry.data.get(CONF_SITE, DEFAULT_SITE),
         )
+        current_min_severity: dict[str, str] = self._config_entry.options.get(
+            CONF_MIN_SEVERITY,
+            self._config_entry.data.get(CONF_MIN_SEVERITY, {}),
+        )
 
         fields: dict[Any, Any] = {}
         for cat in ALL_CATEGORIES:
             fields[vol.Optional(f"cat_{cat}", default=(cat in current_enabled))] = bool
+            fields[
+                vol.Optional(
+                    f"min_severity_{cat}",
+                    default=current_min_severity.get(cat, MIN_SEVERITY_NO_FILTER),
+                )
+            ] = _min_severity_selector
         fields[vol.Optional(CONF_POLL_INTERVAL, default=current_poll)] = vol.All(
             int, vol.Range(min=10, max=3600)
         )

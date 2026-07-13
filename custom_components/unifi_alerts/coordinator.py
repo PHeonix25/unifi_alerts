@@ -20,6 +20,7 @@ from .const import (
     ALL_CATEGORIES,
     CONF_CLEAR_TIMEOUT,
     CONF_ENABLED_CATEGORIES,
+    CONF_MIN_SEVERITY,
     CONF_POLL_INTERVAL,
     CONF_SITE,
     DEFAULT_CLEAR_TIMEOUT,
@@ -32,6 +33,7 @@ from .const import (
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
 from .models import CategoryState, UniFiAlert, UniFiClientConfig, ensure_aware
+from .severity import filter_by_min_severity, get_effective_min_severity, meets_minimum
 from .unifi_auth import CannotConnectError, InvalidAuthError
 from .unifi_client import UniFiClient
 
@@ -75,6 +77,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._config: UniFiClientConfig = config
         self._clear_timeout_minutes: int = config.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT)
         self._enabled_categories: list[str] = config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
+        self._min_severity: dict[str, str] = config.get(CONF_MIN_SEVERITY, {})
         self._site: str = config.get(CONF_SITE, DEFAULT_SITE)
         self._entry_id: str = config_entry.entry_id
         self._store: Store[dict[str, Any]] = Store(
@@ -153,14 +156,16 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 state = self._category_states[cat]
                 if not state.enabled:
                     continue
-                self._track_newest_seen(state, alerts)
+                minimum = get_effective_min_severity(self._config, cat)
+                eligible = filter_by_min_severity(alerts, minimum)
+                self._track_newest_seen(state, eligible)
                 # Count only alarms newer than last_cleared_at so open_count reads as
                 # "since last Clear", not a lifetime total.
                 watermark = state.last_cleared_at
                 counted = (
-                    [a for a in alerts if a.received_at > watermark]
+                    [a for a in eligible if a.received_at > watermark]
                     if watermark is not None
-                    else alerts
+                    else eligible
                 )
                 state.open_count = len(counted)
                 # If polling finds open alerts and we're not already alerting,
@@ -287,6 +292,15 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         state = self._category_states[category]
         if not state.enabled:
+            return
+
+        minimum = get_effective_min_severity(self._config, category)
+        if not meets_minimum(alert.severity_level, minimum):
+            # True no-op except for the webhook-health signal (Requirement 8.1):
+            # is_alerting / alert_count / open_count / last_alert are untouched.
+            state.last_webhook_at = alert.received_at
+            self._schedule_persist()
+            self.async_set_updated_data(self._category_states)
             return
 
         # Alerts without a key (e.g. the empty-body webhook ping) have no
