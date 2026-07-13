@@ -6,11 +6,13 @@
 
 - **Breaking:** username and password authentication is being removed in favour of API keys. Config entries are migrated to a new version-4 schema on upgrade. Entries that already have an API key stored migrate silently and keep working. Entries set up with only a username and password are walked through re-authentication: a repair notice explains that an API key is now required and a single-field form accepts it. The entry is updated in place, so existing sensors, history, and Alarm Manager webhook URLs are preserved. Generate an API key in the UniFi OS web UI (**Settings > Admins & Users > API Keys**, **Integrations > New API Key**, or **Settings > Control Plane > API Keys**, depending on firmware). ([#278])
 - Raised the tooling and CI baseline to Python 3.14 and the declared minimum supported Home Assistant version to 2026.3.1, the first HA release that requires Python 3.14. `DataUpdateCoordinator` now receives `config_entry` explicitly instead of a bare `entry_id` string, and SSDP discovery imports `SsdpServiceInfo` from its new `homeassistant.helpers.service_info.ssdp` location. ([#228], [#311])
+- `fetch_alarms()` now discovers the working alarm endpoint once per site and caches it, instead of walking the `[/list/alarm, /alarm, /stat/alarm]` fallback chain and parsing the HTTP 400 `api.err.InvalidObject` body on every poll. Endpoint discovery (`_discover_alarm_url()`) is now separate from the core fetch/parse flow in `_try_fetch_alarms()`; discovery only re-runs if the cached URL stops resolving. Behaviour is unchanged; this is a refactor. ([#239])
 
 ### Fixed
 
 - Unselected alert categories no longer create entities that sit at Unknown; entities are created only for chosen categories, and orphaned entities from deselected categories are removed on reload.
 - Clearing a category now anchors the acknowledgement watermark to the newest alarm timestamp already known for that category (falling back to the HA clock only when none has ever been seen), instead of the HA host clock. This keeps `open_count` correct when the UniFi controller's clock and the HA host clock drift apart. ([#268])
+- Fixed invalid `except ValueError, TypeError:` (Python 2 syntax) in `coordinator.py`, `models.py`, and `unifi_auth.py`, introduced by [#311]. This broke `custom_components/unifi_alerts` at import time on any Python 3 interpreter; the exception types are now correctly parenthesised as `except (ValueError, TypeError):`.
 
 ## [1.9.0] - 2026-07-06
 
@@ -325,6 +327,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#175]: https://github.com/PHeonix25/unifi_alerts/issues/175
 [#233]: https://github.com/PHeonix25/unifi_alerts/issues/233
 [#238]: https://github.com/PHeonix25/unifi_alerts/issues/238
+[#239]: https://github.com/PHeonix25/unifi_alerts/issues/239
 [#241]: https://github.com/PHeonix25/unifi_alerts/issues/241
 [#257]: https://github.com/PHeonix25/unifi_alerts/pull/257
 [#290]: https://github.com/PHeonix25/unifi_alerts/pull/290

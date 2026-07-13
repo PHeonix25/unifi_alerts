@@ -78,6 +78,11 @@ class UniFiClient:
         # Keys seen during the most recent categorise_alarms() call that could not
         # be matched to any category. Reset each call; callers accumulate as needed.
         self._unrecognised_keys: dict[str, int] = {}
+        # Confirmed-working alarm endpoint URL per site, populated by
+        # _discover_alarm_url() the first time fetch_alarms() is called for a
+        # site. Cleared if the cached URL later stops resolving (e.g. a
+        # firmware upgrade removes/moves the path) so discovery runs again.
+        self._alarm_url_cache: dict[str, str] = {}
 
     # ── Public interface ──────────────────────────────────────────────────
 
@@ -106,18 +111,43 @@ class UniFiClient:
             self._has_system_log = None
 
     async def fetch_alarms(self, site: str = "default") -> list[dict[str, Any]]:
-        """Return all unarchived alarms from the controller."""
+        """Return all unarchived alarms from the controller.
+
+        Uses the cached endpoint URL for `site` once one has been discovered,
+        so steady-state polling is a single request with no path-fallback
+        iteration or HTTP 400 body parsing (see #239). Discovery only runs on
+        the first call for a site, or again later if the cached URL stops
+        resolving (e.g. a firmware upgrade moves the endpoint).
+        """
         if not self._auth.authenticated:
             await self.authenticate()
 
-        # Different firmware versions expose the alarm endpoint at different paths.
-        # Try the newest path first so modern firmware succeeds in one call; fall
-        # back to older variants for backwards compatibility. Order matters —
-        # update docs/UNIFI.md § "Alarm API endpoint" if you change this list.
-        #
-        #   /list/alarm  — newest (UniFi Network 9.x+)
-        #   /alarm       — long-standing universal path
-        #   /stat/alarm  — older intermediate variant; some firmware exposes only this
+        cached_url = self._alarm_url_cache.get(site)
+        if cached_url is not None:
+            result = await self._try_fetch_alarms(cached_url, site)
+            if result is not None:
+                return result
+            _LOGGER.debug(
+                "Cached alarm URL %s no longer resolves for site %s — rediscovering",
+                cached_url,
+                site,
+            )
+            del self._alarm_url_cache[site]
+
+        return await self._discover_alarm_url(site)
+
+    async def _discover_alarm_url(self, site: str) -> list[dict[str, Any]]:
+        """Probe candidate alarm endpoint paths and cache the first one that resolves.
+
+        Different firmware versions expose the alarm endpoint at different paths.
+        Try the newest path first so modern firmware succeeds in one call; fall
+        back to older variants for backwards compatibility. Order matters —
+        update docs/UNIFI.md § "Alarm API endpoint" if you change this list.
+
+          /list/alarm  — newest (UniFi Network 9.x+)
+          /alarm       — long-standing universal path
+          /stat/alarm  — older intermediate variant; some firmware exposes only this
+        """
         alarm_paths = [
             f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/list/alarm",
             f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/alarm",
@@ -126,6 +156,7 @@ class UniFiClient:
         for path in alarm_paths:
             result = await self._try_fetch_alarms(path, site)
             if result is not None:
+                self._alarm_url_cache[site] = path
                 return result
             # None means path not found (404 or api.err.InvalidObject) — try next
         raise InvalidSiteError(
@@ -133,7 +164,13 @@ class UniFiClient:
         )
 
     async def _try_fetch_alarms(self, url: str, site: str) -> list[dict[str, Any]] | None:
-        """Fetch alarms from one URL. Returns None on 404 (caller tries next URL)."""
+        """Fetch alarms from one URL. Returns None if this path doesn't exist here.
+
+        "Doesn't exist" covers both a plain 404 and the HTTP 400 +
+        api.err.InvalidObject some firmware returns instead of a 404 — see
+        _is_missing_alarm_path(). Any other error is a genuine failure and is
+        raised to the caller.
+        """
         _LOGGER.debug("Fetching alarms from %s", url)
         try:
             async with self._session.get(
@@ -155,22 +192,8 @@ class UniFiClient:
                     _LOGGER.debug("Alarm URL %s returned 404 — trying next URL", url)
                     return None
                 if resp.status == 400:
-                    # UniFi returns JSON even on 400 — parse the msg field.
-                    # Some firmware returns 400 + api.err.InvalidObject for paths that
-                    # don't exist on that firmware version (instead of 404), so treat
-                    # that error code as "path not found" and let the caller try the
-                    # next path. Any other 400 is a genuine error worth surfacing.
-                    unifi_msg = ""
-                    try:
-                        body = await resp.json(content_type=None)
-                        unifi_msg = body.get("meta", {}).get("msg", "")
-                    except (json.JSONDecodeError, UnicodeDecodeError) as err:
-                        _LOGGER.debug(
-                            "Could not parse 400 response body from %s: %s",
-                            url,
-                            type(err).__name__,
-                        )
-                    if unifi_msg == "api.err.InvalidObject":
+                    unifi_msg = await self._parse_unifi_error_msg(resp, url)
+                    if self._is_missing_alarm_path(unifi_msg):
                         _LOGGER.debug(
                             "Alarm URL %s returned 400 api.err.InvalidObject — trying next URL",
                             url,
@@ -195,6 +218,37 @@ class UniFiClient:
             raise CannotConnectError(f"{type(err).__name__} {err.status}") from err
         except aiohttp.ClientError as err:
             raise CannotConnectError(type(err).__name__) from err
+
+    @staticmethod
+    async def _parse_unifi_error_msg(resp: aiohttp.ClientResponse, url: str) -> str:
+        """Best-effort extraction of the `meta.msg` field from a UniFi error body.
+
+        UniFi returns JSON even on error responses. Isolated from the fetch
+        loop so the endpoint-discovery heuristic in _is_missing_alarm_path()
+        can be tested independently of the HTTP body-parsing mechanics.
+        """
+        try:
+            body = await resp.json(content_type=None)
+            return str(body.get("meta", {}).get("msg", ""))
+        except (json.JSONDecodeError, UnicodeDecodeError) as err:
+            _LOGGER.debug(
+                "Could not parse 400 response body from %s: %s",
+                url,
+                type(err).__name__,
+            )
+            return ""
+
+    @staticmethod
+    def _is_missing_alarm_path(unifi_msg: str) -> bool:
+        """Decide whether a UniFi error message means "this endpoint path doesn't exist".
+
+        Some firmware returns HTTP 400 + api.err.InvalidObject for alarm paths
+        that don't exist on that firmware version, instead of a plain 404.
+        This heuristic is kept separate from the core fetch/parse flow in
+        _try_fetch_alarms so it can change (or be dropped, per #239's "legacy
+        controller support" scope) without touching data-retrieval code.
+        """
+        return unifi_msg == "api.err.InvalidObject"
 
     async def probe_system_log_endpoint(self, site: str = "default") -> bool:
         """Probe the v2 system-log endpoint to determine whether it is available.

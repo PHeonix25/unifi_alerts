@@ -73,7 +73,9 @@ X-API-Key: your-key-here
 >
 > A path that doesn't exist may return either 404 or `400 api.err.InvalidObject` depending on firmware; both are treated as "try the next path". A genuine 400 (e.g. wrong site name) is surfaced only after every path is exhausted.
 >
-> **If UniFi changes the endpoint again:** add the new path to the head of `alarm_paths` in `unifi_client.py::fetch_alarms`, update the table above, and add a fallback test in `tests/unit/unifi_client/test_legacy.py` (see `TestFetchAlarms::test_falls_back_*`).
+> This probe chain only runs on the first `fetch_alarms()` call for a site (or again later if the cached URL stops resolving, e.g. after a firmware upgrade): see `unifi_client.py::_discover_alarm_url`. Once a path resolves it is cached per site and reused directly on every subsequent poll, so the 404/`api.err.InvalidObject` fallback parsing does not run on every poll ([#239](https://github.com/PHeonix25/unifi_alerts/issues/239)).
+>
+> **If UniFi changes the endpoint again:** add the new path to the head of `alarm_paths` in `unifi_client.py::_discover_alarm_url`, update the table above, and add a fallback test in `tests/unit/unifi_client/test_legacy.py` (see `TestFetchAlarms::test_falls_back_*`).
 
 Default site name is `default`. Multi-site is configurable via `CONF_SITE` per entry; per-category site selection is not implemented (see `docs/ROADMAP.md`, Deferred).
 
