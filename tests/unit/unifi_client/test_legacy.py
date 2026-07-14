@@ -471,9 +471,7 @@ class TestEndpointCaching:
     """
 
     @pytest.mark.asyncio
-    async def test_second_call_skips_fallback_iteration(
-        self, aioclient_mock: AiohttpClientMocker
-    ):
+    async def test_second_call_skips_fallback_iteration(self, aioclient_mock: AiohttpClientMocker):
         """Once discovered, subsequent fetch_alarms() calls must not re-probe earlier paths."""
         client = make_client(aioclient_mock)
 
@@ -521,9 +519,7 @@ class TestEndpointCaching:
         parse_mock.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_stale_cached_url_triggers_rediscovery(
-        self, aioclient_mock: AiohttpClientMocker
-    ):
+    async def test_stale_cached_url_triggers_rediscovery(self, aioclient_mock: AiohttpClientMocker):
         """If the cached URL stops resolving (e.g. a firmware upgrade), rediscover it."""
         client = make_client(aioclient_mock)
         ok_body = {"meta": {"rc": "ok"}, "data": []}
