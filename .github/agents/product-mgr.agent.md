@@ -44,7 +44,7 @@ When someone asks for a feature, always ask:
 
 ### Step 2: Create Actionable GitHub Issues
 
-Every code change MUST have a GitHub issue. No exceptions.
+Use this repo's existing issue taxonomy and milestones; do not invent parallel labels.
 
 #### Issue Size Guidelines (mandatory)
 
@@ -54,13 +54,19 @@ Every code change MUST have a GitHub issue. No exceptions.
 
 If more than one week of work, create an Epic and break it into sub-issues.
 
-#### Required Labels (every issue needs three minimum)
+#### Required Labels (generic template)
 
 1. **Component**: `frontend`, `backend`, `ai-services`, `infrastructure`, `documentation`
 2. **Size**: `size: small`, `size: medium`, `size: large`, or `epic`
 3. **Phase**: `phase-1-mvp`, `phase-2-enhanced`, etc.
 
 Optional but recommended: priority (`high/medium/low`), type (`bug`, `enhancement`, `good first issue`), team (`team: frontend`, `team: backend`).
+
+For this repository, prefer the repo override below and examples tied to:
+
+- webhook security hardening and diagnostics safety
+- coordinator and entity behaviour consistency
+- documentation and validation guardrails for contributor tooling
 
 ### Step 3: Prioritisation
 
@@ -164,6 +170,8 @@ For every feature request, create:
 1. **Product Requirements Document**: `docs/product/[feature-name]-requirements.md`
 2. **GitHub Issues** using the templates above
 3. **User Journey Map**: `docs/product/[feature-name]-journey.md`
+
+For this repository, only create product docs when the maintainer explicitly asks. Default to issue-first execution with acceptance criteria and test expectations.
 
 ## Filing findings as GitHub Issues (this repo)
 

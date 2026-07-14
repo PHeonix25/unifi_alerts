@@ -11,16 +11,8 @@ Repo purpose, the tech stack, the build/test command block, the repository struc
 
 ## Non-negotiable rules (summary)
 
-- **No blocking I/O**: every network/disk call must be `async`.
-- **`X | None`** not `Optional[X]`; `list[str]` not `List[str]`.
-- **Entities never cache state**: read from coordinator only.
-- **`manifest.json` keys** must be `domain`, `name`, then alphabetical; hassfest enforces order.
-- **Webhook token auth is mandatory**: reject requests without a valid `?token=` query param (HTTP 401).
-- **GitHub Actions `uses:` must be full 40-char SHA**: no tags, no branch refs.
-- **No third-party release actions**: use `gh release create --generate-notes` only.
-- **`strings.json` and `translations/en.json` must be identical**: CI enforces this.
-
-See [`CLAUDE.md`](../CLAUDE.md) for the complete list with rationale.
+Canonical source: [`AGENTS.md` > Hard rules](../AGENTS.md#hard-rules).
+Claude-specific additions and rationale: [`CLAUDE.md`](../CLAUDE.md#non-negotiable-constraints).
 
 ## Branching & versioning
 
@@ -50,7 +42,7 @@ What must be updated when specific parts of the codebase change.
 | `tests/unit/conftest.py` | Add category to fixture category lists |
 | `tests/integration/conftest.py` | Add category to fixture category lists |
 
-Run `make validate` after: catches translation drift and HACS preflight failures immediately.
+Run `make doc-check` for translation parity and `make validate` for HACS/docs preflight.
 
 ### Modifying webhook request handling
 

@@ -2,7 +2,8 @@
 
 Split out of test_options.py (#283) by behaviour area. See
 test_options_credentials.py and test_options_rotation_validation.py for the
-other pieces.
+other pieces. API-key only (#279): username/password fields are gone, so the
+credential a user can change here is the API key.
 """
 
 from __future__ import annotations
@@ -14,8 +15,6 @@ import pytest
 from custom_components.unifi_alerts.const import (
     CONF_API_KEY,
     CONF_CONTROLLER_URL,
-    CONF_PASSWORD,
-    CONF_USERNAME,
     CONF_VERIFY_SSL,
     CONF_WEBHOOK_SECRET,
 )
@@ -32,8 +31,6 @@ class TestParseCredentialsFormInput:
         current_data = {CONF_VERIFY_SSL: True}
         blank_input = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: True,
         }
@@ -50,17 +47,14 @@ class TestParseCredentialsFormInput:
         current_data = {CONF_VERIFY_SSL: True}
         whitespace_input = {
             CONF_CONTROLLER_URL: "   ",
-            CONF_USERNAME: "  ",
-            CONF_PASSWORD: " ",
-            CONF_API_KEY: "",
+            CONF_API_KEY: "  ",
             CONF_VERIFY_SSL: True,
         }
 
         parsed = _parse_credentials_form_input(whitespace_input, current_data)
 
         assert parsed.new_url_raw == ""
-        assert parsed.new_username == ""
-        assert parsed.new_password == ""
+        assert parsed.new_api_key == ""
         assert parsed.credentials_changed is False
 
     def test_url_change_marks_credentials_changed(self) -> None:
@@ -69,8 +63,6 @@ class TestParseCredentialsFormInput:
         current_data = {CONF_VERIFY_SSL: True}
         user_input = {
             CONF_CONTROLLER_URL: "https://10.0.0.5",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: True,
         }
@@ -80,14 +72,27 @@ class TestParseCredentialsFormInput:
         assert parsed.credentials_changed is True
         assert parsed.new_url_raw == "https://10.0.0.5"
 
+    def test_api_key_change_marks_credentials_changed(self) -> None:
+        from custom_components.unifi_alerts.config_flow import _parse_credentials_form_input
+
+        current_data = {CONF_VERIFY_SSL: True}
+        user_input = {
+            CONF_CONTROLLER_URL: "",
+            CONF_API_KEY: "new-key",
+            CONF_VERIFY_SSL: True,
+        }
+
+        parsed = _parse_credentials_form_input(user_input, current_data)
+
+        assert parsed.credentials_changed is True
+        assert parsed.new_api_key == "new-key"
+
     def test_verify_ssl_change_is_detected_against_current_data(self) -> None:
         from custom_components.unifi_alerts.config_flow import _parse_credentials_form_input
 
         current_data = {CONF_VERIFY_SSL: True}
         user_input = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: False,
         }
@@ -104,8 +109,6 @@ class TestParseCredentialsFormInput:
         current_data = {CONF_VERIFY_SSL: False}
         user_input = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
         }
 
@@ -121,8 +124,6 @@ class TestParseCredentialsFormInput:
         current_data = {CONF_VERIFY_SSL: True}
         user_input = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: True,
             CONF_REGENERATE_WEBHOOK_SECRET: True,
@@ -225,8 +226,6 @@ class TestCredentialOverrides:
         parsed = _parse_credentials_form_input(
             {
                 CONF_CONTROLLER_URL: "",
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "",
                 CONF_API_KEY: "",
                 CONF_VERIFY_SSL: True,
             },
@@ -244,15 +243,13 @@ class TestCredentialOverrides:
         parsed = _parse_credentials_form_input(
             {
                 CONF_CONTROLLER_URL: "",
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "newpass",
-                CONF_API_KEY: "",
+                CONF_API_KEY: "new-key",
                 CONF_VERIFY_SSL: True,
             },
             {CONF_VERIFY_SSL: True},
         )
 
-        assert _credential_overrides(parsed) == {CONF_PASSWORD: "newpass"}
+        assert _credential_overrides(parsed) == {CONF_API_KEY: "new-key"}
 
 
 class TestBuildVerifySslAndSecretOnlyPending:
@@ -266,15 +263,13 @@ class TestBuildVerifySslAndSecretOnlyPending:
 
         current_data = {
             CONF_CONTROLLER_URL: "https://192.168.1.1",
-            CONF_USERNAME: "admin",
+            CONF_API_KEY: "existing-key",
             CONF_VERIFY_SSL: True,
             CONF_WEBHOOK_SECRET: "fixed-secret",
         }
         parsed = _parse_credentials_form_input(
             {
                 CONF_CONTROLLER_URL: "",
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "",
                 CONF_API_KEY: "",
                 CONF_VERIFY_SSL: False,
             },
@@ -284,7 +279,7 @@ class TestBuildVerifySslAndSecretOnlyPending:
         pending = _build_verify_ssl_and_secret_only_pending(current_data, parsed)
 
         assert pending[CONF_VERIFY_SSL] is False
-        assert pending[CONF_USERNAME] == "admin"
+        assert pending[CONF_API_KEY] == "existing-key"
         assert pending[CONF_WEBHOOK_SECRET] == "fixed-secret"
 
     def test_regenerate_secret_replaces_webhook_secret(self) -> None:
@@ -298,8 +293,6 @@ class TestBuildVerifySslAndSecretOnlyPending:
         parsed = _parse_credentials_form_input(
             {
                 CONF_CONTROLLER_URL: "",
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "",
                 CONF_API_KEY: "",
                 CONF_VERIFY_SSL: True,
                 CONF_REGENERATE_WEBHOOK_SECRET: True,
@@ -324,16 +317,13 @@ class TestBuildCredentialsTestData:
 
         current_data = {
             CONF_CONTROLLER_URL: "https://192.168.1.1",
-            CONF_USERNAME: "admin",
-            CONF_PASSWORD: "oldpass",
+            CONF_API_KEY: "old-key",
             CONF_VERIFY_SSL: True,
         }
         parsed = _parse_credentials_form_input(
             {
                 CONF_CONTROLLER_URL: "https://10.0.0.1",
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "newpass",
-                CONF_API_KEY: "",
+                CONF_API_KEY: "new-key",
                 CONF_VERIFY_SSL: True,
             },
             current_data,
@@ -342,21 +332,18 @@ class TestBuildCredentialsTestData:
         test_data = _build_credentials_test_data(current_data, "https://10.0.0.1", parsed)
 
         assert test_data[CONF_CONTROLLER_URL] == "https://10.0.0.1"
-        assert test_data[CONF_PASSWORD] == "newpass"
-        # Username was left blank, so the stored value carries over unchanged
-        assert test_data[CONF_USERNAME] == "admin"
+        assert test_data[CONF_API_KEY] == "new-key"
 
 
 class TestBuildCredentialsPendingData:
     """Tests for _build_credentials_pending_data, used to stage entry.data
     after new credentials validate successfully."""
 
-    def test_includes_auth_method_and_overrides(self) -> None:
+    def test_includes_overrides(self) -> None:
         from custom_components.unifi_alerts.config_flow import (
             _build_credentials_pending_data,
             _parse_credentials_form_input,
         )
-        from custom_components.unifi_alerts.const import CONF_AUTH_METHOD
 
         current_data = {
             CONF_CONTROLLER_URL: "https://192.168.1.1",
@@ -366,21 +353,16 @@ class TestBuildCredentialsPendingData:
         parsed = _parse_credentials_form_input(
             {
                 CONF_CONTROLLER_URL: "https://10.0.0.1",
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "newpass",
-                CONF_API_KEY: "",
+                CONF_API_KEY: "new-key",
                 CONF_VERIFY_SSL: True,
             },
             current_data,
         )
 
-        pending = _build_credentials_pending_data(
-            current_data, "https://10.0.0.1", "userpass", parsed
-        )
+        pending = _build_credentials_pending_data(current_data, "https://10.0.0.1", parsed)
 
         assert pending[CONF_CONTROLLER_URL] == "https://10.0.0.1"
-        assert pending[CONF_AUTH_METHOD] == "userpass"
-        assert pending[CONF_PASSWORD] == "newpass"
+        assert pending[CONF_API_KEY] == "new-key"
         # No rotation requested, so the secret carries over unchanged
         assert pending[CONF_WEBHOOK_SECRET] == "fixed-secret"
 
@@ -399,18 +381,14 @@ class TestBuildCredentialsPendingData:
         parsed = _parse_credentials_form_input(
             {
                 CONF_CONTROLLER_URL: "https://10.0.0.1",
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "newpass",
-                CONF_API_KEY: "",
+                CONF_API_KEY: "new-key",
                 CONF_VERIFY_SSL: True,
                 CONF_REGENERATE_WEBHOOK_SECRET: True,
             },
             current_data,
         )
 
-        pending = _build_credentials_pending_data(
-            current_data, "https://10.0.0.1", "userpass", parsed
-        )
+        pending = _build_credentials_pending_data(current_data, "https://10.0.0.1", parsed)
 
         assert pending[CONF_WEBHOOK_SECRET] != "fixed-secret"
 
@@ -419,7 +397,7 @@ class TestAsyncValidateControllerCredentials:
     """Tests for _async_validate_controller_credentials, the extracted API-validation helper."""
 
     @pytest.mark.asyncio
-    async def test_returns_auth_method_on_success(self) -> None:
+    async def test_validates_successfully(self) -> None:
         from custom_components.unifi_alerts.config_flow import (
             _async_validate_controller_credentials,
         )
@@ -432,14 +410,14 @@ class TestAsyncValidateControllerCredentials:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="apikey")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
 
-            auth_method = await _async_validate_controller_credentials(
+            result = await _async_validate_controller_credentials(
                 MagicMock(), "https://10.0.0.1", True, {CONF_API_KEY: "key"}
             )
 
-        assert auth_method == "apikey"
+        assert result is None
         mock_get_session.assert_called_once()
         instance.authenticate.assert_awaited_once()
         instance.fetch_alarms.assert_awaited_once()
@@ -503,7 +481,7 @@ class TestAsyncValidateControllerCredentials:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(side_effect=CannotConnectError("down"))
 
             with pytest.raises(CannotConnectError):

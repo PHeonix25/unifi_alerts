@@ -14,8 +14,6 @@ from custom_components.unifi_alerts.const import (
     CONF_API_KEY,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
-    CONF_PASSWORD,
-    CONF_USERNAME,
     CONF_VERIFY_SSL,
     CONF_WEBHOOK_SECRET,
     DEFAULT_VERIFY_SSL,
@@ -52,7 +50,7 @@ class TestUserStep:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
 
             await flow.async_step_user(
@@ -117,7 +115,7 @@ class TestUserStep:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
 
             result = await flow.async_step_user(_VALID_INPUT)
@@ -138,9 +136,7 @@ class TestUserStep:
 
         submitted = {
             CONF_CONTROLLER_URL: "https://10.0.0.1",
-            CONF_USERNAME: "myuser",
-            CONF_PASSWORD: "mypassword",
-            CONF_API_KEY: "",
+            CONF_API_KEY: "bad-key",
             CONF_VERIFY_SSL: False,
         }
 
@@ -169,9 +165,7 @@ class TestUserStep:
             str(k): k.default() for k in schema.schema if k.default is not vol.UNDEFINED
         }
         assert schema_defaults.get(CONF_CONTROLLER_URL) == "https://10.0.0.1"
-        assert schema_defaults.get(CONF_USERNAME) == "myuser"
-        # Password and API key fields must NOT be pre-filled — they have no default
-        assert CONF_PASSWORD not in schema_defaults
+        # The API key field must NOT be pre-filled — it has no default
         assert CONF_API_KEY not in schema_defaults
         assert schema_defaults.get(CONF_VERIFY_SSL) is False
 
@@ -194,7 +188,7 @@ class TestUserStep:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
 
             await flow.async_step_user({**_VALID_INPUT, CONF_VERIFY_SSL: False})
@@ -240,7 +234,7 @@ class TestUserStep:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(
                 side_effect=CannotConnectError("UniFi API error: api.err.InvalidObject")
             )
@@ -291,7 +285,7 @@ class TestUserStep:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(side_effect=SslCertificateError("cert error"))
 
             result = await flow.async_step_user(_VALID_INPUT)
@@ -325,7 +319,7 @@ class TestUserStep:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
             instance._is_unifi_os = False
 
@@ -355,7 +349,7 @@ class TestUserStep:
                 patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
             ):
                 instance = mock_cls.return_value
-                instance.authenticate = AsyncMock(return_value="userpass")
+                instance.authenticate = AsyncMock(return_value=None)
                 instance.fetch_alarms = AsyncMock(return_value=[])
                 instance._is_unifi_os = False
                 await flow.async_step_user(_VALID_INPUT)
@@ -371,7 +365,6 @@ class TestCategoriesStep:
         """Submitting categories with nothing selected must show an error, not proceed."""
         flow = make_flow()
         flow._controller_url = "https://192.168.1.1"
-        flow._detected_auth_method = "userpass"
         flow._credentials = dict(_VALID_INPUT)
         flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
 
@@ -387,7 +380,6 @@ class TestCategoriesStep:
         """Submitting categories should proceed to the finish step, not create the entry."""
         flow = make_flow()
         flow._controller_url = "https://192.168.1.1"
-        flow._detected_auth_method = "userpass"
         flow._credentials = dict(_VALID_INPUT)
 
         finish_result = {"type": "form", "step_id": "finish"}
@@ -406,7 +398,6 @@ class TestCategoriesStep:
 
         flow = make_flow()
         flow._controller_url = "https://192.168.1.1"
-        flow._detected_auth_method = "userpass"
         flow._credentials = {CONF_WEBHOOK_SECRET: "s"}
         flow.async_step_finish = AsyncMock(return_value={"type": "form", "step_id": "finish"})
 
@@ -427,7 +418,6 @@ class TestCategoriesStep:
 
         flow = make_flow()
         flow._controller_url = "https://192.168.1.1"
-        flow._detected_auth_method = "userpass"
         flow._credentials = {CONF_WEBHOOK_SECRET: "s"}
         flow.async_step_finish = AsyncMock(return_value={"type": "form", "step_id": "finish"})
 
@@ -446,7 +436,6 @@ class TestCategoriesStep:
 
         flow = make_flow()
         flow._controller_url = "https://192.168.1.1"
-        flow._detected_auth_method = "userpass"
         flow._credentials = {CONF_WEBHOOK_SECRET: "s"}
         flow.async_step_finish = AsyncMock(return_value={"type": "form", "step_id": "finish"})
 
@@ -465,7 +454,6 @@ class TestCategoriesStep:
 
         flow = make_flow()
         flow._controller_url = "https://192.168.1.1"
-        flow._detected_auth_method = "apikey"
         flow._credentials = {**_VALID_INPUT}
         flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
 
@@ -500,7 +488,6 @@ class TestCategoriesStep:
 
         flow = make_flow()
         flow._controller_url = "https://192.168.1.1"
-        flow._detected_auth_method = "apikey"
         flow._credentials = {**_VALID_INPUT}
         flow.async_step_finish = AsyncMock(return_value={"type": "form", "step_id": "finish"})
 
@@ -522,7 +509,6 @@ class TestCategoriesStep:
 
         flow = make_flow()
         flow._controller_url = "https://192.168.1.1"
-        flow._detected_auth_method = "userpass"
         flow._credentials = {**_VALID_INPUT}
         flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
 
@@ -537,7 +523,7 @@ class TestCategoriesStep:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(side_effect=CannotConnectError("Network timeout"))
 
             result = await flow.async_step_categories(cat_input)
@@ -658,8 +644,8 @@ class TestMigration:
         entry.version = 1
         entry.data = {
             CONF_CONTROLLER_URL: "https://192.168.1.1",
-            CONF_USERNAME: "admin",
-            CONF_PASSWORD: "secret",
+            "username": "admin",
+            "password": "secret",
             CONF_VERIFY_SSL: True,
             "is_unifi_os": True,  # stale key from v1
         }
@@ -682,6 +668,6 @@ class TestMigration:
         assert "is_unifi_os" not in entry.data
         # Remaining fields must be preserved
         assert entry.data[CONF_CONTROLLER_URL] == "https://192.168.1.1"
-        # v3->4 dropped the legacy userpass credentials and pinned apikey auth
-        assert CONF_USERNAME not in entry.data
-        assert CONF_PASSWORD not in entry.data
+        # v3->4 dropped the legacy userpass credentials
+        assert "username" not in entry.data
+        assert "password" not in entry.data

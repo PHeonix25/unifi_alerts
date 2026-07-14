@@ -10,16 +10,13 @@ from custom_components.unifi_alerts.const import (
     CONF_API_KEY,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
-    CONF_PASSWORD,
-    CONF_USERNAME,
     CONF_VERIFY_SSL,
     CONF_WEBHOOK_SECRET,
 )
 
 _VALID_INPUT = {
     CONF_CONTROLLER_URL: "https://192.168.1.1",
-    CONF_USERNAME: "admin",
-    CONF_PASSWORD: "secret",
+    CONF_API_KEY: "test-api-key",
 }
 
 
@@ -54,8 +51,7 @@ def make_reauth_flow(entry_id: str = "entry-test") -> UniFiAlertsConfigFlow:
     mock_entry.title = "UniFi Alerts (https://192.168.1.1)"
     mock_entry.data = {
         CONF_CONTROLLER_URL: "https://192.168.1.1",
-        CONF_USERNAME: "admin",
-        CONF_PASSWORD: "oldpassword",
+        CONF_API_KEY: "old-api-key",
         CONF_WEBHOOK_SECRET: "secret",
     }
 
@@ -77,9 +73,7 @@ def make_options_flow(
     config_entry.entry_id = "entry-options-creds"
     config_entry.data = {
         CONF_CONTROLLER_URL: url,
-        CONF_USERNAME: "admin",
-        CONF_PASSWORD: "secret",
-        CONF_API_KEY: "",
+        CONF_API_KEY: "existing-api-key",
         CONF_VERIFY_SSL: True,
         CONF_WEBHOOK_SECRET: "fixed-secret",
         CONF_ENABLED_CATEGORIES: enabled_categories or ALL_CATEGORIES,

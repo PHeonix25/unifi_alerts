@@ -11,7 +11,7 @@ from conftest import MOCK_CONFIG
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
     CONF_API_KEY,
-    CONF_PASSWORD,
+    CONF_WEBHOOK_SECRET,
 )
 from custom_components.unifi_alerts.diagnostics import async_get_config_entry_diagnostics
 from custom_components.unifi_alerts.models import CategoryState
@@ -65,13 +65,15 @@ class TestDiagnosticsRedaction:
     """Tests that sensitive config fields are redacted and non-sensitive fields are preserved."""
 
     @pytest.mark.asyncio
-    async def test_redacts_password(self) -> None:
-        entry = _make_entry_with_runtime(_make_coordinator())
+    async def test_redacts_webhook_secret(self) -> None:
+        entry = _make_entry_with_runtime(
+            _make_coordinator(), extra_data={CONF_WEBHOOK_SECRET: "super-secret-token"}
+        )
         hass = MagicMock()
 
         result = await async_get_config_entry_diagnostics(hass, entry)
 
-        assert result["config_entry"][CONF_PASSWORD] == "**REDACTED**"
+        assert result["config_entry"][CONF_WEBHOOK_SECRET] == "**REDACTED**"
 
     @pytest.mark.asyncio
     async def test_redacts_api_key(self) -> None:
@@ -92,7 +94,6 @@ class TestDiagnosticsRedaction:
         result = await async_get_config_entry_diagnostics(hass, entry)
 
         assert result["config_entry"]["controller_url"] == "https://192.168.1.1"
-        assert result["config_entry"]["username"] == "**REDACTED**"
 
 
 class TestDiagnosticsContent:

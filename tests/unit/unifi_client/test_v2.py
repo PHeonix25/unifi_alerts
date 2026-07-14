@@ -16,11 +16,11 @@ from custom_components.unifi_alerts.unifi_auth import CannotConnectError, Invali
 from custom_components.unifi_alerts.unifi_client import _PROBE_FAIL_LIMIT
 
 from .conftest import (
-    LOGIN_URL,
     find_calls,
     make_client,
     probe_url,
     queue_responses,
+    self_url,
     system_log_url,
     total_calls,
 )
@@ -279,7 +279,7 @@ class TestProbeSystemLogEndpoint:
         client._probe_fail_count = _PROBE_FAIL_LIMIT
         client._probe_backoff_until = datetime.now(UTC) + timedelta(hours=1)
 
-        aioclient_mock.post(LOGIN_URL, status=200)
+        aioclient_mock.get(self_url(), status=200)
         await client.authenticate()
 
         # Backoff state must be cleared
@@ -296,7 +296,7 @@ class TestProbeSystemLogEndpoint:
         client._probe_fail_count = 0
         client._probe_backoff_until = None
 
-        aioclient_mock.post(LOGIN_URL, status=200)
+        aioclient_mock.get(self_url(), status=200)
         await client.authenticate()
 
         assert client._has_system_log is True

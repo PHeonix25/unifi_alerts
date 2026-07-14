@@ -127,27 +127,11 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         try:
             categorised = await self._fetch_categorised()
         except InvalidAuthError as err:
-            # Re-authenticate once then retry
-            _LOGGER.warning("Auth expired, re-authenticating: %s", err)
-            try:
-                await self._client.authenticate()
-            except (InvalidAuthError, CannotConnectError) as reauth_err:
-                _LOGGER.error(
-                    "Re-authentication failed; credentials may have changed: %s", reauth_err
-                )
-                raise ConfigEntryAuthFailed(
-                    f"Re-authentication failed; credentials may have changed: {reauth_err}"
-                ) from reauth_err
-            try:
-                categorised = await self._fetch_categorised()
-            except InvalidAuthError as retry_err:
-                raise ConfigEntryAuthFailed(
-                    f"Re-authentication succeeded but the controller still returned 401: {retry_err}"
-                ) from retry_err
-            except CannotConnectError as retry_err:
-                raise UpdateFailed(
-                    f"Cannot reach UniFi controller after re-authentication: {retry_err}"
-                ) from retry_err
+            # The API key is a static credential with no session to refresh, so
+            # a 401 means the key was revoked or is otherwise no longer valid.
+            # Surface reauth directly instead of retrying.
+            _LOGGER.error("UniFi controller rejected the API key: %s", err)
+            raise ConfigEntryAuthFailed(f"UniFi controller rejected the API key: {err}") from err
         except CannotConnectError as err:
             raise UpdateFailed(f"Cannot reach UniFi controller: {err}") from err
 
@@ -220,9 +204,9 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         try:
             has_v2 = await self._client.probe_system_log_endpoint(self._site)
         except (InvalidAuthError, CannotConnectError) as probe_err:
-            # probe_system_log_endpoint() only raises via its internal re-auth
-            # attempt (authenticate() when not yet authenticated); the HTTP probe
-            # itself catches aiohttp.ClientError internally and returns False.
+            # Defensive: the HTTP probe catches aiohttp.ClientError internally and
+            # returns False, so it should not raise. Guard anyway and fall back to
+            # the legacy path rather than failing the whole poll on a probe error.
             _LOGGER.debug(
                 "v2 system-log probe raised %s; falling back to legacy path",
                 type(probe_err).__name__,

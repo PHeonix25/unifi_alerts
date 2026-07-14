@@ -27,8 +27,6 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 from custom_components.unifi_alerts.unifi_client import UNIFI_OS_NETWORK_PREFIX, UniFiClient
 
 BASE_URL = "https://192.168.1.1"
-LOGIN_URL = f"{BASE_URL}/api/auth/login"
-LOGOUT_URL = f"{BASE_URL}/api/auth/logout"
 
 
 @dataclass
@@ -74,8 +72,7 @@ def make_client(aioclient_mock: AiohttpClientMocker, config: dict | None = None)
     object.__setattr__(session, "_request", _recording_request)
     _created_sessions.append(session)
     cfg = config or {
-        "username": "admin",
-        "password": "password",
+        "api_key": "test-api-key",
         "verify_ssl": False,
     }
     return UniFiClient(session, BASE_URL, cfg)
@@ -109,6 +106,11 @@ def alarm_url(site: str = "default") -> str:
 
 def stat_alarm_url(site: str = "default") -> str:
     return f"{BASE_URL}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/stat/alarm"
+
+
+def self_url() -> str:
+    """The API-key verification endpoint hit by UniFiAuth.authenticate()."""
+    return f"{BASE_URL}{UNIFI_OS_NETWORK_PREFIX}/api/s/default/self"
 
 
 def probe_url(site: str = "default") -> str:

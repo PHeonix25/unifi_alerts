@@ -13,10 +13,7 @@ DOMAIN = "unifi_alerts"
 # UniFiClientConfig TypedDict keys; without this, `.get(key, default)`
 # returns `object` instead of the field's declared type.
 CONF_CONTROLLER_URL: Final = "controller_url"
-CONF_USERNAME: Final = "username"
-CONF_PASSWORD: Final = "password"
 CONF_API_KEY: Final = "api_key"
-CONF_AUTH_METHOD: Final = "auth_method"
 CONF_POLL_INTERVAL: Final = "poll_interval"
 CONF_CLEAR_TIMEOUT: Final = "clear_timeout"
 CONF_ENABLED_CATEGORIES: Final = "enabled_categories"
@@ -26,9 +23,6 @@ CONF_WEBHOOK_SECRET: Final = "webhook_secret"
 CONF_WEBHOOK_ID_SUFFIX: Final = "webhook_id_suffix"
 CONF_REGENERATE_WEBHOOK_SECRET: Final = "regenerate_webhook_secret"
 CONF_SITE: Final = "site"
-
-AUTH_METHOD_USERPASS = "userpass"
-AUTH_METHOD_APIKEY = "apikey"
 
 DEFAULT_POLL_INTERVAL = 60  # seconds
 DEFAULT_CLEAR_TIMEOUT = 30  # minutes

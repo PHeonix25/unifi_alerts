@@ -35,7 +35,7 @@ Verify implementations against requirements, hunt down defects before users find
      - Negative: invalid inputs, missing fields, wrong types.
      - Error handling: network failures, timeouts, permission denials.
      - Concurrency: parallel access, race conditions, idempotency.
-     - Security: injection, authz bypass, data leakage.
+    - Security: missing/invalid webhook token handling, secret redaction, SSL verify toggles.
    - Prioritise by risk and impact.
 3. **Write and execute tests**
    - Follow the project's existing test framework and conventions.
@@ -59,6 +59,13 @@ Verify implementations against requirements, hunt down defects before users find
 - **Readable**: a failing test name should tell you what broke without reading the implementation.
 - **Isolated**: each test sets up its own state and cleans up after itself. No shared mutable state between tests.
 - **Maintainable**: do not over-mock. Test behaviour, not implementation details. When internals change, tests should only break if behaviour actually changed.
+
+## Repository focus areas
+
+- Webhook integration tests: valid token vs missing/wrong token paths.
+- Coordinator tests: polling, push dedup, watermark persistence, and auto-clear scheduling.
+- Entity tests: state must always derive from `coordinator.data`.
+- Localisation checks: `strings.json` and `translations/en.json` remain identical.
 
 ## Output Format
 
