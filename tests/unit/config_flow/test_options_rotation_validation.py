@@ -16,8 +16,6 @@ from custom_components.unifi_alerts.const import (
     CONF_API_KEY,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
-    CONF_PASSWORD,
-    CONF_USERNAME,
     CONF_VERIFY_SSL,
     CONF_WEBHOOK_SECRET,
 )
@@ -47,8 +45,6 @@ class TestWebhookSecretRotation:
 
         rotate_only = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: True,
             CONF_REGENERATE_WEBHOOK_SECRET: True,
@@ -77,9 +73,7 @@ class TestWebhookSecretRotation:
 
         new_input = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "newpass",
-            CONF_API_KEY: "",
+            CONF_API_KEY: "new-key",
             CONF_VERIFY_SSL: True,
             CONF_REGENERATE_WEBHOOK_SECRET: True,
         }
@@ -92,14 +86,13 @@ class TestWebhookSecretRotation:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
-            instance._is_unifi_os = False
             await flow.async_step_credentials(new_input)
 
         # No eager persistence; staged for finish.
         flow.hass.config_entries.async_update_entry.assert_not_called()
-        assert flow._pending_data[CONF_PASSWORD] == "newpass"
+        assert flow._pending_data[CONF_API_KEY] == "new-key"
         assert flow._pending_data[CONF_WEBHOOK_SECRET] != "fixed-secret"
 
     @pytest.mark.asyncio
@@ -112,8 +105,6 @@ class TestWebhookSecretRotation:
 
         no_rotate = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: True,
             CONF_REGENERATE_WEBHOOK_SECRET: False,
@@ -156,8 +147,6 @@ class TestWebhookSecretRotation:
         await flow.async_step_credentials(
             {
                 CONF_CONTROLLER_URL: "",
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "",
                 CONF_API_KEY: "",
                 CONF_VERIFY_SSL: True,
                 CONF_REGENERATE_WEBHOOK_SECRET: True,
@@ -219,8 +208,6 @@ class TestWebhookSecretRotationRepairIssue:
         await flow.async_step_credentials(
             {
                 CONF_CONTROLLER_URL: "",
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "",
                 CONF_API_KEY: "",
                 CONF_VERIFY_SSL: True,
                 CONF_REGENERATE_WEBHOOK_SECRET: True,
@@ -291,9 +278,9 @@ class TestWebhookSecretRotationRepairIssue:
             CONF_CLEAR_TIMEOUT: 5,
             CONF_SITE: "default",
         }
-        # _pending_data has a new username but the SAME secret
+        # _pending_data has a new API key but the SAME secret
         flow._pending_data = {
-            CONF_USERNAME: "new-admin",
+            CONF_API_KEY: "new-key",
             CONF_WEBHOOK_SECRET: "fixed-secret",
         }
 
@@ -326,8 +313,6 @@ class TestOptionsFlowUniqueIdFollowsUrl:
 
         new_creds = {
             CONF_CONTROLLER_URL: "https://10.0.0.1",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: True,
         }
@@ -340,7 +325,7 @@ class TestOptionsFlowUniqueIdFollowsUrl:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
             instance._is_unifi_os = False
             await flow.async_step_credentials(new_creds)
@@ -371,8 +356,6 @@ class TestOptionsFlowUniqueIdFollowsUrl:
 
         ssl_only = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: False,
         }
@@ -417,8 +400,6 @@ class TestOptionsFlowUniqueIdFollowsUrl:
 
         new_creds = {
             CONF_CONTROLLER_URL: "https://10.0.0.1",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: True,
         }
@@ -431,7 +412,7 @@ class TestOptionsFlowUniqueIdFollowsUrl:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
             instance._is_unifi_os = False
             result = await flow.async_step_credentials(new_creds)
@@ -478,7 +459,7 @@ class TestOptionsFlowSiteValidation:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="apikey")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(
                 side_effect=InvalidSiteError("Site 'bogus-site' not found")
             )
@@ -524,7 +505,7 @@ class TestOptionsFlowSiteValidation:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="apikey")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
             result = await flow.async_step_categories(cat_input)
 
@@ -554,7 +535,7 @@ class TestOptionsFlowSiteValidation:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="apikey")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
             result = await flow.async_step_categories(cat_input)
 
@@ -583,7 +564,7 @@ class TestOptionsFlowSiteValidation:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="apikey")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(side_effect=CannotConnectError("Connection refused"))
             result = await flow.async_step_categories(cat_input)
 

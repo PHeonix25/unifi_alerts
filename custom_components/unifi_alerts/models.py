@@ -22,17 +22,10 @@ class UniFiClientConfig(TypedDict, total=False):
 
     total=False because legacy entries and credential subsets may omit fields;
     call sites use .get(key, default) for optional fields.
-
-    auth_method is typed as str (not Literal["userpass", "apikey"]) because the
-    value originates from user input and is validated in unifi_client.authenticate();
-    constraining the type here would force casts at the validation boundary.
     """
 
     controller_url: str
-    username: str
-    password: str
     api_key: str
-    auth_method: str
     verify_ssl: bool
     webhook_secret: str
     webhook_id_suffix: str

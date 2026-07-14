@@ -25,7 +25,6 @@ from custom_components.unifi_alerts.unifi_auth import CannotConnectError, Invali
 from custom_components.unifi_alerts.unifi_client import UniFiClient
 
 from .conftest import (
-    LOGOUT_URL,
     alarm_url,
     find_calls,
     list_alarm_url,
@@ -176,15 +175,12 @@ class TestFetchAlarms:
         assert alarms == []
 
     @pytest.mark.asyncio
-    async def test_401_raises_invalid_auth_and_clears_authenticated(
-        self, aioclient_mock: AiohttpClientMocker
-    ):
+    async def test_401_raises_invalid_auth(self, aioclient_mock: AiohttpClientMocker):
+        """A 401 on the alarm fetch (revoked API key) must raise InvalidAuthError."""
         client = make_client(aioclient_mock)
-        client._auth._authenticated = True
         aioclient_mock.get(list_alarm_url(), status=401)
         with pytest.raises(InvalidAuthError):
             await client.fetch_alarms()
-        assert client._auth._authenticated is False
 
     @pytest.mark.asyncio
     async def test_client_error_raises_cannot_connect(self, aioclient_mock: AiohttpClientMocker):
@@ -416,29 +412,6 @@ class TestFetchAlarms:
             await client.fetch_alarms()
 
     @pytest.mark.asyncio
-    async def test_not_authenticated_calls_authenticate_first(
-        self, aioclient_mock: AiohttpClientMocker
-    ):
-        """fetch_alarms must call authenticate() when not yet authenticated."""
-        client = make_client(aioclient_mock)
-        client._auth._authenticated = False
-        body = {"meta": {"rc": "ok"}, "data": [{"key": "EVT_GW_WANTransition", "archived": False}]}
-
-        authenticated_calls = []
-
-        async def _mock_authenticate():
-            client._auth._authenticated = True
-            client._auth._method = "userpass"
-            authenticated_calls.append(1)
-
-        client.authenticate = _mock_authenticate
-
-        aioclient_mock.get(list_alarm_url(), status=200, json=body)
-        await client.fetch_alarms()
-
-        assert len(authenticated_calls) == 1
-
-    @pytest.mark.asyncio
     async def test_redirect_raises_cannot_connect(self, aioclient_mock: AiohttpClientMocker):
         """A 3xx on an authenticated alarm fetch must raise CannotConnectError (no redirect)."""
         client = make_client(aioclient_mock)
@@ -587,25 +560,23 @@ class TestCategoriseAlarms:
 class TestAuthenticate:
     """Tests for UniFiClient.authenticate — delegates to UniFiAuth.authenticate().
 
-    Method auto-detection and fallback are UniFiAuth's own behaviour and are
-    covered by tests/unit/test_unifi_auth.py. These tests only cover what
-    UniFiClient itself is responsible for: delegating to self._auth and
-    resetting probe-backoff state on every successful authentication.
+    API-key verification is UniFiAuth's own behaviour and is covered by
+    tests/unit/test_unifi_auth.py. These tests only cover what UniFiClient
+    itself is responsible for: delegating to self._auth and resetting
+    probe-backoff state on every successful verification.
 
     UniFiAuth is a composed collaborator here (not HTTP), so these stay on
     MagicMock/AsyncMock — out of scope for the aioclient_mock conversion.
     """
 
     @pytest.mark.asyncio
-    async def test_delegates_to_auth_and_returns_its_result(
-        self, aioclient_mock: AiohttpClientMocker
-    ):
+    async def test_delegates_to_auth(self, aioclient_mock: AiohttpClientMocker):
         client = make_client(aioclient_mock)
-        client._auth.authenticate = AsyncMock(return_value="apikey")
+        client._auth.authenticate = AsyncMock(return_value=None)
 
         result = await client.authenticate()
 
-        assert result == "apikey"
+        assert result is None
         client._auth.authenticate.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -618,85 +589,21 @@ class TestAuthenticate:
 
 
 class TestClose:
-    """Tests for UniFiClient.close — logout behaviour."""
+    """close() is a stateless no-op: API-key auth has no session to log out."""
 
     @pytest.mark.asyncio
-    async def test_userpass_auth_posts_to_unifi_os_logout_path(
-        self, aioclient_mock: AiohttpClientMocker
-    ):
-        """close() must POST to /api/auth/logout (UniFi OS path only)."""
-        client = make_client(aioclient_mock)
-        client._auth._method = "userpass"
-        client._auth._authenticated = True
-
-        aioclient_mock.post(LOGOUT_URL, status=200)
-        await client.close()
-        calls = find_calls("POST", LOGOUT_URL)
-
-        assert len(calls) == 1
-
-    @pytest.mark.asyncio
-    async def test_apikey_auth_does_not_post_logout(self, aioclient_mock: AiohttpClientMocker):
+    async def test_close_makes_no_requests(self, aioclient_mock: AiohttpClientMocker):
         client = make_client(aioclient_mock, {"api_key": "k", "verify_ssl": False})
-        client._auth._method = "apikey"
-        client._auth._authenticated = True
 
-        # Nothing registered — if close() posted anywhere, aioclient_mock
-        # would raise AssertionError for the unmatched request and fail this test.
+        # Nothing is registered on the mock — if close() made any request,
+        # aioclient_mock would raise AssertionError for the unmatched call.
         await client.close()
         assert total_calls() == 0
 
     @pytest.mark.asyncio
-    async def test_not_authenticated_does_not_post_logout(
-        self, aioclient_mock: AiohttpClientMocker
-    ):
-        client = make_client(aioclient_mock)
-        client._auth._method = "userpass"
-        client._auth._authenticated = False
-
-        await client.close()
-        assert total_calls() == 0
-
-    @pytest.mark.asyncio
-    async def test_logout_failure_logs_warning_with_class_name_only(
-        self, aioclient_mock: AiohttpClientMocker, caplog
-    ):
-        """A failed logout must log at WARNING with the exception class name only.
-
-        The previous `contextlib.suppress(Exception)` swallowed the error silently,
-        leaving operators no diagnostic and the session token live on the controller.
-        We log the class name (not str(err)) to avoid surfacing controller response
-        bodies that may include sensitive fragments.
-        """
-        import logging
-
-        client = make_client(aioclient_mock)
-        client._auth._method = "userpass"
-        client._auth._authenticated = True
-        secret_marker = "controller.local: 401 Unauthorized — api_key=secret"
-
-        aioclient_mock.post(LOGOUT_URL, exc=ConnectionResetError(secret_marker))
-        with caplog.at_level(logging.WARNING, logger="custom_components.unifi_alerts.unifi_client"):
-            await client.close()
-
-        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert any("ConnectionResetError" in r.getMessage() for r in warnings)
-        assert all(secret_marker not in r.getMessage() for r in warnings)
-
-    @pytest.mark.asyncio
-    async def test_logout_failure_does_not_propagate(self, aioclient_mock: AiohttpClientMocker):
-        """close() must never raise on a realistic logout failure — best-effort.
-
-        Only network/connection failures (aiohttp.ClientError, OSError,
-        TimeoutError) are absorbed; a genuine bug (e.g. RuntimeError from our
-        own code) is intentionally allowed to propagate so it isn't hidden.
-        """
-        client = make_client(aioclient_mock)
-        client._auth._method = "userpass"
-        client._auth._authenticated = True
-
-        aioclient_mock.post(LOGOUT_URL, exc=aiohttp.ClientConnectionError("boom"))
-        # No pytest.raises — close() must absorb the failure.
+    async def test_close_does_not_raise(self, aioclient_mock: AiohttpClientMocker):
+        client = make_client(aioclient_mock, {"api_key": "k", "verify_ssl": False})
+        # No pytest.raises — close() must always be safe to await.
         await client.close()
 
 
@@ -741,8 +648,8 @@ class TestSslFailOpen:
 class TestSslCertificateError:
     """SslCertificateError is raised on TLS certificate failures, not CannotConnectError.
 
-    Auth-layer certificate handling (_verify_api_key, _login_userpass) is
-    UniFiAuth's own behaviour and is covered by tests/unit/test_unifi_auth.py.
+    Auth-layer certificate handling (_verify_api_key) is UniFiAuth's own
+    behaviour and is covered by tests/unit/test_unifi_auth.py.
     These tests cover UniFiClient's own request paths.
     """
 

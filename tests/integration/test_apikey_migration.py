@@ -28,16 +28,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
-    AUTH_METHOD_APIKEY,
     CONF_API_KEY,
-    CONF_AUTH_METHOD,
     CONF_CLEAR_TIMEOUT,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
-    CONF_PASSWORD,
     CONF_POLL_INTERVAL,
     CONF_SITE,
-    CONF_USERNAME,
     CONF_VERIFY_SSL,
     CONF_WEBHOOK_ID_SUFFIX,
     CONF_WEBHOOK_SECRET,
@@ -58,7 +54,7 @@ WEBHOOK_ID_SUFFIX = "abadcafe"
 def _make_client_mock() -> MagicMock:
     """Return a mock UniFiClient wired for the coordinator's first refresh."""
     instance = MagicMock()
-    instance.authenticate = AsyncMock(return_value=AUTH_METHOD_APIKEY)
+    instance.authenticate = AsyncMock(return_value=None)
     instance.categorise_alarms = AsyncMock(return_value={})
     instance.probe_system_log_endpoint = AsyncMock(return_value=False)
     instance.close = AsyncMock()
@@ -101,8 +97,8 @@ async def test_apikey_entry_migrates_silently_to_v4(hass):
 
     entry = _v3_entry(
         {
-            CONF_USERNAME: "admin",
-            CONF_PASSWORD: "password",
+            "username": "admin",
+            "password": "password",
             CONF_API_KEY: "existing-api-key",
         }
     )
@@ -117,9 +113,9 @@ async def test_apikey_entry_migrates_silently_to_v4(hass):
         assert entry.state is ConfigEntryState.LOADED
         assert entry.version == 4
         assert entry.data[CONF_API_KEY] == "existing-api-key"
-        assert entry.data[CONF_AUTH_METHOD] == AUTH_METHOD_APIKEY
-        assert CONF_USERNAME not in entry.data
-        assert CONF_PASSWORD not in entry.data
+        assert "auth_method" not in entry.data
+        assert "username" not in entry.data
+        assert "password" not in entry.data
 
         # Identity-preserving fields untouched.
         assert entry.entry_id == "migration-test-entry"
@@ -149,7 +145,7 @@ async def test_userpass_entry_migrates_and_is_restored_via_reauth(hass):
     """A v3 userpass-only entry migrates to v4, lands in reauth, and is restored by an API key."""
     await _prepare_hass(hass)
 
-    entry = _v3_entry({CONF_USERNAME: "admin", CONF_PASSWORD: "password"})
+    entry = _v3_entry({"username": "admin", "password": "password"})
     entry.add_to_hass(hass)
 
     client = _make_client_mock()
@@ -166,10 +162,10 @@ async def test_userpass_entry_migrates_and_is_restored_via_reauth(hass):
 
         # Migrated to v4 with credentials removed, but not loaded (awaiting reauth).
         assert entry.version == 4
-        assert CONF_USERNAME not in entry.data
-        assert CONF_PASSWORD not in entry.data
+        assert "username" not in entry.data
+        assert "password" not in entry.data
         assert CONF_API_KEY not in entry.data
-        assert entry.data[CONF_AUTH_METHOD] == AUTH_METHOD_APIKEY
+        assert "auth_method" not in entry.data
         assert entry.state is not ConfigEntryState.LOADED
 
         # The explanatory migration repair issue is raised (not a generic auth failure).
@@ -188,7 +184,7 @@ async def test_userpass_entry_migrates_and_is_restored_via_reauth(hass):
         flow_id = reauth_flows[0]["flow_id"]
 
         # Supplying a valid API key restores the connection.
-        client.authenticate = AsyncMock(return_value=AUTH_METHOD_APIKEY)
+        client.authenticate = AsyncMock(return_value=None)
         result = await hass.config_entries.flow.async_configure(
             flow_id, {CONF_API_KEY: "new-api-key"}
         )
@@ -200,7 +196,7 @@ async def test_userpass_entry_migrates_and_is_restored_via_reauth(hass):
         # Entry reloaded and now carries the API key.
         assert entry.state is ConfigEntryState.LOADED
         assert entry.data[CONF_API_KEY] == "new-api-key"
-        assert entry.data[CONF_AUTH_METHOD] == AUTH_METHOD_APIKEY
+        assert "auth_method" not in entry.data
 
         # Identity-preserving fields survived the whole journey.
         assert entry.entry_id == "migration-test-entry"
