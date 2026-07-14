@@ -30,7 +30,7 @@ Per-file annotations and load-bearing details live in [`docs/REPO_LAYOUT.md`](do
 
 ## Non-negotiable constraints
 
-- **Python 3.14 only (matching the HA baseline).** Use modern type hints (`list[str]` not `List[str]`, `X | None` not `Optional[X]`).
+- **Python 3.14 only (matching the HA baseline).** Use modern type hints (`list[str]` not `List[str]`, `X | None` not `Optional[X]`). This includes [PEP 758](https://peps.python.org/pep-0758/) (accepted for 3.14): `except A, B:` (no parentheses, no `as`) is valid and is what the pinned `ruff format` (`target-version = "py314"`) canonicalises multi-type `except` clauses to. **Do not "fix" this to `except (A, B):`** - it is not Python 2 syntax leaking in, it is correct for this project's only supported interpreter. This exact mistake was made and reverted once already in [#328](https://github.com/PHeonix25/unifi_alerts/pull/328) ("the earlier parenthesisation was a mis-diagnosis made by compiling against Python 3.13, which predates PEP 758") and reproduced independently in [#329](https://github.com/PHeonix25/unifi_alerts/pull/329). If you cannot obtain a real Python 3.14 interpreter to verify a change (older interpreters give a false-positive `SyntaxError: multiple exception types must be parenthesized` on this syntax), say so explicitly and treat CI as authoritative for anything mypy/pytest-shaped rather than "fixing" code that predates your interpreter.
 - **All I/O is async.** No blocking calls anywhere. Use `aiohttp` for HTTP, never `requests`.
 - **No YAML configuration.** Everything goes through the config flow. Do not add `async_setup` or `configuration.yaml` support.
 - **`iot_class: local_push`** must stay in `manifest.json` - this is accurate and affects HA's energy/performance classification.
