@@ -91,7 +91,7 @@ Calling `await session.close()` on either triggers a deprecation warning from `h
 # DO: HA-managed, no try/finally needed
 session = async_get_clientsession(hass, verify_ssl=verify_ssl)
 client = UniFiClient(session, url, user_input)
-auth_method = await client.authenticate()
+await client.authenticate()
 
 # DON'T: bare ClientSession bypasses HA's proxy + pool + verify_ssl wiring
 async with aiohttp.ClientSession() as session:
