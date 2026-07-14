@@ -10,12 +10,10 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_API_KEY,
-    CONF_PASSWORD,
-    CONF_USERNAME,
     CONF_WEBHOOK_SECRET,
 )
 
-_TO_REDACT: set[str] = {CONF_PASSWORD, CONF_API_KEY, CONF_USERNAME, CONF_WEBHOOK_SECRET}
+_TO_REDACT: set[str] = {CONF_API_KEY, CONF_WEBHOOK_SECRET}
 
 
 async def async_get_config_entry_diagnostics(

@@ -16,8 +16,6 @@ from custom_components.unifi_alerts.const import (
     CONF_API_KEY,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
-    CONF_PASSWORD,
-    CONF_USERNAME,
     CONF_VERIFY_SSL,
     CONF_WEBHOOK_SECRET,
 )
@@ -140,8 +138,6 @@ async def test_options_flow_full_cycle() -> None:
     # Step 1: blank credentials -> skip to categories
     blank_creds = {
         CONF_CONTROLLER_URL: "",
-        CONF_USERNAME: "",
-        CONF_PASSWORD: "",
         CONF_API_KEY: "",
         CONF_VERIFY_SSL: True,
     }
@@ -268,7 +264,7 @@ async def test_options_flow_saves_submitted_values() -> None:
         ),
     ):
         instance = mock_cls.return_value
-        instance.authenticate = AsyncMock(return_value="apikey")
+        instance.authenticate = AsyncMock(return_value=None)
         instance.fetch_alarms = AsyncMock(return_value=[])
         await flow.async_step_categories(user_input)
 
@@ -337,8 +333,6 @@ class TestOptionsFlowCredentials:
 
         blank_input = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: True,
         }
@@ -362,9 +356,7 @@ class TestOptionsFlowCredentials:
 
         new_creds = {
             CONF_CONTROLLER_URL: "https://10.0.0.1",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "newpass",
-            CONF_API_KEY: "",
+            CONF_API_KEY: "new-key",
             CONF_VERIFY_SSL: True,
         }
 
@@ -376,9 +368,8 @@ class TestOptionsFlowCredentials:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
-            instance._is_unifi_os = False
 
             result = await flow.async_step_credentials(new_creds)
 
@@ -387,7 +378,7 @@ class TestOptionsFlowCredentials:
 
         # The pending values must be staged, ready for async_step_finish to commit
         assert flow._pending_data[CONF_CONTROLLER_URL] == "https://10.0.0.1"
-        assert flow._pending_data[CONF_PASSWORD] == "newpass"
+        assert flow._pending_data[CONF_API_KEY] == "new-key"
 
         # Should have continued to categories
         assert result["step_id"] == "categories"
@@ -402,9 +393,7 @@ class TestOptionsFlowCredentials:
 
         new_creds = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "baduser",
-            CONF_PASSWORD: "wrongpass",
-            CONF_API_KEY: "",
+            CONF_API_KEY: "bad-key",
             CONF_VERIFY_SSL: True,
         }
 
@@ -435,8 +424,6 @@ class TestOptionsFlowCredentials:
 
         bad_url_input = {
             CONF_CONTROLLER_URL: "ftp://192.168.1.1",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: True,
         }
@@ -468,8 +455,6 @@ class TestOptionsFlowCredentials:
 
         new_creds = {
             CONF_CONTROLLER_URL: "https://10.0.0.1",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: True,
         }
@@ -482,7 +467,7 @@ class TestOptionsFlowCredentials:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
             instance._is_unifi_os = False
 
@@ -504,9 +489,7 @@ class TestOptionsFlowCredentials:
         # First: update credentials
         new_creds = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "newadmin",
-            CONF_PASSWORD: "",
-            CONF_API_KEY: "",
+            CONF_API_KEY: "new-key",
             CONF_VERIFY_SSL: False,
         }
 
@@ -518,7 +501,7 @@ class TestOptionsFlowCredentials:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
             instance._is_unifi_os = True
 
@@ -527,7 +510,7 @@ class TestOptionsFlowCredentials:
         # The credentials step must NOT persist eagerly -- the staged data is
         # only committed once async_step_finish runs.
         flow.hass.config_entries.async_update_entry.assert_not_called()
-        assert flow._pending_data[CONF_USERNAME] == "newadmin"
+        assert flow._pending_data[CONF_API_KEY] == "new-key"
 
         # Now: submit the categories step (stores in _pending_options, routes to finish)
         first_cat = ALL_CATEGORIES[0]
@@ -551,7 +534,7 @@ class TestOptionsFlowCredentials:
         assert result["type"] == "create_entry"
         flow.hass.config_entries.async_update_entry.assert_called_once()
         committed = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
-        assert committed[CONF_USERNAME] == "newadmin"
+        assert committed[CONF_API_KEY] == "new-key"
         saved = flow.async_create_entry.call_args.kwargs["data"]
         assert saved[CONF_ENABLED_CATEGORIES] == [first_cat]
         assert saved[CONF_POLL_INTERVAL] == 90
@@ -571,9 +554,7 @@ class TestOptionsFlowCredentials:
 
         new_creds = {
             CONF_CONTROLLER_URL: "https://10.0.0.1",
-            CONF_USERNAME: "newadmin",
-            CONF_PASSWORD: "newpass",
-            CONF_API_KEY: "",
+            CONF_API_KEY: "new-key",
             CONF_VERIFY_SSL: True,
         }
 
@@ -585,7 +566,7 @@ class TestOptionsFlowCredentials:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
             instance._is_unifi_os = False
             await flow.async_step_credentials(new_creds)
@@ -594,7 +575,7 @@ class TestOptionsFlowCredentials:
         # entry.data must NOT have been written. The staged dict holds the
         # change that *would* have been committed if the user had finished.
         flow.hass.config_entries.async_update_entry.assert_not_called()
-        assert flow._pending_data[CONF_PASSWORD] == "newpass"
+        assert flow._pending_data[CONF_API_KEY] == "new-key"
 
     @pytest.mark.asyncio
     async def test_verify_ssl_only_toggle_stages_and_skips_auth(self) -> None:
@@ -609,8 +590,6 @@ class TestOptionsFlowCredentials:
         # Fixture default is verify_ssl=True; flip to False
         ssl_only = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: False,
         }
@@ -624,7 +603,7 @@ class TestOptionsFlowCredentials:
         flow.hass.config_entries.async_update_entry.assert_not_called()
         assert flow._pending_data[CONF_VERIFY_SSL] is False
         # Other entry-data keys must be carried over unchanged
-        assert flow._pending_data[CONF_USERNAME] == "admin"
+        assert flow._pending_data[CONF_API_KEY] == "existing-api-key"
         assert flow._pending_data[CONF_WEBHOOK_SECRET] == "fixed-secret"
 
     @pytest.mark.asyncio
@@ -642,8 +621,6 @@ class TestOptionsFlowCredentials:
         await flow.async_step_credentials(
             {
                 CONF_CONTROLLER_URL: "",
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "",
                 CONF_API_KEY: "",
                 CONF_VERIFY_SSL: False,
             }
@@ -672,8 +649,6 @@ class TestOptionsFlowCredentials:
 
         same_input = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "",
             CONF_VERIFY_SSL: True,
         }
@@ -697,9 +672,7 @@ class TestOptionsCredentialsErrorsAndStaging:
         flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "credentials"})
         user_input = {
             CONF_CONTROLLER_URL: "https://10.0.0.1",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "newpass",
-            CONF_API_KEY: "",
+            CONF_API_KEY: "new-key",
             CONF_VERIFY_SSL: True,
         }
 
@@ -725,9 +698,7 @@ class TestOptionsCredentialsErrorsAndStaging:
         flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "credentials"})
         user_input = {
             CONF_CONTROLLER_URL: "https://10.0.0.1",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "newpass",
-            CONF_API_KEY: "",
+            CONF_API_KEY: "new-key",
             CONF_VERIFY_SSL: True,
         }
 
@@ -751,8 +722,6 @@ class TestOptionsCredentialsErrorsAndStaging:
         flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
         user_input = {
             CONF_CONTROLLER_URL: "",
-            CONF_USERNAME: "",
-            CONF_PASSWORD: "",
             CONF_API_KEY: "new-api-key",
             CONF_VERIFY_SSL: True,
         }
@@ -765,7 +734,7 @@ class TestOptionsCredentialsErrorsAndStaging:
             patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="apikey")
+            instance.authenticate = AsyncMock(return_value=None)
             instance.fetch_alarms = AsyncMock(return_value=[])
             result = await flow.async_step_credentials(user_input)
 

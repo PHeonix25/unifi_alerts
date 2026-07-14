@@ -9,8 +9,6 @@ import pytest
 from custom_components.unifi_alerts.config_flow import UniFiAlertsConfigFlow
 from custom_components.unifi_alerts.const import (
     CONF_API_KEY,
-    CONF_PASSWORD,
-    CONF_USERNAME,
 )
 
 from .conftest import make_reauth_flow, make_session_mock
@@ -229,7 +227,7 @@ class TestReauthConfirmStep:
         flow = make_reauth_flow()
         flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "reauth_confirm"})
 
-        new_creds = {CONF_USERNAME: "admin", CONF_PASSWORD: "wrongpassword"}
+        new_creds = {CONF_API_KEY: "bad-key"}
 
         with (
             patch(
@@ -265,9 +263,7 @@ class TestReauthConfirmStep:
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(side_effect=CannotConnectError("down"))
 
-            result = await flow.async_step_reauth_confirm(
-                user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "pass"}
-            )
+            result = await flow.async_step_reauth_confirm(user_input={CONF_API_KEY: "some-key"})
 
         assert result["step_id"] == "reauth_confirm"
         call_kwargs = flow.async_show_form.call_args.kwargs
@@ -291,9 +287,7 @@ class TestReauthConfirmStep:
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(side_effect=SslCertificateError("cert"))
 
-            result = await flow.async_step_reauth_confirm(
-                user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "pass"}
-            )
+            result = await flow.async_step_reauth_confirm(user_input={CONF_API_KEY: "some-key"})
 
         assert result["step_id"] == "reauth_confirm"
         call_kwargs = flow.async_show_form.call_args.kwargs
@@ -318,9 +312,7 @@ class TestReauthConfirmStep:
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(side_effect=InvalidAuthError("bad"))
 
-            await flow.async_step_reauth_confirm(
-                user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "wrong"}
-            )
+            await flow.async_step_reauth_confirm(user_input={CONF_API_KEY: "bad-key"})
 
         mock_del.assert_not_called()
 

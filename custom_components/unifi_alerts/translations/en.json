@@ -3,12 +3,10 @@
     "step": {
       "user": {
         "title": "Connect to UniFi Controller",
-        "description": "Enter your UniFi Network controller address and credentials. The integration will auto-detect which method to use.\n\n**API key** (UniFi OS consoles — UDM Pro, UCG Ultra, etc.): leave Username and Password blank. Generate an API key in the UniFi OS web UI — the exact location varies by firmware version. Common paths: **Settings → Admins & Users → API Keys** or **Integrations → New API Key**. See the integration README on GitHub for device-specific instructions.\n\n**Username / password** (older controllers or Cloud Key): fill in Username and Password, leave API Key blank.\n\nSSL verification is enabled by default. Disable it only if your controller uses a self-signed certificate.",
+        "description": "Enter your UniFi Network controller address and an API key.\n\nGenerate an API key in the UniFi OS web UI; the exact location varies by firmware version. Common paths: **Settings > Admins & Users > API Keys** or **Integrations > New API Key**. See the integration README on GitHub for device-specific instructions.\n\nSSL verification is enabled by default. Disable it only if your controller uses a self-signed certificate.",
         "data": {
           "controller_url": "Controller URL (e.g. https://192.168.1.1)",
-          "username": "Username (leave blank if using API key)",
-          "password": "Password",
-          "api_key": "API Key (UniFi OS only — leave blank if using username/password)",
+          "api_key": "API Key",
           "verify_ssl": "Verify SSL certificate"
         },
         "data_description": {
@@ -54,7 +52,7 @@
     },
     "error": {
       "cannot_connect": "Cannot reach the controller. Check the URL, port, and SSL settings. See Home Assistant logs for details.",
-      "invalid_auth": "Invalid credentials. Check your username/password or API key.",
+      "invalid_auth": "Invalid API key. Check the key and that it has not been revoked on the controller.",
       "invalid_ssl_cert": "SSL certificate verification failed. If this controller uses a self-signed certificate, untick \"Verify SSL certificate\" and try again.",
       "invalid_url_scheme": "Controller URL must start with http:// or https://.",
       "at_least_one_category": "Please enable at least one alert category.",
@@ -73,7 +71,7 @@
         "step": {
           "confirm": {
             "title": "Re-authenticate UniFi Alerts",
-            "description": "The credentials for **{name}** are no longer valid (e.g. the password or API key was changed). Enter new credentials to restore the connection."
+            "description": "The API key for **{name}** is no longer valid (for example it was revoked or regenerated on the controller). Enter a new API key to restore the connection."
           }
         }
       }
@@ -186,7 +184,7 @@
   "options": {
     "error": {
       "cannot_connect": "Cannot reach the controller. Check the URL, port, and SSL settings. See Home Assistant logs for details.",
-      "invalid_auth": "Invalid credentials. Check your username/password or API key.",
+      "invalid_auth": "Invalid API key. Check the key and that it has not been revoked on the controller.",
       "invalid_ssl_cert": "SSL certificate verification failed. If this controller uses a self-signed certificate, untick \"Verify SSL certificate\" and try again.",
       "invalid_url_scheme": "Controller URL must start with http:// or https://.",
       "at_least_one_category": "Please enable at least one alert category.",
@@ -195,11 +193,9 @@
     "step": {
       "credentials": {
         "title": "Update Controller Credentials",
-        "description": "Optionally update the controller URL or credentials. Leave all fields blank to skip this step and go straight to alert category settings.\n\nCurrent controller: {current_url}\n\nTick **Regenerate webhook secret** if you suspect the current token has been exposed (e.g. pasted into logs or shared issues). New webhook URLs will be shown on the final step — copy them into UniFi Alarm Manager before clicking Submit, or webhook delivery will start failing immediately.",
+        "description": "Optionally update the controller URL or API key. Leave the fields blank to skip this step and go straight to alert category settings.\n\nCurrent controller: {current_url}\n\nTick **Regenerate webhook secret** if you suspect the current token has been exposed (e.g. pasted into logs or shared issues). New webhook URLs will be shown on the final step; copy them into UniFi Alarm Manager before clicking Submit, or webhook delivery will start failing immediately.",
         "data": {
           "controller_url": "New Controller URL (leave blank to keep current)",
-          "username": "New Username (leave blank to keep current)",
-          "password": "New Password (leave blank to keep current)",
           "api_key": "New API Key (leave blank to keep current)",
           "verify_ssl": "Verify SSL certificate",
           "regenerate_webhook_secret": "Regenerate webhook secret"

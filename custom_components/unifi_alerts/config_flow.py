@@ -23,15 +23,12 @@ from yarl import URL
 from .const import (
     ALL_CATEGORIES,
     CONF_API_KEY,
-    CONF_AUTH_METHOD,
     CONF_CLEAR_TIMEOUT,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
-    CONF_PASSWORD,
     CONF_POLL_INTERVAL,
     CONF_REGENERATE_WEBHOOK_SECRET,
     CONF_SITE,
-    CONF_USERNAME,
     CONF_VERIFY_SSL,
     CONF_WEBHOOK_ID_SUFFIX,
     CONF_WEBHOOK_SECRET,
@@ -102,12 +99,11 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._controller_url: str = ""
-        self._detected_auth_method: str | None = None
         self._credentials: dict[str, Any] = {}
         self._entry_data: dict[str, Any] = {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Step 1: controller URL + credentials."""
+        """Step 1: controller URL + API key."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -128,7 +124,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
                 client = UniFiClient(session, url, cast(UniFiClientConfig, user_input))
                 try:
-                    auth_method = await client.authenticate()
+                    await client.authenticate()
                     await client.fetch_alarms()  # validate alarm endpoint reachable
                 except InvalidAuthError:
                     errors["base"] = "invalid_auth"
@@ -139,7 +135,6 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                     errors["base"] = "cannot_connect"
                 else:
                     self._controller_url = url
-                    self._detected_auth_method = auth_method
                     # CONF_WEBHOOK_ID_SUFFIX is generated per-entry so two
                     # config entries can never collide on a webhook ID.
                     # 8 hex chars = 32 bits of entropy, plenty to avoid
@@ -151,44 +146,29 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                     }
                     return await self.async_step_categories()
 
-        _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
-        if user_input is not None:
-            # Rebuild schema with submitted values as defaults so the user
-            # doesn't have to re-enter everything on a validation error.
-            # Password/API key fields deliberately omit `default=` so HA does
-            # not pre-fill sensitive values — the user must re-enter them.
-            # Username uses a conditional default: omit entirely when empty so
-            # HA treats the field as truly blank rather than pre-filled.
-            _username = user_input.get(CONF_USERNAME, "")
-            schema = vol.Schema(
-                {
-                    vol.Required(CONF_CONTROLLER_URL, default=user_input[CONF_CONTROLLER_URL]): str,
-                    vol.Optional(
-                        CONF_USERNAME, **({"default": _username} if _username else {})
-                    ): str,
-                    vol.Optional(CONF_PASSWORD): _password_selector,
-                    vol.Optional(CONF_API_KEY): _api_key_selector,
-                    vol.Optional(
-                        CONF_VERIFY_SSL,
-                        default=user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
-                    ): bool,
-                }
-            )
-        else:
-            # Use a pre-filled URL when arriving via SSDP discovery;
-            # fall back to the example placeholder for manual setup.
-            _url_default = self._controller_url or "https://192.168.1.1"
-            schema = vol.Schema(
-                {
-                    vol.Required(CONF_CONTROLLER_URL, default=_url_default): str,
-                    vol.Optional(CONF_USERNAME): str,
-                    vol.Optional(CONF_PASSWORD): _password_selector,
-                    vol.Optional(CONF_API_KEY): _api_key_selector,
-                    vol.Optional(CONF_VERIFY_SSL, default=DEFAULT_VERIFY_SSL): bool,
-                }
-            )
+        # Use a pre-filled URL when arriving via SSDP discovery or re-showing the
+        # form after a validation error; fall back to the example placeholder.
+        # The API key field deliberately omits `default=` so HA does not pre-fill
+        # the secret — the user must re-enter it.
+        _url_default = (
+            user_input[CONF_CONTROLLER_URL]
+            if user_input is not None
+            else (self._controller_url or "https://192.168.1.1")
+        )
+        _verify_ssl_default = (
+            user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+            if user_input is not None
+            else DEFAULT_VERIFY_SSL
+        )
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_CONTROLLER_URL, default=_url_default): str,
+                vol.Required(CONF_API_KEY): _api_key_selector,
+                vol.Optional(CONF_VERIFY_SSL, default=_verify_ssl_default): bool,
+            }
+        )
         return self.async_show_form(
             step_id="user",
             data_schema=schema,
@@ -229,14 +209,10 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 site = user_input.get(CONF_SITE, DEFAULT_SITE)
                 if site != DEFAULT_SITE:
-                    creds_with_method = {
-                        **self._credentials,
-                        CONF_AUTH_METHOD: self._detected_auth_method,
-                    }
                     verify_ssl = self._credentials.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
                     session = async_get_clientsession(self.hass, verify_ssl=verify_ssl)
                     client = UniFiClient(
-                        session, self._controller_url, cast(UniFiClientConfig, creds_with_method)
+                        session, self._controller_url, cast(UniFiClientConfig, self._credentials)
                     )
                     try:
                         await client.authenticate()
@@ -257,7 +233,6 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                             CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT
                         ),
                         CONF_SITE: site,
-                        CONF_AUTH_METHOD: self._detected_auth_method,
                     }
                     return await self.async_step_finish()
 
@@ -341,7 +316,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             client = UniFiClient(session, url, cast(UniFiClientConfig, user_input))
             try:
-                auth_method = await client.authenticate()
+                await client.authenticate()
             except InvalidAuthError:
                 errors["base"] = "invalid_auth"
             except SslCertificateError:
@@ -357,7 +332,6 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 new_data = {
                     **entry.data,
                     **user_input,
-                    CONF_AUTH_METHOD: auth_method,
                 }
                 self.hass.config_entries.async_update_entry(entry, data=new_data)
                 # Clear both possible repair issues now that auth is restored.
@@ -394,8 +368,6 @@ class _CredentialsFormInput:
     """Normalized values parsed from an options-flow credentials form submission."""
 
     new_url_raw: str
-    new_username: str
-    new_password: str
     new_api_key: str
     regenerate_secret: bool
     new_verify_ssl: bool
@@ -413,19 +385,15 @@ def _parse_credentials_form_input(
     without driving the full flow step.
     """
     new_url_raw = (user_input.get(CONF_CONTROLLER_URL) or "").strip()
-    new_username = (user_input.get(CONF_USERNAME) or "").strip()
-    new_password = (user_input.get(CONF_PASSWORD) or "").strip()
     new_api_key = (user_input.get(CONF_API_KEY) or "").strip()
     regenerate_secret = bool(user_input.get(CONF_REGENERATE_WEBHOOK_SECRET, False))
     current_verify_ssl = current_data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
     # verify_ssl always comes through as a bool (voluptuous default)
     new_verify_ssl = user_input.get(CONF_VERIFY_SSL, current_verify_ssl)
     verify_ssl_changed = new_verify_ssl != current_verify_ssl
-    credentials_changed = bool(new_url_raw or new_username or new_password or new_api_key)
+    credentials_changed = bool(new_url_raw or new_api_key)
     return _CredentialsFormInput(
         new_url_raw=new_url_raw,
-        new_username=new_username,
-        new_password=new_password,
         new_api_key=new_api_key,
         regenerate_secret=regenerate_secret,
         new_verify_ssl=new_verify_ssl,
@@ -466,10 +434,6 @@ def _credential_overrides(parsed: _CredentialsFormInput) -> dict[str, Any]:
     dict without clobbering unrelated stored values.
     """
     overrides: dict[str, Any] = {}
-    if parsed.new_username:
-        overrides[CONF_USERNAME] = parsed.new_username
-    if parsed.new_password:
-        overrides[CONF_PASSWORD] = parsed.new_password
     if parsed.new_api_key:
         overrides[CONF_API_KEY] = parsed.new_api_key
     return overrides
@@ -509,7 +473,6 @@ def _build_credentials_test_data(
 def _build_credentials_pending_data(
     current_data: Mapping[str, Any],
     effective_url: str,
-    auth_method: str,
     parsed: _CredentialsFormInput,
 ) -> dict[str, Any]:
     """Build the staged entry.data after new credentials validate successfully."""
@@ -517,7 +480,6 @@ def _build_credentials_pending_data(
         **current_data,
         CONF_CONTROLLER_URL: effective_url,
         CONF_VERIFY_SSL: parsed.new_verify_ssl,
-        CONF_AUTH_METHOD: auth_method,
         **_credential_overrides(parsed),
     }
     if parsed.regenerate_secret:
@@ -527,20 +489,17 @@ def _build_credentials_pending_data(
 
 async def _async_validate_controller_credentials(
     hass: Any, url: str, verify_ssl: bool, test_data: dict[str, Any]
-) -> str:
-    """Instantiate a UniFiClient and validate it can authenticate and reach
-    the alarm endpoint.
+) -> None:
+    """Instantiate a UniFiClient and validate the API key reaches the controller.
 
-    Returns the detected auth method on success. `InvalidAuthError`,
-    `SslCertificateError`, and `CannotConnectError` propagate unchanged so
-    the caller classifies them into its `errors` dict — this function does
-    not know about the options-flow error-key mapping.
+    `InvalidAuthError`, `SslCertificateError`, and `CannotConnectError`
+    propagate unchanged so the caller classifies them into its `errors` dict —
+    this function does not know about the options-flow error-key mapping.
     """
     session = async_get_clientsession(hass, verify_ssl=verify_ssl)
     client = UniFiClient(session, url, cast(UniFiClientConfig, test_data))
-    auth_method = await client.authenticate()
+    await client.authenticate()
     await client.fetch_alarms()
-    return auth_method
 
 
 class UniFiAlertsOptionsFlow(OptionsFlow):
@@ -604,7 +563,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                     self._config_entry.data, effective_url, parsed
                 )
                 try:
-                    auth_method = await _async_validate_controller_credentials(
+                    await _async_validate_controller_credentials(
                         self.hass, effective_url, parsed.new_verify_ssl, test_data
                     )
                 except InvalidAuthError:
@@ -626,12 +585,11 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                     # in the finish step, so abandoning the flow leaves nothing
                     # behind. async_update_entry is intentionally NOT called here.
                     self._pending_data = _build_credentials_pending_data(
-                        self._config_entry.data, effective_url, auth_method, parsed
+                        self._config_entry.data, effective_url, parsed
                     )
                     return await self.async_step_categories()
 
         # Build the credentials form — all fields optional with current values as hints
-        _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         current_url: str = self._config_entry.data.get(CONF_CONTROLLER_URL, "")
         current_verify_ssl = self._config_entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
@@ -639,8 +597,6 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Optional(CONF_CONTROLLER_URL): str,
-                vol.Optional(CONF_USERNAME): str,
-                vol.Optional(CONF_PASSWORD): _password_selector,
                 vol.Optional(CONF_API_KEY): _api_key_selector,
                 vol.Optional(CONF_VERIFY_SSL, default=current_verify_ssl): bool,
                 vol.Optional(CONF_REGENERATE_WEBHOOK_SECRET, default=False): bool,

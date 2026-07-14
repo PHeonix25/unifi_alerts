@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **Breaking:** username and password authentication is being removed in favour of API keys. Config entries are migrated to a new version-4 schema on upgrade. Entries that already have an API key stored migrate silently and keep working. Entries set up with only a username and password are walked through re-authentication: a repair notice explains that an API key is now required and a single-field form accepts it. The entry is updated in place, so existing sensors, history, and Alarm Manager webhook URLs are preserved. Generate an API key in the UniFi OS web UI (**Settings > Admins & Users > API Keys**, **Integrations > New API Key**, or **Settings > Control Plane > API Keys**, depending on firmware). ([#278])
+- **Breaking:** username and password authentication has been removed; an API key is now the only supported credential. Config entries are migrated to a new version-4 schema on upgrade. Entries that already have an API key stored migrate silently and keep working. Entries set up with only a username and password are walked through re-authentication: a repair notice explains that an API key is now required and a single-field form accepts it. The entry is updated in place, so existing sensors, history, and Alarm Manager webhook URLs are preserved. The initial setup form now requires an API key, and the reconfigure form asks only for an API key. Generate one in the UniFi OS web UI (**Settings > Admins & Users > API Keys**, **Integrations > New API Key**, or **Settings > Control Plane > API Keys**, depending on firmware). ([#278], [#279])
 - Raised the tooling and CI baseline to Python 3.14 and the declared minimum supported Home Assistant version to 2026.3.1, the first HA release that requires Python 3.14. `DataUpdateCoordinator` now receives `config_entry` explicitly instead of a bare `entry_id` string, and SSDP discovery imports `SsdpServiceInfo` from its new `homeassistant.helpers.service_info.ssdp` location. ([#228], [#311])
 - `fetch_alarms()` now discovers the working alarm endpoint once per site and caches it, instead of walking the `[/list/alarm, /alarm, /stat/alarm]` fallback chain and parsing the HTTP 400 `api.err.InvalidObject` body on every poll. Endpoint discovery (`_discover_alarm_url()`) is now separate from the core fetch/parse flow in `_try_fetch_alarms()`; discovery only re-runs if the cached URL stops resolving. Behaviour is unchanged; this is a refactor. ([#239])
 
@@ -341,6 +341,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#268]: https://github.com/PHeonix25/unifi_alerts/issues/268
 [#270]: https://github.com/PHeonix25/unifi_alerts/issues/270
 [#278]: https://github.com/PHeonix25/unifi_alerts/issues/278
+[#279]: https://github.com/PHeonix25/unifi_alerts/issues/279
 [#282]: https://github.com/PHeonix25/unifi_alerts/issues/282
 [#283]: https://github.com/PHeonix25/unifi_alerts/issues/283
 [#284]: https://github.com/PHeonix25/unifi_alerts/issues/284

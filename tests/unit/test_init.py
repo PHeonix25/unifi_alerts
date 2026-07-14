@@ -9,15 +9,11 @@ from conftest import make_entry, make_hass, patch_setup_entry_collaborators
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
-    AUTH_METHOD_APIKEY,
     CONF_API_KEY,
-    CONF_AUTH_METHOD,
     CONF_CLEAR_TIMEOUT,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
-    CONF_PASSWORD,
     CONF_POLL_INTERVAL,
-    CONF_USERNAME,
     CONF_VERIFY_SSL,
     CONF_WEBHOOK_ID_SUFFIX,
     CONF_WEBHOOK_SECRET,
@@ -657,8 +653,8 @@ class TestAsyncMigrateEntry:
             data={
                 CONF_CONTROLLER_URL: "https://192.168.1.1",
                 CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-                CONF_USERNAME: "admin",
-                CONF_PASSWORD: "password",
+                "username": "admin",
+                "password": "password",
                 "is_unifi_os": True,  # legacy field to be stripped in v1->2
             }
         )
@@ -681,7 +677,7 @@ class TestAsyncMigrateEntry:
 
     @pytest.mark.asyncio
     async def test_v3_with_api_key_migrates_silently_to_v4(self):
-        """A v3 entry with an API key drops userpass, pins apikey, and bumps to v4."""
+        """A v3 entry with an API key drops legacy userpass keys and bumps to v4."""
         from custom_components.unifi_alerts import async_migrate_entry
 
         hass = make_hass()
@@ -689,8 +685,9 @@ class TestAsyncMigrateEntry:
             data={
                 CONF_CONTROLLER_URL: "https://192.168.1.1",
                 CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-                CONF_USERNAME: "admin",
-                CONF_PASSWORD: "password",
+                "username": "admin",
+                "password": "password",
+                "auth_method": "apikey",
                 CONF_API_KEY: "existing-api-key",
                 CONF_WEBHOOK_SECRET: "fake-secret",
                 CONF_WEBHOOK_ID_SUFFIX: "deadbeef",
@@ -705,16 +702,17 @@ class TestAsyncMigrateEntry:
         assert result is True
         assert entry.version == 4
         assert entry.data[CONF_API_KEY] == "existing-api-key"
-        assert entry.data[CONF_AUTH_METHOD] == AUTH_METHOD_APIKEY
-        assert CONF_USERNAME not in entry.data
-        assert CONF_PASSWORD not in entry.data
+        # Legacy userpass keys (and the now-unused auth_method marker) are dropped.
+        assert "username" not in entry.data
+        assert "password" not in entry.data
+        assert "auth_method" not in entry.data
         # Identity-preserving fields untouched.
         assert entry.data[CONF_WEBHOOK_SECRET] == "fake-secret"
         assert entry.data[CONF_WEBHOOK_ID_SUFFIX] == "deadbeef"
 
     @pytest.mark.asyncio
     async def test_v3_userpass_only_migrates_to_v4_without_credentials(self):
-        """A v3 userpass-only entry loses its credentials and is pinned to apikey for reauth."""
+        """A v3 userpass-only entry loses its credentials, leaving no api_key for reauth."""
         from custom_components.unifi_alerts import async_migrate_entry
 
         hass = make_hass()
@@ -722,8 +720,8 @@ class TestAsyncMigrateEntry:
             data={
                 CONF_CONTROLLER_URL: "https://192.168.1.1",
                 CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-                CONF_USERNAME: "admin",
-                CONF_PASSWORD: "password",
+                "username": "admin",
+                "password": "password",
                 CONF_WEBHOOK_SECRET: "fake-secret",
                 CONF_WEBHOOK_ID_SUFFIX: "deadbeef",
             }
@@ -736,10 +734,9 @@ class TestAsyncMigrateEntry:
 
         assert result is True
         assert entry.version == 4
-        assert CONF_USERNAME not in entry.data
-        assert CONF_PASSWORD not in entry.data
+        assert "username" not in entry.data
+        assert "password" not in entry.data
         assert CONF_API_KEY not in entry.data
-        assert entry.data[CONF_AUTH_METHOD] == AUTH_METHOD_APIKEY
         # Identity-preserving fields untouched, so entities/history/webhooks survive.
         assert entry.data[CONF_WEBHOOK_SECRET] == "fake-secret"
         assert entry.data[CONF_WEBHOOK_ID_SUFFIX] == "deadbeef"
@@ -754,7 +751,6 @@ class TestAsyncMigrateEntry:
             data={
                 CONF_CONTROLLER_URL: "https://192.168.1.1",
                 CONF_API_KEY: "key",
-                CONF_AUTH_METHOD: AUTH_METHOD_APIKEY,
             }
         )
         entry.version = 4
