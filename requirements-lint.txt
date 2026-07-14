@@ -1,5 +1,12 @@
 # Minimal dependencies for lint and typecheck only.
 # Install via `make setup-lint` when you do not need the full Home Assistant
 # test stack. Pairs with `make lint`, `make typecheck`, and `make doc-check`.
-mypy
-ruff
+#
+# Pinned to the exact same versions as requirements-dev.txt (see the pinning
+# policy comment there, #142) - CI's dedicated lint job installs from this
+# file, and an unpinned ruff/mypy here drifted out of sync with the pinned
+# versions everywhere else, so the lint job's formatting opinions silently
+# diverged from what the rest of the repo (and every local dev venv built via
+# `make setup`) already conforms to (#329).
+mypy==2.1.0
+ruff==0.15.16
