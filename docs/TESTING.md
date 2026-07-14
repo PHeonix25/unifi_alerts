@@ -16,13 +16,7 @@ make setup
 
 ## Running checks
 
-```bash
-make check      # default target - runs everything below in sequence
-make lint       # ruff lint + format check
-make typecheck  # mypy
-make validate   # HACS manifest pre-flight (scripts/validate_hacs.py)
-make test       # pytest
-```
+Canonical `make` command definitions are maintained in [`AGENTS.md` > Build & test commands](../AGENTS.md#build--test-commands). Keep command descriptions single-homed there.
 
 Individual commands if you prefer to skip the Makefile:
 
@@ -53,8 +47,7 @@ Individual commands if you prefer to skip the Makefile:
 python3 scripts/validate_hacs.py
 
 # Translation drift check
-diff custom_components/unifi_alerts/strings.json \
-     custom_components/unifi_alerts/translations/en.json
+python3 scripts/check_translations.py
 ```
 
 ---

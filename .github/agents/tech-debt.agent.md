@@ -65,6 +65,13 @@ Generate comprehensive, actionable technical-debt remediation plans for code, te
 - Ineffective design patterns
 - TODO/FIXME markers
 
+### Repository-specific debt examples
+
+- Drift between markdown `make <target>` claims and actual Makefile wiring.
+- Duplicate agent-context content across `AGENTS.md`, `CLAUDE.md`, and `.github/copilot-instructions.md`.
+- Missing webhook token-auth coverage or diagnostics-redaction assertions.
+- Translation parity gaps between `strings.json` and `translations/en.json`.
+
 ## Output Format
 
 ```markdown

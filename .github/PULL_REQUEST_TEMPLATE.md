@@ -13,7 +13,8 @@
 <!-- Steps a reviewer can follow to verify the change works. Include relevant `make` commands. -->
 
 ```bash
-make check   # lint + typecheck + validate + all tests
+make doc-check  # docs + translation parity
+make check      # full validation suite
 ```
 
 ## Checklist
