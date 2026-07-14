@@ -30,13 +30,7 @@ Why not a slimmer `requirements-test.txt`? The install is dominated by Home Assi
 
 ## Running checks
 
-```bash
-make check       # default; runs lint + typecheck + HACS preflight + translation drift + pytest
-make lint        # ruff lint + format check
-make typecheck   # mypy
-make validate    # scripts/validate_hacs.py (HACS manifest pre-flight)
-make test        # pytest
-```
+Canonical command definitions live in [`AGENTS.md` > Build & test commands](../AGENTS.md#build--test-commands). Use those targets directly.
 
 All `make` targets use `.venv` in the repo root; never the system Python.
 

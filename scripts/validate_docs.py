@@ -9,6 +9,7 @@ Catches AI-style prose patterns and HISTORY.md format drift before they land:
 - HISTORY.md h2 headings that are not `## YYYY-MM-DD`
 - shared-fact blocks duplicated across the agent instruction files
 - cross-file markdown pointers that do not resolve to an existing file
+- markdown claims about `make <target>` capabilities that do not match Makefile
 
 Scans every `*.md` file in the repository (excluding `.git`, `.venv`,
 `node_modules`, `.claude`, and similar generated/vendored directories) so
@@ -30,6 +31,7 @@ from _console import use_utf8_console
 use_utf8_console()
 
 REPO = Path(__file__).resolve().parent.parent
+MAKEFILE = REPO / "Makefile"
 
 # Every markdown file in the repo is in scope, recursively, so the same rules
 # apply to docs, agent definitions, PR templates, and anything else added
@@ -81,6 +83,10 @@ AGENT_FILES: tuple[str, ...] = (
 
 # Markdown inline link: `[text](target)`.
 MD_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+MAKE_TARGET_REF = re.compile(
+    r"`make\s+([a-z][a-z0-9-]*)`|^\s*make\s+([a-z][a-z0-9-]*)(?:\s|$)",
+    re.IGNORECASE,
+)
 
 
 def _significant_lines(text: str) -> list[str]:
@@ -184,6 +190,117 @@ def scan_pointers() -> list[str]:
     return violations
 
 
+def _parse_makefile_targets(makefile: Path) -> dict[str, tuple[list[str], list[str]]]:
+    """Parse `target: deps` rules and tab-indented recipe lines from Makefile."""
+    targets: dict[str, tuple[list[str], list[str]]] = {}
+    current: str | None = None
+    for raw in makefile.read_text(encoding="utf-8").splitlines():
+        if raw.startswith("\t") and current is not None:
+            deps, commands = targets[current]
+            commands.append(raw.strip())
+            targets[current] = (deps, commands)
+            continue
+
+        m = re.match(r"^([A-Za-z0-9_.-]+)\s*:(.*)$", raw)
+        if not m:
+            current = None
+            continue
+
+        name = m.group(1)
+        if name.startswith("."):
+            current = None
+            continue
+        deps = [d for d in m.group(2).strip().split() if d and not d.startswith("#")]
+        targets[name] = (deps, [])
+        current = name
+    return targets
+
+
+def _target_capabilities(targets: dict[str, tuple[list[str], list[str]]]) -> dict[str, set[str]]:
+    """Resolve transitive capabilities implemented by each make target."""
+    cache: dict[str, set[str]] = {}
+    visiting: set[str] = set()
+
+    def direct(commands: list[str]) -> set[str]:
+        text = "\n".join(commands).lower()
+        out: set[str] = set()
+        if "check_translations.py" in text:
+            out.add("translation_drift")
+        if "validate_docs.py" in text:
+            out.add("docs_prose")
+        if "validate_hacs.py" in text:
+            out.add("hacs_preflight")
+        return out
+
+    def resolve(name: str) -> set[str]:
+        if name in cache:
+            return cache[name]
+        if name in visiting:
+            return set()
+        visiting.add(name)
+        deps, commands = targets.get(name, ([], []))
+        out = direct(commands)
+        for dep in deps:
+            if dep in targets:
+                out |= resolve(dep)
+        visiting.remove(name)
+        cache[name] = out
+        return out
+
+    for target in targets:
+        resolve(target)
+    return cache
+
+
+def scan_make_claims(files: list[Path]) -> list[str]:
+    """Fail when markdown `make <target>` capability claims contradict Makefile."""
+    if not MAKEFILE.is_file():
+        return [f"Makefile not found at expected path: {MAKEFILE}"]
+
+    targets = _parse_makefile_targets(MAKEFILE)
+    capabilities = _target_capabilities(targets)
+    capability_patterns: tuple[tuple[str, re.Pattern[str], str], ...] = (
+        (
+            "translation_drift",
+            re.compile(
+                r"translation drift|translation parity|check_translations|"
+                r"strings\.json\s*/\s*translations/en\.json",
+                re.IGNORECASE,
+            ),
+            "translation drift check",
+        ),
+        (
+            "docs_prose",
+            re.compile(r"docs prose|prose linter|validate_docs", re.IGNORECASE),
+            "docs prose check",
+        ),
+        ("hacs_preflight", re.compile(r"hacs preflight|validate_hacs", re.IGNORECASE), "HACS preflight"),
+    )
+
+    violations: list[str] = []
+    for path in files:
+        rel = path.relative_to(REPO)
+        if rel.as_posix() in {"CHANGELOG.md", "docs/HISTORY.md"}:
+            # Historical files may intentionally describe past Makefile behaviour.
+            continue
+        for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            matches = list(MAKE_TARGET_REF.finditer(line))
+            if not matches:
+                continue
+
+            for i, match in enumerate(matches):
+                target = (match.group(1) or match.group(2)).lower()
+                segment_end = matches[i + 1].start() if i + 1 < len(matches) else len(line)
+                segment = line[match.start() : segment_end]
+                for cap_key, cap_pat, cap_label in capability_patterns:
+                    if cap_pat.search(segment) and cap_key not in capabilities.get(target, set()):
+                        violations.append(
+                            f"{rel}:{line_no}: claims `make {target}` includes {cap_label}, "
+                            f"but Makefile wiring does not"
+                        )
+    return violations
+
+
 def collect_files() -> list[Path]:
     """Collect every markdown file in the repo, skipping excluded directories."""
     files: list[Path] = []
@@ -234,6 +351,9 @@ def main() -> int:
         print(msg, file=sys.stderr)
         rc = 1
     for msg in scan_pointers():
+        print(msg, file=sys.stderr)
+        rc = 1
+    for msg in scan_make_claims(files):
         print(msg, file=sys.stderr)
         rc = 1
 
