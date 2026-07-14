@@ -12,7 +12,6 @@
 
 - Unselected alert categories no longer create entities that sit at Unknown; entities are created only for chosen categories, and orphaned entities from deselected categories are removed on reload.
 - Clearing a category now anchors the acknowledgement watermark to the newest alarm timestamp already known for that category (falling back to the HA clock only when none has ever been seen), instead of the HA host clock. This keeps `open_count` correct when the UniFi controller's clock and the HA host clock drift apart. ([#268])
-- Fixed invalid `except ValueError, TypeError:` (Python 2 syntax) in `coordinator.py`, `models.py`, and `unifi_auth.py`, introduced by [#311]. This broke `custom_components/unifi_alerts` at import time on any Python 3 interpreter; the exception types are now correctly parenthesised as `except (ValueError, TypeError):`.
 
 ## [1.9.0] - 2026-07-06
 
