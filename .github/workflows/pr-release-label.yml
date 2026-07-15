@@ -1,0 +1,105 @@
+name: PR Release Label
+
+# Applies a release-notes label from the PR's Conventional Commit title
+# prefix, then verifies a recognised label is present - both in one job, one
+# script, one run. This replaces the former split between pr-labeler.yml
+# (apply) and the label-guard job in pr-guards.yml (verify): that split
+# raced, because pr-labeler applied the label using the default GITHUB_TOKEN,
+# and GitHub never lets a GITHUB_TOKEN-authored event (including the
+# `labeled` event the label application itself fires) trigger a further
+# workflow run. label-guard's initial run therefore always failed against a
+# stale payload, and nothing it did on its own re-ran it green. Doing both
+# steps in one execution removes the cross-workflow dependency entirely.
+#
+# Mapping (title prefix -> label):
+#   feat:     -> feat
+#   fix:      -> fix
+#   docs:     -> documentation
+#   test(s):  -> tests
+#   ci:       -> ci
+#   security: -> security
+# Other prefixes (chore, build, refactor, perf, style, etc.) are not
+# auto-mapped; apply a label recognised by .github/release.yml by hand or the
+# check below fails.
+#
+# Uses pull_request_target (not pull_request) so the job runs in the base-repo
+# context and receives a write-capable GITHUB_TOKEN even for PRs from forks; a
+# plain pull_request trigger gets a read-only token on fork PRs and cannot
+# apply labels. Safe here because the workflow never checks out or runs PR
+# code: it only reads the PR title and labels (via API/env vars) and applies
+# a label drawn from a fixed case mapping, never from raw PR-controlled input.
+on:
+  pull_request_target:
+    branches: [main, dev]
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  release-label:
+    name: PR has release-notes label
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply and verify a release-notes label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Labels recognised by .github/release.yml. Keep in sync with that file.
+          VALID="security bug fix enhancement feat documentation tests ci github-actions dependencies"
+
+          has_valid_label() {
+            for label in $existing; do
+              for valid in $VALID; do
+                [ "$label" = "$valid" ] && return 0
+              done
+            done
+            return 1
+          }
+
+          existing="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name')"
+
+          if ! has_valid_label; then
+            title_lower="$(echo "$PR_TITLE" | tr '[:upper:]' '[:lower:]')"
+            case "$title_lower" in
+              *:*)
+                prefix="${title_lower%%:*}"
+                type="${prefix%%(*}"
+                type="${type%!}"
+                case "$type" in
+                  feat)       label="feat" ;;
+                  fix)        label="fix" ;;
+                  docs)       label="documentation" ;;
+                  test|tests) label="tests" ;;
+                  ci)         label="ci" ;;
+                  security)   label="security" ;;
+                  *)          label="" ;;
+                esac
+                ;;
+              *) label="" ;;
+            esac
+
+            if [ -n "$label" ]; then
+              echo "Applying label '$label' to PR #$PR_NUMBER"
+              gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "$label"
+              existing="$label"
+            fi
+          fi
+
+          if has_valid_label; then
+            echo "Release-notes label present."
+            exit 0
+          fi
+
+          echo "::error::This PR has no release-notes label." \
+            "Add one of: security, bug/fix, enhancement/feat, documentation," \
+            "tests, ci, github-actions, dependencies." \
+            "PRs with a Conventional Commit prefix (feat:, fix:, docs:, ci:, etc.)" \
+            "in their title are auto-labelled by this workflow."
+          exit 1
