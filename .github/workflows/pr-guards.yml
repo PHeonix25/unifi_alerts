@@ -1,6 +1,6 @@
 name: PR Guards
 
-# Three independent checks that enforce process rules mechanically rather
+# Two independent checks that enforce process rules mechanically rather
 # than relying on reviewer discipline.
 #
 # changelog-guard  - custom_components/ edits must be accompanied by a
@@ -8,12 +8,12 @@ name: PR Guards
 #                    or any of the ci/tests/documentation/dependencies/
 #                    github-actions labels).
 #
-# label-guard      - every PR must carry at least one label recognised by
-#                    .github/release.yml so auto-generated release notes
-#                    group it correctly.
-#
 # history-guard    - docs/HISTORY.md may only be modified on claude/bump-*
 #                    branches (version-bump PRs); never on feature branches.
+#
+# The release-notes label check lives in pr-release-label.yml, not here - it
+# both applies and verifies the label in one job so the two steps can never
+# race across separate workflow runs.
 
 on:
   pull_request:
@@ -63,29 +63,6 @@ jobs:
             exit 1
           fi
           echo "CHANGELOG.md updated alongside custom_components/ changes."
-
-  label-guard:
-    name: PR has release-notes label
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check PR carries a release-notes label
-        env:
-          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-        run: |
-          # Labels recognised by .github/release.yml. Keep in sync with that file.
-          VALID="security bug fix enhancement feat documentation tests ci github-actions dependencies"
-          for valid in $VALID; do
-            if echo "$PR_LABELS" | jq -r '.[]' | grep -qxF "$valid"; then
-              echo "Found release-notes label: $valid"
-              exit 0
-            fi
-          done
-          echo "::error::This PR has no release-notes label." \
-            "Add one of: security, bug/fix, enhancement/feat, documentation," \
-            "tests, ci, github-actions, dependencies." \
-            "PRs with a Conventional Commit prefix (feat:, fix:, docs:, ci:, etc.)" \
-            "in their title are auto-labelled by pr-labeler.yml."
-          exit 1
 
   history-guard:
     name: HISTORY.md only in bump PRs
