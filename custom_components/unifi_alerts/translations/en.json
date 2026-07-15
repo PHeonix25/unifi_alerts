@@ -101,7 +101,7 @@
     },
     "webhook_legacy_query_auth": {
       "title": "UniFi Alerts: {name} is still using the legacy webhook token",
-      "description": "A webhook for **{name}** authenticated using the legacy `?token=` query parameter rather than the `Authorization: Bearer` header. The query-parameter method still works but is deprecated and will be removed no earlier than v3.0.0.\n\nTo migrate: open **Settings > Devices and Services > UniFi Alerts > Configure** to see each category's URL and bearer secret, then in UniFi Network's **Settings > Notifications > Alarm Manager**, add an `Authorization: Bearer <secret>` header to each alarm's webhook action and drop the `?token=` query string from the URL.\n\nThis notice clears automatically once a header-authenticated webhook is received."
+      "description": "A webhook for **{name}** authenticated using the legacy `?token=` query parameter rather than the `Authorization: Bearer` header. The query-parameter method still works but is deprecated and will be removed no earlier than v3.0.0.\n\nTo migrate: open **Settings > Devices and Services > UniFi Alerts > Configure** to see each category's URL and bearer secret, then in UniFi Network's **Settings > Notifications > Alarm Manager**, add the secret as an `Authorization: Bearer` header on each alarm's webhook action and drop the `?token=` query string from the URL.\n\nThis notice clears automatically once a header-authenticated webhook is received."
     }
   },
   "services": {
