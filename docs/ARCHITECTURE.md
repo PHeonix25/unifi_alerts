@@ -72,10 +72,9 @@ Single source of truth for:
 Stateful async HTTP client. Always uses the UniFi OS API surface:
 
 - `/proxy/network/api/...` for the alarm endpoint.
-- `/api/auth/login` and `/api/auth/logout` for username/password auth.
-- API-key auth verifies against `/proxy/network/api/s/default/self`.
+- API-key auth verifies against `/proxy/network/api/s/default/self` and is sent as an `X-API-Key` header on every request.
 
-Auto-detects auth method: tries API key first if present, falls back to username/password session cookies. Auth state is held on the client instance; on `InvalidAuthError` during a poll, the coordinator re-authenticates once and retries.
+API-key authentication is the only supported method (username/password auth was removed, epic #277; see `docs/UNIFI.md` for the historical note and CSRF rationale). API keys are stateless: no session, cookie, or login/logout to manage, so the client holds no auth state. On `InvalidAuthError` during a poll, the coordinator re-authenticates once (re-verifies the key) and retries.
 
 `fetch_alarms()` uses a per-site cached endpoint URL once one has been discovered. On the first call for a site (or again later if the cached URL stops resolving, e.g. after a firmware upgrade) it delegates to `_discover_alarm_url()`, which walks the legacy alarm-endpoint probe chain `[/list/alarm, /alarm, /stat/alarm]` (newest UniFi Network firmware first); 404 / 400 falls through to the next path, only surfacing an error after every path is exhausted. Endpoint discovery (the fallback iteration and `api.err.InvalidObject` detection) is kept separate from the core fetch/parse loop in `_try_fetch_alarms()`, so steady-state polling issues a single request with no fallback parsing (#239). `categorise_alarms()` calls `fetch_alarms()` and groups the results by category via `_classify()`.
 
@@ -137,10 +136,7 @@ After setup, `entry.data` contains:
 ```python
 {
     "controller_url": "https://192.168.1.1",
-    "username": "admin",                    # absent if API key used
-    "password": "...",                      # absent if API key used
-    "api_key": "...",                       # absent if user/pass used
-    "auth_method": "userpass",              # or "apikey"; detected at setup
+    "api_key": "...",                       # required; the only supported credential
     "verify_ssl": True,
     "webhook_secret": "...",                # token_urlsafe(32)
     "webhook_id_suffix": "...",             # token_hex(4); per-entry
@@ -155,10 +151,11 @@ After setup, `entry.data` contains:
 
 Runtime state lives on `entry.runtime_data` (`RuntimeData` dataclass): coordinator, webhook URLs, unregister callable, client. Not in `hass.data`.
 
-`ConfigFlow.VERSION = 3`. `async_migrate_entry` runs migrations sequentially in `__init__.py`:
+`ConfigFlow.VERSION = 4`. `async_migrate_entry` runs migrations sequentially in `__init__.py`:
 
 - **v1 -> v2**: strips the legacy `is_unifi_os` key.
 - **v2 -> v3**: backfills `webhook_secret` and/or `webhook_id_suffix` on entries that predate v1.4.0 and were never reconfigured via the options flow. If `webhook_id_suffix` was backfilled (changing every webhook URL for that entry), raises a `webhook_urls_changed` repair issue prompting the user to re-paste URLs into Alarm Manager.
+- **v3 -> v4**: drops the legacy `username`, `password`, and `auth_method` keys (epic #277). Entries that already carry an API key migrate silently. Entries with only username/password lose their credentials here, so `async_setup_entry` raises `ConfigEntryAuthFailed` and Home Assistant launches the reauth flow, which asks for a single API key and raises an explanatory repair issue. `entry_id`, `unique_id`, the webhook secret, and the webhook id suffix are untouched, so entities, history, and Alarm Manager webhook URLs survive the migration.
 
 ## Tooling and validation
 

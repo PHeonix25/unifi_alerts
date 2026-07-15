@@ -19,7 +19,7 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 - **Clear buttons** - manually reset any category or all at once
 - **Auto-clear** - configurable timeout to reset sensors automatically
 - **UI config flow** - full setup and options UI, no YAML
-- **Auto-detect auth** - tries API key (UniFi OS) then falls back to username/password
+- **API-key authentication** - a stateless `X-API-Key` header, no session cookies or login/logout
 
 ### Alert categories
 
@@ -40,8 +40,9 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 - **Home Assistant** 2026.3 or later (requires Python 3.14)
 - **The `webhook` component enabled** - ships with `default_config`, which almost all installs include. If you run a minimal Home Assistant configuration that hand-picks integrations instead of using `default_config`, add `webhook:` to `configuration.yaml` yourself; without it, webhook registration fails at setup. (`manifest.json` cannot declare this as a HACS dependency - see [#267](https://github.com/PHeonix25/unifi_alerts/issues/267).)
 - **UniFi OS console** - the classic self-hosted Network Application is not supported. The integration uses the `/proxy/network` API path, which is UniFi OS-only.
+- **UniFi Network Application 8.x or later** - the version that introduced API keys. Older firmware cannot create one, so it cannot be used with this integration.
 - **Local network reachability** - your UniFi controller and HA must share a network. Webhook URLs are local-only and cannot be reached over Nabu Casa remote access or from cloud-hosted controllers.
-- **Credentials** - API key (recommended) or username + password.
+- **Credentials** - a UniFi API key. Username and password authentication is no longer supported; see [Setup](#setup) below.
 
 ### Tested controllers
 
@@ -82,9 +83,9 @@ After every HACS update (or manual file copy), **fully restart Home Assistant**.
 
 ## Setup
 
-### 1. Generate a UniFi API key (recommended)
+### 1. Generate a UniFi API key
 
-API keys are available on all supported UniFi OS consoles. The navigation path varies by firmware:
+An API key is required; the integration no longer supports username/password authentication. API keys are available on all supported UniFi OS consoles running Network Application 8.x or later. The navigation path varies by firmware:
 
 | Firmware / UI version | Path |
 |---|---|
@@ -94,12 +95,12 @@ API keys are available on all supported UniFi OS consoles. The navigation path v
 
 The key is shown only once at creation - copy it immediately.
 
-> **Tip:** Create a dedicated local admin account for the integration. Do not use a cloud account or one with MFA enabled, since non-interactive login will fail.
+> **Tip:** Create a dedicated local admin account to generate the key from. The API key inherits that account's permissions, so a dedicated account keeps the integration's access auditable and separate from your own login.
 
 ### 2. Add the integration in Home Assistant
 
 1. **Settings > Devices & Services > Add Integration** > search **UniFi Alerts**
-2. Enter your controller URL (e.g. `https://192.168.1.1`) and credentials. For API key auth, leave Username/Password blank; for username/password, leave API Key blank.
+2. Enter your controller URL (e.g. `https://192.168.1.1`) and the API key generated in step 1.
 3. Select the alert categories you want to monitor (client/device categories are noisy by default).
 4. Configure polling interval and auto-clear timeout.
 5. **Copy the webhook URLs** shown on the final screen before clicking Submit. The integration is not created until you click Submit.
