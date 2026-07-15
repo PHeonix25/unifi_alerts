@@ -171,7 +171,9 @@ class TestWebhookSecretRotation:
         ):
             await flow.async_step_categories(cat_input)
 
-        # Inspect the form schema's default URLs -- they must contain the NEW secret
+        # Inspect the form schema's default URLs -- displayed URLs no longer
+        # embed the secret (#176); the NEW secret must instead be surfaced via
+        # description_placeholders for the Authorization header instructions.
         finish_call = flow.async_show_form.call_args_list[-1]
         schema = finish_call.kwargs["data_schema"]
         url_defaults = [
@@ -183,10 +185,10 @@ class TestWebhookSecretRotation:
         ]
         assert url_defaults, "Expected at least one webhook_url_* field on the finish step"
         for url in url_defaults:
-            assert new_secret in url, (
-                f"Finish step displayed an old/wrong token. URL: {url}, "
-                f"expected new secret: {new_secret}"
+            assert new_secret not in url, (
+                f"Finish step must not embed the secret in the URL. URL: {url}"
             )
+        assert finish_call.kwargs["description_placeholders"]["webhook_secret"] == new_secret
 
 
 class TestWebhookSecretRotationRepairIssue:

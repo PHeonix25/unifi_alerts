@@ -41,7 +41,7 @@ def _patch_all(authenticate_side_effect=None, first_refresh_side_effect=None):
 
     mock_webhook_manager = MagicMock()
     mock_webhook_manager.register_all = MagicMock(
-        return_value={"network_wan": "http://ha/hook/abc?token=x"}
+        return_value={"network_wan": "http://ha/hook/abc"}
     )
     mock_webhook_manager.unregister_all = MagicMock()
 
@@ -315,7 +315,7 @@ class TestAsyncSetupEntry:
         from custom_components.unifi_alerts import async_setup_entry
 
         mock_client, mock_coordinator, mock_wm = _patch_all()
-        full_urls = {cat: f"http://ha/hook/{cat}?token=x" for cat in ALL_CATEGORIES}
+        full_urls = {cat: f"http://ha/hook/{cat}" for cat in ALL_CATEGORIES}
         mock_wm.register_all.side_effect = [RuntimeError("first attempt never gets here")]
 
         with patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm):
@@ -493,6 +493,7 @@ class TestAsyncRemoveEntry:
             "webhook_urls_changed_entry-xyz",
             "watermark_persist_failed_entry-xyz",
             "apikey_migration_required_entry-xyz",
+            "webhook_legacy_query_auth_entry-xyz",
         }
         for call in mock_delete_issue.call_args_list:
             assert call.args[0] is hass
@@ -868,29 +869,3 @@ class TestAsyncMigrateEntryRepairIssue:
 
         assert result is True
         mock_create_issue.assert_not_called()
-
-
-class TestRedactWebhookToken:
-    """`?token=<secret>` must be stripped from URLs before they hit DEBUG logs."""
-
-    def test_redacts_token_query_param(self):
-        from custom_components.unifi_alerts import _redact_webhook_token
-
-        url = "http://homeassistant.local:8123/api/webhook/unifi_alerts_x?token=supersecret123"
-        redacted = _redact_webhook_token(url)
-        assert "supersecret123" not in redacted
-        assert redacted.endswith("?token=***")
-
-    def test_passthrough_when_no_token_present(self):
-        from custom_components.unifi_alerts import _redact_webhook_token
-
-        url = "http://homeassistant.local:8123/api/webhook/unifi_alerts_x"
-        assert _redact_webhook_token(url) == url
-
-    def test_redacted_when_token_anywhere_after_question_mark(self):
-        """Even if the token is the only query param, redaction stops at end-of-string."""
-        from custom_components.unifi_alerts import _redact_webhook_token
-
-        url = "http://h/api/webhook/x?token=abc"
-        redacted = _redact_webhook_token(url)
-        assert "abc" not in redacted

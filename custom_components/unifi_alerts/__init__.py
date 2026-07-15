@@ -27,6 +27,7 @@ from .const import (
     ISSUE_ID_APIKEY_MIGRATION,
     ISSUE_ID_AUTH_FAILED,
     ISSUE_ID_PERSIST_FAILED,
+    ISSUE_ID_WEBHOOK_LEGACY_QUERY_AUTH,
     ISSUE_ID_WEBHOOK_SECRET_ROTATED,
     ISSUE_ID_WEBHOOK_URLS_CHANGED,
     STORAGE_VERSION_WATERMARKS,
@@ -258,23 +259,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _LOGGER.info("UniFi Alerts set up. Registered %d webhook(s).", len(webhook_urls))
     if _LOGGER.isEnabledFor(logging.DEBUG):
-        # Redact ?token=<secret> before logging — DEBUG logs commonly end up
-        # in GitHub issues, and the token is the only thing protecting the
-        # webhook endpoint from local-network forgery.
+        # Safe to log verbatim: register_all() no longer embeds the bearer
+        # secret in these URLs (#176) — auth now travels via the
+        # Authorization header (or, for legacy setups, the ?token= query
+        # param, which callers add themselves and which never appears here).
         _LOGGER.debug(
             "UniFi Alerts webhook URLs: %s",
-            ", ".join(f"{cat}={_redact_webhook_token(url)}" for cat, url in webhook_urls.items()),
+            ", ".join(f"{cat}={url}" for cat, url in webhook_urls.items()),
         )
     return True
-
-
-def _redact_webhook_token(url: str) -> str:
-    """Strip ``?token=<secret>`` from a webhook URL for safe DEBUG logging."""
-    token_marker = "?token="  # noqa: S105  # URL query marker for redaction, not a secret
-    idx = url.find(token_marker)
-    if idx == -1:
-        return url
-    return f"{url[:idx]}?token=***"
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -313,6 +306,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         ISSUE_ID_WEBHOOK_URLS_CHANGED,
         ISSUE_ID_PERSIST_FAILED,
         ISSUE_ID_APIKEY_MIGRATION,
+        ISSUE_ID_WEBHOOK_LEGACY_QUERY_AUTH,
     ):
         ir.async_delete_issue(hass, DOMAIN, f"{issue_id_base}_{entry.entry_id}")
 

@@ -100,7 +100,7 @@ This is the most common extension task. Every step is required - missing any one
 - **`X | None`** not `Optional[X]`; `list[str]` not `List[str]`.
 - **Entities never cache state** - read from coordinator only.
 - **`manifest.json` keys** must be `domain`, `name`, then all remaining keys alphabetically - hassfest enforces order.
-- **Webhook token auth is mandatory** - every inbound webhook request must be validated against `CONF_WEBHOOK_SECRET` via `?token=`. Never remove this check.
+- **Webhook token auth is mandatory** - every inbound webhook request must be validated against `CONF_WEBHOOK_SECRET` via the `Authorization: Bearer` header (preferred) or the legacy `?token=` query parameter (deprecated, accepted during a migration window - issue #176). Never remove either check while both are supported.
 - **GitHub Actions `uses:` must be full 40-char SHA** - no tags, no branch refs.
 - **No third-party release actions** - use `gh release create --generate-notes` only.
 - **`strings.json` and `translations/en.json` must be identical** - CI enforces this.

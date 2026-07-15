@@ -272,14 +272,12 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         fields: dict[Any, Any] = {}
         for cat in ALL_CATEGORIES:
             if cat in enabled:
-                url = (
-                    f"{async_generate_url(self.hass, webhook_id_for_category(cat, suffix))}"
-                    f"?token={secret}"
-                )
+                url = async_generate_url(self.hass, webhook_id_for_category(cat, suffix))
                 fields[vol.Optional(f"webhook_url_{cat}", default=url)] = str
         return self.async_show_form(
             step_id="finish",
             data_schema=vol.Schema(fields),
+            description_placeholders={"webhook_secret": secret},
         )
 
     # ── Reauth flow ───────────────────────────────────────────────────────
@@ -735,12 +733,10 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
         fields: dict[Any, Any] = {}
         for cat in ALL_CATEGORIES:
             if cat in enabled:
-                url = (
-                    f"{async_generate_url(self.hass, webhook_id_for_category(cat, suffix))}"
-                    f"?token={secret}"
-                )
+                url = async_generate_url(self.hass, webhook_id_for_category(cat, suffix))
                 fields[vol.Optional(f"webhook_url_{cat}", default=url)] = str
         return self.async_show_form(
             step_id="finish",
             data_schema=vol.Schema(fields),
+            description_placeholders={"webhook_secret": secret},
         )

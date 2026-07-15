@@ -31,7 +31,7 @@
       },
       "finish": {
         "title": "Webhook URLs",
-        "description": "Copy each webhook URL into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. You can retrieve these URLs later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough.",
+        "description": "Copy each webhook URL into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. In the alarm's Advanced Settings, add a custom header named `Authorization` with the value `Bearer {webhook_secret}` — this is the preferred authentication method. If your Alarm Manager version has no custom-header option, append `?token={webhook_secret}` to the URL instead; this legacy method still works but is deprecated. You can retrieve these URLs and the secret later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough.",
         "data": {
           "webhook_url_network_device": "Network: Device offline/online webhook URL",
           "webhook_url_network_wan": "Network: WAN offline/latency webhook URL",
@@ -98,6 +98,10 @@
     "webhook_urls_changed": {
       "title": "UniFi Alerts: webhook URLs have changed for {name} — action required",
       "description": "**Action required after upgrade.**\n\nThe integration was upgraded from a version that did not assign a unique suffix to webhook URLs. The webhook URLs for **{name}** have changed and the old URLs in UniFi Alarm Manager will no longer work.\n\nRe-paste all category webhook URLs: open **Settings > Devices and Services > UniFi Alerts > Configure** to see the new URLs, then update each one in **UniFi Network > Settings > Notifications > Alarm Manager**.\n\nWebhook event delivery will not resume until this is done."
+    },
+    "webhook_legacy_query_auth": {
+      "title": "UniFi Alerts: {name} is still using the legacy webhook token",
+      "description": "A webhook for **{name}** authenticated using the legacy `?token=` query parameter rather than the `Authorization: Bearer` header. The query-parameter method still works but is deprecated and will be removed no earlier than v3.0.0.\n\nTo migrate: open **Settings > Devices and Services > UniFi Alerts > Configure** to see each category's URL and bearer secret, then in UniFi Network's **Settings > Notifications > Alarm Manager**, add an `Authorization: Bearer <secret>` header to each alarm's webhook action and drop the `?token=` query string from the URL.\n\nThis notice clears automatically once a header-authenticated webhook is received."
     }
   },
   "services": {
@@ -222,7 +226,7 @@
       },
       "finish": {
         "title": "Webhook URLs",
-        "description": "Copy each webhook URL into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. You can retrieve these URLs later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough.",
+        "description": "Copy each webhook URL into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. In the alarm's Advanced Settings, add a custom header named `Authorization` with the value `Bearer {webhook_secret}` — this is the preferred authentication method. If your Alarm Manager version has no custom-header option, append `?token={webhook_secret}` to the URL instead; this legacy method still works but is deprecated. You can retrieve these URLs and the secret later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough.",
         "data": {
           "webhook_url_network_device": "Network: Device offline/online webhook URL",
           "webhook_url_network_wan": "Network: WAN offline/latency webhook URL",

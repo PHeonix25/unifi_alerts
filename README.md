@@ -103,7 +103,7 @@ The key is shown only once at creation - copy it immediately.
 2. Enter your controller URL (e.g. `https://192.168.1.1`) and the API key generated in step 1.
 3. Select the alert categories you want to monitor (client/device categories are noisy by default).
 4. Configure polling interval and auto-clear timeout.
-5. **Copy the webhook URLs** shown on the final screen before clicking Submit. The integration is not created until you click Submit.
+5. **Copy the webhook URLs and the bearer secret** shown on the final screen before clicking Submit. The integration is not created until you click Submit.
 
 > You can retrieve webhook URLs later from **Settings > Devices & Services > UniFi Alerts > Configure**.
 
@@ -118,9 +118,12 @@ For each enabled category, create an alarm in **UniFi Network > Settings > Notif
 3. Set scope (specific devices or network-wide)
 4. Under **Action**, choose **Webhook > Custom Webhook > POST**
 5. Paste the webhook URL for that category from the HA integration page
-6. Click **Create**
+6. In the alarm's **Advanced Settings**, add a custom header named `Authorization` with the value `Bearer <secret>` - this is the preferred authentication method. If your Alarm Manager version has no custom-header option, append `?token=<secret>` to the URL instead; this legacy form still works but is deprecated (see the breaking-change note below).
+7. Click **Create**
 
 > **Test Alarm** in UniFi verifies the webhook reaches HA before you save.
+>
+> **Breaking change (v2.0.0):** webhook authentication moved from the `?token=` query parameter to an `Authorization: Bearer` header (issue #176). The query parameter still works during a deprecation window (no earlier than v3.0.0), so existing Alarm Manager configurations are not broken by upgrading, but new setups should use the header form - displayed webhook URLs no longer embed the secret.
 
 #### Trigger reference
 
@@ -136,7 +139,7 @@ For each enabled category, create an alarm in **UniFi Network > Settings > Notif
 
 > **Security categories share a trigger.** All three Security categories (Threat, Honeypot, Firewall) use the same "Security" trigger type in Alarm Manager. If you enable more than one, create a separate alarm for each using the same trigger but paste each category's distinct webhook URL. When a security event fires, UniFi will call all three URLs; each receives the event and the integration routes it to the correct category based on the event key. To avoid this, enable only the security categories you actively use.
 
-> **Webhook secret rotation:** if you regenerate the secret via the options flow, every existing URL becomes invalid immediately. Re-paste all new URLs into Alarm Manager, or affected alarms will silently fail with HTTP 401.
+> **Webhook secret rotation:** if you regenerate the secret via the options flow, every existing header value and legacy `?token=` URL becomes invalid immediately. Update the `Authorization` header (or re-paste `?token=` URLs) in Alarm Manager, or affected alarms will silently fail with HTTP 401.
 
 #### Confirming a category received its first webhook
 
@@ -145,7 +148,7 @@ You do not have to wait for a real alert to know the wiring works. Each per-cate
 - `webhook_health`: `never_received` until the first webhook arrives, then `healthy`. It reads `stale` once more than 7 days pass without a webhook (expected for rarely-firing categories such as honeypot or threat).
 - `last_webhook_at`: the UTC timestamp of the most recent webhook received for that category, or `None` if none has arrived.
 
-Fire a **Test Alarm** from Alarm Manager (or trigger the event yourself) and watch `webhook_health` flip to `healthy`. A category still showing `never_received` after a test points to a wrong URL, a missing `?token=`, or an alarm whose trigger does not match the category. The same fields appear per category in the integration's **Download diagnostics** output.
+Fire a **Test Alarm** from Alarm Manager (or trigger the event yourself) and watch `webhook_health` flip to `healthy`. A category still showing `never_received` after a test points to a wrong URL, a missing/wrong `Authorization` header or `?token=`, or an alarm whose trigger does not match the category. The same fields appear per category in the integration's **Download diagnostics** output.
 
 ### Multiple controllers or sites
 
