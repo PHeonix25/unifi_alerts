@@ -17,8 +17,8 @@ UniFi Controller
     |--- HTTP GET/POST --> UniFiClient --> coordinator._async_update_data()
          (polling; GET=legacy, POST=v2) --> coordinator._fetch_categorised()
                                                   |
-                              probe_system_log_endpoint() (once per client,
-                              cached with backoff on repeated failure)
+                              coordinator._probe_has_system_log() (caches the
+                              client's stateless probe, with backoff on repeated failure)
                                        /                        \
                               v2 available                v2 unavailable / older firmware
                                        |                          |
@@ -69,7 +69,7 @@ Single source of truth for:
 
 ### `unifi_client.py`
 
-Stateful async HTTP client. Always uses the UniFi OS API surface:
+Stateless async HTTP client (#240). Always uses the UniFi OS API surface:
 
 - `/proxy/network/api/...` for the alarm endpoint.
 - API-key auth verifies against `/proxy/network/api/s/default/self` and is sent as an `X-API-Key` header on every request.
@@ -78,7 +78,7 @@ API-key authentication is the only supported method (username/password auth was 
 
 `fetch_alarms()` uses a per-site cached endpoint URL once one has been discovered. On the first call for a site (or again later if the cached URL stops resolving, e.g. after a firmware upgrade) it delegates to `_discover_alarm_url()`, which walks the legacy alarm-endpoint probe chain `[/list/alarm, /alarm, /stat/alarm]` (newest UniFi Network firmware first); 404 / 400 falls through to the next path, only surfacing an error after every path is exhausted. Endpoint discovery (the fallback iteration and `api.err.InvalidObject` detection) is kept separate from the core fetch/parse loop in `_try_fetch_alarms()`, so steady-state polling issues a single request with no fallback parsing (#239). `categorise_alarms()` calls `fetch_alarms()` and groups the results by category via `_classify()`.
 
-`probe_system_log_endpoint()` checks whether the v2 `/v2/api/site/{site}/system-log/count` endpoint is available (200 = yes, 404 = no, cached until re-auth; a run of transient failures triggers a timed backoff before re-probing). `fetch_system_log_alarms()` pages through `/v2/api/site/{site}/system-log/all` using a `timestampFrom` watermark, filtering to `status == "NEW"` events, up to `MAX_SYSTEM_LOG_PAGES`.
+`probe_system_log_endpoint()` makes a single, stateless HTTP call checking whether the v2 `/v2/api/site/{site}/system-log/count` endpoint is available, returning `True` (200), `False` (404, definitively not implemented), or `None` (any other outcome, treated as transient by the caller). It holds no cache and no retry state itself - see `coordinator.py` below for where that cross-poll state lives (#240). `fetch_system_log_alarms()` pages through `/v2/api/site/{site}/system-log/all` using a `timestampFrom` watermark, filtering to `status == "NEW"` events, up to `MAX_SYSTEM_LOG_PAGES`.
 
 `_classify()` is a static method (pure function, easily testable) mapping raw legacy alarm dicts to categories. `UniFiAlert.from_system_log_event()` is the equivalent parser for the v2 event schema (`message_raw` + `parameters` templating, no `EVT_` prefix on keys).
 
@@ -87,7 +87,8 @@ API-key authentication is the only supported method (username/password auth was 
 The integration's single source of truth at runtime. Key design decisions:
 
 - **`_category_states` is long-lived**: not re-created on each poll. Polling updates `open_count` and may set `is_alerting` directly (without incrementing `alert_count`) if the category is not already alerting. Webhook pushes update `is_alerting` and `alert_count` immediately via `apply_alert()`.
-- **Polling path dispatch**: `_fetch_categorised()` probes for the v2 system-log endpoint once per client instance and prefers it when available, computing a `timestampFrom` watermark as the oldest `last_cleared_at` across enabled categories (clamped to `DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS` so an uncleared category cannot grow the fetch window without bound). Falls back to the legacy `categorise_alarms()` path when the probe returns unavailable or fails. Both paths feed `unrecognised_keys` (exposed via diagnostics) for keys that cannot be mapped to a category.
+- **Polling path dispatch**: `_fetch_categorised()` calls `_probe_has_system_log()` and prefers the v2 path when available, computing a `timestampFrom` watermark as the oldest `last_cleared_at` across enabled categories (clamped to `DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS` so an uncleared category cannot grow the fetch window without bound). Falls back to the legacy `categorise_alarms()` path when the probe returns unavailable or fails. Both paths feed `unrecognised_keys` (exposed via diagnostics) for keys that cannot be mapped to a category.
+- **v2 system-log probe cache/backoff (#240)**: `_probe_has_system_log()` wraps `UniFiClient.probe_system_log_endpoint()` (a single stateless HTTP call) with the cross-poll cache the client itself no longer holds. A confirmed `True` or a definitive `False` (HTTP 404) is cached for the coordinator's lifetime (i.e. until the config entry reloads); a transient outcome is not cached, so the next poll re-probes immediately; after `_PROBE_FAIL_LIMIT` (5) consecutive transient outcomes, the result is pinned to `False` for `_PROBE_RETRY_AFTER` (1 hour) before the next re-probe.
 - **Auto-clear**: each `push_alert()` cancels any existing `asyncio.Task` for that category and schedules a new one via `hass.async_create_background_task` (or `async_create_task` / `asyncio.ensure_future` as fallbacks). Repeated alerts reset the timer rather than stacking. Background task failures are logged via a done-callback instead of being silently swallowed.
 - **`async_set_updated_data()`** is called on webhook push to bypass the polling interval and notify entities immediately.
 - **Polling does not clear `is_alerting`**: only the auto-clear timeout or a button press does. Prevents a polling race where a momentarily empty alarm list falsely clears an active alert.

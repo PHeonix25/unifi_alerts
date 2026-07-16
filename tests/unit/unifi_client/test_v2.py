@@ -6,61 +6,53 @@ Split by behaviour area (#283) alongside test_legacy.py
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 import aiohttp
 import pytest
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.unifi_alerts.unifi_auth import CannotConnectError, InvalidAuthError
-from custom_components.unifi_alerts.unifi_client import _PROBE_FAIL_LIMIT
 
 from .conftest import (
     find_calls,
     make_client,
     probe_url,
     queue_responses,
-    self_url,
     system_log_url,
     total_calls,
 )
 
-# Pinned business-rule value for the probe backoff window. Deliberately NOT
-# imported as `_PROBE_RETRY_AFTER` from unifi_client — importing the constant
-# under test would make any assertion against it tautological (change the
-# constant, both sides of the comparison move together, and a genuine
-# regression in the backoff duration would still pass).
-_EXPECTED_PROBE_RETRY_AFTER = timedelta(hours=1)
-
 
 class TestProbeSystemLogEndpoint:
-    """Tests for UniFiClient.probe_system_log_endpoint."""
+    """Tests for UniFiClient.probe_system_log_endpoint.
+
+    The client's probe is a single stateless HTTP call with no caching or
+    retry state (#240): each outcome (True/False/None) is returned as-is on
+    every call. Caching across poll cycles and backing off after repeated
+    transient failures is tested against UniFiAlertsCoordinator instead — see
+    tests/unit/coordinator/test_system_log_probe.py.
+    """
 
     @pytest.mark.asyncio
     async def test_probe_returns_true_on_200(self, aioclient_mock: AiohttpClientMocker):
-        """HTTP 200 from /system-log/count must return True and set _has_system_log=True."""
+        """HTTP 200 from /system-log/count must return True."""
         client = make_client(aioclient_mock)
         client._auth._authenticated = True
         aioclient_mock.post(probe_url(), status=200, json={"categories": []})
         result = await client.probe_system_log_endpoint()
         assert result is True
-        assert client._has_system_log is True
 
     @pytest.mark.asyncio
     async def test_probe_returns_false_on_404(self, aioclient_mock: AiohttpClientMocker):
-        """HTTP 404 from /system-log/count must return False and set _has_system_log=False."""
+        """HTTP 404 from /system-log/count must return False (definitively not implemented)."""
         client = make_client(aioclient_mock)
         client._auth._authenticated = True
         aioclient_mock.post(probe_url(), status=404)
         result = await client.probe_system_log_endpoint()
         assert result is False
-        assert client._has_system_log is False
 
     @pytest.mark.asyncio
-    async def test_probe_returns_false_on_403_does_not_cache(
-        self, aioclient_mock: AiohttpClientMocker
-    ):
-        """HTTP 403 (non-definitive) must return False this call but leave the cache None.
+    async def test_probe_returns_none_on_403(self, aioclient_mock: AiohttpClientMocker):
+        """HTTP 403 (non-definitive) must return None — transient, not "not implemented".
 
         Only 404 is treated as a definitive "endpoint not implemented" response.
         Other 4xx codes may be transient (e.g., temporary permission state) and
@@ -70,81 +62,39 @@ class TestProbeSystemLogEndpoint:
         client._auth._authenticated = True
         aioclient_mock.post(probe_url(), status=403)
         result = await client.probe_system_log_endpoint()
-        assert result is False
-        assert client._has_system_log is None
+        assert result is None
 
     @pytest.mark.asyncio
-    async def test_probe_returns_false_on_500_does_not_cache(
-        self, aioclient_mock: AiohttpClientMocker
-    ):
-        """HTTP 5xx is treated as transient: returns False without caching."""
+    async def test_probe_returns_none_on_500(self, aioclient_mock: AiohttpClientMocker):
+        """HTTP 5xx is treated as transient: returns None."""
         client = make_client(aioclient_mock)
         client._auth._authenticated = True
         aioclient_mock.post(probe_url(), status=503)
         result = await client.probe_system_log_endpoint()
-        assert result is False
-        assert client._has_system_log is None
+        assert result is None
 
     @pytest.mark.asyncio
-    async def test_probe_returns_false_on_network_error_does_not_cache(
-        self, aioclient_mock: AiohttpClientMocker
-    ):
-        """aiohttp.ClientError during probe must return False, not raise, and not cache."""
+    async def test_probe_returns_none_on_network_error(self, aioclient_mock: AiohttpClientMocker):
+        """aiohttp.ClientError during probe must return None, not raise."""
         client = make_client(aioclient_mock)
         client._auth._authenticated = True
         aioclient_mock.post(probe_url(), exc=aiohttp.ClientConnectionError("unreachable"))
         result = await client.probe_system_log_endpoint()
-        assert result is False
-        assert client._has_system_log is None
+        assert result is None
 
     @pytest.mark.asyncio
-    async def test_probe_retries_after_transient_failure(self, aioclient_mock: AiohttpClientMocker):
-        """A 5xx followed by a 200 must end with cache=True (transient does not pin to legacy).
-
-        aioclient_mock never consumes a matched registration, so two plain
-        registrations at the same URL would both always answer with the
-        first one; queue_responses hands out one response per call instead.
-        """
+    async def test_probe_makes_exactly_one_request_per_call(
+        self, aioclient_mock: AiohttpClientMocker
+    ):
+        """Each call to probe_system_log_endpoint() must hit the network — no caching."""
         client = make_client(aioclient_mock)
         client._auth._authenticated = True
+        aioclient_mock.post(probe_url(), status=200, json={})
 
-        queue_responses(
-            aioclient_mock,
-            "post",
-            probe_url(),
-            [{"status": 503}, {"status": 200, "json": {}}],
-        )
+        await client.probe_system_log_endpoint()
+        await client.probe_system_log_endpoint()
 
-        first = await client.probe_system_log_endpoint()
-        assert first is False
-        assert client._has_system_log is None, "Transient failure must not cache"
-
-        second = await client.probe_system_log_endpoint()
-        assert second is True
-        assert client._has_system_log is True
-
-    @pytest.mark.asyncio
-    async def test_probe_is_cached_after_true(self, aioclient_mock: AiohttpClientMocker):
-        """Second call must not hit the network when _has_system_log is True."""
-        client = make_client(aioclient_mock)
-        client._auth._authenticated = True
-        client._has_system_log = True  # pre-set the cache
-
-        # Nothing registered — a network hit here would raise and fail the test.
-        result = await client.probe_system_log_endpoint()
-        assert total_calls() == 0, "Network must not be hit when result is cached"
-        assert result is True
-
-    @pytest.mark.asyncio
-    async def test_probe_is_cached_after_false(self, aioclient_mock: AiohttpClientMocker):
-        """Second call must not hit the network when _has_system_log is False."""
-        client = make_client(aioclient_mock)
-        client._auth._authenticated = True
-        client._has_system_log = False  # pre-set the cache
-
-        result = await client.probe_system_log_endpoint()
-        assert total_calls() == 0, "Network must not be hit when result is cached"
-        assert result is False
+        assert total_calls() == 2, "Every call must hit the network; the client caches nothing"
 
     @pytest.mark.asyncio
     async def test_probe_url_includes_v2_and_site(self, aioclient_mock: AiohttpClientMocker):
@@ -159,147 +109,6 @@ class TestProbeSystemLogEndpoint:
 
         assert len(calls) == 1, "Expected one POST call"
         assert "v2/api/site/mysite/system-log/count" in expected_url
-
-    @pytest.mark.asyncio
-    async def test_probe_backoff_triggers_after_fail_limit(
-        self, aioclient_mock: AiohttpClientMocker
-    ):
-        """After _PROBE_FAIL_LIMIT consecutive transient failures the probe caches False
-        and sets a backoff deadline so subsequent polls skip the network entirely."""
-        from datetime import UTC, datetime
-
-        client = make_client(aioclient_mock)
-        client._auth._authenticated = True
-
-        aioclient_mock.post(probe_url(), status=503)
-
-        before = datetime.now(UTC)
-        for _ in range(_PROBE_FAIL_LIMIT):
-            result = await client.probe_system_log_endpoint()
-            assert result is False
-        after = datetime.now(UTC)
-
-        # After the threshold the cache must be False and a backoff deadline set.
-        assert client._has_system_log is False
-        assert client._probe_backoff_until is not None
-        assert client._probe_fail_count == _PROBE_FAIL_LIMIT
-        # Assert the actual deadline duration, not just its presence — a wrong
-        # _PROBE_RETRY_AFTER value (e.g. minutes instead of hours) would still
-        # satisfy `is not None` and pass the rest of the suite.
-        assert (
-            before + _EXPECTED_PROBE_RETRY_AFTER
-            <= client._probe_backoff_until
-            <= after + _EXPECTED_PROBE_RETRY_AFTER
-        )
-
-    @pytest.mark.asyncio
-    async def test_probe_during_backoff_skips_network(self, aioclient_mock: AiohttpClientMocker):
-        """Once in backoff, probes must return False without making a network call."""
-        from datetime import UTC, datetime, timedelta
-
-        client = make_client(aioclient_mock)
-        client._auth._authenticated = True
-        client._has_system_log = False
-        client._probe_backoff_until = datetime.now(UTC) + timedelta(hours=1)
-
-        result = await client.probe_system_log_endpoint()
-        assert total_calls() == 0, "Network must not be hit during backoff"
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_probe_retries_after_backoff_expires(self, aioclient_mock: AiohttpClientMocker):
-        """Once the backoff window expires, the next probe must hit the network
-        and, if successful, set cache=True and clear backoff state."""
-        from datetime import UTC, datetime, timedelta
-
-        client = make_client(aioclient_mock)
-        client._auth._authenticated = True
-        # Simulate an expired backoff (deadline in the past).
-        client._has_system_log = False
-        client._probe_backoff_until = datetime.now(UTC) - timedelta(seconds=1)
-        client._probe_fail_count = _PROBE_FAIL_LIMIT
-
-        aioclient_mock.post(probe_url(), status=200, json={})
-        result = await client.probe_system_log_endpoint()
-
-        assert result is True
-        assert client._has_system_log is True
-        assert client._probe_backoff_until is None
-        assert client._probe_fail_count == 0
-
-    @pytest.mark.asyncio
-    async def test_probe_404_does_not_set_backoff(self, aioclient_mock: AiohttpClientMocker):
-        """A definitive 404 must set cache=False without a backoff deadline
-        (the endpoint will never appear on this controller)."""
-        client = make_client(aioclient_mock)
-        client._auth._authenticated = True
-
-        aioclient_mock.post(probe_url(), status=404)
-        result = await client.probe_system_log_endpoint()
-
-        assert result is False
-        assert client._has_system_log is False
-        assert client._probe_backoff_until is None
-
-    @pytest.mark.asyncio
-    async def test_probe_backoff_via_network_error(self, aioclient_mock: AiohttpClientMocker):
-        """Repeated aiohttp.ClientError failures must also trigger the backoff
-        after reaching _PROBE_FAIL_LIMIT."""
-        from datetime import UTC, datetime
-
-        client = make_client(aioclient_mock)
-        client._auth._authenticated = True
-
-        aioclient_mock.post(probe_url(), exc=aiohttp.ClientConnectionError("unreachable"))
-
-        before = datetime.now(UTC)
-        for _ in range(_PROBE_FAIL_LIMIT):
-            result = await client.probe_system_log_endpoint()
-            assert result is False
-        after = datetime.now(UTC)
-
-        assert client._has_system_log is False
-        assert client._probe_backoff_until is not None
-        assert (
-            before + _EXPECTED_PROBE_RETRY_AFTER
-            <= client._probe_backoff_until
-            <= after + _EXPECTED_PROBE_RETRY_AFTER
-        )
-
-    @pytest.mark.asyncio
-    async def test_reauth_clears_probe_backoff(self, aioclient_mock: AiohttpClientMocker):
-        """A successful authenticate() must clear the probe-backoff state so the
-        next probe call actually hits the network instead of returning the cached
-        False from backoff."""
-        from datetime import UTC, datetime, timedelta
-
-        client = make_client(aioclient_mock)
-        # Simulate an active backoff (e.g. credentials were bad, probe kept failing)
-        client._has_system_log = False
-        client._probe_fail_count = _PROBE_FAIL_LIMIT
-        client._probe_backoff_until = datetime.now(UTC) + timedelta(hours=1)
-
-        aioclient_mock.get(self_url(), status=200)
-        await client.authenticate()
-
-        # Backoff state must be cleared
-        assert client._probe_backoff_until is None
-        assert client._probe_fail_count == 0
-        assert client._has_system_log is None  # re-probed on next poll
-
-    @pytest.mark.asyncio
-    async def test_reauth_does_not_reset_confirmed_true(self, aioclient_mock: AiohttpClientMocker):
-        """If _has_system_log is True (v2 endpoint confirmed), re-auth must not
-        reset it to None - there's nothing to re-probe."""
-        client = make_client(aioclient_mock)
-        client._has_system_log = True
-        client._probe_fail_count = 0
-        client._probe_backoff_until = None
-
-        aioclient_mock.get(self_url(), status=200)
-        await client.authenticate()
-
-        assert client._has_system_log is True
 
 
 class TestFetchSystemLogAlarms:
