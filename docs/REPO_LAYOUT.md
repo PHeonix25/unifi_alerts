@@ -14,14 +14,15 @@ custom_components/unifi_alerts/   # integration source
   webhook_handler.py              # registers HA webhooks (POST-only), dispatches to coordinator; rejects requests missing/wrong Authorization: Bearer header or legacy ?token= with HTTP 401; bearer secret from CONF_WEBHOOK_SECRET; raises webhook_legacy_query_auth repair issue on query-param auth
   config_flow.py                  # three-step UI setup (credentials > categories > webhook URLs, secret shown separately for the Authorization header) + options flow; generates CONF_WEBHOOK_SECRET via secrets.token_urlsafe(32) on first auth; network_device and network_client default OFF; options flow reads entry.options first, falls back to entry.data
   diagnostics.py                  # HA diagnostics platform; redacts api_key/webhook_secret, exposes webhook URLs + coordinator state
-  binary_sensor.py                # per-category + rollup binary sensors
-  sensor.py                       # message, count, and rollup count sensors
-  event.py                        # event entities, fire per alert
-  button.py                       # manual clear buttons
+  binary_sensor.py                # per-category + rollup binary sensors; PARALLEL_UPDATES = 0 (coordinator-based, no per-entity throttling needed); on/off icons come from icons.json state mapping, not a property (the entity's own state IS the alerting/ok discriminator)
+  sensor.py                       # message, count, and rollup count sensors; PARALLEL_UPDATES = 0; UniFiCategoryMessageSensor.icon stays a property (native_value is the alert message text, not a valid icons.json discriminator) - the count sensors' static icons moved to icons.json
+  event.py                        # event entities, fire per alert; PARALLEL_UPDATES = 0; static per-category icon moved to icons.json
+  button.py                       # manual clear buttons; PARALLEL_UPDATES = 0; static icons moved to icons.json; no _handle_coordinator_update override - CoordinatorEntity's default (async_write_ha_state()) is exactly what both button classes need
   services.py                     # registers unifi_alerts.clear_category and unifi_alerts.clear_all HA service calls; delegates to coordinator
   services.yaml                   # HA service schema definition (clear_category: category field, clear_all: no fields)
   strings.json                    # UI copy for config flow; must be identical to translations/en.json - CI enforces this
   translations/en.json            # runtime translation file loaded by HA; must be identical to strings.json - CI enforces this
+  icons.json                      # per-entity icon overrides keyed by translation_key; binary_sensor entries use "state": {"on": ..., "off": ...} since is_on is the icon discriminator; button/sensor(count)/event entries use a flat "default" (static, no state discriminator)
 tests/
   conftest.py                     # root shared fixtures; Windows-only event-loop and socket workarounds (no-op on Linux/macOS)
   unit/                           # plain-mock unit tests - no real HA instance
