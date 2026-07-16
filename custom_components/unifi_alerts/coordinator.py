@@ -43,6 +43,14 @@ _LOGGER = logging.getLogger(__name__)
 # save per push.
 _PERSIST_DELAY_SECONDS = 1
 
+# After this many consecutive transient v2 system-log-probe outcomes, stop
+# re-probing every poll and fall back to the legacy path. A single network
+# blip should not pin the coordinator to legacy mode, so the threshold is
+# intentionally > 1.
+_PROBE_FAIL_LIMIT = 5
+# How long to wait before attempting another probe after the threshold is hit.
+_PROBE_RETRY_AFTER = timedelta(hours=1)
+
 
 class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     """Manages polling state and receives webhook-pushed alerts.
@@ -104,6 +112,17 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         # any category. Exposed via diagnostics so users can report missing keys
         # without needing DEBUG logging. Never reset; grows until the entry reloads.
         self._unrecognised_keys: dict[str, int] = {}
+
+        # v2 system-log-probe cache/backoff state (#240). UniFiClient's probe
+        # is a single stateless HTTP call; caching the result and backing off
+        # after repeated transient failures is the coordinator's concern,
+        # since this is the layer designed to hold cross-poll state.
+        # None = not yet probed (or backoff has expired and a re-probe is due).
+        self._has_system_log: bool | None = None
+        # Consecutive transient probe outcomes. Resets to 0 on any definitive result.
+        self._probe_fail_count: int = 0
+        # Set when _probe_fail_count reaches _PROBE_FAIL_LIMIT; cleared on retry window expiry.
+        self._probe_backoff_until: datetime | None = None
 
     # ── DataUpdateCoordinator override ───────────────────────────────────
 
@@ -186,21 +205,22 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     async def _fetch_categorised(self) -> dict[str, list[UniFiAlert]]:
         """Fetch and categorise alarms using v2 or legacy path as appropriate.
 
-        Calls probe_system_log_endpoint() once per client instance. On success,
-        fetches from system-log/all with a timestampFrom watermark and parses
-        each event with UniFiAlert.from_system_log_event(). Skips events whose
-        resolved category is empty (unknown keys with no broad enum fallback).
+        Calls _probe_has_system_log() once per poll (cached across polls). On
+        success, fetches from system-log/all with a timestampFrom watermark
+        and parses each event with UniFiAlert.from_system_log_event(). Skips
+        events whose resolved category is empty (unknown keys with no broad
+        enum fallback).
 
         Falls back to legacy categorise_alarms() if:
-          - the probe returns False (404 / 4xx from the controller)
+          - the probe returns False (404, or repeated transient failures past backoff)
           - the probe itself raises a network error (logged at DEBUG)
           - this is an older controller without the v2 endpoint
         """
         try:
-            has_v2 = await self._client.probe_system_log_endpoint(self._site)
+            has_v2 = await self._probe_has_system_log()
         except (InvalidAuthError, CannotConnectError) as probe_err:
             # Defensive: the HTTP probe catches aiohttp.ClientError internally and
-            # returns False, so it should not raise. Guard anyway and fall back to
+            # returns None, so it should not raise. Guard anyway and fall back to
             # the legacy path rather than failing the whole poll on a probe error.
             _LOGGER.debug(
                 "v2 system-log probe raised %s; falling back to legacy path",
@@ -250,6 +270,66 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             categorised.setdefault(alert.category, []).append(alert)
 
         return categorised
+
+    async def _probe_has_system_log(self) -> bool:
+        """Determine whether the v2 system-log endpoint is available, with caching and backoff.
+
+        Wraps UniFiClient.probe_system_log_endpoint() — a single stateless
+        HTTP call — with the cross-poll cache/backoff state that keeps
+        steady-state polling from re-probing every cycle (#240):
+
+        - True is cached permanently (a fresh probe only happens via a new
+          coordinator instance, i.e. a config-entry reload).
+        - False from a definitive HTTP 404 is cached permanently, no backoff.
+        - A single transient outcome (None) leaves the cache at None so the
+          next poll re-probes immediately.
+        - After _PROBE_FAIL_LIMIT consecutive transient outcomes, the cache is
+          pinned to False for _PROBE_RETRY_AFTER before the next re-probe.
+        """
+        if self._has_system_log is not None:
+            # For a backoff-triggered False, check whether the retry window has opened.
+            if self._has_system_log is False and self._probe_backoff_until is not None:
+                if datetime.now(UTC) >= self._probe_backoff_until:
+                    _LOGGER.debug("v2 system-log probe backoff expired; will retry")
+                    self._has_system_log = None
+                    self._probe_fail_count = 0
+                    self._probe_backoff_until = None
+                    # Fall through to probe below.
+                else:
+                    return False
+            else:
+                return self._has_system_log
+
+        result = await self._client.probe_system_log_endpoint(self._site)
+
+        if result is True:
+            self._has_system_log = True
+            self._probe_fail_count = 0
+            self._probe_backoff_until = None
+            return True
+        if result is False:
+            self._has_system_log = False
+            self._probe_fail_count = 0
+            return False
+
+        # result is None: transient outcome. Only cached (pinned to False) once
+        # _PROBE_FAIL_LIMIT consecutive transient outcomes have been seen.
+        self._probe_fail_count += 1
+        if self._probe_fail_count >= _PROBE_FAIL_LIMIT:
+            self._has_system_log = False
+            self._probe_backoff_until = datetime.now(UTC) + _PROBE_RETRY_AFTER
+            _LOGGER.debug(
+                "v2 system-log probe failed %d consecutive times; switching to legacy path for %s",
+                _PROBE_FAIL_LIMIT,
+                _PROBE_RETRY_AFTER,
+            )
+        else:
+            _LOGGER.debug(
+                "v2 system-log probe transient failure (%d/%d); legacy path this poll, will retry next",
+                self._probe_fail_count,
+                _PROBE_FAIL_LIMIT,
+            )
+        return False
 
     # ── Webhook push path ────────────────────────────────────────────────
 

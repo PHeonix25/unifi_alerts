@@ -8,9 +8,9 @@ custom_components/unifi_alerts/   # integration source
   manifest.json                   # HA metadata (domain, version, iot_class); do NOT add "homeassistant" min-version key - it is not in the HA manifest schema and breaks hassfest
   const.py                        # all constants, category defs, UniFi key>category map; DEFAULT_VERIFY_SSL = True (secure by default); CONF_WEBHOOK_SECRET = "webhook_secret"
   models.py                       # UniFiAlert and CategoryState dataclasses; all datetimes are UTC-aware (datetime.now(UTC))
-  unifi_client.py                 # async HTTP client (alarm fetch, pagination, system-log probe); composes a UniFiAuth instance (self._auth) for all auth concerns - does not proxy or duplicate its state
+  unifi_client.py                 # stateless async HTTP client (alarm fetch, pagination, system-log probe); composes a UniFiAuth instance (self._auth) for all auth concerns - does not proxy or duplicate its state; probe_system_log_endpoint() is a single stateless call (True/False/None) with no cache/backoff (#240) - see coordinator.py
   unifi_auth.py                   # UniFiAuth: API-key verification and X-API-Key header construction (the only supported auth method); also owns CannotConnectError/SslCertificateError/InvalidAuthError (unifi_client.py re-exports them, so existing `from .unifi_client import ...` call sites elsewhere in the integration are unaffected)
-  coordinator.py                  # DataUpdateCoordinator, owns all category state; polling path sets is_alerting/last_alert directly (does NOT call apply_alert, so alert_count is not incremented); open_count filtered by last_cleared_at watermark (alarms since last Clear only); async_clear_category()/async_clear_all() are the sole clear entry points - they cancel tasks, advance watermark, persist via Store, notify; cancel_clear(category) cancels pending auto-clear tasks; async_restore_watermarks() loads persisted watermarks from storage on startup; async_shutdown() cancels all pending clear tasks on unload
+  coordinator.py                  # DataUpdateCoordinator, owns all category state; polling path sets is_alerting/last_alert directly (does NOT call apply_alert, so alert_count is not incremented); open_count filtered by last_cleared_at watermark (alarms since last Clear only); async_clear_category()/async_clear_all() are the sole clear entry points - they cancel tasks, advance watermark, persist via Store, notify; cancel_clear(category) cancels pending auto-clear tasks; async_restore_watermarks() loads persisted watermarks from storage on startup; async_shutdown() cancels all pending clear tasks on unload; _probe_has_system_log() owns the v2 system-log-probe cache/backoff state moved out of UniFiClient (#240)
   webhook_handler.py              # registers HA webhooks (POST-only), dispatches to coordinator; rejects requests missing/wrong Authorization: Bearer header or legacy ?token= with HTTP 401; bearer secret from CONF_WEBHOOK_SECRET; raises webhook_legacy_query_auth repair issue on query-param auth
   config_flow.py                  # three-step UI setup (credentials > categories > webhook URLs, secret shown separately for the Authorization header) + options flow; generates CONF_WEBHOOK_SECRET via secrets.token_urlsafe(32) on first auth; network_device and network_client default OFF; options flow reads entry.options first, falls back to entry.data
   diagnostics.py                  # HA diagnostics platform; redacts api_key/webhook_secret, exposes webhook URLs + coordinator state
@@ -42,11 +42,12 @@ tests/
       test_persistence.py         # watermark persist/restore, legacy string format, persist-failed repair issue
       test_polling.py             # _async_update_data: v2/legacy dispatch, open_count, already-alerting guard, auth retry
       test_push_dedup.py          # push_alert: apply_alert, webhook dedup window, optimistic open_count increment
+      test_system_log_probe.py    # _probe_has_system_log(): cache/backoff state moved out of UniFiClient (#240)
     unifi_client/                 # UniFiClient tests (split from monolithic test_unifi_client.py)
       __init__.py
       conftest.py                 # shared client fixtures
       test_legacy.py              # _classify, fetch_alarms probe chain, categorise_alarms, authenticate, close
-      test_v2.py                  # probe_system_log_endpoint (cache/backoff), fetch_system_log_alarms (pagination, watermark)
+      test_v2.py                  # probe_system_log_endpoint (single stateless call, no cache/backoff - #240), fetch_system_log_alarms (pagination, watermark)
     test_console_helper.py        # tests scripts/_console.py UTF-8 stdout forcing on Windows
     test_diagnostics.py           # diagnostics platform: redaction, webhook URL exposure, coordinator state
     test_entities.py              # all entity property methods: binary_sensor, sensor, event, button
