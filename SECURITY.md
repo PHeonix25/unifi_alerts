@@ -107,6 +107,11 @@ re-paste their webhook URLs into the UniFi Alarm Manager after upgrading.
 New webhook URLs are available at Settings > Devices & Services >
 UniFi Alerts > Configure.
 
+## Accepted CodeQL false positives
+
+- **`py/clear-text-logging-sensitive-data` at `unifi_client.py` (debug logs of alarm/probe URLs).** First identified on PR #259: `_LOGGER.debug("Fetching alarms from %s", url)` (and the equivalent v2 system-log probe/fetch debug logs) trace back through `self._base`/`controller_url` to the config dict (`UniFiClientConfig`, which also carries `api_key`) passed into `UniFiClient.__init__`. No secret ever reaches the log line - every hop only ever carries the controller hostname/URL and a fixed API path, never the API key itself. The alert fires because CodeQL's Python dataflow analysis is field-insensitive on dicts: reading *any* key out of a dict that *also* contains a sensitive key (`api_key`) gets tainted, regardless of which key is actually read.
+  `UniFiClientConfig` was restructured as an explicit `TypedDict` (in PR #195) specifically to test whether giving CodeQL field-level type information would stop the over-tainting (tracked as issue #261). Re-running the CodeQL workflow with the TypedDict already in place, the alert still fires: `TypedDict` is a static-typing construct with no runtime distinction from a plain `dict`, so CodeQL's dataflow analysis - which operates on runtime dict-access patterns, not static annotations - cannot distinguish "read `controller_url`" from "read `api_key`" on the same dict object. No further code change is expected to resolve this; the alert is dismissed as an accepted false positive rather than fixed. Re-triaging this exact shape from scratch is unnecessary; link back to this note and issues #259/#261 instead.
+
 ## What's out of scope
 
 - Vulnerabilities in upstream Home Assistant Core or in third-party HA
