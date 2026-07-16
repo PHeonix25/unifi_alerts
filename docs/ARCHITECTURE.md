@@ -101,7 +101,7 @@ Registers one HA webhook per enabled category using `homeassistant.components.we
 - Scoped to `local_only=True` (LAN only).
 - Accepted on POST only; GET requests are rejected with HTTP 405. UniFi Alarm Manager must be configured to send POST.
 - Fail-closed if no secret is configured: HTTP 500 with an error log pointing the user at Configure to re-save the entry. Never skips the token check.
-- Bearer-token authenticated: `?token=` query parameter compared against `CONF_WEBHOOK_SECRET` via `hmac.compare_digest`; missing or wrong token returns HTTP 401.
+- Bearer-token authenticated: `Authorization: Bearer <secret>` header (preferred) or the legacy `?token=` query parameter (deprecated, accepted during a migration window - issue #176), both compared against `CONF_WEBHOOK_SECRET` via `hmac.compare_digest`; missing or wrong token in both forms returns HTTP 401. A webhook authenticated via the query param raises the `webhook_legacy_query_auth` repair issue.
 - Body-capped at `WEBHOOK_MAX_BODY_BYTES`; oversized bodies return HTTP 413.
 - Parsed as JSON; a body that fails JSON or UTF-8 decoding is rejected with HTTP 400 (logged at WARNING with class name and 80-byte body preview) rather than falling back to `{}`. An empty body (`{}`) or a body with no recognised fields is accepted and yields `UniFiAlert.from_webhook_payload()`'s "Unknown alert" fallback - only genuine parse failures return 400.
 - DEBUG-payload narrowed to `{category, alert_key, severity, device_name, key}` to avoid surfacing future-firmware fields.
@@ -115,7 +115,7 @@ Three-step setup flow:
 
 1. **`async_step_user`**: URL + credentials (with SSDP discovery pre-filling the URL via `async_step_ssdp`). Calls `UniFiClient.authenticate()` for validation. Generates `CONF_WEBHOOK_SECRET` (`secrets.token_urlsafe(32)`) and `CONF_WEBHOOK_ID_SUFFIX` (`secrets.token_hex(4)`) on success.
 2. **`async_step_categories`**: per-category boolean toggles plus `poll_interval`, `clear_timeout`, and `site`.
-3. **`async_step_finish`**: displays generated webhook URLs (with bearer token) for the user to copy into UniFi Alarm Manager.
+3. **`async_step_finish`**: displays generated webhook URLs (no longer embedding the secret, issue #176) and the bearer secret separately, for the user to copy into UniFi Alarm Manager as an `Authorization: Bearer` header (or, for the deprecated legacy form, a `?token=` query string).
 
 `UniFiAlertsOptionsFlow` mirrors all three steps, allowing credentials, categories, and timing to be reconfigured in place. The credentials step also offers a "Regenerate webhook secret" checkbox. Option changes trigger an entry reload via `_async_update_listener`.
 

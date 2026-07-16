@@ -55,7 +55,7 @@ Settings > Devices & Services > UniFi Alerts > Download diagnostics produces a J
 
 **Redacted before inclusion:** `CONF_API_KEY`, `CONF_WEBHOOK_SECRET` (the `_TO_REDACT` set), applied via `homeassistant.components.diagnostics.async_redact_data` to both `entry.data` and `entry.options`.
 
-**Included but stripped:** webhook URLs are included (so a shared diagnostics file still shows what was configured), but the `?token=...` query string is removed before inclusion, so the bearer secret itself never appears in the file.
+**Included:** webhook URLs are included (so a shared diagnostics file still shows what was configured). They no longer embed the bearer secret (breaking change, issue #176), so no stripping is required before inclusion.
 
 **Included, coordinator state only:** per-category `enabled`, `is_alerting`, `open_count`, `alert_count`, `last_cleared_at`, `last_webhook_at`, `webhook_health()`, plus the rollup counters (`any_alerting`, `rollup_alert_count`, `rollup_open_count`) and the `unrecognised_keys` counts.
 
@@ -73,7 +73,7 @@ When the `custom_components.unifi_alerts` logger is set to `DEBUG`, webhook rece
 
 Only these fields (when present in the payload) are logged, one line per webhook received. Any other field the controller sends, including the raw payload structure, firmware-specific additions, or free-text fields not in this list, is never written to the log.
 
-The webhook bearer token is never logged. Webhook URLs that appear anywhere in logs or diagnostics always have the `?token=...` query string stripped first, the same pattern used in diagnostics output above.
+The webhook bearer secret is never logged. Webhook URLs registered by the integration no longer embed it (issue #176), so URLs that appear anywhere in logs or diagnostics never carry the secret. Any `?token=...` a user pastes into their own Alarm Manager configuration is theirs to redact from screenshots or shared logs; this integration never echoes it back.
 
 ## Retention policy
 

@@ -11,8 +11,8 @@ custom_components/unifi_alerts/   # integration source
   unifi_client.py                 # async HTTP client (alarm fetch, pagination, system-log probe); composes a UniFiAuth instance (self._auth) for all auth concerns - does not proxy or duplicate its state
   unifi_auth.py                   # UniFiAuth: API-key verification and X-API-Key header construction (the only supported auth method); also owns CannotConnectError/SslCertificateError/InvalidAuthError (unifi_client.py re-exports them, so existing `from .unifi_client import ...` call sites elsewhere in the integration are unaffected)
   coordinator.py                  # DataUpdateCoordinator, owns all category state; polling path sets is_alerting/last_alert directly (does NOT call apply_alert, so alert_count is not incremented); open_count filtered by last_cleared_at watermark (alarms since last Clear only); async_clear_category()/async_clear_all() are the sole clear entry points - they cancel tasks, advance watermark, persist via Store, notify; cancel_clear(category) cancels pending auto-clear tasks; async_restore_watermarks() loads persisted watermarks from storage on startup; async_shutdown() cancels all pending clear tasks on unload
-  webhook_handler.py              # registers HA webhooks (POST-only), dispatches to coordinator; rejects requests missing/wrong ?token= with HTTP 401; bearer secret from CONF_WEBHOOK_SECRET
-  config_flow.py                  # three-step UI setup (credentials > categories > webhook URLs with token) + options flow; generates CONF_WEBHOOK_SECRET via secrets.token_urlsafe(32) on first auth; network_device and network_client default OFF; options flow reads entry.options first, falls back to entry.data
+  webhook_handler.py              # registers HA webhooks (POST-only), dispatches to coordinator; rejects requests missing/wrong Authorization: Bearer header or legacy ?token= with HTTP 401; bearer secret from CONF_WEBHOOK_SECRET; raises webhook_legacy_query_auth repair issue on query-param auth
+  config_flow.py                  # three-step UI setup (credentials > categories > webhook URLs, secret shown separately for the Authorization header) + options flow; generates CONF_WEBHOOK_SECRET via secrets.token_urlsafe(32) on first auth; network_device and network_client default OFF; options flow reads entry.options first, falls back to entry.data
   diagnostics.py                  # HA diagnostics platform; redacts api_key/webhook_secret, exposes webhook URLs + coordinator state
   binary_sensor.py                # per-category + rollup binary sensors
   sensor.py                       # message, count, and rollup count sensors
@@ -74,7 +74,7 @@ tests/
   dependabot.yml                  # tracks the github-actions ecosystem only (weekly, Brisbane TZ); minor+patch grouped, major bumps individual. Required to keep the SHA pins fresh - do NOT remove. Python deps stay manual.
   release.yml                     # release-notes categories file used by `gh release create --generate-notes` to group merged PRs by label (Security / Bug Fixes / Features / Documentation / Tests / CI / Other). DIFFERENT FILE from .github/workflows/release.yml.
   ISSUE_TEMPLATE/
-    bug_report.yml                # required-field bug template; warns users to redact `?token=...` from logs.
+    bug_report.yml                # required-field bug template; warns users to redact bearer secrets (Authorization header or legacy ?token=...) from logs.
     feature_request.yml           # problem > solution > alternatives template.
     config.yml                    # disables blank issues; surfaces the security-advisory link + Discussions.
     unclassified_event_key.yml    # for reporting UniFi event keys not yet in UNIFI_KEY_TO_CATEGORY.

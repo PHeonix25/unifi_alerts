@@ -18,7 +18,7 @@ from custom_components.unifi_alerts.const import (
     WEBHOOK_MAX_BODY_BYTES,
     webhook_id_for_category,
 )
-from custom_components.unifi_alerts.webhook_handler import WebhookManager
+from custom_components.unifi_alerts.webhook_handler import WebhookManager, _extract_bearer_token
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,10 +35,20 @@ def make_manager(enabled=None, secret="test-secret-123", hass=None, suffix=""):
     return WebhookManager(hass, "entry-123", config, push_cb), push_cb
 
 
-def make_request(token: str | None = "test-secret-123", json_body: dict | None = None):
-    """Build a minimal mock aiohttp.web.Request."""
+def make_request(
+    token: str | None = "test-secret-123",
+    json_body: dict | None = None,
+    authorization: str | None = None,
+):
+    """Build a minimal mock aiohttp.web.Request.
+
+    ``token`` populates the legacy ``?token=`` query param; ``authorization``
+    populates the raw ``Authorization`` header value (e.g. ``"Bearer tok"``).
+    Both default to "absent" so tests exercise exactly the auth path they ask for.
+    """
     req = MagicMock()
     req.query = {"token": token} if token is not None else {}
+    req.headers = {"Authorization": authorization} if authorization is not None else {}
     body_dict = (
         json_body
         if json_body is not None
@@ -61,10 +71,6 @@ def _assert_only_enabled_category_registered(urls, manager, mock_reg):
     assert CATEGORY_SECURITY_THREAT not in urls
 
 
-def _assert_url_has_token(urls, manager, mock_reg):
-    assert urls[CATEGORY_NETWORK_WAN] == "http://ha/hook/abc?token=mysecret"
-
-
 def _assert_url_has_no_token(urls, manager, mock_reg):
     assert urls[CATEGORY_NETWORK_WAN] == "http://ha/hook/abc"
 
@@ -76,6 +82,30 @@ def _assert_registered_list_populated(urls, manager, mock_reg):
 def _assert_returns_dict_mapping(urls, manager, mock_reg):
     assert isinstance(urls, dict)
     assert CATEGORY_NETWORK_WAN in urls
+
+
+# ── _extract_bearer_token ────────────────────────────────────────────────────
+
+
+class TestExtractBearerToken:
+    def test_extracts_token_from_bearer_header(self):
+        assert _extract_bearer_token("Bearer tok123") == "tok123"
+
+    def test_scheme_is_case_insensitive(self):
+        assert _extract_bearer_token("bearer tok123") == "tok123"
+        assert _extract_bearer_token("BEARER tok123") == "tok123"
+
+    def test_empty_header_returns_empty_string(self):
+        assert _extract_bearer_token("") == ""
+
+    def test_non_bearer_scheme_returns_empty_string(self):
+        assert _extract_bearer_token("Basic dXNlcjpwYXNz") == ""
+
+    def test_bearer_with_no_token_returns_empty_string(self):
+        assert _extract_bearer_token("Bearer") == ""
+
+    def test_bearer_with_trailing_whitespace_is_stripped(self):
+        assert _extract_bearer_token("Bearer  tok123 ") == "tok123"
 
 
 class TestRegisterAll:
@@ -97,8 +127,8 @@ class TestRegisterAll:
             pytest.param(
                 [CATEGORY_NETWORK_WAN],
                 "mysecret",
-                _assert_url_has_token,
-                id="url-includes-token-when-secret-set",
+                _assert_url_has_no_token,
+                id="url-has-no-token-when-secret-set",
             ),
             pytest.param(
                 [CATEGORY_NETWORK_WAN],
@@ -215,6 +245,78 @@ class TestMakeHandler:
         assert response is not None
         assert response.status == 401
         push_cb.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_valid_bearer_header_calls_push_callback(self):
+        """Authorization: Bearer <secret> must be accepted (#176 preferred form)."""
+        manager, push_cb = make_manager(secret="tok123")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok123")
+        req = make_request(token=None, authorization="Bearer tok123")
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is None
+        push_cb.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_valid_bearer_header_case_insensitive_scheme(self):
+        """RFC 6750: the Bearer scheme name is case-insensitive."""
+        manager, push_cb = make_manager(secret="tok123")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok123")
+        req = make_request(token=None, authorization="bearer tok123")
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is None
+        push_cb.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_wrong_bearer_header_and_no_query_returns_401(self):
+        manager, push_cb = make_manager(secret="tok123")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok123")
+        req = make_request(token=None, authorization="Bearer wrong-token")
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is not None
+        assert response.status == 401
+        push_cb.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_wrong_header_and_wrong_query_returns_401(self):
+        """Full 401 matrix: both auth forms present but both wrong."""
+        manager, push_cb = make_manager(secret="tok123")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok123")
+        req = make_request(token="wrong-query", authorization="Bearer wrong-header")
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is not None
+        assert response.status == 401
+        push_cb.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_missing_both_header_and_query_returns_401(self):
+        """Full 401 matrix: neither auth form present."""
+        manager, push_cb = make_manager(secret="tok123")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok123")
+        req = make_request(token=None, authorization=None)
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is not None
+        assert response.status == 401
+        push_cb.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_correct_header_with_wrong_query_is_accepted(self):
+        """Either form independently authorises the request — header wins here."""
+        manager, push_cb = make_manager(secret="tok123")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok123")
+        req = make_request(token="wrong-query", authorization="Bearer tok123")
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is None
+        push_cb.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_correct_query_with_wrong_header_is_accepted(self):
+        """Either form independently authorises the request — legacy query wins here."""
+        manager, push_cb = make_manager(secret="tok123")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok123")
+        req = make_request(token="tok123", authorization="Bearer wrong-header")
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is None
+        push_cb.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_empty_secret_returns_500(self):
@@ -424,22 +526,28 @@ class TestMultiEntryWebhookIdIsolation:
 
 class TestHmacTokenComparison:
     @pytest.mark.asyncio
-    async def test_uses_hmac_compare_digest_for_token_check(self):
-        """The token comparison must go through ``hmac.compare_digest``.
+    async def test_uses_hmac_compare_digest_for_both_token_checks(self):
+        """Both the header and query token comparisons must go through
+        ``hmac.compare_digest``.
 
         We can't time-measure a side-channel in a unit test, but we can assert
         that the implementation actually calls ``hmac.compare_digest`` rather
-        than ``==`` / ``!=`` so the hardening can't silently regress.
+        than ``==`` / ``!=`` so the hardening can't silently regress. Both
+        checks must run (not be short-circuited) so the header-absent /
+        query-present case and the header-present / query-absent case take
+        the same code path.
         """
         manager, _ = make_manager(secret="tok123")
         handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok123")
-        req = make_request(token="tok123")
+        req = make_request(token="tok123", authorization="Bearer tok123")
         with patch(
             "custom_components.unifi_alerts.webhook_handler.hmac.compare_digest",
             return_value=True,
         ) as mock_cmp:
             await handler(manager._hass, "wh-id", req)
-        mock_cmp.assert_called_once_with("tok123", "tok123")
+        assert mock_cmp.call_count == 2
+        mock_cmp.assert_any_call("tok123", "tok123")  # header token vs secret
+        mock_cmp.assert_any_call("tok123", "tok123")  # query token vs secret
 
 
 # ── decode-error logging (no longer silent) ──────────────────────────────────
@@ -601,3 +709,68 @@ class TestWebhookSecretRotatedRepairIssue:
             await handler(manager._hass, "wh-id", req)
 
         mock_del.assert_not_called()
+
+
+class TestWebhookLegacyQueryAuthRepairIssue:
+    """Repair issue lifecycle for the ?token= deprecation nudge (#176)."""
+
+    @pytest.mark.asyncio
+    async def test_query_only_auth_raises_legacy_issue(self):
+        """A webhook authenticated via the query param only must raise the nudge issue."""
+        manager, _ = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="tok", authorization=None)
+
+        with patch(
+            "custom_components.unifi_alerts.webhook_handler.ir.async_create_issue"
+        ) as mock_create:
+            await handler(manager._hass, "wh-id", req)
+
+        mock_create.assert_called_once()
+        args, kwargs = mock_create.call_args
+        assert args[2] == "webhook_legacy_query_auth_entry-123"
+        assert kwargs["translation_key"] == "webhook_legacy_query_auth"
+
+    @pytest.mark.asyncio
+    async def test_header_auth_deletes_legacy_issue(self):
+        """A webhook authenticated via the header must clear the nudge issue."""
+        manager, _ = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token=None, authorization="Bearer tok")
+
+        with patch(
+            "custom_components.unifi_alerts.webhook_handler.ir.async_delete_issue"
+        ) as mock_del:
+            await handler(manager._hass, "wh-id", req)
+
+        mock_del.assert_any_call(
+            manager._hass,
+            "unifi_alerts",
+            "webhook_legacy_query_auth_entry-123",
+        )
+
+    @pytest.mark.asyncio
+    async def test_header_auth_does_not_raise_legacy_issue(self):
+        manager, _ = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token=None, authorization="Bearer tok")
+
+        with patch(
+            "custom_components.unifi_alerts.webhook_handler.ir.async_create_issue"
+        ) as mock_create:
+            await handler(manager._hass, "wh-id", req)
+
+        mock_create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rejected_webhook_does_not_raise_legacy_issue(self):
+        manager, _ = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="wrong-token", authorization=None)
+
+        with patch(
+            "custom_components.unifi_alerts.webhook_handler.ir.async_create_issue"
+        ) as mock_create:
+            await handler(manager._hass, "wh-id", req)
+
+        mock_create.assert_not_called()

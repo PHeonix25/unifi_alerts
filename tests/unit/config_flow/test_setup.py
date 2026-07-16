@@ -560,8 +560,12 @@ class TestFinishStep:
         schema = call_kwargs["data_schema"]
         # Webhook URLs must be present as field defaults in the schema
         schema_defaults = {str(k): k.default() for k in schema.schema}
-        assert any(f"?token={fake_secret}" in v for v in schema_defaults.values())
+        # Displayed URLs must no longer embed the secret (#176) — it is
+        # surfaced separately via description_placeholders for the
+        # Authorization header.
+        assert not any(f"token={fake_secret}" in v for v in schema_defaults.values())
         assert any(fake_url in v for v in schema_defaults.values())
+        assert call_kwargs["description_placeholders"]["webhook_secret"] == fake_secret
 
     @pytest.mark.asyncio
     async def test_submit_creates_entry(self) -> None:

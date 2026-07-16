@@ -23,6 +23,7 @@ from .const import (
     CONF_WEBHOOK_ID_SUFFIX,
     CONF_WEBHOOK_SECRET,
     DOMAIN,
+    ISSUE_ID_WEBHOOK_LEGACY_QUERY_AUTH,
     ISSUE_ID_WEBHOOK_SECRET_ROTATED,
     WEBHOOK_MAX_BODY_BYTES,
     webhook_id_for_category,
@@ -40,6 +41,40 @@ _SAFE_DEBUG_FIELDS: tuple[str, ...] = (
     "severity",
     "device_name",
 )
+
+
+def _extract_bearer_token(authorization_header: str) -> str:
+    """Return the token from an ``Authorization: Bearer <token>`` header.
+
+    Returns "" if the header is absent or does not use the Bearer scheme
+    (RFC 6750), so callers can feed the result straight into
+    ``hmac.compare_digest`` alongside the legacy query-param token.
+    """
+    scheme, _, token = authorization_header.partition(" ")
+    if scheme.lower() != "bearer":
+        return ""
+    return token.strip()
+
+
+def _raise_legacy_query_auth_issue(hass: HomeAssistant, entry_id: str) -> None:
+    """Nudge the user to migrate off the legacy ``?token=`` query param.
+
+    Fires the first time a webhook authenticates via the query param rather
+    than the Authorization header (#176). Not fixable via a repair flow —
+    migrating means re-pasting the URL and adding a header in UniFi Alarm
+    Manager, which cannot be automated from Home Assistant's side.
+    """
+    entry = hass.config_entries.async_get_entry(entry_id)
+    name = entry.title if entry is not None else entry_id
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"{ISSUE_ID_WEBHOOK_LEGACY_QUERY_AUTH}_{entry_id}",
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=ISSUE_ID_WEBHOOK_LEGACY_QUERY_AUTH,
+        translation_placeholders={"name": name},
+    )
 
 
 class WebhookManager:
@@ -98,8 +133,10 @@ class WebhookManager:
                 )
                 continue
             self._registered.append(webhook_id)
-            base_url = async_generate_url(self._hass, webhook_id)
-            urls[category] = f"{base_url}?token={secret}" if secret else base_url
+            # No secret embedded here (#176) — auth travels via the
+            # Authorization header (or the legacy ?token= query param, which
+            # is added by the caller/documentation, not generated here).
+            urls[category] = async_generate_url(self._hass, webhook_id)
             _LOGGER.debug("Registered webhook for %s", category)
 
         return urls
@@ -127,12 +164,20 @@ class WebhookManager:
                     category,
                 )
                 return Response(status=500)
-            provided = request.query.get("token", "")
-            # Use hmac.compare_digest to avoid leaking the secret via a
-            # timing side-channel — `==` / `!=` exit early on the first
-            # mismatching byte, which lets a remote attacker recover the
-            # secret byte-by-byte.
-            if not hmac.compare_digest(provided, secret):
+            # Authorization: Bearer header is the preferred form (#176); the
+            # legacy ?token= query param remains accepted during the
+            # deprecation window so existing UniFi Alarm Manager
+            # configurations are not broken by this migration. Both checks
+            # run unconditionally (not short-circuited) and use
+            # hmac.compare_digest to avoid leaking the secret via a timing
+            # side-channel — `==` / `!=` exit early on the first mismatching
+            # byte, which lets a remote attacker recover the secret
+            # byte-by-byte.
+            header_token = _extract_bearer_token(request.headers.get("Authorization", ""))
+            query_token = request.query.get("token", "")
+            header_authorized = hmac.compare_digest(header_token, secret)
+            query_authorized = hmac.compare_digest(query_token, secret)
+            if not header_authorized and not query_authorized:
                 _LOGGER.warning(
                     "Webhook request for category %s rejected: missing or invalid token",
                     category,
@@ -185,6 +230,14 @@ class WebhookManager:
             ir.async_delete_issue(
                 hass, DOMAIN, f"{ISSUE_ID_WEBHOOK_SECRET_ROTATED}_{self._entry_id}"
             )
+            if header_authorized:
+                # Migration to header auth confirmed for this entry — clear
+                # any outstanding legacy-auth nudge.
+                ir.async_delete_issue(
+                    hass, DOMAIN, f"{ISSUE_ID_WEBHOOK_LEGACY_QUERY_AUTH}_{self._entry_id}"
+                )
+            else:
+                _raise_legacy_query_auth_issue(hass, self._entry_id)
             return None
 
         return handle_webhook

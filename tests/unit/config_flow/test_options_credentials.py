@@ -49,8 +49,11 @@ async def test_options_finish_includes_webhook_urls() -> None:
     call_kwargs = flow.async_show_form.call_args.kwargs
     schema = call_kwargs["data_schema"]
     str_defaults = [v for v in (k.default() for k in schema.schema) if isinstance(v, str)]
-    assert any(f"?token={fake_secret}" in v for v in str_defaults)
+    # Displayed URLs must no longer embed the secret (#176) — it is surfaced
+    # separately via description_placeholders for the Authorization header.
+    assert not any(f"token={fake_secret}" in v for v in str_defaults)
     assert any(fake_url in v for v in str_defaults)
+    assert call_kwargs["description_placeholders"]["webhook_secret"] == fake_secret
 
 
 @pytest.mark.asyncio

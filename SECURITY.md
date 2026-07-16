@@ -53,17 +53,41 @@ what this integration persists to disk, what stays memory-only, what appears
 in diagnostics downloads (and what is redacted from them), and what is logged
 at DEBUG.
 
+## Webhook authentication: header vs legacy query parameter
+
+Inbound webhook requests are authenticated with a per-entry bearer secret,
+checked via `hmac.compare_digest` (timing-safe). Two forms are accepted:
+
+- **`Authorization: Bearer <secret>` header (preferred, issue #176).** Headers
+  are not captured by reverse-proxy or web-server access logs, browser
+  history, or screenshots of the config flow the way a query string is, so
+  this form has less exposure surface.
+- **`?token=<secret>` query parameter (deprecated).** Kept for backwards
+  compatibility during a migration window so existing UniFi Alarm Manager
+  configurations are not broken by the header migration. Will be removed no
+  earlier than v3.0.0. A webhook authenticated this way raises the
+  `webhook_legacy_query_auth` repair issue prompting migration to the header
+  form.
+
+Both forms carry the same risk profile if the secret itself leaks (e.g.
+pasted into a public log or issue): whoever holds it can POST to the webhook
+endpoint until the secret is rotated. Config- and options-flow "Webhook URLs"
+screens no longer embed the secret in the displayed URL; it is shown
+separately for the user to set as a header value (or, for the legacy form,
+to append manually).
+
 ## Webhook secret rotation
 
 The options flow can regenerate the per-entry webhook bearer secret. Rotation
-replaces the `?token=<value>` query parameter; the webhook URL path (which
-embeds an 8-character entry suffix) is **not** rotated. An attacker who
-captured the old token can still POST to the same endpoint, but the
-constant-time token check (`hmac.compare_digest`) rejects the request.
+replaces the value validated against both the `Authorization` header and the
+legacy `?token=<value>` query parameter; the webhook URL path (which embeds
+an 8-character entry suffix) is **not** rotated. An attacker who captured the
+old secret can still POST to the same endpoint, but the constant-time check
+(`hmac.compare_digest`) rejects the request.
 
 If true URL-path revocation is ever required (e.g. the suffix itself is
 believed compromised), the only recovery is to delete and re-add the config
-entry. Rotation alone is sufficient for the common "I think my token leaked"
+entry. Rotation alone is sufficient for the common "I think my secret leaked"
 case; it is not sufficient for "the URL has been published publicly".
 
 ## Schema version 3 migration (v1.7)
