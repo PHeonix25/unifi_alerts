@@ -15,12 +15,13 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     ALL_CATEGORIES,
-    CATEGORY_ICONS,
     CONF_CONTROLLER_URL,
     DOMAIN,
 )
 from .coordinator import UniFiAlertsCoordinator
 from .models import CategoryState, UniFiAlert
+
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
@@ -61,7 +62,6 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_event"
         self._attr_translation_key = f"event_{category}"
-        self._attr_icon = CATEGORY_ICONS[category]
         self._attr_device_info = _device_info(entry)
         # Track alert_count to detect new alerts on coordinator update
         self._last_seen_count: int = 0

@@ -16,13 +16,13 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     ALL_CATEGORIES,
-    CATEGORY_ICONS,
-    CATEGORY_ICONS_OK,
     CONF_CONTROLLER_URL,
     DOMAIN,
 )
 from .coordinator import UniFiAlertsCoordinator
 from .models import CategoryState
+
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
@@ -69,12 +69,6 @@ class UniFiCategoryBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], Binar
     def available(self) -> bool:
         state = self.coordinator.get_category_state(self._category)
         return state is not None and state.enabled
-
-    @property
-    def icon(self) -> str:
-        if self.is_on:
-            return CATEGORY_ICONS[self._category]
-        return CATEGORY_ICONS_OK[self._category]
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -124,10 +118,6 @@ class UniFiRollupBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], BinaryS
     @property
     def is_on(self) -> bool:
         return self.coordinator.any_alerting
-
-    @property
-    def icon(self) -> str:
-        return "mdi:shield-alert" if self.is_on else "mdi:shield-check"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

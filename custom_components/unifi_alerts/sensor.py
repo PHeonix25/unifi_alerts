@@ -25,6 +25,8 @@ from .const import (
 from .coordinator import UniFiAlertsCoordinator
 from .models import CategoryState
 
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -103,7 +105,6 @@ class UniFiCategoryCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sensor
     # No SensorDeviceClass fits an alert counter; MEASUREMENT suits a resettable integer.
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "alerts"
-    _attr_icon = "mdi:counter"
 
     def __init__(
         self,
@@ -185,7 +186,6 @@ class UniFiRollupCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEn
     # No SensorDeviceClass fits an alert counter; MEASUREMENT suits a resettable integer.
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "alerts"
-    _attr_icon = "mdi:bell-alert"
 
     def __init__(
         self,

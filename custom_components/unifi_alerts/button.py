@@ -5,7 +5,7 @@ from __future__ import annotations
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -16,6 +16,8 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import UniFiAlertsCoordinator
+
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
@@ -38,7 +40,6 @@ class UniFiClearCategoryButton(CoordinatorEntity[UniFiAlertsCoordinator], Button
     """Button that manually clears the alert state for one category."""
 
     _attr_has_entity_name = True
-    _attr_icon = "mdi:bell-off"
     _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(
@@ -52,10 +53,6 @@ class UniFiClearCategoryButton(CoordinatorEntity[UniFiAlertsCoordinator], Button
         self._attr_unique_id = f"{entry.entry_id}_{category}_clear"
         self._attr_translation_key = f"clear_{category}"
         self._attr_device_info = _device_info(entry)
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
@@ -73,7 +70,6 @@ class UniFiClearAllButton(CoordinatorEntity[UniFiAlertsCoordinator], ButtonEntit
 
     _attr_has_entity_name = True
     _attr_translation_key = "clear_all"
-    _attr_icon = "mdi:shield-off"
     _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(
@@ -84,10 +80,6 @@ class UniFiClearAllButton(CoordinatorEntity[UniFiAlertsCoordinator], ButtonEntit
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_clear_all"
         self._attr_device_info = _device_info(entry)
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
