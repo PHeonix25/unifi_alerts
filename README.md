@@ -196,6 +196,12 @@ All data stays on your local network; the integration does not communicate with 
 
 ---
 
+## Quality scale
+
+This integration is audited against Home Assistant's [integration quality scale](https://www.home-assistant.io/docs/quality_scale/). See [quality_scale.yaml](quality_scale.yaml) for the full rule-by-rule status (done, exempt, or open, with linked issues for remaining gaps). The `quality_scale` manifest key is not set yet: one Bronze-tier rule (`brands`, tracked by [#143](https://github.com/PHeonix25/unifi_alerts/issues/143)) is still open, so no tier is fully achieved.
+
+---
+
 ## Uninstall
 
 **Settings > Devices & Services > UniFi Alerts > three-dot menu > Delete.**
