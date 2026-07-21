@@ -24,6 +24,11 @@ def make_flow() -> UniFiAlertsConfigFlow:
     """Create a config flow instance with a minimal hass mock."""
     flow = UniFiAlertsConfigFlow()
     flow.hass = MagicMock()
+    # No pre-existing entries by default — async_step_ssdp's serial-based
+    # rediscovery lookup (_find_entry_by_serial) iterates this list. Tests
+    # that need a match override it with a MagicMock(return_value=[...]).
+    flow.hass.config_entries.async_entries = MagicMock(return_value=[])
+    flow.hass.config_entries.async_update_entry = MagicMock()
     flow.context = {}
     # Patch unique ID helpers — real implementations need a running hass
     flow.async_set_unique_id = AsyncMock(return_value=None)

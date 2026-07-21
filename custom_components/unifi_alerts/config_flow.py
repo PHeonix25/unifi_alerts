@@ -32,6 +32,7 @@ from .const import (
     CONF_API_KEY,
     CONF_CLEAR_TIMEOUT,
     CONF_CONTROLLER_URL,
+    CONF_DEVICE_SERIAL,
     CONF_ENABLED_CATEGORIES,
     CONF_MIN_SEVERITY,
     CONF_POLL_INTERVAL,
@@ -121,6 +122,21 @@ def _entry_needs_apikey_migration(entry: Any) -> bool:
     return not entry.data.get(CONF_API_KEY)
 
 
+def _find_entry_by_serial(hass: Any, serial: str) -> ConfigEntry | None:
+    """Return the config entry whose stored device serial matches `serial`, or None.
+
+    `unique_id` is keyed on the controller URL (see `async_step_user`), which
+    changes if the controller's IP address changes. The UPnP serial number
+    carried in SSDP discovery payloads does not, so it is how
+    `async_step_ssdp` finds a previously configured entry to refresh when a
+    known console reappears at a new address (#343).
+    """
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get(CONF_DEVICE_SERIAL) == serial:
+            return cast(ConfigEntry, entry)
+    return None
+
+
 class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the initial setup flow shown in Settings → Integrations."""
 
@@ -130,6 +146,10 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         self._controller_url: str = ""
         self._credentials: dict[str, Any] = {}
         self._entry_data: dict[str, Any] = {}
+        # Set by async_step_ssdp when the discovery payload carries a UPnP
+        # serial number; persisted onto the new entry so a future rediscovery
+        # at a different address can find and refresh it (#343).
+        self._device_serial: str = ""
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Step 1: controller URL + API key."""
@@ -173,6 +193,11 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32),
                         CONF_WEBHOOK_ID_SUFFIX: secrets.token_hex(4),
                     }
+                    if self._device_serial:
+                        # Carried over from async_step_ssdp so a future
+                        # rediscovery at a different address can find this
+                        # entry again (#343).
+                        self._credentials[CONF_DEVICE_SERIAL] = self._device_serial
                     return await self.async_step_categories()
 
         _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
@@ -213,6 +238,8 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         """
         from urllib.parse import urlparse
 
+        from homeassistant.helpers.service_info import ssdp as ssdp_info
+
         parsed = urlparse(discovery_info.ssdp_location or "")
         host = parsed.hostname or ""
         if not host:
@@ -221,6 +248,34 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         self._controller_url = f"https://{host}"
         await self.async_set_unique_id(self._controller_url)
         self._abort_if_unique_id_configured()
+
+        # The unique_id check above only catches rediscovery at an unchanged
+        # address, since unique_id is keyed on the controller URL (see
+        # async_step_user). If the controller's IP changed (DHCP lease
+        # change, console swap), the discovered UPnP serial number - stable
+        # across IP changes, unlike the URL - is used to find the previously
+        # configured entry and refresh its controller URL and unique_id in
+        # place, instead of leaving it pinned to the stale address until a
+        # human edits it manually (#343).
+        serial = discovery_info.upnp.get(ssdp_info.ATTR_UPNP_SERIAL)
+        if serial:
+            self._device_serial = serial
+            existing = _find_entry_by_serial(self.hass, serial)
+            if (
+                existing is not None
+                and existing.data.get(CONF_CONTROLLER_URL) != self._controller_url
+            ):
+                self.hass.config_entries.async_update_entry(
+                    existing,
+                    data={
+                        **existing.data,
+                        CONF_CONTROLLER_URL: self._controller_url,
+                        CONF_DEVICE_SERIAL: serial,
+                    },
+                    unique_id=self._controller_url,
+                )
+                return self.async_abort(reason="already_configured")
+
         self.context["title_placeholders"] = {"name": host}
         return await self.async_step_user()
 

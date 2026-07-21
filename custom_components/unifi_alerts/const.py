@@ -23,6 +23,13 @@ CONF_WEBHOOK_SECRET: Final = "webhook_secret"
 CONF_WEBHOOK_ID_SUFFIX: Final = "webhook_id_suffix"
 CONF_REGENERATE_WEBHOOK_SECRET: Final = "regenerate_webhook_secret"
 CONF_SITE: Final = "site"
+# Stable UPnP serial number (MAC address) captured from SSDP discovery.
+# Unlike CONF_CONTROLLER_URL (what unique_id is keyed on), this survives an
+# IP address change, so it is how async_step_ssdp finds and refreshes a
+# previously configured entry when a known console reappears at a new
+# address instead of leaving it pinned to the stale URL (#343). Only set on
+# entries created via SSDP discovery; absent on entries added manually.
+CONF_DEVICE_SERIAL: Final = "device_serial"
 
 DEFAULT_POLL_INTERVAL = 60  # seconds
 DEFAULT_CLEAR_TIMEOUT = 30  # minutes
