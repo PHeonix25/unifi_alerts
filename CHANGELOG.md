@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added a dedicated reconfigure flow, so the controller URL, API key, and SSL verification can be updated through Home Assistant's "Reconfigure" affordance without deleting and re-adding the entry. The existing "Configure" options flow is unchanged. ([#344])
 - Added a per-category minimum-severity option (Config Flow and Options Flow), with an explicit "No Filter" value, so noisy categories can be enabled without accepting every low-value alert; alerts with no recognisable severity are never filtered out. ([#135])
 
 ### Changed
@@ -360,3 +361,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#340]: https://github.com/PHeonix25/unifi_alerts/issues/340
 [#341]: https://github.com/PHeonix25/unifi_alerts/issues/341
 [#343]: https://github.com/PHeonix25/unifi_alerts/issues/343
+[#344]: https://github.com/PHeonix25/unifi_alerts/issues/344

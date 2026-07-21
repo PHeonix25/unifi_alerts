@@ -268,11 +268,15 @@ rules:
       value (the message text), which icons.json's state-keyed mechanism
       cannot express.
   reconfiguration-flow:
-    status: todo
+    status: done
     comment: |
-      No async_step_reconfigure. The options flow already covers changing
-      the controller URL and API key, but not through HA's dedicated
-      reconfigure entry point. Filed as #344.
+      async_step_reconfigure implements HA's dedicated reconfigure entry
+      point, letting the user update the controller URL, API key, and
+      verify_ssl for an existing entry without deleting and re-adding it.
+      Reuses the same credential-validation helpers as the options flow's
+      credentials step rather than duplicating that logic. The options flow
+      is kept as-is alongside it, covering alert categories, polling, and
+      webhook secret rotation. Landed in #344.
   repair-issues:
     status: done
     comment: |
