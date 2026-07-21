@@ -64,7 +64,7 @@ from .unifi_client import InvalidSiteError, UniFiClient
 _LOGGER = logging.getLogger(__name__)
 
 # Minimum_Severity_Setting selector, shared by the Config_Flow and
-# Options_Flow categories steps (see design.md's config_flow.py section).
+# Options_Flow categories steps.
 # Inline SelectOptionDict labels are used instead of a `selector.*`
 # translation-key section, matching the level of ceremony already used for
 # the password/API-key TextSelector fields above.

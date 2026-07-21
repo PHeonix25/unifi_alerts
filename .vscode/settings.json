@@ -10,6 +10,5 @@
     }
   ],
   "chat.promptFiles": true,
-  "chat.mcp.access": "all",
-  "makefile.configureOnOpen": false
+  "chat.mcp.access": "all"
 }

@@ -592,6 +592,8 @@ class TestPushAlertSeverityGate:
         assert state.alert_count == prior_alert_count
         assert state.open_count == prior_open_count
         assert state.last_alert is prior_last_alert
+        # No immediate broadcast for a filtered event either.
+        coord.async_set_updated_data.assert_not_called()
 
     # last_webhook_at must still advance on a gated (below-threshold) push.
     @given(
@@ -641,6 +643,39 @@ class TestPushAlertSeverityGate:
         assert state.alert_count == prior_alert_count
         assert state.open_count == prior_open_count
         assert state.last_alert is prior_last_alert
+
+    def test_realistic_webhook_payload_with_no_severity_field_is_not_gated_out(
+        self,
+    ) -> None:
+        """A realistic Alarm Manager webhook POST body (no `severity` key at
+        all, per docs/UNIFI.md) must never be dropped by a category's
+        Minimum_Severity_Setting, however high it is set.
+
+        from_webhook_payload() falls back to `subsystem` when `severity` is
+        absent, which normalize_severity() maps to SEVERITY_UNKNOWN - the
+        gate must fail open on that, not silently mute the webhook (this is
+        the primary real-time path, and the exact scenario #135 targets)."""
+        category = CATEGORY_NETWORK_WAN
+        payload = {
+            "message": "WAN connection lost",
+            "subsystem": "wan",
+            "key": "EVT_WAN_Transition",
+            # No "severity" key - matches the undocumented webhook payload shape.
+        }
+        alert = UniFiAlert.from_webhook_payload(category, payload)
+
+        coord = make_coordinator(enabled=[category])
+        coord.async_set_updated_data = MagicMock()
+        # The strictest possible setting - if fail-open works, this still
+        # must not filter the webhook out.
+        coord._config[CONF_MIN_SEVERITY] = {category: SEVERITY_ORDER[-1]}
+
+        coord.push_alert(category, alert)
+
+        state = coord.get_category_state(category)
+        assert state.is_alerting is True
+        assert state.alert_count == 1
+        assert state.last_alert is alert
 
     # An at/above-threshold push, or a push under No_Filter, must be accepted
     # exactly as before this feature existed.

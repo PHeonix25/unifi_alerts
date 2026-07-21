@@ -14,9 +14,10 @@ from custom_components.unifi_alerts.severity import (
     _SEVERITY_SYNONYMS,
     MIN_SEVERITY_NO_FILTER,
     MIN_SEVERITY_ORDER,
-    SEVERITY_LOW,
     SEVERITY_ORDER,
+    SEVERITY_UNKNOWN,
     get_effective_min_severity,
+    meets_minimum,
     normalize_severity,
 )
 
@@ -46,14 +47,16 @@ def _padded(name: str) -> st.SearchStrategy[str]:
 
 
 # Normalizer totality: normalize_severity must be a total function over
-# arbitrary string input, never raising and never returning the sentinel.
+# arbitrary string input, never raising and never returning the No_Filter
+# sentinel.
 @given(raw=st.text())
 @settings(max_examples=25)
 def test_normalize_severity_totality(raw: str) -> None:
-    """normalize_severity always returns one of the four Severity_Levels,
-    and never the MIN_SEVERITY_NO_FILTER sentinel, for any string input."""
+    """normalize_severity always returns one of the four Severity_Levels or
+    SEVERITY_UNKNOWN, and never the MIN_SEVERITY_NO_FILTER sentinel, for any
+    string input."""
     result = normalize_severity(raw)
-    assert result in SEVERITY_ORDER
+    assert result in (*SEVERITY_ORDER, SEVERITY_UNKNOWN)
     assert result != MIN_SEVERITY_NO_FILTER
 
 
@@ -74,7 +77,10 @@ def test_normalize_severity_case_and_whitespace_insensitive(name: str, data: st.
     assert normalize_severity(padded) == expected
 
 
-# Unmatched or empty input must fall back to LOW.
+# Unmatched or empty input must fall back to UNKNOWN, never LOW - conflating
+# "no recognised severity" with an explicit LOW would let a category's
+# Minimum_Severity_Setting silently drop alerts whose severity could not be
+# determined (the primary defect this gate must not reintroduce).
 @given(
     raw=st.text().filter(
         lambda s: (
@@ -84,11 +90,22 @@ def test_normalize_severity_case_and_whitespace_insensitive(name: str, data: st.
     )
 )
 @settings(max_examples=25)
-def test_normalize_severity_unmatched_or_empty_falls_back_to_low(raw: str) -> None:
+def test_normalize_severity_unmatched_or_empty_falls_back_to_unknown(raw: str) -> None:
     """Any string that, after lowercasing and stripping, does not match a
     canonical Severity_Level name or a documented synonym key (including the
-    empty string) must normalize to SEVERITY_LOW."""
-    assert normalize_severity(raw) == SEVERITY_LOW
+    empty string) must normalize to SEVERITY_UNKNOWN."""
+    assert normalize_severity(raw) == SEVERITY_UNKNOWN
+
+
+# SEVERITY_UNKNOWN must fail open: it always satisfies any minimum, including
+# the highest (VERY_HIGH) - an alert with no recognisable severity is never
+# gated out, regardless of how strict the category's setting is.
+@given(minimum=st.sampled_from(MIN_SEVERITY_ORDER))
+@settings(max_examples=25)
+def test_unknown_severity_always_meets_minimum(minimum: str) -> None:
+    """meets_minimum(SEVERITY_UNKNOWN, minimum) is True for every possible
+    Minimum_Severity_Setting, including No_Filter and every Severity_Level."""
+    assert meets_minimum(SEVERITY_UNKNOWN, minimum) is True
 
 
 # Effective-setting resolution must default missing data to No_Filter.
@@ -125,6 +142,21 @@ def test_get_effective_min_severity_defaults_missing_data_to_no_filter(
     assert get_effective_min_severity(config_with_key, category) == stored_value
 
 
+# A stored value outside MIN_SEVERITY_ORDER (hand-edited or corrupted config
+# entry) must be coerced back to No_Filter rather than propagating a value
+# meets_minimum() would raise on.
+def test_get_effective_min_severity_coerces_unrecognised_value_to_no_filter() -> None:
+    config: dict[str, Any] = {CONF_MIN_SEVERITY: {"network_device": "banana"}}
+    assert get_effective_min_severity(config, "network_device") == MIN_SEVERITY_NO_FILTER
+
+
+# A non-dict min_severity value (e.g. hand-edited to a list or string) must
+# be treated as absent rather than raising AttributeError on .get().
+def test_get_effective_min_severity_non_mapping_value_treated_as_absent() -> None:
+    config: dict[str, Any] = {CONF_MIN_SEVERITY: ["not", "a", "mapping"]}
+    assert get_effective_min_severity(config, "network_device") == MIN_SEVERITY_NO_FILTER
+
+
 # Raw severity must be preserved independent of normalization.
 @given(raw=st.text())
 @settings(max_examples=25)
@@ -144,4 +176,4 @@ def test_alert_severity_preserved_independent_of_normalization(raw: str) -> None
     assert alert.severity == raw
     # severity_level is derived independently and must never mutate severity.
     assert alert.severity == raw
-    assert alert.severity_level in SEVERITY_ORDER
+    assert alert.severity_level in (*SEVERITY_ORDER, SEVERITY_UNKNOWN)

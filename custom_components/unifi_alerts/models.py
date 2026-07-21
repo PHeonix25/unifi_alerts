@@ -92,7 +92,7 @@ class UniFiAlert:
 
     @property
     def severity_level(self) -> str:
-        """Normalized severity, derived from self.severity on every access.
+        """Normalised severity, derived from self.severity on every access.
 
         Computed on demand rather than stored so it can never drift from
         `self.severity`, and is intentionally not a dataclass field: it is

@@ -279,9 +279,9 @@ If webhooks are not configured in UniFi Alarm Manager, Event entities never fire
 3. Check HA logs for HTTP 401 responses; this indicates a webhook token mismatch.
 4. Verify the category configured in UniFi matches a category enabled in the HA integration options.
 
-## Severity normalization
+## Severity normalisation
 
-Every alert, regardless of which ingestion path produced it (webhook push, legacy `/list/alarm` polling, or v2 `system-log` polling), is assigned a normalized `severity_level` in addition to its original raw `severity` string. `custom_components/unifi_alerts/severity.py` is the source of truth; this section documents its behavior.
+Every alert, regardless of which ingestion path produced it (webhook push, legacy `/list/alarm` polling, or v2 `system-log` polling), is assigned a normalised `severity_level` in addition to its original raw `severity` string. `custom_components/unifi_alerts/severity.py` is the source of truth; this section documents its behaviour.
 
 ### Ordering
 
@@ -291,11 +291,11 @@ Exactly four Severity_Levels exist, ordered:
 LOW < MEDIUM < HIGH < VERY_HIGH
 ```
 
-`normalize_severity()` always returns one of these four values - never empty, never an unrecognised string.
+`normalize_severity()` returns one of these four values, or the `UNKNOWN` sentinel described under Fallback below - never empty.
 
 ### The `No_Filter` sentinel
 
-`No_Filter` (displayed to users as "No Filter") is a Minimum_Severity_Setting value, not a Severity_Level. It is used only for the per-category minimum-severity gate and is never assigned as an alert's own normalized severity. For the purposes of the Minimum_Severity_Setting selector's ordering only, `No_Filter` sits below `LOW`:
+`No_Filter` (displayed to users as "No Filter") is a Minimum_Severity_Setting value, not a Severity_Level. It is used only for the per-category minimum-severity gate and is never assigned as an alert's own normalised severity. For the purposes of the Minimum_Severity_Setting selector's ordering only, `No_Filter` sits below `LOW`:
 
 ```
 No_Filter < LOW < MEDIUM < HIGH < VERY_HIGH
@@ -307,7 +307,7 @@ A category set to `No_Filter` accepts every alert regardless of severity, with n
 
 Legacy alarm severities are inconsistent free-form strings. `normalize_severity()` matches case-insensitively and ignores leading/trailing whitespace, first against the four canonical names above, then against this synonym table:
 
-| Raw value | Normalized Severity_Level |
+| Raw value | Normalised Severity_Level |
 |---|---|
 | `critical` | `VERY_HIGH` |
 | `urgent` | `VERY_HIGH` |
@@ -320,7 +320,9 @@ When a user reports a legacy severity string that isn't classified correctly, ad
 
 ### Fallback
 
-If the raw severity string is empty, or matches neither a canonical name nor a synonym after case-folding and trimming, `normalize_severity()` falls back to `LOW`.
+The webhook push path and the legacy `/list/alarm` poll path do not document a `severity` field at all: `UniFiAlert.from_webhook_payload`/`from_api_alarm` fall back to the record's `subsystem` (e.g. `wlan`, `lan`, `wan`) when `severity` is absent, which is not a recognised severity or synonym.
+
+If the raw severity string is empty, or matches neither a canonical name nor a synonym after case-folding and trimming, `normalize_severity()` returns the `UNKNOWN` sentinel rather than `LOW`. `UNKNOWN` is deliberately excluded from `SEVERITY_ORDER` and always passes the minimum-severity gate (`meets_minimum()` fails open): an alert whose severity could not be determined is never silently dropped by a category's Minimum_Severity_Setting, regardless of how high that minimum is set.
 
 ## Event key taxonomy
 

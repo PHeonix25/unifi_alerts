@@ -20,7 +20,6 @@ from .const import (
     ALL_CATEGORIES,
     CONF_CLEAR_TIMEOUT,
     CONF_ENABLED_CATEGORIES,
-    CONF_MIN_SEVERITY,
     CONF_POLL_INTERVAL,
     CONF_SITE,
     DEFAULT_CLEAR_TIMEOUT,
@@ -77,7 +76,6 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._config: UniFiClientConfig = config
         self._clear_timeout_minutes: int = config.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT)
         self._enabled_categories: list[str] = config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
-        self._min_severity: dict[str, str] = config.get(CONF_MIN_SEVERITY, {})
         self._site: str = config.get(CONF_SITE, DEFAULT_SITE)
         self._entry_id: str = config_entry.entry_id
         self._store: Store[dict[str, Any]] = Store(
@@ -280,11 +278,16 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         minimum = get_effective_min_severity(self._config, category)
         if not meets_minimum(alert.severity_level, minimum):
-            # True no-op except for the webhook-health signal:
-            # is_alerting / alert_count / open_count / last_alert are untouched.
+            # Below the configured Minimum_Severity_Setting: is_alerting,
+            # alert_count, open_count, and last_alert are left untouched.
+            # last_webhook_at still advances and is persisted so the
+            # webhook_health signal for this category isn't falsely marked
+            # stale, but no immediate broadcast is fired for a filtered
+            # event - the periodic poll refresh picks it up, which keeps a
+            # noisy filtered category from generating unbounded listener
+            # notifications.
             state.last_webhook_at = alert.received_at
             self._schedule_persist()
-            self.async_set_updated_data(self._category_states)
             return
 
         # Alerts without a key (e.g. the empty-body webhook ping) have no

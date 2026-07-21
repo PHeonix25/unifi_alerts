@@ -1,11 +1,9 @@
 """Tests for the Minimum_Severity_Setting selector in Config_Flow and Options_Flow.
 
-Covers Properties 5-6 (categories-step submission round-tripping) from
-design.md's Correctness Properties section, plus the associated Options_Flow
-pre-fill example test (10.4). Split from test_setup.py (which owns the
-existing category-enable/disable and generic categories-step behavior) since
-this file is scoped specifically to the min_severity_{category} selector
-added by this feature.
+Covers categories-step submission round-tripping and Options_Flow pre-fill.
+Split from test_setup.py (which owns the existing category-enable/disable
+and generic categories-step behaviour) since this file is scoped
+specifically to the min_severity_{category} selector added by this feature.
 """
 
 from __future__ import annotations
@@ -50,10 +48,9 @@ class TestConfigFlowMinSeverity:
         async def _run() -> dict[str, str]:
             flow = make_flow()
             flow._controller_url = "https://192.168.1.1"
-            flow._detected_auth_method = "userpass"
             flow._credentials = dict(_VALID_INPUT)
             # async_step_finish needs a real hass to render webhook URLs; the
-            # submission-round-trip behavior under test is fully captured by
+            # submission-round-trip behaviour under test is fully captured by
             # _entry_data before that step runs, so it is mocked out here the
             # same way test_setup.py's TestCategoriesStep does.
             flow.async_step_finish = AsyncMock(return_value={"type": "form", "step_id": "finish"})
@@ -113,7 +110,7 @@ class TestOptionsFlowMinSeverity:
             flow = UniFiAlertsOptionsFlow(config_entry)
             flow.hass = MagicMock()
             # async_step_finish needs a real hass to render webhook URLs; the
-            # submission-round-trip behavior under test is fully captured by
+            # submission-round-trip behaviour under test is fully captured by
             # _pending_options before that step runs, same as
             # TestConfigFlowMinSeverity above.
             flow.async_step_finish = AsyncMock(return_value={"type": "form", "step_id": "finish"})

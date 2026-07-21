@@ -4,7 +4,7 @@
 
 ### Added
 
-- Added a per-category minimum-severity option (Config Flow and Options Flow), with an explicit "No Filter" value, so noisy categories can be enabled without accepting every low-value alert. Alerts below a category's configured minimum severity are a true no-op on both the webhook push path and the polling paths. Raw severity strings from all ingestion paths (webhooks, legacy alarms, v2 system-log events) are now normalized onto a consistent `LOW`/`MEDIUM`/`HIGH`/`VERY_HIGH` scale for the comparison, closing the remaining scope of the severity-visibility issue. ([#135])
+- Added a per-category minimum-severity option (Config Flow and Options Flow), with an explicit "No Filter" value, so noisy categories can be enabled without accepting every low-value alert; alerts with no recognisable severity are never filtered out. ([#135])
 
 ### Changed
 
