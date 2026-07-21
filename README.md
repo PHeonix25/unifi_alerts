@@ -35,6 +35,17 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 
 ---
 
+## Use cases
+
+- **Network-outage dashboards** - put the rollup `binary_sensor.unifi_alerts_any_alert` and the WAN offline/latency category on a Lovelace card so a failover or ISP outage is visible at a glance.
+- **Security automations** - notify the moment UniFi's IPS/IDS, honeypot, or firewall-block alarms fire, instead of noticing a threat only after checking the controller UI.
+- **Unattended-site power monitoring** - alert on PoE disconnects, power cycles, or UPS events at a remote or unstaffed site where nobody is watching the controller in real time.
+- **Client presence and churn tracking** - use the client connect/disconnect category to notice unexpected devices joining, or expected devices dropping off, the network.
+
+See [docs/EXAMPLES.md](docs/EXAMPLES.md) for a working example of each: a Lovelace entities card ("UniFi Network Health") and an automation that notifies on a security threat, built on the entities this integration creates.
+
+---
+
 ## Requirements
 
 - **Home Assistant** 2026.3 or later (requires Python 3.14)

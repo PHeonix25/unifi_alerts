@@ -203,10 +203,12 @@ rules:
     status: done
     comment: docs/TROUBLESHOOTING.md.
   docs-use-cases:
-    status: todo
+    status: done
     comment: |
-      Features and setup are documented but there is no section explicitly
-      framed around use cases. Filed as #346.
+      README "Use cases" section names four concrete scenarios (network-
+      outage dashboards, security automations, unattended-site power
+      monitoring, client presence tracking) and cross-links docs/EXAMPLES.md
+      for the working dashboard card and automation. Closed #346.
   dynamic-devices:
     status: exempt
     comment: |
