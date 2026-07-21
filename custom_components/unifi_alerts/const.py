@@ -72,6 +72,11 @@ ISSUE_ID_AUTH_FAILED: Final = "auth_failed"
 ISSUE_ID_WEBHOOK_SECRET_ROTATED: Final = "webhook_secret_rotated"
 ISSUE_ID_WEBHOOK_URLS_CHANGED: Final = "webhook_urls_changed"
 ISSUE_ID_PERSIST_FAILED: Final = "watermark_persist_failed"
+# Raised the first time a webhook authenticates via the legacy ?token= query
+# parameter (#176) rather than the Authorization: Bearer header. Nudges
+# users still on the legacy form to migrate; cleared as soon as a header-
+# authenticated webhook is received for the same entry.
+ISSUE_ID_WEBHOOK_LEGACY_QUERY_AUTH: Final = "webhook_legacy_query_auth"
 # Raised when a username/password entry is migrated to the API-key-only schema
 # (version 4) and needs an API key supplied via reauth. Distinct from
 # ISSUE_ID_AUTH_FAILED so the repair card explains the upgrade rather than

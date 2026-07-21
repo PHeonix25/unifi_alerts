@@ -62,6 +62,46 @@ async def test_valid_post_flips_binary_sensor(hass, entry, hass_client):
 
 
 @pytest.mark.integration
+async def test_valid_post_with_authorization_header_flips_binary_sensor(hass, entry, hass_client):
+    """POST with Authorization: Bearer <secret> (#176 preferred form) and no
+    ?token= flips the matching binary sensor to ON."""
+    uid = f"{ENTRY_ID}_{TEST_CATEGORY}_binary"
+    eid = entity_id_for(hass, "binary_sensor", uid)
+    assert hass.states.get(eid).state == "off"
+
+    client = await hass_client()
+    resp = await client.post(
+        f"/api/webhook/{TEST_WEBHOOK_ID}",
+        json=TEST_PAYLOAD,
+        headers={"Authorization": f"Bearer {WEBHOOK_SECRET}"},
+    )
+    assert resp.status == 200
+    await resp.read()
+    await hass.async_block_till_done()
+
+    assert hass.states.get(eid).state == "on"
+
+
+@pytest.mark.integration
+async def test_wrong_authorization_header_and_no_query_returns_401(hass, entry, hass_client):
+    """A wrong Authorization header with no ?token= must return 401."""
+    uid = f"{ENTRY_ID}_{TEST_CATEGORY}_binary"
+    eid = entity_id_for(hass, "binary_sensor", uid)
+
+    client = await hass_client()
+    resp = await client.post(
+        f"/api/webhook/{TEST_WEBHOOK_ID}",
+        json=TEST_PAYLOAD,
+        headers={"Authorization": "Bearer wrong-token"},
+    )
+    assert resp.status == 401
+    await resp.read()
+    await hass.async_block_till_done()
+
+    assert hass.states.get(eid).state == "off"
+
+
+@pytest.mark.integration
 async def test_valid_post_also_flips_rollup_sensor(hass, entry, hass_client):
     """A successful webhook POST should also flip the rollup binary sensor to ON."""
     rollup_eid = entity_id_for(hass, "binary_sensor", f"{ENTRY_ID}_rollup_binary")

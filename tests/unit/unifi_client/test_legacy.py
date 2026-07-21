@@ -29,6 +29,7 @@ from .conftest import (
     find_calls,
     list_alarm_url,
     make_client,
+    queue_responses,
     stat_alarm_url,
     system_log_url,
     total_calls,
@@ -443,6 +444,105 @@ class TestFetchAlarms:
         sent_headers = calls[0].kwargs.get("headers") or {}
         assert sent_headers.get("X-API-Key") == "s3cr3t-key"
         assert sent_headers.get("Accept") == "application/json"
+
+
+class TestIsMissingAlarmPath:
+    """Unit tests for the extracted path-not-found heuristic (#239).
+
+    Pure function, no HTTP involved — decoupled from _try_fetch_alarms so the
+    endpoint-discovery decision can be tested and changed independently of
+    the core fetch/parse flow.
+    """
+
+    def test_invalid_object_message_is_missing_path(self):
+        assert UniFiClient._is_missing_alarm_path("api.err.InvalidObject") is True
+
+    @pytest.mark.parametrize("unifi_msg", ["", "api.err.Invalid", "api.err.NoSiteContext"])
+    def test_other_messages_are_not_missing_path(self, unifi_msg: str):
+        assert UniFiClient._is_missing_alarm_path(unifi_msg) is False
+
+
+class TestEndpointCaching:
+    """Tests for the per-site alarm-endpoint cache (#239).
+
+    Verifies that fetch_alarms() only runs the fallback-probe chain once per
+    site — subsequent polls go straight to the cached URL — and that a cached
+    URL that stops resolving triggers rediscovery rather than a hard failure.
+    """
+
+    @pytest.mark.asyncio
+    async def test_second_call_skips_fallback_iteration(self, aioclient_mock: AiohttpClientMocker):
+        """Once discovered, subsequent fetch_alarms() calls must not re-probe earlier paths."""
+        client = make_client(aioclient_mock)
+
+        aioclient_mock.get(list_alarm_url(), status=404)
+        aioclient_mock.get(alarm_url(), status=200, json={"meta": {"rc": "ok"}, "data": []})
+
+        await client.fetch_alarms()
+        assert len(find_calls("GET", list_alarm_url())) == 1
+        assert len(find_calls("GET", alarm_url())) == 1
+
+        await client.fetch_alarms()
+        # No further calls to list_alarm_url — discovery does not run again.
+        assert len(find_calls("GET", list_alarm_url())) == 1
+        assert len(find_calls("GET", alarm_url())) == 2
+        assert total_calls() == 3
+
+    @pytest.mark.asyncio
+    async def test_discovered_url_is_cached_per_site(self, aioclient_mock: AiohttpClientMocker):
+        client = make_client(aioclient_mock)
+        aioclient_mock.get(list_alarm_url(), status=200, json={"meta": {"rc": "ok"}, "data": []})
+
+        await client.fetch_alarms()
+
+        assert client._alarm_url_cache == {"default": list_alarm_url()}
+
+    @pytest.mark.asyncio
+    async def test_400_parsing_not_reached_on_cached_happy_path(
+        self, aioclient_mock: AiohttpClientMocker, monkeypatch
+    ):
+        """A cache-hit poll that succeeds must never touch the 400-body parser.
+
+        Acceptance criterion from #239: _try_fetch_alarms must not parse
+        api.err.InvalidObject on every single execution once the endpoint is
+        known.
+        """
+        client = make_client(aioclient_mock)
+        aioclient_mock.get(list_alarm_url(), status=200, json={"meta": {"rc": "ok"}, "data": []})
+
+        parse_mock = AsyncMock(wraps=UniFiClient._parse_unifi_error_msg)
+        monkeypatch.setattr(UniFiClient, "_parse_unifi_error_msg", parse_mock)
+
+        await client.fetch_alarms()
+        await client.fetch_alarms()
+
+        parse_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_stale_cached_url_triggers_rediscovery(self, aioclient_mock: AiohttpClientMocker):
+        """If the cached URL stops resolving (e.g. a firmware upgrade), rediscover it."""
+        client = make_client(aioclient_mock)
+        ok_body = {"meta": {"rc": "ok"}, "data": []}
+
+        queue_responses(
+            aioclient_mock,
+            "get",
+            list_alarm_url(),
+            [
+                {"status": 200, "json": ok_body},  # first poll: succeeds, gets cached
+                {"status": 404},  # second poll: cached URL no longer resolves
+                {"status": 404},  # rediscovery retries list/alarm first, still gone
+            ],
+        )
+        aioclient_mock.get(alarm_url(), status=200, json=ok_body)
+
+        await client.fetch_alarms()
+        assert client._alarm_url_cache["default"] == list_alarm_url()
+
+        await client.fetch_alarms()
+        assert client._alarm_url_cache["default"] == alarm_url()
+        assert len(find_calls("GET", list_alarm_url())) == 3
+        assert len(find_calls("GET", alarm_url())) == 1
 
 
 class TestCategoriseAlarms:

@@ -12,24 +12,13 @@ This integration monitors **UniFi Network** alerts: events surfaced in the Netwo
 
 **UniFi OS consoles only** as of v1.4.0. Tested on UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+. Classic self-hosted Network Application (Linux/Windows bare-metal) is not supported and the legacy `/api/...` paths and `/api/login` endpoint were removed alongside detection logic.
 
-All requests are prefixed with `/proxy/network/`. Authentication uses `/api/auth/login` (userpass) or the `X-API-Key` header (API key). Logout uses `/api/auth/logout`.
+All requests are prefixed with `/proxy/network/`. Authentication uses the `X-API-Key` header exclusively.
 
 ## Authentication
 
-### Username/password
-
-```
-POST /api/auth/login
-{"username": "admin", "password": "..."}
-```
-
-Sets a session cookie; subsequent requests use the cookie automatically (aiohttp `ClientSession` handles this). Logout: `POST /api/auth/logout`.
-
-**Important:** Do not enable 2FA/MFA on the account used for API access; it breaks non-interactive login. Use a dedicated read-only local account.
-
 ### API key
 
-API keys are stateless: no login/logout. Generated in the UniFi OS web UI; the navigation path varies by firmware:
+API keys are stateless: no login/logout, no session cookie, and no CSRF token requirement. Generated in the UniFi OS web UI; the navigation path varies by firmware:
 
 - **Newer firmware (Network Application 8.x+):** Settings > Admins & Users > API Keys
 - **Some firmware versions:** Integrations > New API Key
@@ -53,11 +42,9 @@ X-API-Key: your-key-here
 
 > **Newer API (v2) note:** UniFi Network Application 8.x introduced a REST API under `/proxy/network/v2/api/`. `GET /proxy/network/v2/api/site` lists sites. The alarm endpoint is still at the classic `/proxy/network/api/s/{site}/alarm` (or `/list/alarm` / `/stat/alarm` depending on firmware). Note: `GET /proxy/network/v2/api/site/{site}/alarm` returns HTTP 404; the v2 alarm data lives at `POST /proxy/network/v2/api/site/{site}/system-log/all` (see "v2 system-log API" below).
 
-### Auto-detect logic (in `UniFiClient.authenticate()`)
+### Historical note: username/password removal
 
-1. If `api_key` is present in config, try API-key auth.
-2. If API-key auth fails (or no key supplied), fall back to username/password.
-3. Store the detected method in `self._auth_method`.
+Prior versions also supported username/password (cookie-session) authentication, with API key tried first and username/password as a fallback. This was removed (epic #277): cookie/session auth on UniFi OS requires an `x-csrf-token` header on non-GET requests, which the integration never sent, risking silent failure of the v2 system-log path. API keys are a stateless header with no login/logout and no CSRF requirement, so the fallback path was dropped rather than fixed. Config entries are migrated to an API-key-only schema; see `docs/ARCHITECTURE.md` for the migration detail.
 
 ## Alarm API endpoint
 
@@ -73,7 +60,9 @@ X-API-Key: your-key-here
 >
 > A path that doesn't exist may return either 404 or `400 api.err.InvalidObject` depending on firmware; both are treated as "try the next path". A genuine 400 (e.g. wrong site name) is surfaced only after every path is exhausted.
 >
-> **If UniFi changes the endpoint again:** add the new path to the head of `alarm_paths` in `unifi_client.py::fetch_alarms`, update the table above, and add a fallback test in `tests/unit/unifi_client/test_legacy.py` (see `TestFetchAlarms::test_falls_back_*`).
+> This probe chain only runs on the first `fetch_alarms()` call for a site (or again later if the cached URL stops resolving, e.g. after a firmware upgrade): see `unifi_client.py::_discover_alarm_url`. Once a path resolves it is cached per site and reused directly on every subsequent poll, so the 404/`api.err.InvalidObject` fallback parsing does not run on every poll ([#239](https://github.com/PHeonix25/unifi_alerts/issues/239)).
+>
+> **If UniFi changes the endpoint again:** add the new path to the head of `alarm_paths` in `unifi_client.py::_discover_alarm_url`, update the table above, and add a fallback test in `tests/unit/unifi_client/test_legacy.py` (see `TestFetchAlarms::test_falls_back_*`).
 
 Default site name is `default`. Multi-site is configurable via `CONF_SITE` per entry; per-category site selection is not implemented (see `docs/ROADMAP.md`, Deferred).
 

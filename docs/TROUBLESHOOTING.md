@@ -34,9 +34,9 @@ Symptom: alarms were working, then you rotated the webhook secret via the option
 WARNING ... Webhook request for category <name> rejected: missing or invalid token
 ```
 
-Cause: rotating the webhook secret invalidates every URL that Alarm Manager already has. The old `?token=...` query parameter no longer matches, so every POST is rejected with HTTP 401. HA's default log level surfaces WARNING, so these rejections are visible in Settings > System > Logs without enabling DEBUG.
+Cause: rotating the webhook secret invalidates every `Authorization` header value and legacy `?token=...` query parameter that Alarm Manager already has. Neither matches the new secret, so every POST is rejected with HTTP 401. HA's default log level surfaces WARNING, so these rejections are visible in Settings > System > Logs without enabling DEBUG.
 
-Fix: after regenerating, re-open the options flow finish step, copy all new webhook URLs, and re-paste them into UniFi Network > Settings > Notifications > Alarm Manager. Every category needs its URL replaced - a single stale URL means that category silently 401s.
+Fix: after regenerating, re-open the options flow finish step, copy the new secret, and update the `Authorization` header (or re-paste the `?token=` URL) for each category in UniFi Network > Settings > Notifications > Alarm Manager. Every category needs updating - a single stale secret means that category silently 401s.
 
 If you do not update Alarm Manager promptly, alarms continue to fire on the UniFi side but none reach HA.
 

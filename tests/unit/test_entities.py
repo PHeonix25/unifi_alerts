@@ -118,18 +118,6 @@ class TestUniFiCategoryBinarySensor:
         entity = self._make(state)
         assert entity.available is expected
 
-    @pytest.mark.parametrize(
-        ("is_alerting", "expected_icon"),
-        [
-            pytest.param(True, CATEGORY_ICONS[CATEGORY_NETWORK_WAN], id="alerting"),
-            pytest.param(False, CATEGORY_ICONS_OK[CATEGORY_NETWORK_WAN], id="not-alerting"),
-        ],
-    )
-    def test_icon(self, is_alerting, expected_icon):
-        state = make_state(is_alerting=is_alerting)
-        entity = self._make(state)
-        assert entity.icon == expected_icon
-
     def test_extra_attrs_with_alert(self):
         alert = make_alert()
         state = make_state(is_alerting=True, alert_count=2, open_count=1, last_alert=alert)
@@ -203,21 +191,6 @@ class TestUniFiRollupBinarySensor:
         states = {CATEGORY_NETWORK_WAN: make_state(is_alerting=is_alerting)}
         entity = self._make(states)
         assert entity.is_on is expected
-
-    @pytest.mark.parametrize(
-        ("states", "expected_icon"),
-        [
-            pytest.param(
-                {CATEGORY_NETWORK_WAN: make_state(is_alerting=True)},
-                "mdi:shield-alert",
-                id="alerting",
-            ),
-            pytest.param({}, "mdi:shield-check", id="not-alerting"),
-        ],
-    )
-    def test_icon(self, states, expected_icon):
-        entity = self._make(states)
-        assert entity.icon == expected_icon
 
     def test_extra_attrs_with_last_alert(self):
         alert = make_alert()

@@ -17,8 +17,8 @@ UniFi Controller
     |--- HTTP GET/POST --> UniFiClient --> coordinator._async_update_data()
          (polling; GET=legacy, POST=v2) --> coordinator._fetch_categorised()
                                                   |
-                              probe_system_log_endpoint() (once per client,
-                              cached with backoff on repeated failure)
+                              coordinator._probe_has_system_log() (caches the
+                              client's stateless probe, with backoff on repeated failure)
                                        /                        \
                               v2 available                v2 unavailable / older firmware
                                        |                          |
@@ -69,17 +69,16 @@ Single source of truth for:
 
 ### `unifi_client.py`
 
-Stateful async HTTP client. Always uses the UniFi OS API surface:
+Stateless async HTTP client (#240). Always uses the UniFi OS API surface:
 
 - `/proxy/network/api/...` for the alarm endpoint.
-- `/api/auth/login` and `/api/auth/logout` for username/password auth.
-- API-key auth verifies against `/proxy/network/api/s/default/self`.
+- API-key auth verifies against `/proxy/network/api/s/default/self` and is sent as an `X-API-Key` header on every request.
 
-Auto-detects auth method: tries API key first if present, falls back to username/password session cookies. Auth state is held on the client instance; on `InvalidAuthError` during a poll, the coordinator re-authenticates once and retries.
+API-key authentication is the only supported method (username/password auth was removed, epic #277; see `docs/UNIFI.md` for the historical note and CSRF rationale). API keys are stateless: no session, cookie, or login/logout to manage, so the client holds no auth state. On `InvalidAuthError` during a poll, the coordinator re-authenticates once (re-verifies the key) and retries.
 
-`fetch_alarms()` walks the legacy alarm-endpoint probe chain `[/list/alarm, /alarm, /stat/alarm]` (newest UniFi Network firmware first); 404 / 400 falls through to the next path, only surfacing an error after every path is exhausted. `categorise_alarms()` calls `fetch_alarms()` and groups the results by category via `_classify()`.
+`fetch_alarms()` uses a per-site cached endpoint URL once one has been discovered. On the first call for a site (or again later if the cached URL stops resolving, e.g. after a firmware upgrade) it delegates to `_discover_alarm_url()`, which walks the legacy alarm-endpoint probe chain `[/list/alarm, /alarm, /stat/alarm]` (newest UniFi Network firmware first); 404 / 400 falls through to the next path, only surfacing an error after every path is exhausted. Endpoint discovery (the fallback iteration and `api.err.InvalidObject` detection) is kept separate from the core fetch/parse loop in `_try_fetch_alarms()`, so steady-state polling issues a single request with no fallback parsing (#239). `categorise_alarms()` calls `fetch_alarms()` and groups the results by category via `_classify()`.
 
-`probe_system_log_endpoint()` checks whether the v2 `/v2/api/site/{site}/system-log/count` endpoint is available (200 = yes, 404 = no, cached until re-auth; a run of transient failures triggers a timed backoff before re-probing). `fetch_system_log_alarms()` pages through `/v2/api/site/{site}/system-log/all` using a `timestampFrom` watermark, filtering to `status == "NEW"` events, up to `MAX_SYSTEM_LOG_PAGES`.
+`probe_system_log_endpoint()` makes a single, stateless HTTP call checking whether the v2 `/v2/api/site/{site}/system-log/count` endpoint is available, returning `True` (200), `False` (404, definitively not implemented), or `None` (any other outcome, treated as transient by the caller). It holds no cache and no retry state itself - see `coordinator.py` below for where that cross-poll state lives (#240). `fetch_system_log_alarms()` pages through `/v2/api/site/{site}/system-log/all` using a `timestampFrom` watermark, filtering to `status == "NEW"` events, up to `MAX_SYSTEM_LOG_PAGES`.
 
 `_classify()` is a static method (pure function, easily testable) mapping raw legacy alarm dicts to categories. `UniFiAlert.from_system_log_event()` is the equivalent parser for the v2 event schema (`message_raw` + `parameters` templating, no `EVT_` prefix on keys).
 
@@ -88,7 +87,8 @@ Auto-detects auth method: tries API key first if present, falls back to username
 The integration's single source of truth at runtime. Key design decisions:
 
 - **`_category_states` is long-lived**: not re-created on each poll. Polling updates `open_count` and may set `is_alerting` directly (without incrementing `alert_count`) if the category is not already alerting. Webhook pushes update `is_alerting` and `alert_count` immediately via `apply_alert()`.
-- **Polling path dispatch**: `_fetch_categorised()` probes for the v2 system-log endpoint once per client instance and prefers it when available, computing a `timestampFrom` watermark as the oldest `last_cleared_at` across enabled categories (clamped to `DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS` so an uncleared category cannot grow the fetch window without bound). Falls back to the legacy `categorise_alarms()` path when the probe returns unavailable or fails. Both paths feed `unrecognised_keys` (exposed via diagnostics) for keys that cannot be mapped to a category.
+- **Polling path dispatch**: `_fetch_categorised()` calls `_probe_has_system_log()` and prefers the v2 path when available, computing a `timestampFrom` watermark as the oldest `last_cleared_at` across enabled categories (clamped to `DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS` so an uncleared category cannot grow the fetch window without bound). Falls back to the legacy `categorise_alarms()` path when the probe returns unavailable or fails. Both paths feed `unrecognised_keys` (exposed via diagnostics) for keys that cannot be mapped to a category.
+- **v2 system-log probe cache/backoff (#240)**: `_probe_has_system_log()` wraps `UniFiClient.probe_system_log_endpoint()` (a single stateless HTTP call) with the cross-poll cache the client itself no longer holds. A confirmed `True` or a definitive `False` (HTTP 404) is cached for the coordinator's lifetime (i.e. until the config entry reloads); a transient outcome is not cached, so the next poll re-probes immediately; after `_PROBE_FAIL_LIMIT` (5) consecutive transient outcomes, the result is pinned to `False` for `_PROBE_RETRY_AFTER` (1 hour) before the next re-probe.
 - **Auto-clear**: each `push_alert()` cancels any existing `asyncio.Task` for that category and schedules a new one via `hass.async_create_background_task` (or `async_create_task` / `asyncio.ensure_future` as fallbacks). Repeated alerts reset the timer rather than stacking. Background task failures are logged via a done-callback instead of being silently swallowed.
 - **`async_set_updated_data()`** is called on webhook push to bypass the polling interval and notify entities immediately.
 - **Polling does not clear `is_alerting`**: only the auto-clear timeout or a button press does. Prevents a polling race where a momentarily empty alarm list falsely clears an active alert.
@@ -102,7 +102,7 @@ Registers one HA webhook per enabled category using `homeassistant.components.we
 - Scoped to `local_only=True` (LAN only).
 - Accepted on POST only; GET requests are rejected with HTTP 405. UniFi Alarm Manager must be configured to send POST.
 - Fail-closed if no secret is configured: HTTP 500 with an error log pointing the user at Configure to re-save the entry. Never skips the token check.
-- Bearer-token authenticated: `?token=` query parameter compared against `CONF_WEBHOOK_SECRET` via `hmac.compare_digest`; missing or wrong token returns HTTP 401.
+- Bearer-token authenticated: `Authorization: Bearer <secret>` header (preferred) or the legacy `?token=` query parameter (deprecated, accepted during a migration window - issue #176), both compared against `CONF_WEBHOOK_SECRET` via `hmac.compare_digest`; missing or wrong token in both forms returns HTTP 401. A webhook authenticated via the query param raises the `webhook_legacy_query_auth` repair issue.
 - Body-capped at `WEBHOOK_MAX_BODY_BYTES`; oversized bodies return HTTP 413.
 - Parsed as JSON; a body that fails JSON or UTF-8 decoding is rejected with HTTP 400 (logged at WARNING with class name and 80-byte body preview) rather than falling back to `{}`. An empty body (`{}`) or a body with no recognised fields is accepted and yields `UniFiAlert.from_webhook_payload()`'s "Unknown alert" fallback - only genuine parse failures return 400.
 - DEBUG-payload narrowed to `{category, alert_key, severity, device_name, key}` to avoid surfacing future-firmware fields.
@@ -116,7 +116,7 @@ Three-step setup flow:
 
 1. **`async_step_user`**: URL + credentials (with SSDP discovery pre-filling the URL via `async_step_ssdp`). Calls `UniFiClient.authenticate()` for validation. Generates `CONF_WEBHOOK_SECRET` (`secrets.token_urlsafe(32)`) and `CONF_WEBHOOK_ID_SUFFIX` (`secrets.token_hex(4)`) on success.
 2. **`async_step_categories`**: per-category boolean toggles plus `poll_interval`, `clear_timeout`, and `site`.
-3. **`async_step_finish`**: displays generated webhook URLs (with bearer token) for the user to copy into UniFi Alarm Manager.
+3. **`async_step_finish`**: displays generated webhook URLs (no longer embedding the secret, issue #176) and the bearer secret separately, for the user to copy into UniFi Alarm Manager as an `Authorization: Bearer` header (or, for the deprecated legacy form, a `?token=` query string).
 
 `UniFiAlertsOptionsFlow` mirrors all three steps, allowing credentials, categories, and timing to be reconfigured in place. The credentials step also offers a "Regenerate webhook secret" checkbox. Option changes trigger an entry reload via `_async_update_listener`.
 
@@ -137,10 +137,7 @@ After setup, `entry.data` contains:
 ```python
 {
     "controller_url": "https://192.168.1.1",
-    "username": "admin",                    # absent if API key used
-    "password": "...",                      # absent if API key used
-    "api_key": "...",                       # absent if user/pass used
-    "auth_method": "userpass",              # or "apikey"; detected at setup
+    "api_key": "...",                       # required; the only supported credential
     "verify_ssl": True,
     "webhook_secret": "...",                # token_urlsafe(32)
     "webhook_id_suffix": "...",             # token_hex(4); per-entry
@@ -155,10 +152,11 @@ After setup, `entry.data` contains:
 
 Runtime state lives on `entry.runtime_data` (`RuntimeData` dataclass): coordinator, webhook URLs, unregister callable, client. Not in `hass.data`.
 
-`ConfigFlow.VERSION = 3`. `async_migrate_entry` runs migrations sequentially in `__init__.py`:
+`ConfigFlow.VERSION = 4`. `async_migrate_entry` runs migrations sequentially in `__init__.py`:
 
 - **v1 -> v2**: strips the legacy `is_unifi_os` key.
 - **v2 -> v3**: backfills `webhook_secret` and/or `webhook_id_suffix` on entries that predate v1.4.0 and were never reconfigured via the options flow. If `webhook_id_suffix` was backfilled (changing every webhook URL for that entry), raises a `webhook_urls_changed` repair issue prompting the user to re-paste URLs into Alarm Manager.
+- **v3 -> v4**: drops the legacy `username`, `password`, and `auth_method` keys (epic #277). Entries that already carry an API key migrate silently. Entries with only username/password lose their credentials here, so `async_setup_entry` raises `ConfigEntryAuthFailed` and Home Assistant launches the reauth flow, which asks for a single API key and raises an explanatory repair issue. `entry_id`, `unique_id`, the webhook secret, and the webhook id suffix are untouched, so entities, history, and Alarm Manager webhook URLs survive the migration.
 
 ## Tooling and validation
 
