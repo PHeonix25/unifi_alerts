@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypedDict
 
+from .severity import normalize_severity
+
 _LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -30,6 +32,7 @@ class UniFiClientConfig(TypedDict, total=False):
     webhook_secret: str
     webhook_id_suffix: str
     enabled_categories: list[str]
+    min_severity: dict[str, str]
     poll_interval: int
     clear_timeout: int
     site: str
@@ -86,6 +89,17 @@ class UniFiAlert:
     device_name: str = ""
     site: str = ""
     severity: str = ""
+
+    @property
+    def severity_level(self) -> str:
+        """Normalised severity, derived from self.severity on every access.
+
+        Computed on demand rather than stored so it can never drift from
+        `self.severity`, and is intentionally not a dataclass field: it is
+        not serialised by `to_dict`/`from_dict`, and is recomputed from the
+        persisted raw `severity` string on restore.
+        """
+        return normalize_severity(self.severity)
 
     @classmethod
     def from_webhook_payload(cls, category: str, payload: dict[str, Any]) -> UniFiAlert:

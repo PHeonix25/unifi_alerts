@@ -532,6 +532,50 @@ class TestCategoriesStep:
         call_kwargs = flow.async_show_form.call_args.kwargs
         assert call_kwargs["errors"].get("base") == "cannot_connect"
 
+    @pytest.mark.asyncio
+    async def test_min_severity_selector_rendered_for_all_categories(self) -> None:
+        """Each of the 7 categories must expose a min_severity_{cat} selector.
+
+        The selector must offer exactly the 5 expected options (No_Filter plus
+        the four Severity_Levels) and default to No_Filter.
+        """
+        from custom_components.unifi_alerts.severity import (
+            MIN_SEVERITY_NO_FILTER,
+            SEVERITY_HIGH,
+            SEVERITY_LOW,
+            SEVERITY_MEDIUM,
+            SEVERITY_VERY_HIGH,
+        )
+
+        flow = make_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
+
+        await flow.async_step_categories(user_input=None)
+
+        call_kwargs = flow.async_show_form.call_args.kwargs
+        schema = call_kwargs["data_schema"]
+
+        expected_option_values = {
+            MIN_SEVERITY_NO_FILTER,
+            SEVERITY_LOW,
+            SEVERITY_MEDIUM,
+            SEVERITY_HIGH,
+            SEVERITY_VERY_HIGH,
+        }
+
+        markers_by_name = {str(k): k for k in schema.schema}
+        assert len(ALL_CATEGORIES) == 7
+
+        for cat in ALL_CATEGORIES:
+            field_name = f"min_severity_{cat}"
+            assert field_name in markers_by_name, f"missing selector field for category {cat!r}"
+            marker = markers_by_name[field_name]
+            assert marker.default() == MIN_SEVERITY_NO_FILTER
+
+            selector = schema.schema[marker]
+            option_values = {opt["value"] for opt in selector.config["options"]}
+            assert option_values == expected_option_values
+
 
 class TestFinishStep:
     """Tests for async_step_finish."""

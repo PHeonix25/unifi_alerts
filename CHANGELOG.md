@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a per-category minimum-severity option (Config Flow and Options Flow), with an explicit "No Filter" value, so noisy categories can be enabled without accepting every low-value alert; alerts with no recognisable severity are never filtered out. ([#135])
+
 ### Changed
 
 - **Breaking:** username and password authentication has been removed; an API key is now the only supported credential. Config entries are migrated to a new version-4 schema on upgrade. Entries that already have an API key stored migrate silently and keep working. Entries set up with only a username and password are walked through re-authentication: a repair notice explains that an API key is now required and a single-field form accepts it. The entry is updated in place, so existing sensors, history, and Alarm Manager webhook URLs are preserved. The initial setup form now requires an API key, and the reconfigure form asks only for an API key. Generate one in the UniFi OS web UI (**Settings > Admins & Users > API Keys**, **Integrations > New API Key**, or **Settings > Control Plane > API Keys**, depending on firmware). Upgrading users: create an API key and Home Assistant will prompt for it via the reauth flow after upgrading; see the [README Setup section](README.md#setup) for the full walkthrough. ([#278], [#279])

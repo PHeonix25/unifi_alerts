@@ -32,6 +32,7 @@ from .const import (
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
 from .models import CategoryState, UniFiAlert, UniFiClientConfig, ensure_aware
+from .severity import filter_by_min_severity, get_effective_min_severity, meets_minimum
 from .unifi_auth import CannotConnectError, InvalidAuthError
 from .unifi_client import UniFiClient
 
@@ -156,14 +157,16 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 state = self._category_states[cat]
                 if not state.enabled:
                     continue
-                self._track_newest_seen(state, alerts)
+                minimum = get_effective_min_severity(self._config, cat)
+                eligible = filter_by_min_severity(alerts, minimum)
+                self._track_newest_seen(state, eligible)
                 # Count only alarms newer than last_cleared_at so open_count reads as
                 # "since last Clear", not a lifetime total.
                 watermark = state.last_cleared_at
                 counted = (
-                    [a for a in alerts if a.received_at > watermark]
+                    [a for a in eligible if a.received_at > watermark]
                     if watermark is not None
-                    else alerts
+                    else eligible
                 )
                 state.open_count = len(counted)
                 # If polling finds open alerts and we're not already alerting,
@@ -351,6 +354,20 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         state = self._category_states[category]
         if not state.enabled:
+            return
+
+        minimum = get_effective_min_severity(self._config, category)
+        if not meets_minimum(alert.severity_level, minimum):
+            # Below the configured Minimum_Severity_Setting: is_alerting,
+            # alert_count, open_count, and last_alert are left untouched.
+            # last_webhook_at still advances and is persisted so the
+            # webhook_health signal for this category isn't falsely marked
+            # stale, but no immediate broadcast is fired for a filtered
+            # event - the periodic poll refresh picks it up, which keeps a
+            # noisy filtered category from generating unbounded listener
+            # notifications.
+            state.last_webhook_at = alert.received_at
+            self._schedule_persist()
             return
 
         # Alerts without a key (e.g. the empty-body webhook ping) have no
