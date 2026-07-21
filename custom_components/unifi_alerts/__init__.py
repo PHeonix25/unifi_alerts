@@ -24,6 +24,8 @@ from .const import (
     CONF_VERIFY_SSL,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
+    EXCEPTION_SETUP_AUTH_FAILED,
+    EXCEPTION_SETUP_CANNOT_CONNECT,
     ISSUE_ID_APIKEY_MIGRATION,
     ISSUE_ID_AUTH_FAILED,
     ISSUE_ID_PERSIST_FAILED,
@@ -181,12 +183,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except InvalidAuthError as err:
         _LOGGER.error("Authentication failed for UniFi controller: %s", type(err).__name__)
         raise ConfigEntryAuthFailed(
-            f"Invalid credentials for UniFi controller: {type(err).__name__}"
+            f"Invalid credentials for UniFi controller: {type(err).__name__}",
+            translation_domain=DOMAIN,
+            translation_key=EXCEPTION_SETUP_AUTH_FAILED,
+            translation_placeholders={"error": type(err).__name__},
         ) from err
     except CannotConnectError as err:
         _LOGGER.error("Failed to authenticate to UniFi controller: %s", type(err).__name__)
         raise ConfigEntryNotReady(
-            f"Could not connect to UniFi controller: {type(err).__name__}"
+            f"Could not connect to UniFi controller: {type(err).__name__}",
+            translation_domain=DOMAIN,
+            translation_key=EXCEPTION_SETUP_CANNOT_CONNECT,
+            translation_placeholders={"error": type(err).__name__},
         ) from err
 
     # Proactively register the hub device so it appears in HA's Services section

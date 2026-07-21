@@ -244,12 +244,16 @@ rules:
       strings.json/translations/en.json, kept identical and drift-checked
       in CI.
   exception-translations:
-    status: todo
+    status: done
     comment: |
-      Repair issues use translation_key correctly, but raised exceptions
-      (ConfigEntryAuthFailed, ConfigEntryNotReady, UpdateFailed) carry plain
-      f-string messages rather than translation_domain/translation_key.
-      Filed as #341.
+      Repair issues use translation_key correctly, and the exceptions HA
+      surfaces to the user (ConfigEntryAuthFailed, ConfigEntryNotReady,
+      UpdateFailed in __init__.py and coordinator.py) now carry
+      translation_domain/translation_key/translation_placeholders, backed by
+      an "exceptions" section in strings.json/translations/en.json. The
+      internal CannotConnectError/InvalidAuthError/SslCertificateError in
+      unifi_auth.py are out of scope: they are caught and re-raised as the
+      above before ever reaching the user. Landed in #341.
   icon-translations:
     status: done
     comment: |

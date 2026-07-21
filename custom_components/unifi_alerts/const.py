@@ -83,6 +83,21 @@ ISSUE_ID_WEBHOOK_LEGACY_QUERY_AUTH: Final = "webhook_legacy_query_auth"
 # looking like a credential failure.
 ISSUE_ID_APIKEY_MIGRATION: Final = "apikey_migration_required"
 
+# Translation keys for exceptions raised during setup and polling (Gold
+# quality-scale rule exception-translations, #341). These are distinct from
+# the ISSUE_ID_* constants above: those key repair issues in the issue
+# registry, these key the "exceptions" section in strings.json/translations
+# consumed via translation_domain/translation_key/translation_placeholders on
+# the raised exception itself (ConfigEntryAuthFailed, ConfigEntryNotReady,
+# UpdateFailed). Scoped only to exceptions HA actually surfaces to the user;
+# unifi_auth.py's internal CannotConnectError/InvalidAuthError/
+# SslCertificateError are caught and re-raised as these, so they do not need
+# their own translation keys.
+EXCEPTION_SETUP_AUTH_FAILED: Final = "setup_auth_failed"
+EXCEPTION_SETUP_CANNOT_CONNECT: Final = "setup_cannot_connect"
+EXCEPTION_POLL_AUTH_FAILED: Final = "poll_auth_failed"
+EXCEPTION_POLL_CANNOT_CONNECT: Final = "poll_cannot_connect"
+
 # ──────────────────────────────────────────────
 # Category identifiers
 # ──────────────────────────────────────────────

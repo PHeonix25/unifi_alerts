@@ -27,6 +27,8 @@ from .const import (
     DEFAULT_SITE,
     DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS,
     DOMAIN,
+    EXCEPTION_POLL_AUTH_FAILED,
+    EXCEPTION_POLL_CANNOT_CONNECT,
     ISSUE_ID_PERSIST_FAILED,
     STORAGE_VERSION_WATERMARKS,
     WEBHOOK_DEDUP_WINDOW_SECONDS,
@@ -148,9 +150,19 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             # a 401 means the key was revoked or is otherwise no longer valid.
             # Surface reauth directly instead of retrying.
             _LOGGER.error("UniFi controller rejected the API key: %s", err)
-            raise ConfigEntryAuthFailed(f"UniFi controller rejected the API key: {err}") from err
+            raise ConfigEntryAuthFailed(
+                f"UniFi controller rejected the API key: {err}",
+                translation_domain=DOMAIN,
+                translation_key=EXCEPTION_POLL_AUTH_FAILED,
+                translation_placeholders={"error": str(err)},
+            ) from err
         except CannotConnectError as err:
-            raise UpdateFailed(f"Cannot reach UniFi controller: {err}") from err
+            raise UpdateFailed(
+                f"Cannot reach UniFi controller: {err}",
+                translation_domain=DOMAIN,
+                translation_key=EXCEPTION_POLL_CANNOT_CONNECT,
+                translation_placeholders={"error": str(err)},
+            ) from err
 
         for cat, alerts in categorised.items():
             if cat in self._category_states:

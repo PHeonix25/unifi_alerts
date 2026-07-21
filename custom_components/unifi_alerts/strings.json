@@ -117,6 +117,18 @@
     },
     "entry_not_loaded": {
       "message": "The UniFi Alerts config entry \"{entry_id}\" is not currently loaded."
+    },
+    "setup_auth_failed": {
+      "message": "Invalid credentials for UniFi controller: {error}"
+    },
+    "setup_cannot_connect": {
+      "message": "Could not connect to UniFi controller: {error}"
+    },
+    "poll_auth_failed": {
+      "message": "UniFi controller rejected the API key: {error}"
+    },
+    "poll_cannot_connect": {
+      "message": "Cannot reach UniFi controller: {error}"
     }
   },
   "services": {
