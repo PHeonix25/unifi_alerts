@@ -446,6 +446,100 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    # ── Reconfigure flow ─────────────────────────────────────────────────
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Entry point for HA's dedicated "Reconfigure" UI affordance.
+
+        Distinct from the options flow's "Configure" gear icon (which also
+        covers alert categories, polling, and webhook secret rotation), this
+        is what the Gold-tier `reconfiguration-flow` quality-scale rule
+        checks for. Lets the user update the controller URL, API key, and/or
+        verify_ssl for an existing entry without deleting and re-adding it.
+        Reuses the same credential-validation helpers as
+        `UniFiAlertsOptionsFlow`'s credentials step
+        (`_parse_credentials_form_input`, `_build_credentials_test_data`,
+        `_async_validate_controller_credentials`) so the two flows apply
+        identical validation instead of diverging.
+        """
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            parsed = _parse_credentials_form_input(user_input, entry.data)
+
+            if (
+                not parsed.credentials_changed
+                and not parsed.regenerate_secret
+                and not parsed.verify_ssl_changed
+            ):
+                # Nothing changed - nothing to persist or reload.
+                return self.async_abort(reason="reconfigure_successful")
+
+            if not parsed.credentials_changed:
+                # verify_ssl flip only - no controller round-trip needed.
+                new_data = _build_verify_ssl_and_secret_only_pending(entry.data, parsed)
+                return self.async_update_reload_and_abort(
+                    entry, data=new_data, reason="reconfigure_successful"
+                )
+
+            effective_url = (
+                parsed.new_url_raw.rstrip("/")
+                if parsed.new_url_raw
+                else entry.data[CONF_CONTROLLER_URL]
+            )
+
+            if not _is_valid_url_scheme(effective_url):
+                errors[CONF_CONTROLLER_URL] = "invalid_url_scheme"
+            else:
+                test_data = _build_credentials_test_data(entry.data, effective_url, parsed)
+                try:
+                    await _async_validate_controller_credentials(
+                        self.hass, effective_url, parsed.new_verify_ssl, test_data
+                    )
+                except InvalidAuthError:
+                    errors["base"] = "invalid_auth"
+                except SslCertificateError:
+                    errors["base"] = "invalid_ssl_cert"
+                except CannotConnectError as err:
+                    _LOGGER.error("Cannot reach controller during reconfigure: %s", err)
+                    errors["base"] = "cannot_connect"
+                else:
+                    url_changed = effective_url != entry.data[CONF_CONTROLLER_URL]
+                    if url_changed and _find_duplicate_entry(
+                        self.hass, entry.entry_id, effective_url
+                    ):
+                        return self.async_abort(reason="already_configured")
+
+                    new_data = _build_credentials_pending_data(entry.data, effective_url, parsed)
+                    update_kwargs: dict[str, Any] = {
+                        "data": new_data,
+                        "reason": "reconfigure_successful",
+                    }
+                    if url_changed:
+                        update_kwargs["unique_id"] = effective_url
+                    return self.async_update_reload_and_abort(entry, **update_kwargs)
+
+        _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+        current_url: str = entry.data.get(CONF_CONTROLLER_URL, "")
+        current_verify_ssl = entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_CONTROLLER_URL): str,
+                vol.Optional(CONF_API_KEY): _api_key_selector,
+                vol.Optional(CONF_VERIFY_SSL, default=current_verify_ssl): bool,
+            }
+        )
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"current_url": current_url},
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:

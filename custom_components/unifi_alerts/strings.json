@@ -55,6 +55,18 @@
         "data": {
           "api_key": "API Key"
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure UniFi Alerts",
+        "description": "Update the controller URL, API key, or SSL verification for this entry. Leave the URL and API key fields blank to keep their current values.\n\nCurrent controller: {current_url}\n\nAlert categories, polling, and webhook secret rotation are managed separately via Settings > Devices & Services > UniFi Alerts > Configure.",
+        "data": {
+          "controller_url": "New Controller URL (leave blank to keep current)",
+          "api_key": "New API Key (leave blank to keep current)",
+          "verify_ssl": "Verify SSL certificate"
+        },
+        "data_description": {
+          "verify_ssl": "Disable only if the controller uses a self-signed certificate. Disabling verification exposes the connection to man-in-the-middle attacks on the local network."
+        }
       }
     },
     "error": {
@@ -68,6 +80,7 @@
     "abort": {
       "already_configured": "This UniFi controller is already configured.",
       "reauth_successful": "Re-authentication was successful. The integration has been reloaded.",
+      "reconfigure_successful": "Reconfiguration was successful. The integration has been reloaded.",
       "cannot_connect": "Could not determine the controller address from the discovery information. Set up the controller manually instead."
     }
   },
