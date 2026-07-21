@@ -176,11 +176,14 @@ rules:
       manifest.json declares ssdp matchers for UDM/UDM Pro/UDM SE/UDM Pro
       Max; async_step_ssdp handles discovery.
   discovery-update-info:
-    status: todo
+    status: done
     comment: |
-      async_step_ssdp only aborts on a matching unique_id; it never updates
-      the existing entry's controller_url on rediscovery with a changed IP.
-      Filed as #343.
+      async_step_ssdp matches unchanged addresses via unique_id as before.
+      On a changed IP, the discovered UPnP serial number (stable across IP
+      changes, unlike unique_id which is keyed on the controller URL) is
+      used to find the previously configured entry and refresh its
+      controller_url and unique_id in place instead of leaving it pinned to
+      the stale address. Fixed in #343.
   docs-data-update:
     status: done
     comment: |

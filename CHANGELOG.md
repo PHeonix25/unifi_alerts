@@ -20,6 +20,7 @@
 - Unselected alert categories no longer create entities that sit at Unknown; entities are created only for chosen categories, and orphaned entities from deselected categories are removed on reload.
 - Clearing a category now anchors the acknowledgement watermark to the newest alarm timestamp already known for that category (falling back to the HA clock only when none has ever been seen), instead of the HA host clock. This keeps `open_count` correct when the UniFi controller's clock and the HA host clock drift apart. ([#268])
 - The `clear_category` and `clear_all` services now raise a translatable error when called with an `entry_id` that is unknown or not currently loaded, instead of silently doing nothing. Calling without an `entry_id` to act on every loaded entry is unaffected. ([#340])
+- SSDP rediscovery of a UniFi OS console at a new IP address (DHCP lease change, console swap) now updates the existing config entry's controller URL in place instead of leaving it pinned to the stale address until a human edited it manually. The console is matched by its UPnP serial number, which stays stable across IP changes. ([#343])
 
 ## [1.9.0] - 2026-07-06
 
@@ -358,3 +359,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#240]: https://github.com/PHeonix25/unifi_alerts/issues/240
 [#340]: https://github.com/PHeonix25/unifi_alerts/issues/340
 [#341]: https://github.com/PHeonix25/unifi_alerts/issues/341
+[#343]: https://github.com/PHeonix25/unifi_alerts/issues/343
