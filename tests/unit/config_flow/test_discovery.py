@@ -14,17 +14,26 @@ from custom_components.unifi_alerts.const import CONF_CONTROLLER_URL, CONF_DEVIC
 from .conftest import _VALID_INPUT, make_flow, make_session_mock
 
 
-def make_ssdp_info(host: str = "192.168.1.1") -> ssdp.SsdpServiceInfo:
-    """Build a minimal SsdpServiceInfo for a UDM Pro at the given host."""
+def make_ssdp_info(
+    host: str = "192.168.1.1", serial: str | None = "aa:bb:cc:dd:ee:ff"
+) -> ssdp.SsdpServiceInfo:
+    """Build a minimal SsdpServiceInfo for a UDM Pro at the given host.
+
+    `serial` defaults to a stand-in UPnP serial; pass `None` to simulate a
+    discovery payload that lacks one, as seen on some firmware/device
+    combinations.
+    """
+    upnp = {
+        ssdp.ATTR_UPNP_MANUFACTURER: "Ubiquiti Networks",
+        ssdp.ATTR_UPNP_MODEL_DESCRIPTION: "UniFi Dream Machine Pro",
+    }
+    if serial is not None:
+        upnp[ssdp.ATTR_UPNP_SERIAL] = serial
     return ssdp.SsdpServiceInfo(
         ssdp_usn="uuid:abcd-1234-efgh-5678",
         ssdp_st="urn:schemas-upnp-org:device:InternetGatewayDevice:1",
         ssdp_location=f"http://{host}:1900/description.xml",
-        upnp={
-            ssdp.ATTR_UPNP_MANUFACTURER: "Ubiquiti Networks",
-            ssdp.ATTR_UPNP_MODEL_DESCRIPTION: "UniFi Dream Machine Pro",
-            ssdp.ATTR_UPNP_SERIAL: "aa:bb:cc:dd:ee:ff",
-        },
+        upnp=upnp,
     )
 
 
@@ -161,6 +170,25 @@ async def test_ssdp_no_matching_serial_continues_to_user_step() -> None:
     flow.hass.config_entries.async_update_entry.assert_not_called()
     flow.async_step_user.assert_called_once()
     assert flow._device_serial == "aa:bb:cc:dd:ee:ff"
+    assert result == {"type": "form", "step_id": "user"}
+
+
+@pytest.mark.asyncio
+async def test_ssdp_discovery_without_serial_continues_to_user_step() -> None:
+    """A discovery payload with no UPnP serial skips the rediscovery lookup.
+
+    Matches pre-#343 behaviour for devices/firmware whose SSDP response
+    never carries a serial.
+    """
+    flow = make_flow()
+    flow.async_step_user = AsyncMock(return_value={"type": "form", "step_id": "user"})
+
+    result = await flow.async_step_ssdp(make_ssdp_info("10.0.0.7", serial=None))
+
+    flow.hass.config_entries.async_entries.assert_not_called()
+    flow.hass.config_entries.async_update_entry.assert_not_called()
+    flow.async_step_user.assert_called_once()
+    assert flow._device_serial == ""
     assert result == {"type": "form", "step_id": "user"}
 
 
