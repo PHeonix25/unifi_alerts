@@ -99,11 +99,14 @@ rules:
 
   # Silver
   action-exceptions:
-    status: todo
+    status: done
     comment: |
-      services.py logs a warning and silently no-ops when entry_id is
-      unknown or the entry is not loaded, instead of raising a translatable
-      error the caller can see. Filed as #340.
+      _get_coordinators in services.py raises a translatable
+      ServiceValidationError (translation_key unknown_entry_id /
+      entry_not_loaded) when clear_category/clear_all is called with an
+      explicit entry_id that does not resolve to a currently loaded UniFi
+      Alerts entry. Calling with no entry_id (act on every loaded entry)
+      is unaffected and never raises. Closed by #340.
   config-entry-unloading:
     status: done
     comment: |
