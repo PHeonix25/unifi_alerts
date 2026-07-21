@@ -13,6 +13,7 @@
 - `fetch_alarms()` now discovers the working alarm endpoint once per site and caches it, instead of walking the `[/list/alarm, /alarm, /stat/alarm]` fallback chain and parsing the HTTP 400 `api.err.InvalidObject` body on every poll. Endpoint discovery (`_discover_alarm_url()`) is now separate from the core fetch/parse flow in `_try_fetch_alarms()`; discovery only re-runs if the cached URL stops resolving. Behaviour is unchanged; this is a refactor. ([#239])
 - **Breaking:** inbound webhook authentication now checks an `Authorization: Bearer <secret>` header in addition to the legacy `?token=<secret>` query parameter. The header is the preferred form: query strings are routinely captured by reverse-proxy and access logs, browser history, and screenshots of the config flow, so the secret has more exposure surface than a header. The `?token=` form is still accepted during a deprecation window (no earlier than v3.0.0) so existing UniFi Alarm Manager configurations keep working, but a `webhook_legacy_query_auth` repair issue nudges affected entries to migrate. The config and options flow "Webhook URLs" screens no longer embed the secret in the displayed URL; it is shown separately for use as the header value. ([#335])
 - `UniFiClient` is now fully stateless: the v2 system-log-probe cache and backoff (previously `_has_system_log`/`_probe_fail_count`/`_probe_backoff_until` on the client) moved to `UniFiAlertsCoordinator`, which already owns all other cross-poll state. Behaviour is unchanged; this is a refactor. ([#240])
+- The setup and polling errors surfaced to the user (`ConfigEntryAuthFailed`, `ConfigEntryNotReady`, `UpdateFailed`) now carry translation keys instead of hard-coded English messages, so they can be localised the same way repair issues already are. ([#341])
 
 ### Fixed
 
@@ -356,3 +357,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#335]: https://github.com/PHeonix25/unifi_alerts/pull/335
 [#240]: https://github.com/PHeonix25/unifi_alerts/issues/240
 [#340]: https://github.com/PHeonix25/unifi_alerts/issues/340
+[#341]: https://github.com/PHeonix25/unifi_alerts/issues/341
