@@ -111,6 +111,14 @@
       "description": "A webhook for **{name}** authenticated using the legacy `?token=` query parameter rather than the `Authorization: Bearer` header. The query-parameter method still works but is deprecated and will be removed no earlier than v3.0.0.\n\nTo migrate: open **Settings > Devices and Services > UniFi Alerts > Configure** to see each category's URL and bearer secret, then in UniFi Network's **Settings > Notifications > Alarm Manager**, add the secret as an `Authorization: Bearer` header on each alarm's webhook action and drop the `?token=` query string from the URL.\n\nThis notice clears automatically once a header-authenticated webhook is received."
     }
   },
+  "exceptions": {
+    "unknown_entry_id": {
+      "message": "No UniFi Alerts config entry found with entry_id \"{entry_id}\"."
+    },
+    "entry_not_loaded": {
+      "message": "The UniFi Alerts config entry \"{entry_id}\" is not currently loaded."
+    }
+  },
   "services": {
     "clear_category": {
       "name": "Clear category",

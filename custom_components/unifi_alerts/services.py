@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
 from .const import ALL_CATEGORIES, DOMAIN
@@ -41,7 +42,14 @@ CLEAR_ALL_SCHEMA = vol.Schema(
 def _get_coordinators(
     hass: HomeAssistant, entry_id: str | None
 ) -> Iterator[UniFiAlertsCoordinator]:
-    """Yield coordinator(s) from loaded entries, optionally filtered by entry_id."""
+    """Yield coordinator(s) from loaded entries, optionally filtered by entry_id.
+
+    When entry_id is given explicitly and it does not resolve to a currently
+    loaded UniFi Alerts config entry, a translatable ServiceValidationError is
+    raised so the failure is visible in the UI/automation trace instead of only
+    the log. entry_id=None (act on every loaded entry) never raises: an empty
+    result set is a valid outcome for that case.
+    """
     if entry_id is not None:
         entry = hass.config_entries.async_get_entry(entry_id)
         if entry is None or entry.domain != DOMAIN:
@@ -49,14 +57,22 @@ def _get_coordinators(
                 "clear service called with unknown entry_id %r — no coordinator found",
                 entry_id,
             )
-            return
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unknown_entry_id",
+                translation_placeholders={"entry_id": entry_id},
+            )
         if entry.state != ConfigEntryState.LOADED:
             _LOGGER.warning(
                 "clear service called on entry %r which is not loaded (state: %s)",
                 entry_id,
                 entry.state,
             )
-            return
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="entry_not_loaded",
+                translation_placeholders={"entry_id": entry_id},
+            )
         yield entry.runtime_data.coordinator
     else:
         for entry in hass.config_entries.async_entries(DOMAIN):
