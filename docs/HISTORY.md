@@ -2,6 +2,44 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-07-21
+
+- **release**: v2.0.0-pre1 tagged. First checkpoint of the v2.0.0 "HACS default catalogue" cycle. Headline: username/password authentication removed in favour of API-key-only auth with a reauth migration path (#328, #330), webhook authentication gains an `Authorization: Bearer` header alongside the deprecated `?token=` query parameter (#335), two architecture refactors (endpoint discovery decoupled from the alarm fetch loop, `UniFiClient` made fully stateless), fixes for unselected-category entity creation and clock-drift in the clear-watermark anchor, a quality-scale audit ahead of HACS submission, and a broad CI/tooling hardening pass (Python 3.14 baseline, Dev Container, agentrc eval harness, PR quality-score check).
+- **feat**: username and password authentication removed; an API key is now the only supported credential. Config entries migrate to a version-4 schema: entries that already have a stored API key migrate silently, entries set up with only a username and password are walked through a reauth repair that asks for an API key in place, preserving existing sensors, history, and Alarm Manager webhook URLs ([#328], [#330]). Closes #278, #279.
+- **feat**: audited the HA integration quality scale ahead of HACS default-catalogue submission ([#348]).
+- **security**: inbound webhook authentication now accepts an `Authorization: Bearer <secret>` header in addition to the legacy `?token=` query parameter; the header is preferred since query strings routinely leak into proxy/access logs and browser history. `?token=` remains accepted through a deprecation window (no earlier than v3.0.0), with a `webhook_legacy_query_auth` repair issue nudging affected entries to migrate; the config/options "Webhook URLs" screens no longer embed the secret in the displayed URL ([#335]).
+- **refactor**: `fetch_alarms()` now discovers and caches the working alarm endpoint once per site instead of walking the fallback chain and parsing an HTTP 400 body on every poll; discovery only re-runs if the cached URL stops resolving ([#329]). Closes #239. `UniFiClient` is now fully stateless: the v2 system-log-probe cache and backoff moved onto `UniFiAlertsCoordinator`, which already owns all other cross-poll state ([#336]). Closes #240.
+- **fix**: unselected alert categories no longer create entities that sit at Unknown; entities are created only for chosen categories, and orphaned entities from deselected categories are removed on reload ([#308]). Clearing a category now anchors the acknowledgement watermark to the newest known alarm timestamp for that category instead of the HA host clock, keeping `open_count` correct when the controller and HA clocks drift ([#318]). Closes #268. The Dev Container added this cycle was broken on first use; fixed ([#324]).
+- **docs**: added a Dev Container since native-Windows pytest is unsupported ([#323]); added `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md` ([#315]); documented API-key-only auth setup and the upgrade path ([#333]). Closes #280. Applied the non-discoverable filter across agent-facing context files ([#332]).
+- **ci**: raised the tooling and CI baseline to Python 3.14 and the declared minimum HA version to 2026.3.1, the first HA release requiring it ([#311]). Closes #228. Split ruff into its own fast job and routed mypy through `run_typecheck.py` ([#314]). Merged `pr-labeler` and `label-guard` to fix a tagging race ([#334]). Bumped the `github-actions` Dependabot group ([#327]).
+- **chore**: added a three-phase agentic PR-quality eval harness: local single-model harness, cross-model comparison, and an advisory PR quality-score CI check ([#313], [#316], [#317], [#320], [#325]). Removed redundant button state overrides, added `PARALLEL_UPDATES`, and moved static icon definitions into `icons.json` ([#338]).
+- **tests**: migrated `unifi_client` HTTP tests from `aioresponses` to Home Assistant's `aioclient_mock`, matching the fixture the rest of the suite already uses ([#321]).
+
+[#308]: https://github.com/PHeonix25/unifi_alerts/pull/308
+[#311]: https://github.com/PHeonix25/unifi_alerts/pull/311
+[#313]: https://github.com/PHeonix25/unifi_alerts/pull/313
+[#314]: https://github.com/PHeonix25/unifi_alerts/pull/314
+[#315]: https://github.com/PHeonix25/unifi_alerts/pull/315
+[#316]: https://github.com/PHeonix25/unifi_alerts/pull/316
+[#317]: https://github.com/PHeonix25/unifi_alerts/pull/317
+[#318]: https://github.com/PHeonix25/unifi_alerts/pull/318
+[#320]: https://github.com/PHeonix25/unifi_alerts/pull/320
+[#321]: https://github.com/PHeonix25/unifi_alerts/pull/321
+[#323]: https://github.com/PHeonix25/unifi_alerts/pull/323
+[#324]: https://github.com/PHeonix25/unifi_alerts/pull/324
+[#325]: https://github.com/PHeonix25/unifi_alerts/pull/325
+[#327]: https://github.com/PHeonix25/unifi_alerts/pull/327
+[#328]: https://github.com/PHeonix25/unifi_alerts/pull/328
+[#329]: https://github.com/PHeonix25/unifi_alerts/pull/329
+[#330]: https://github.com/PHeonix25/unifi_alerts/pull/330
+[#332]: https://github.com/PHeonix25/unifi_alerts/pull/332
+[#333]: https://github.com/PHeonix25/unifi_alerts/pull/333
+[#334]: https://github.com/PHeonix25/unifi_alerts/pull/334
+[#335]: https://github.com/PHeonix25/unifi_alerts/pull/335
+[#336]: https://github.com/PHeonix25/unifi_alerts/pull/336
+[#338]: https://github.com/PHeonix25/unifi_alerts/pull/338
+[#348]: https://github.com/PHeonix25/unifi_alerts/pull/348
+
 ## 2026-07-06
 
 - **release**: v1.9.0 tagged. Closes out the v1.9.0 "Localisation and Scale" cycle: a webhook health sensor and setup-failure cleanup, a documented `webhook` runtime dependency, a full CI and tooling hardening pass, and a repo-wide documentation drift audit, on top of everything already shipped in pre1 through pre3.
