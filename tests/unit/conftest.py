@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
-from collections.abc import Generator, Iterator
+from collections.abc import Coroutine, Generator, Iterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -67,6 +68,27 @@ def sample_alarm_record() -> dict[str, Any]:
 
 
 # ── shared plain-function helpers (importable from any test file) ─────────────
+
+
+def run_sync[T](coro: Coroutine[Any, Any, T]) -> T:
+    """Run a coroutine to completion for a sync (typically hypothesis @given)
+    test, without leaving the process-wide event loop unset afterward.
+
+    `asyncio.run()` calls `asyncio.set_event_loop(None)` in its cleanup, and
+    on Python 3.12+ that makes any later `asyncio.get_event_loop()` call
+    raise `RuntimeError: There is no current event loop`. The older
+    pytest-asyncio pulled in by the CI minimum-HA leg
+    (`pytest-homeassistant-custom-component==0.13.317`) hits exactly that
+    call when setting up the next `@pytest.mark.asyncio` test, which fails
+    the entire remainder of the suite. Using our own loop here, and
+    re-installing a fresh one afterward instead of clearing it, avoids that.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(asyncio.new_event_loop())
 
 
 def make_hass() -> MagicMock:

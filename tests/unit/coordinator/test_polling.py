@@ -6,11 +6,11 @@ test_persistence.py, and test_autoclear.py in this package.
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from conftest import run_sync
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -463,7 +463,7 @@ class TestPollingSeverityGate:
         state = coord.get_category_state(category)
         state.last_cleared_at = watermark
 
-        asyncio.run(coord._async_update_data())
+        run_sync(coord._async_update_data())
 
         # Same severity-eligible subset feeds both open_count/alerting selection
         # (further restricted by the watermark) and the newest-seen watermark.
@@ -589,7 +589,7 @@ class TestPollingSeverityGate:
         state.open_count = prior_open_count
         state.last_alert = prior_last_alert
 
-        asyncio.run(coord._async_update_data())
+        run_sync(coord._async_update_data())
 
         assert state.is_alerting is prior_is_alerting
         assert state.last_alert is prior_last_alert

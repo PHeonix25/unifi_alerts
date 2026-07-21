@@ -8,9 +8,9 @@ specifically to the min_severity_{category} selector added by this feature.
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
+from conftest import run_sync
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -64,7 +64,7 @@ class TestConfigFlowMinSeverity:
             await flow.async_step_categories(cat_input)
             return flow._entry_data[CONF_MIN_SEVERITY]
 
-        stored = asyncio.run(_run())
+        stored = run_sync(_run())
 
         expected = {cat: submitted.get(cat, MIN_SEVERITY_NO_FILTER) for cat in ALL_CATEGORIES}
         assert stored == expected
@@ -124,7 +124,7 @@ class TestOptionsFlowMinSeverity:
             await flow.async_step_categories(cat_input)
             return flow._pending_options[CONF_MIN_SEVERITY]
 
-        persisted = asyncio.run(_run())
+        persisted = run_sync(_run())
 
         expected = {cat: submitted.get(cat, MIN_SEVERITY_NO_FILTER) for cat in ALL_CATEGORIES}
         assert persisted == expected
@@ -136,7 +136,7 @@ class TestOptionsFlowMinSeverity:
         flow = make_options_flow()
         flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
 
-        asyncio.run(flow.async_step_categories(None))
+        run_sync(flow.async_step_categories(None))
 
         call_kwargs = flow.async_show_form.call_args.kwargs
         schema = call_kwargs["data_schema"]
@@ -157,7 +157,7 @@ class TestOptionsFlowMinSeverity:
         flow._config_entry.data[CONF_MIN_SEVERITY] = {stored_cat: stored_value}
         flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
 
-        asyncio.run(flow.async_step_categories(None))
+        run_sync(flow.async_step_categories(None))
 
         call_kwargs = flow.async_show_form.call_args.kwargs
         schema = call_kwargs["data_schema"]
