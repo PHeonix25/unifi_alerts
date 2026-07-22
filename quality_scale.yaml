@@ -235,11 +235,12 @@ rules:
       have no device class because none fits an alert counter; they use
       SensorStateClass.MEASUREMENT instead (see sensor.py inline comment).
   entity-disabled-by-default:
-    status: todo
+    status: exempt
     comment: |
-      No entity sets entity_registry_enabled_default = False. Ambiguous
-      whether this is actually a gap, since users already opt into
-      categories at config time. Filed as #345 for a maintainer decision.
+      Every entity is user-scoped and essential. Categories are opted into
+      during the config flow, so nothing is auto-discovered noise, and the
+      per-category diagnostic entities (last-message, webhook-health) are
+      needed for setup and troubleshooting rather than being verbose clutter.
   entity-translations:
     status: done
     comment: |
