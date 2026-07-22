@@ -66,17 +66,19 @@ _LOGGER = logging.getLogger(__name__)
 
 # Minimum_Severity_Setting selector, shared by the Config_Flow and
 # Options_Flow categories steps.
-# Inline SelectOptionDict labels are used instead of a `selector.*`
-# translation-key section, matching the level of ceremony already used for
-# the password/API-key TextSelector fields above.
+# Bare value options with a `selector.min_severity.options` translation-key
+# section (strings.json / translations/en.json) so the display text is
+# localisable, matching the pattern used elsewhere in this integration.
 _MIN_SEVERITY_OPTIONS: Final[list[SelectOptionDict]] = [
-    SelectOptionDict(value=MIN_SEVERITY_NO_FILTER, label="No Filter"),
-    SelectOptionDict(value=SEVERITY_LOW, label="Low"),
-    SelectOptionDict(value=SEVERITY_MEDIUM, label="Medium"),
-    SelectOptionDict(value=SEVERITY_HIGH, label="High"),
-    SelectOptionDict(value=SEVERITY_VERY_HIGH, label="Very High"),
+    SelectOptionDict(value=MIN_SEVERITY_NO_FILTER),
+    SelectOptionDict(value=SEVERITY_LOW),
+    SelectOptionDict(value=SEVERITY_MEDIUM),
+    SelectOptionDict(value=SEVERITY_HIGH),
+    SelectOptionDict(value=SEVERITY_VERY_HIGH),
 ]
-_min_severity_selector = SelectSelector(SelectSelectorConfig(options=_MIN_SEVERITY_OPTIONS))
+_min_severity_selector = SelectSelector(
+    SelectSelectorConfig(options=_MIN_SEVERITY_OPTIONS, translation_key="min_severity")
+)
 
 
 def _create_auth_failed_issue(hass: Any, entry: Any) -> None:

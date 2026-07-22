@@ -285,5 +285,16 @@
         }
       }
     }
+  },
+  "selector": {
+    "min_severity": {
+      "options": {
+        "no_filter": "No Filter",
+        "LOW": "Low",
+        "MEDIUM": "Medium",
+        "HIGH": "High",
+        "VERY_HIGH": "Very High"
+      }
+    }
   }
 }
