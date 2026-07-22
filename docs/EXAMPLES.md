@@ -76,6 +76,44 @@ automation:
 
 > **Tip:** Replace `event.unifi_alerts_security_threat_ids_detected_event` with any per-category event entity (e.g. `event.unifi_alerts_network_device_offline_online_event`, `event.unifi_alerts_power_poe_power_loss_event`). Swap `persistent_notification.create` for `notify.mobile_app_your_phone` or any other notify action.
 
+Some alerts are transient and may resolve quickly. If you want to be notified only when the open count is above a threshold for a period of time, use a numeric state trigger on the per-category open-count sensor instead.
+
+```yaml
+automation:
+  - alias: "Notify IDS count above 10"
+    description: "Send me a message if the IDS open count is above 10 for 10 minutes"
+    triggers:
+      - trigger: numeric_state
+        entity_id:
+          - sensor.unifi_alerts_security_threat_ids_detected_open_count
+        for:
+          hours: 0
+          minutes: 10
+          seconds: 0
+        above: 10
+    conditions: []
+    actions:
+      - delay:
+          hours: 0
+          minutes: 10
+          seconds: 0
+          milliseconds: 0
+      - if:
+          - condition: numeric_state
+            entity_id: sensor.unifi_alerts_security_threat_ids_detected_open_count
+            above: 10
+        then:
+          - action: notify.mobile_app
+            data:
+              message: >-
+                IDS open count is above 10! 
+
+                Current value: {{
+                states("sensor.unifi_alerts_security_threat_ids_detected_open_count")
+                }}
+              title: We're under attack!
+```
+
 ---
 
 ## Automation caveats
