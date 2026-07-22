@@ -536,16 +536,12 @@ class TestCategoriesStep:
     async def test_min_severity_selector_rendered_for_all_categories(self) -> None:
         """Each of the 7 categories must expose a min_severity_{cat} selector.
 
-        The selector must offer exactly the 5 expected options (No_Filter plus
-        the four Severity_Levels) and default to No_Filter.
+        The selector offers exactly the 5 expected widget option values
+        (lowercase slugs, since hassfest requires translation keys to be
+        lowercase) and defaults to No_Filter.
         """
-        from custom_components.unifi_alerts.severity import (
-            MIN_SEVERITY_NO_FILTER,
-            SEVERITY_HIGH,
-            SEVERITY_LOW,
-            SEVERITY_MEDIUM,
-            SEVERITY_VERY_HIGH,
-        )
+        from custom_components.unifi_alerts.config_flow import _MIN_SEVERITY_TO_WIDGET
+        from custom_components.unifi_alerts.severity import MIN_SEVERITY_NO_FILTER
 
         flow = make_flow()
         flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
@@ -555,13 +551,7 @@ class TestCategoriesStep:
         call_kwargs = flow.async_show_form.call_args.kwargs
         schema = call_kwargs["data_schema"]
 
-        expected_option_values = {
-            MIN_SEVERITY_NO_FILTER,
-            SEVERITY_LOW,
-            SEVERITY_MEDIUM,
-            SEVERITY_HIGH,
-            SEVERITY_VERY_HIGH,
-        }
+        expected_option_values = set(_MIN_SEVERITY_TO_WIDGET.values())
 
         markers_by_name = {str(k): k for k in schema.schema}
         assert len(ALL_CATEGORIES) == 7
@@ -573,7 +563,7 @@ class TestCategoriesStep:
             assert marker.default() == MIN_SEVERITY_NO_FILTER
 
             selector = schema.schema[marker]
-            option_values = {opt["value"] for opt in selector.config["options"]}
+            option_values = set(selector.config["options"])
             assert option_values == expected_option_values
 
 
