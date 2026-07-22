@@ -18,7 +18,6 @@ from homeassistant.core import callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
-    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     TextSelector,
@@ -66,17 +65,29 @@ _LOGGER = logging.getLogger(__name__)
 
 # Minimum_Severity_Setting selector, shared by the Config_Flow and
 # Options_Flow categories steps.
-# Inline SelectOptionDict labels are used instead of a `selector.*`
-# translation-key section, matching the level of ceremony already used for
-# the password/API-key TextSelector fields above.
-_MIN_SEVERITY_OPTIONS: Final[list[SelectOptionDict]] = [
-    SelectOptionDict(value=MIN_SEVERITY_NO_FILTER, label="No Filter"),
-    SelectOptionDict(value=SEVERITY_LOW, label="Low"),
-    SelectOptionDict(value=SEVERITY_MEDIUM, label="Medium"),
-    SelectOptionDict(value=SEVERITY_HIGH, label="High"),
-    SelectOptionDict(value=SEVERITY_VERY_HIGH, label="Very High"),
-]
-_min_severity_selector = SelectSelector(SelectSelectorConfig(options=_MIN_SEVERITY_OPTIONS))
+# hassfest requires translation keys to be lowercase slugs, so the widget
+# offers lowercase option values with a `selector.min_severity.options`
+# translation-key section (strings.json / translations/en.json) for the
+# display text, while the stored config value stays the upper-case
+# Severity_Level constant (e.g. "LOW") that the rest of the integration
+# compares against. `_MIN_SEVERITY_TO_WIDGET`/`_WIDGET_TO_MIN_SEVERITY`
+# convert between the two at the Config_Flow/Options_Flow boundary; nothing
+# outside this module ever sees the widget-only lowercase form.
+_MIN_SEVERITY_TO_WIDGET: Final[dict[str, str]] = {
+    MIN_SEVERITY_NO_FILTER: MIN_SEVERITY_NO_FILTER,
+    SEVERITY_LOW: "low",
+    SEVERITY_MEDIUM: "medium",
+    SEVERITY_HIGH: "high",
+    SEVERITY_VERY_HIGH: "very_high",
+}
+_WIDGET_TO_MIN_SEVERITY: Final[dict[str, str]] = {
+    widget: stored for stored, widget in _MIN_SEVERITY_TO_WIDGET.items()
+}
+_min_severity_selector = SelectSelector(
+    SelectSelectorConfig(
+        options=list(_MIN_SEVERITY_TO_WIDGET.values()), translation_key="min_severity"
+    )
+)
 
 
 def _create_auth_failed_issue(hass: Any, entry: Any) -> None:
@@ -288,7 +299,10 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             enabled = [cat for cat in ALL_CATEGORIES if user_input.get(f"cat_{cat}", False)]
             min_severity = {
-                cat: user_input.get(f"min_severity_{cat}", MIN_SEVERITY_NO_FILTER)
+                cat: _WIDGET_TO_MIN_SEVERITY.get(
+                    user_input.get(f"min_severity_{cat}", MIN_SEVERITY_NO_FILTER),
+                    MIN_SEVERITY_NO_FILTER,
+                )
                 for cat in ALL_CATEGORIES
             }
             if not enabled:
@@ -802,7 +816,10 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
         if user_input is not None:
             enabled = [cat for cat in ALL_CATEGORIES if user_input.get(f"cat_{cat}", False)]
             min_severity = {
-                cat: user_input.get(f"min_severity_{cat}", MIN_SEVERITY_NO_FILTER)
+                cat: _WIDGET_TO_MIN_SEVERITY.get(
+                    user_input.get(f"min_severity_{cat}", MIN_SEVERITY_NO_FILTER),
+                    MIN_SEVERITY_NO_FILTER,
+                )
                 for cat in ALL_CATEGORIES
             }
             if not enabled:
@@ -866,7 +883,10 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             fields[
                 vol.Optional(
                     f"min_severity_{cat}",
-                    default=current_min_severity.get(cat, MIN_SEVERITY_NO_FILTER),
+                    default=_MIN_SEVERITY_TO_WIDGET.get(
+                        current_min_severity.get(cat, MIN_SEVERITY_NO_FILTER),
+                        MIN_SEVERITY_NO_FILTER,
+                    ),
                 )
             ] = _min_severity_selector
         fields[vol.Optional(CONF_POLL_INTERVAL, default=current_poll)] = vol.All(

@@ -14,7 +14,10 @@ from conftest import run_sync
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from custom_components.unifi_alerts.config_flow import UniFiAlertsOptionsFlow
+from custom_components.unifi_alerts.config_flow import (
+    _MIN_SEVERITY_TO_WIDGET,
+    UniFiAlertsOptionsFlow,
+)
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
     CONF_ENABLED_CATEGORIES,
@@ -43,7 +46,12 @@ class TestConfigFlowMinSeverity:
     ) -> None:
         """Submitting the categories step with an arbitrary subset-to-setting
         mapping must store the submitted value for every category present in
-        the mapping, and No_Filter for every category omitted from it."""
+        the mapping, and No_Filter for every category omitted from it.
+
+        `cat_input` carries the widget's lowercase option value (what a real
+        submission sends); `submitted`/`expected` stay in terms of the stored
+        Severity_Level constant, since that is what `_entry_data` persists.
+        """
 
         async def _run() -> dict[str, str]:
             flow = make_flow()
@@ -59,7 +67,7 @@ class TestConfigFlowMinSeverity:
             # form with an error instead of proceeding to store _entry_data.
             cat_input: dict[str, object] = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
             for cat, value in submitted.items():
-                cat_input[f"min_severity_{cat}"] = value
+                cat_input[f"min_severity_{cat}"] = _MIN_SEVERITY_TO_WIDGET[value]
 
             await flow.async_step_categories(cat_input)
             return flow._entry_data[CONF_MIN_SEVERITY]
@@ -92,7 +100,13 @@ class TestOptionsFlowMinSeverity:
     ) -> None:
         """Submitting the options-flow categories step must persist exactly the
         submitted per-category mapping (omitted categories defaulting to
-        No_Filter), regardless of what was previously stored/pre-filled."""
+        No_Filter), regardless of what was previously stored/pre-filled.
+
+        `cat_input` carries the widget's lowercase option value (what a real
+        submission sends); `submitted`/`expected` stay in terms of the stored
+        Severity_Level constant, since that is what `_pending_options`
+        persists.
+        """
 
         async def _run() -> dict[str, str]:
             config_entry = MagicMock()
@@ -119,7 +133,7 @@ class TestOptionsFlowMinSeverity:
             # form with an error instead of storing _pending_options.
             cat_input: dict[str, object] = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
             for cat, value in submitted.items():
-                cat_input[f"min_severity_{cat}"] = value
+                cat_input[f"min_severity_{cat}"] = _MIN_SEVERITY_TO_WIDGET[value]
 
             await flow.async_step_categories(cat_input)
             return flow._pending_options[CONF_MIN_SEVERITY]
@@ -148,8 +162,8 @@ class TestOptionsFlowMinSeverity:
 
     def test_categories_step_prefill_resolves_stored_value(self) -> None:
         """An entry with an explicit stored `min_severity` value for a category
-        must pre-fill that category's selector with the stored value, while
-        other categories still default to No_Filter."""
+        must pre-fill that category's selector with the corresponding widget
+        option value, while other categories still default to No_Filter."""
         stored_cat = ALL_CATEGORIES[0]
         stored_value = next(v for v in MIN_SEVERITY_ORDER if v != MIN_SEVERITY_NO_FILTER)
 
@@ -164,7 +178,7 @@ class TestOptionsFlowMinSeverity:
         markers_by_name = {str(k): k for k in schema.schema}
 
         stored_marker = markers_by_name[f"min_severity_{stored_cat}"]
-        assert stored_marker.default() == stored_value
+        assert stored_marker.default() == _MIN_SEVERITY_TO_WIDGET[stored_value]
 
         for cat in ALL_CATEGORIES:
             if cat == stored_cat:
