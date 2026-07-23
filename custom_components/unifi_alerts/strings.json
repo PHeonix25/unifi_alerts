@@ -38,7 +38,7 @@
       },
       "finish": {
         "title": "Webhook URLs",
-        "description": "Copy each webhook URL into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. In the alarm's Advanced Settings, add a custom header named `Authorization` with the value `Bearer {webhook_secret}` — this is the preferred authentication method. If your Alarm Manager version has no custom-header option, append `?token={webhook_secret}` to the URL instead; this legacy method still works but is deprecated. You can retrieve these URLs and the secret later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough.",
+        "description": "**Header key:** `Authorization`\n\n**Header value:** `Bearer {webhook_secret}`\n\nAdd this custom header in each alarm's Advanced Settings in UniFi Alarm Manager first; it is the preferred authentication method. Then copy each webhook URL below into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. If your Alarm Manager version has no custom-header option, append `?token={webhook_secret}` to the URL instead; this legacy method still works but is deprecated. You can retrieve these URLs and the secret later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough.",
         "data": {
           "webhook_url_network_device": "Network: Device offline/online webhook URL",
           "webhook_url_network_wan": "Network: WAN offline/latency webhook URL",
@@ -273,7 +273,7 @@
       },
       "finish": {
         "title": "Webhook URLs",
-        "description": "Copy each webhook URL into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. In the alarm's Advanced Settings, add a custom header named `Authorization` with the value `Bearer {webhook_secret}` — this is the preferred authentication method. If your Alarm Manager version has no custom-header option, append `?token={webhook_secret}` to the URL instead; this legacy method still works but is deprecated. You can retrieve these URLs and the secret later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough.",
+        "description": "**Header key:** `Authorization`\n\n**Header value:** `Bearer {webhook_secret}`\n\nAdd this custom header in each alarm's Advanced Settings in UniFi Alarm Manager first; it is the preferred authentication method. Then copy each webhook URL below into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. If your Alarm Manager version has no custom-header option, append `?token={webhook_secret}` to the URL instead; this legacy method still works but is deprecated. You can retrieve these URLs and the secret later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough.",
         "data": {
           "webhook_url_network_device": "Network: Device offline/online webhook URL",
           "webhook_url_network_wan": "Network: WAN offline/latency webhook URL",
