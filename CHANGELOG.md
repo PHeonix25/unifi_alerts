@@ -16,6 +16,7 @@
 - `UniFiClient` is now fully stateless: the v2 system-log-probe cache and backoff (previously `_has_system_log`/`_probe_fail_count`/`_probe_backoff_until` on the client) moved to `UniFiAlertsCoordinator`, which already owns all other cross-poll state. Behaviour is unchanged; this is a refactor. ([#240])
 - The setup and polling errors surfaced to the user (`ConfigEntryAuthFailed`, `ConfigEntryNotReady`, `UpdateFailed`) now carry translation keys instead of hard-coded English messages, so they can be localised the same way repair issues already are. ([#341])
 - The minimum-severity selector's option labels ("No Filter", "Low", "Medium", "High", "Very High") are now defined in `translations/en.json` instead of being hard-coded English strings in the selector config, so translators can provide locale-specific versions. Stored values are unchanged. ([#353])
+- The "Webhook URLs" finish step of the config and options flows now shows the `Authorization` header key and `Bearer <secret>` header value as their own labelled block above the webhook URLs, instead of burying the header value inside the step description, so the credentials are easier to copy before pasting the URLs into Alarm Manager. ([#368])
 
 ### Fixed
 
@@ -364,3 +365,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#343]: https://github.com/PHeonix25/unifi_alerts/issues/343
 [#344]: https://github.com/PHeonix25/unifi_alerts/issues/344
 [#353]: https://github.com/PHeonix25/unifi_alerts/issues/353
+[#368]: https://github.com/PHeonix25/unifi_alerts/issues/368
