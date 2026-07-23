@@ -2,6 +2,26 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-07-23
+
+- **release**: v2.0.0-pre2 tagged. Second v2.0.0 checkpoint: per-category severity filtering for noisy categories lands, the HA quality-scale gaps found in the pre1 audit are closed (reconfigure flow, translated exceptions, service-call validation, SSDP host updates, localised selector labels), and the final config step now spells out the `Authorization` header for the new webhook auth. Everything bar the HACS default-catalogue submission (#143) is on `dev`.
+- **feat**: added per-category minimum-severity filtering for noisy categories; each alert's severity is normalised onto a fixed scale and sub-threshold alerts are gated on both the poll and webhook paths, with unknown severities failing open so nothing is silently muted ([#331]). Closes #135. The selector's option labels moved onto a `translation_key` so they are localisable instead of hardcoded English ([#366]). Closes #353. The final "Webhook URLs" step now surfaces the `Authorization` header key and value as their own copy-paste block above the URLs, in both the config and options flows ([#370]). Closes #368.
+- **feat**: added a dedicated reconfigure flow (`async_step_reconfigure`) that reuses the existing credential-validation helpers ([#364]). Closes #344. User-facing setup and update failures now carry translation keys so their text is localisable ([#363]). Closes #341.
+- **fix**: SSDP rediscovery with a changed controller IP now updates the existing entry's `controller_url` and `unique_id` instead of aborting silently ([#365]). Closes #343. `clear_category`/`clear_all` now raise a `ServiceValidationError` on an unknown or unloaded `entry_id` rather than doing nothing ([#362]). Closes #340.
+- **docs**: recorded the `entity-disabled-by-default` quality-scale rule as exempt, on the grounds that every entity is user-scoped and essential ([#367]). Closes #345. Added a "Use cases" section ([#361], closes #346) and an intrusion-detection example ([#369]) to the README, and backfilled the `docs/HISTORY.md` block for the v2.0.0-pre1 tag ([#350]).
+
+[#331]: https://github.com/PHeonix25/unifi_alerts/pull/331
+[#350]: https://github.com/PHeonix25/unifi_alerts/pull/350
+[#361]: https://github.com/PHeonix25/unifi_alerts/pull/361
+[#362]: https://github.com/PHeonix25/unifi_alerts/pull/362
+[#363]: https://github.com/PHeonix25/unifi_alerts/pull/363
+[#364]: https://github.com/PHeonix25/unifi_alerts/pull/364
+[#365]: https://github.com/PHeonix25/unifi_alerts/pull/365
+[#366]: https://github.com/PHeonix25/unifi_alerts/pull/366
+[#367]: https://github.com/PHeonix25/unifi_alerts/pull/367
+[#369]: https://github.com/PHeonix25/unifi_alerts/pull/369
+[#370]: https://github.com/PHeonix25/unifi_alerts/pull/370
+
 ## 2026-07-21
 
 - **release**: v2.0.0-pre1 tagged. First checkpoint of the v2.0.0 "HACS default catalogue" cycle. Headline: username/password authentication removed in favour of API-key-only auth with a reauth migration path (#328, #330), webhook authentication gains an `Authorization: Bearer` header alongside the deprecated `?token=` query parameter (#335), two architecture refactors (endpoint discovery decoupled from the alarm fetch loop, `UniFiClient` made fully stateless), fixes for unselected-category entity creation and clock-drift in the clear-watermark anchor, a quality-scale audit ahead of HACS submission, and a broad CI/tooling hardening pass (Python 3.14 baseline, Dev Container, agentrc eval harness, PR quality-score check).
