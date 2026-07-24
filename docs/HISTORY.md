@@ -4,7 +4,11 @@ Dated record of completed work. Newest first. Format per entry: category, short 
 
 ## 2026-07-24
 
+- **release**: v2.0.1 stable. Critical hotfix promoted straight to `main` as a patch release, shipping the single fix below.
+- **fix**: the per-category minimum-severity selector on the categories step now renders as a translated dropdown instead of an untranslated radio-button list; it was missing an explicit dropdown render mode, a regression introduced with the `translation_key` selector added for v2.0.0 ([#376]). Closes #375.
 - **release**: v2.0.0 stable. Promotes the "HACS default catalogue" cycle to `main`. No further changes landed on `dev` since `v2.0.0-pre2`, so this is a straight version promotion; every pre1/pre2 item ships as-is. The cycle's umbrella issue (#143) closed the same day: repository topics set, the brand icon self-hosted under `custom_components/unifi_alerts/brand/` (replacing the retired `home-assistant/brands` submission path), and a PR opened against `hacs/default`.
+
+[#376]: https://github.com/PHeonix25/unifi_alerts/pull/376
 
 ## 2026-07-23
 
