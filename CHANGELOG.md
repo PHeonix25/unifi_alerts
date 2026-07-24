@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-07-24
+
 ### Fixed
 
 - The per-category minimum-severity selector on the "Configure Alert Categories" step (config flow) and "Update Alert Categories" step (options flow) now renders as a dropdown with translated labels, instead of an untranslated radio-button list showing raw keys (e.g. `min_severity_network_wan`, `no_filter`). The selector was missing an explicit dropdown render mode. ([#375])
@@ -283,7 +285,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v2.0.1
 [2.0.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v2.0.0
 [1.9.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.9.0
 [1.8.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.8.0
