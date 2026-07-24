@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The per-category minimum-severity selector on the "Configure Alert Categories" step (config flow) and "Update Alert Categories" step (options flow) now renders as a dropdown with translated labels, instead of an untranslated radio-button list showing raw keys (e.g. `min_severity_network_wan`, `no_filter`). The selector was missing an explicit dropdown render mode. ([#375])
+
 ## [2.0.0] - 2026-07-24
 
 ### Added
@@ -369,3 +373,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#344]: https://github.com/PHeonix25/unifi_alerts/issues/344
 [#353]: https://github.com/PHeonix25/unifi_alerts/issues/353
 [#368]: https://github.com/PHeonix25/unifi_alerts/issues/368
+[#375]: https://github.com/PHeonix25/unifi_alerts/issues/375
