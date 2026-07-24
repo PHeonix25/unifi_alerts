@@ -20,6 +20,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
+    SelectSelectorMode,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -85,7 +86,9 @@ _WIDGET_TO_MIN_SEVERITY: Final[dict[str, str]] = {
 }
 _min_severity_selector = SelectSelector(
     SelectSelectorConfig(
-        options=list(_MIN_SEVERITY_TO_WIDGET.values()), translation_key="min_severity"
+        options=list(_MIN_SEVERITY_TO_WIDGET.values()),
+        translation_key="min_severity",
+        mode=SelectSelectorMode.DROPDOWN,
     )
 )
 

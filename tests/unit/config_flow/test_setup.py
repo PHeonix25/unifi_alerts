@@ -540,6 +540,8 @@ class TestCategoriesStep:
         (lowercase slugs, since hassfest requires translation keys to be
         lowercase) and defaults to No_Filter.
         """
+        from homeassistant.helpers.selector import SelectSelectorMode
+
         from custom_components.unifi_alerts.config_flow import _MIN_SEVERITY_TO_WIDGET
         from custom_components.unifi_alerts.severity import MIN_SEVERITY_NO_FILTER
 
@@ -565,6 +567,10 @@ class TestCategoriesStep:
             selector = schema.schema[marker]
             option_values = set(selector.config["options"])
             assert option_values == expected_option_values
+            # Regression test for #375: without an explicit dropdown mode, HA's
+            # frontend defaults a <=6-option SelectSelector to a radio-button
+            # list instead of a dropdown.
+            assert selector.config["mode"] == SelectSelectorMode.DROPDOWN
 
 
 class TestFinishStep:
