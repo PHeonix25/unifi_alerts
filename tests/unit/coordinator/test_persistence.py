@@ -382,6 +382,25 @@ class TestCoordinatorUncoveredBranches:
         assert state.alert_count == 2
 
     @pytest.mark.asyncio
+    async def test_restore_watermarks_skips_unparseable_last_alert(self):
+        """A last_alert payload that UniFiAlert.from_dict cannot parse is dropped, not raised."""
+        coord = make_coordinator()
+        coord._store = MagicMock()
+        coord._store.async_load = AsyncMock(
+            return_value={CATEGORY_NETWORK_WAN: {"last_alert": {"message": "corrupt"}}}
+        )
+        coord._store.async_save = AsyncMock()
+
+        with patch(
+            "custom_components.unifi_alerts.coordinator.UniFiAlert.from_dict",
+            side_effect=KeyError("category"),
+        ):
+            await coord.async_restore_watermarks()  # must not raise
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.last_alert is None
+
+    @pytest.mark.asyncio
     async def test_clear_unknown_category_is_noop(self):
         coord = make_coordinator()
         coord._store = MagicMock()

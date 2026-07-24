@@ -10,12 +10,10 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_API_KEY,
-    CONF_PASSWORD,
-    CONF_USERNAME,
     CONF_WEBHOOK_SECRET,
 )
 
-_TO_REDACT: set[str] = {CONF_PASSWORD, CONF_API_KEY, CONF_USERNAME, CONF_WEBHOOK_SECRET}
+_TO_REDACT: set[str] = {CONF_API_KEY, CONF_WEBHOOK_SECRET}
 
 
 async def async_get_config_entry_diagnostics(
@@ -29,11 +27,11 @@ async def async_get_config_entry_diagnostics(
     """
     runtime_data = getattr(entry, "runtime_data", None)
     coordinator = runtime_data.coordinator if runtime_data is not None else None
-    # Strip token query params so secrets are not exposed in shared diagnostics output
-    webhook_urls: dict[str, str] = {
-        cat: url.split("?")[0]
-        for cat, url in (runtime_data.webhook_urls if runtime_data is not None else {}).items()
-    }
+    # register_all() no longer embeds the bearer secret in these URLs (#176),
+    # so no redaction is needed before including them in shared diagnostics.
+    webhook_urls: dict[str, str] = (
+        dict(runtime_data.webhook_urls) if runtime_data is not None else {}
+    )
 
     coordinator_info: dict[str, Any]
     if coordinator is not None:

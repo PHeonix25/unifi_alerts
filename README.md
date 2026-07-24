@@ -19,7 +19,7 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 - **Clear buttons** - manually reset any category or all at once
 - **Auto-clear** - configurable timeout to reset sensors automatically
 - **UI config flow** - full setup and options UI, no YAML
-- **Auto-detect auth** - tries API key (UniFi OS) then falls back to username/password
+- **API-key authentication** - a stateless `X-API-Key` header, no session cookies or login/logout
 
 ### Alert categories
 
@@ -35,13 +35,25 @@ Aggregates **UniFi Network controller alerts** into Home Assistant sensors, bina
 
 ---
 
+## Use cases
+
+- **Network-outage dashboards** - put the rollup `binary_sensor.unifi_alerts_any_alert` and the WAN offline/latency category on a Lovelace card so a failover or ISP outage is visible at a glance.
+- **Security automations** - notify the moment UniFi's IPS/IDS, honeypot, or firewall-block alarms fire, instead of noticing a threat only after checking the controller UI.
+- **Unattended-site power monitoring** - alert on PoE disconnects, power cycles, or UPS events at a remote or unstaffed site where nobody is watching the controller in real time.
+- **Client presence and churn tracking** - use the client connect/disconnect category to notice unexpected devices joining, or expected devices dropping off, the network.
+
+See [docs/EXAMPLES.md](docs/EXAMPLES.md) for a working example of each: a Lovelace entities card ("UniFi Network Health") and an automation that notifies on a security threat, built on the entities this integration creates.
+
+---
+
 ## Requirements
 
-- **Home Assistant** 2025.1 or later
+- **Home Assistant** 2026.3 or later (requires Python 3.14)
 - **The `webhook` component enabled** - ships with `default_config`, which almost all installs include. If you run a minimal Home Assistant configuration that hand-picks integrations instead of using `default_config`, add `webhook:` to `configuration.yaml` yourself; without it, webhook registration fails at setup. (`manifest.json` cannot declare this as a HACS dependency - see [#267](https://github.com/PHeonix25/unifi_alerts/issues/267).)
 - **UniFi OS console** - the classic self-hosted Network Application is not supported. The integration uses the `/proxy/network` API path, which is UniFi OS-only.
+- **UniFi Network Application 8.x or later** - the version that introduced API keys. Older firmware cannot create one, so it cannot be used with this integration.
 - **Local network reachability** - your UniFi controller and HA must share a network. Webhook URLs are local-only and cannot be reached over Nabu Casa remote access or from cloud-hosted controllers.
-- **Credentials** - API key (recommended) or username + password.
+- **Credentials** - a UniFi API key. Username and password authentication is no longer supported; see [Setup](#setup) below.
 
 ### Tested controllers
 
@@ -82,9 +94,9 @@ After every HACS update (or manual file copy), **fully restart Home Assistant**.
 
 ## Setup
 
-### 1. Generate a UniFi API key (recommended)
+### 1. Generate a UniFi API key
 
-API keys are available on all supported UniFi OS consoles. The navigation path varies by firmware:
+An API key is required; the integration no longer supports username/password authentication. API keys are available on all supported UniFi OS consoles running Network Application 8.x or later. The navigation path varies by firmware:
 
 | Firmware / UI version | Path |
 |---|---|
@@ -94,15 +106,15 @@ API keys are available on all supported UniFi OS consoles. The navigation path v
 
 The key is shown only once at creation - copy it immediately.
 
-> **Tip:** Create a dedicated local admin account for the integration. Do not use a cloud account or one with MFA enabled, since non-interactive login will fail.
+> **Tip:** Create a dedicated local admin account to generate the key from. The API key inherits that account's permissions, so a dedicated account keeps the integration's access auditable and separate from your own login.
 
 ### 2. Add the integration in Home Assistant
 
 1. **Settings > Devices & Services > Add Integration** > search **UniFi Alerts**
-2. Enter your controller URL (e.g. `https://192.168.1.1`) and credentials. For API key auth, leave Username/Password blank; for username/password, leave API Key blank.
+2. Enter your controller URL (e.g. `https://192.168.1.1`) and the API key generated in step 1.
 3. Select the alert categories you want to monitor (client/device categories are noisy by default).
 4. Configure polling interval and auto-clear timeout.
-5. **Copy the webhook URLs** shown on the final screen before clicking Submit. The integration is not created until you click Submit.
+5. **Copy the webhook URLs and the bearer secret** shown on the final screen before clicking Submit. The integration is not created until you click Submit.
 
 > You can retrieve webhook URLs later from **Settings > Devices & Services > UniFi Alerts > Configure**.
 
@@ -117,9 +129,12 @@ For each enabled category, create an alarm in **UniFi Network > Settings > Notif
 3. Set scope (specific devices or network-wide)
 4. Under **Action**, choose **Webhook > Custom Webhook > POST**
 5. Paste the webhook URL for that category from the HA integration page
-6. Click **Create**
+6. In the alarm's **Advanced Settings**, add a custom header named `Authorization` with the value `Bearer <secret>` - this is the preferred authentication method. If your Alarm Manager version has no custom-header option, append `?token=<secret>` to the URL instead; this legacy form still works but is deprecated (see the breaking-change note below).
+7. Click **Create**
 
 > **Test Alarm** in UniFi verifies the webhook reaches HA before you save.
+>
+> **Breaking change (v2.0.0):** webhook authentication moved from the `?token=` query parameter to an `Authorization: Bearer` header (issue #176). The query parameter still works during a deprecation window (no earlier than v3.0.0), so existing Alarm Manager configurations are not broken by upgrading, but new setups should use the header form - displayed webhook URLs no longer embed the secret.
 
 #### Trigger reference
 
@@ -135,7 +150,7 @@ For each enabled category, create an alarm in **UniFi Network > Settings > Notif
 
 > **Security categories share a trigger.** All three Security categories (Threat, Honeypot, Firewall) use the same "Security" trigger type in Alarm Manager. If you enable more than one, create a separate alarm for each using the same trigger but paste each category's distinct webhook URL. When a security event fires, UniFi will call all three URLs; each receives the event and the integration routes it to the correct category based on the event key. To avoid this, enable only the security categories you actively use.
 
-> **Webhook secret rotation:** if you regenerate the secret via the options flow, every existing URL becomes invalid immediately. Re-paste all new URLs into Alarm Manager, or affected alarms will silently fail with HTTP 401.
+> **Webhook secret rotation:** if you regenerate the secret via the options flow, every existing header value and legacy `?token=` URL becomes invalid immediately. Update the `Authorization` header (or re-paste `?token=` URLs) in Alarm Manager, or affected alarms will silently fail with HTTP 401.
 
 #### Confirming a category received its first webhook
 
@@ -144,7 +159,7 @@ You do not have to wait for a real alert to know the wiring works. Each per-cate
 - `webhook_health`: `never_received` until the first webhook arrives, then `healthy`. It reads `stale` once more than 7 days pass without a webhook (expected for rarely-firing categories such as honeypot or threat).
 - `last_webhook_at`: the UTC timestamp of the most recent webhook received for that category, or `None` if none has arrived.
 
-Fire a **Test Alarm** from Alarm Manager (or trigger the event yourself) and watch `webhook_health` flip to `healthy`. A category still showing `never_received` after a test points to a wrong URL, a missing `?token=`, or an alarm whose trigger does not match the category. The same fields appear per category in the integration's **Download diagnostics** output.
+Fire a **Test Alarm** from Alarm Manager (or trigger the event yourself) and watch `webhook_health` flip to `healthy`. A category still showing `never_received` after a test points to a wrong URL, a missing/wrong `Authorization` header or `?token=`, or an alarm whose trigger does not match the category. The same fields appear per category in the integration's **Download diagnostics** output.
 
 ### Multiple controllers or sites
 
@@ -192,6 +207,12 @@ All data stays on your local network; the integration does not communicate with 
 
 ---
 
+## Quality scale
+
+This integration is audited against Home Assistant's [integration quality scale](https://www.home-assistant.io/docs/quality_scale/). See [quality_scale.yaml](quality_scale.yaml) for the full rule-by-rule status (done, exempt, or open, with linked issues for remaining gaps). The `quality_scale` manifest key is not set yet: one Bronze-tier rule (`brands`, tracked by [#143](https://github.com/PHeonix25/unifi_alerts/issues/143)) is still open, so no tier is fully achieved.
+
+---
+
 ## Uninstall
 
 **Settings > Devices & Services > UniFi Alerts > three-dot menu > Delete.**
@@ -208,16 +229,17 @@ All data stays on your local network; the integration does not communicate with 
 
 ## Contributing
 
-Issues and PRs welcome. The full developer guide lives in [docs/DEVELOPING.md](docs/DEVELOPING.md): local setup, running checks, the CI pipeline, branching strategy, and release process.
+Issues and pull requests welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, branch rules, and PR requirements. We are committed to maintaining a respectful community - see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
-A short tour of the rest of the documentation:
+For deeper dives:
 
-| Document | When to read |
+| Document | Purpose |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the modules fit together |
-| [docs/HOMEASSISTANT.md](docs/HOMEASSISTANT.md) | HA-specific patterns: coordinators, entities, config flow |
-| [docs/UNIFI.md](docs/UNIFI.md) | UniFi API, auth methods, alarm payload taxonomy |
+| [docs/DEVELOPING.md](docs/DEVELOPING.md) | Full developer guide: setup, CI overview, branching strategy, release process |
 | [docs/TESTING.md](docs/TESTING.md) | Test layout and conventions |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the modules fit together |
+| [docs/HOMEASSISTANT.md](docs/HOMEASSISTANT.md) | Home Assistant specific patterns |
+| [docs/UNIFI.md](docs/UNIFI.md) | UniFi API and alarm payload taxonomy |
 | [docs/REPO_LAYOUT.md](docs/REPO_LAYOUT.md) | Per-file responsibilities |
-| [docs/LOCALISATION.md](docs/LOCALISATION.md) | Localisation maturity bar, audit history, and how to contribute a new language |
+| [docs/LOCALISATION.md](docs/LOCALISATION.md) | Contributing a new language |
 | [CLAUDE.md](CLAUDE.md) | Non-negotiable constraints and coding conventions |

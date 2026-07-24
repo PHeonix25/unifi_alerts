@@ -35,12 +35,8 @@ Two data paths run in parallel:
 <!-- shared:stack -->
 | Layer | Tool |
 | ----- | ---- |
-| Language | Python 3.12+ |
-| Async HTTP | `aiohttp` |
-| Lint + format | `ruff` |
-| Type checking | `mypy` (strict) |
-| Tests | `pytest` + `MagicMock`/`AsyncMock` |
-| HA integration | `custom_components/unifi_alerts/` |
+| Type checking | `mypy` in strict mode |
+| Tests | `pytest` + `MagicMock`/`AsyncMock`; never real HTTP in tests |
 <!-- /shared:stack -->
 
 ---
@@ -52,7 +48,8 @@ Two data paths run in parallel:
 make check        # default: lint + typecheck + validate + test (run before every commit)
 make lint         # ruff check + format check
 make typecheck    # mypy
-make validate     # HACS preflight + translation drift check
+make validate     # HACS preflight + docs prose checks
+make doc-check    # docs prose checks + translation drift check
 make test         # pytest
 ```
 <!-- /shared:commands -->
@@ -61,53 +58,26 @@ All commands use `.venv` in the repo root - never the system Python. Run `make s
 
 ---
 
-## Repository structure
+## Repository map
 
-```
-custom_components/unifi_alerts/   # integration source
-  __init__.py                     # setup/teardown, config entry lifecycle
-  const.py                        # all constants, category defs, UniFi key->category map
-  coordinator.py                  # DataUpdateCoordinator - owns all category state
-  webhook_handler.py              # registers HA webhooks, validates ?token= bearer auth
-  config_flow.py                  # three-step UI setup + options flow
-  models.py                       # UniFiAlert dataclass, UniFiClientConfig TypedDict
-  unifi_client.py                 # async HTTP client for UniFi controller API
-  binary_sensor.py                # per-category and rollup binary sensors
-  sensor.py                       # per-category message + open-count sensors, rollup count
-  event.py                        # per-category event entities
-  button.py                       # per-category and rollup clear buttons
-  services.py                     # HA service: clear alert category
-  diagnostics.py                  # HA diagnostics redaction
-  strings.json                    # UI strings - must stay identical to translations/en.json
-  translations/en.json            # English translations - must stay identical to strings.json
+Use [`docs/REPO_LAYOUT.md`](docs/REPO_LAYOUT.md) for the authoritative per-file map and load-bearing notes. Do not duplicate the file tree in agent-context files.
 
-tests/
-  conftest.py                     # root fixtures
-  unit/                           # unit tests by module
-    conftest.py
-    config_flow/                  # config flow tests split by flow type
-      conftest.py
-  integration/                    # full config-entry lifecycle tests
-
-docs/                             # extended documentation
-scripts/                          # validation helpers (validate_hacs.py, check_translations.py, etc.)
-agentrc.eval.json                 # agent planning-eval cases (see below)
-```
-
-`agentrc.eval.json` holds planning-evaluation cases for agent harnesses: each case pairs a realistic task prompt with the expectations a good implementation plan must meet (files touched, constraints respected, tests updated). It is not executed by CI. If you rename a symbol or move a test file referenced in its expectations, update the case text in the same PR.
+`agentrc.eval.json` holds planning-evaluation cases for agent harnesses: each case pairs a realistic task prompt with the expectations a good implementation plan must meet (files touched, constraints respected, tests updated) and a `checklist` array of binary, independently-gradeable criteria derived from those expectations - every case must ship a `checklist`, not prose alone. `scripts/check_agentrc_refs.py` (wired into `make doc-check`/`make validate` and CI) mechanically checks that file paths named in the case text still exist; it does not check the checklist's presence or shape, or judge semantic accuracy - review that by hand. `scripts/run_agentrc_eval.py` (manual/`workflow_dispatch`, see `docs/research/agentic-eval-harness.md`) runs the cases against one model (default Anthropic Claude Haiku - needs `ANTHROPIC_API_KEY`) and grades each checklist item pass/fail; `scripts/run_agentrc_eval_cross_model.py` runs the same cases against every model listed in `scripts/agentrc_eval_models.json` (manual only for now) and reports where models disagree. `.github/workflows/agentrc-quality-score.yml` runs the single-model check automatically on PRs touching `agentrc.eval.json`/`CLAUDE.md`/`AGENTS.md`/`custom_components/unifi_alerts/**` and posts an advisory PR comment - it never blocks a merge, and is a silent no-op if `ANTHROPIC_API_KEY` isn't configured. If you rename a symbol or move a test file referenced in a case's text, or the case's premise stops matching the codebase, update the case (and its checklist) in the same PR.
 
 ---
 
-## Key source files
+## Personas and when to invoke
 
-| File | Role |
-| ---- | ---- |
-| `custom_components/unifi_alerts/const.py` | All constants, category defs, `UNIFI_KEY_TO_CATEGORY` map |
-| `custom_components/unifi_alerts/coordinator.py` | DataUpdateCoordinator - owns all category state |
-| `custom_components/unifi_alerts/webhook_handler.py` | Registers HA webhooks, validates `?token=` bearer auth |
-| `custom_components/unifi_alerts/config_flow.py` | Three-step UI setup + options flow |
-| `custom_components/unifi_alerts/strings.json` | Must stay identical to `translations/en.json` |
-| `tests/conftest.py` | Root fixtures and shared helpers |
+Use `.github/agents/*.agent.md` as the source for persona behaviour and outputs. Route by task type:
+
+- **Security Lead**: webhook token auth, diagnostics redaction, SSL verification defaults, and trust-boundary checks in webhook/client paths.
+- **Software Engineering Lead**: coordinator-owned state, async lifecycle correctness, and design trade-offs in integration modules.
+- **Quality Lead**: regression tests for config flow, webhook dispatch, coordinator polling, and entity state behaviour.
+- **Responsible AI**: accessibility and inclusive UX in config flow copy, diagnostics readability, and privacy-by-design checks.
+- **Product Manager**: issue shaping in this repo's taxonomy (`size:`, `priority:`, milestone) with measurable user outcomes.
+- **Technical Debt Remediation Plan**: ranked debt plans tied to existing issues and verifiable follow-up work.
+
+Keep persona examples tied to this integration's actual surface, not generic web-app examples.
 
 ---
 
@@ -120,7 +90,7 @@ This is the most common extension task. Every step is required - missing any one
 3. **`translations/en.json`** - mirror every change made to `strings.json` exactly. Run `scripts/check_translations.py` to validate.
 4. **`binary_sensor.py`**, **`sensor.py`**, **`event.py`**, **`button.py`** - no code changes needed for most categories (platforms iterate `ALL_CATEGORIES` dynamically), but review each if adding a category with unusual display logic.
 5. **`tests/`** - add the new category key to fixtures in `tests/unit/conftest.py` and `tests/integration/conftest.py`. Check `tests/unit/coordinator/` and `test_entities.py` for category-enumerated tests that need updating.
-6. Run `make check` - this runs the translation drift check and all tests. Fix any failures before committing.
+6. Run `make doc-check` for translation parity, then `make check` for the full suite. Fix any failures before committing.
 
 ---
 
@@ -130,16 +100,22 @@ This is the most common extension task. Every step is required - missing any one
 - **`X | None`** not `Optional[X]`; `list[str]` not `List[str]`.
 - **Entities never cache state** - read from coordinator only.
 - **`manifest.json` keys** must be `domain`, `name`, then all remaining keys alphabetically - hassfest enforces order.
-- **Webhook token auth is mandatory** - every inbound webhook request must be validated against `CONF_WEBHOOK_SECRET` via `?token=`. Never remove this check.
+- **Webhook token auth is mandatory** - every inbound webhook request must be validated against `CONF_WEBHOOK_SECRET` via the `Authorization: Bearer` header (preferred) or the legacy `?token=` query parameter (deprecated, accepted during a migration window - issue #176). Never remove either check while both are supported.
 - **GitHub Actions `uses:` must be full 40-char SHA** - no tags, no branch refs.
 - **No third-party release actions** - use `gh release create --generate-notes` only.
 - **`strings.json` and `translations/en.json` must be identical** - CI enforces this.
 
 ---
 
+## Decision log
+
+- **Nested `AGENTS.md` files**: deferred. This repository is a single-package integration with a stable module map; one root `AGENTS.md` plus `docs/REPO_LAYOUT.md` keeps routing clear without extra maintenance overhead.
+
+---
+
 ## Common pitfalls
 
-- **Partial category registration** - the most common mistake. Adding a category to `const.py` but forgetting `strings.json`/`translations/en.json` breaks the config flow UI silently. Always run `make validate` after touching categories.
+- **Partial category registration** - the most common mistake. Adding a category to `const.py` but forgetting `strings.json`/`translations/en.json` breaks the config flow UI silently. Always run `make doc-check` after touching categories.
 - **Blocking I/O in coordinator** - `UniFiAlertsCoordinator._async_update_data` must stay async-clean. Importing and calling `requests` or any sync HTTP here will block the HA event loop.
 - **Caching state in entities** - entities must read state from `self.coordinator.data` on every `@property` call. Storing a local copy causes stale UI after coordinator updates.
 - **`manifest.json` key order** - hassfest rejects any manifest where keys after `domain`/`name` are not alphabetical. Always check with `make validate` after editing this file.

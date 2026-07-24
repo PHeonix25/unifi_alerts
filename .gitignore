@@ -6,7 +6,7 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 *.egg-info/
-
+.hypothesis/
 
 # Ignore virtual environments
 .venv/
@@ -27,3 +27,6 @@ htmlcov/
 
 # Personal Claude Code overrides (shared settings live in .claude/settings.json)
 .claude/settings.local.json
+
+# scripts/run_agentrc_eval.py output (raw plans + verdicts, not source)
+.agentrc-eval-out/

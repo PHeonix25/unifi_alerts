@@ -82,7 +82,7 @@ body:
     attributes:
       label: Relevant log output
       description: |
-        Enable DEBUG logging for `custom_components.unifi_alerts` and paste the relevant lines here. **Redact any `?token=...` values before pasting** — those are the bearer tokens for your webhooks.
+        Enable DEBUG logging for `custom_components.unifi_alerts` and paste the relevant lines here. **Redact any `Authorization: Bearer ...` header values or `?token=...` query strings before pasting** — those are the bearer secrets for your webhooks.
 
         ```yaml
         logger:

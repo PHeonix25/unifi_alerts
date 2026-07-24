@@ -1,0 +1,306 @@
+rules:
+  # Bronze
+  action-setup:
+    status: done
+    comment: |
+      Services are registered in async_setup_entry via async_register_services
+      (idempotent) and unregistered in async_unload_entry once the last entry
+      is gone (services.py).
+  appropriate-polling:
+    status: done
+    comment: |
+      DataUpdateCoordinator with a user-configurable poll interval
+      (CONF_POLL_INTERVAL, 10 to 3600 seconds, coordinator.py). Webhook push
+      is the primary path; polling is a backstop.
+  brands:
+    status: todo
+    comment: |
+      Not yet submitted to home-assistant/brands. Tracked as an acceptance
+      item on #143 (HACS default catalogue umbrella), not duplicated here.
+  common-modules:
+    status: done
+    comment: |
+      Standard DataUpdateCoordinator, ConfigEntry.runtime_data, CoordinatorEntity
+      base classes throughout; no bespoke reinvention of core patterns.
+  config-flow:
+    status: done
+    comment: |
+      config_flow.py implements the full setup flow (user, categories, finish
+      steps) plus SSDP discovery, reauth, and an options flow.
+  config-flow-test-coverage:
+    status: done
+    comment: |
+      tests/unit/config_flow/ covers setup, discovery, reauth, options
+      credentials, options rotation validation, and options helpers.
+  dependency-transparency:
+    status: done
+    comment: |
+      manifest.json requirements is empty; the only third-party import
+      (yarl) is an existing aiohttp/HA core transitive dependency, not a
+      vendored or hidden package.
+  docs-actions:
+    status: done
+    comment: |
+      services.yaml and the strings.json/translations/en.json services
+      section fully describe clear_category and clear_all (name,
+      description, fields) for HA's Developer Tools > Actions UI.
+  docs-conditions:
+    status: exempt
+    comment: This integration does not provide any device conditions.
+  docs-high-level-description:
+    status: done
+    comment: README.md opening paragraph and Features section.
+  docs-installation-instructions:
+    status: done
+    comment: README.md "Installation" and "Setup" sections (HACS and manual).
+  docs-removal-instructions:
+    status: done
+    comment: README.md "Uninstall" section.
+  docs-triggers:
+    status: exempt
+    comment: This integration does not provide any device triggers.
+  entity-event-setup:
+    status: exempt
+    comment: |
+      Entities use the standard CoordinatorEntity update pattern
+      (_handle_coordinator_update); none subscribe to the HA event bus
+      directly, so there is no explicit subscribe/unsubscribe lifecycle
+      to manage.
+  entity-unique-id:
+    status: done
+    comment: |
+      "{entry.entry_id}_{category}_{suffix}" format, stable across restarts
+      (based on entry_id, not mutable config). See docs/HOMEASSISTANT.md
+      "Entity unique IDs".
+  has-entity-name:
+    status: done
+    comment: _attr_has_entity_name = True set on every entity class.
+  runtime-data:
+    status: done
+    comment: |
+      entry.runtime_data holds a typed RuntimeData dataclass (models.py),
+      assigned in async_setup_entry.
+  test-before-configure:
+    status: done
+    comment: |
+      async_step_user and the options-flow credentials step both call
+      client.authenticate() and client.fetch_alarms() before accepting
+      input.
+  test-before-setup:
+    status: done
+    comment: |
+      async_setup_entry authenticates before creating any entity and raises
+      ConfigEntryNotReady/ConfigEntryAuthFailed on failure.
+  unique-config-entry:
+    status: done
+    comment: |
+      async_set_unique_id(url) plus _abort_if_unique_id_configured() in both
+      async_step_user and async_step_ssdp.
+
+  # Silver
+  action-exceptions:
+    status: done
+    comment: |
+      _get_coordinators in services.py raises a translatable
+      ServiceValidationError (translation_key unknown_entry_id /
+      entry_not_loaded) when clear_category/clear_all is called with an
+      explicit entry_id that does not resolve to a currently loaded UniFi
+      Alerts entry. Calling with no entry_id (act on every loaded entry)
+      is unaffected and never raises. Closed by #340.
+  config-entry-unloading:
+    status: done
+    comment: |
+      async_unload_entry unloads platforms, shuts down the coordinator,
+      unregisters webhooks, and closes the client; async_remove_entry also
+      cleans up persisted storage and repair issues.
+  docs-configuration-parameters:
+    status: done
+    comment: |
+      README "Setup" step 2 to 4 and "Multiple controllers or sites"
+      document poll interval, clear timeout, categories, and site.
+  docs-installation-parameters:
+    status: done
+    comment: README "Requirements" and "Setup" sections.
+  entity-unavailable:
+    status: done
+    comment: |
+      Every entity's available property reflects real coordinator state
+      (category enabled/present), not a cached local flag.
+  integration-owner:
+    status: done
+    comment: manifest.json codeowners lists @PHeonix25.
+  log-when-unavailable:
+    status: done
+    comment: |
+      DataUpdateCoordinator's built-in behaviour (single WARNING on first
+      UpdateFailed/ConfigEntryAuthFailed, single INFO on recovery) is relied
+      on rather than reimplemented; _async_update_data raises the correct
+      exception types for it to apply.
+  parallel-updates:
+    status: done
+    comment: |
+      PARALLEL_UPDATES = 0 declared in binary_sensor.py, sensor.py, event.py,
+      and button.py. Every entity is coordinator-driven with no per-entity
+      network calls, including button presses, which only touch in-memory
+      state and local storage.
+  reauthentication-flow:
+    status: done
+    comment: |
+      async_step_reauth / async_step_reauth_confirm implemented; also raises
+      a repair issue (ISSUE_ID_AUTH_FAILED) alongside the standard reauth
+      prompt. The version-4 username/password-to-API-key migration
+      (_migrate_v3_to_v4 in __init__.py) reuses the same reauth entry point,
+      with its own repair issue (ISSUE_ID_APIKEY_MIGRATION) so the prompt
+      does not look like an ordinary credential failure.
+  test-coverage:
+    status: done
+    comment: |
+      make test and CI both enforce --cov-fail-under=95.
+
+  # Gold
+  devices:
+    status: done
+    comment: |
+      All entities share one DeviceInfo per config entry (entry_type
+      "service"), registered proactively in async_setup_entry before
+      platform forwarding.
+  diagnostics:
+    status: done
+    comment: |
+      diagnostics.py returns redacted config/options plus live coordinator
+      state, with alert content deliberately excluded (see its inline
+      comment) to avoid leaking client hostnames/MACs/IPs.
+  discovery:
+    status: done
+    comment: |
+      manifest.json declares ssdp matchers for UDM/UDM Pro/UDM SE/UDM Pro
+      Max; async_step_ssdp handles discovery.
+  discovery-update-info:
+    status: done
+    comment: |
+      async_step_ssdp matches unchanged addresses via unique_id as before.
+      On a changed IP, the discovered UPnP serial number (stable across IP
+      changes, unlike unique_id which is keyed on the controller URL) is
+      used to find the previously configured entry and refresh its
+      controller_url and unique_id in place instead of leaving it pinned to
+      the stale address. Fixed in #343.
+  docs-data-update:
+    status: done
+    comment: |
+      docs/ARCHITECTURE.md and docs/HOMEASSISTANT.md document the dual
+      webhook-push/REST-polling data path in detail.
+  docs-examples:
+    status: done
+    comment: docs/EXAMPLES.md (dashboard card, automation).
+  docs-known-limitations:
+    status: done
+    comment: |
+      docs/UNIFI.md documents the 3000-record /list/alarm cap; README
+      documents the security-categories-share-a-trigger caveat, the
+      local-network-only requirement, and the ?token=/Authorization header
+      deprecation window.
+  docs-supported-devices:
+    status: done
+    comment: README "Tested controllers" table.
+  docs-supported-functions:
+    status: done
+    comment: README "Features" and "Alert categories" sections.
+  docs-troubleshooting:
+    status: done
+    comment: docs/TROUBLESHOOTING.md.
+  docs-use-cases:
+    status: done
+    comment: |
+      README "Use cases" section names four concrete scenarios (network-
+      outage dashboards, security automations, unattended-site power
+      monitoring, client presence tracking) and cross-links docs/EXAMPLES.md
+      for the working dashboard card and automation. Closed #346.
+  dynamic-devices:
+    status: exempt
+    comment: |
+      One fixed service device per config entry; the integration never adds
+      or removes devices at runtime.
+  entity-category:
+    status: done
+    comment: |
+      Diagnostic sensors (message, webhook-health) use
+      EntityCategory.DIAGNOSTIC; clear buttons use EntityCategory.CONFIG;
+      primary state entities (binary sensor, count sensor, event) are
+      correctly left uncategorised.
+  entity-device-class:
+    status: done
+    comment: |
+      BinarySensorDeviceClass.PROBLEM on binary sensors,
+      SensorDeviceClass.ENUM on the webhook-health sensor. Count sensors
+      have no device class because none fits an alert counter; they use
+      SensorStateClass.MEASUREMENT instead (see sensor.py inline comment).
+  entity-disabled-by-default:
+    status: exempt
+    comment: |
+      Every entity is user-scoped and essential. Categories are opted into
+      during the config flow, so nothing is auto-discovered noise, and the
+      per-category diagnostic entities (last-message, webhook-health) are
+      needed for setup and troubleshooting rather than being verbose clutter.
+  entity-translations:
+    status: done
+    comment: |
+      Every entity sets _attr_translation_key; names are supplied via
+      strings.json/translations/en.json, kept identical and drift-checked
+      in CI.
+  exception-translations:
+    status: done
+    comment: |
+      Repair issues use translation_key correctly, and the exceptions HA
+      surfaces to the user (ConfigEntryAuthFailed, ConfigEntryNotReady,
+      UpdateFailed in __init__.py and coordinator.py) now carry
+      translation_domain/translation_key/translation_placeholders, backed by
+      an "exceptions" section in strings.json/translations/en.json. The
+      internal CannotConnectError/InvalidAuthError/SslCertificateError in
+      unifi_auth.py are out of scope: they are caught and re-raised as the
+      above before ever reaching the user. Landed in #341.
+  icon-translations:
+    status: done
+    comment: |
+      icons.json (added in #338) covers every entity's icon, keyed by
+      translation_key, including state-dependent on/off pairs for binary
+      sensors. The one remaining Python-side icon property (the per-category
+      message sensor) is a justified exception: its icon depends on
+      is_alerting, a different signal from the sensor's own displayed
+      value (the message text), which icons.json's state-keyed mechanism
+      cannot express.
+  reconfiguration-flow:
+    status: done
+    comment: |
+      async_step_reconfigure implements HA's dedicated reconfigure entry
+      point, letting the user update the controller URL, API key, and
+      verify_ssl for an existing entry without deleting and re-adding it.
+      Reuses the same credential-validation helpers as the options flow's
+      credentials step rather than duplicating that logic. The options flow
+      is kept as-is alongside it, covering alert categories, polling, and
+      webhook secret rotation. Landed in #344.
+  repair-issues:
+    status: done
+    comment: |
+      Six distinct repair issues, each created and cleared at the right
+      lifecycle point: auth failed, API-key migration needed, webhook
+      secret rotated, webhook URLs changed (migration), watermark persist
+      failed, legacy query-string webhook auth deprecation.
+  stale-devices:
+    status: exempt
+    comment: |
+      One fixed service device per config entry; there is no set of
+      sub-devices that can go stale independently.
+
+  # Platinum
+  async-dependency:
+    status: done
+    comment: All I/O uses aiohttp; no synchronous network or disk calls.
+  inject-websession:
+    status: done
+    comment: |
+      async_get_clientsession(hass, verify_ssl=...) is used everywhere; no
+      bare aiohttp.ClientSession is ever created (see
+      docs/HOMEASSISTANT.md "aiohttp session lifecycle").
+  strict-typing:
+    status: done
+    comment: pyproject.toml sets mypy strict = true, enforced in CI.

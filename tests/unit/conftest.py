@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
-from collections.abc import Generator, Iterator
+from collections.abc import Coroutine, Generator, Iterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,12 +12,11 @@ import pytest
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
+    CONF_API_KEY,
     CONF_CLEAR_TIMEOUT,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
-    CONF_PASSWORD,
     CONF_POLL_INTERVAL,
-    CONF_USERNAME,
     CONF_VERIFY_SSL,
     DEFAULT_CLEAR_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
@@ -24,8 +24,7 @@ from custom_components.unifi_alerts.const import (
 
 MOCK_CONFIG = {
     CONF_CONTROLLER_URL: "https://192.168.1.1",
-    CONF_USERNAME: "admin",
-    CONF_PASSWORD: "password",
+    CONF_API_KEY: "test-api-key",
     CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
     CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
     CONF_CLEAR_TIMEOUT: DEFAULT_CLEAR_TIMEOUT,
@@ -34,11 +33,11 @@ MOCK_CONFIG = {
 
 
 @pytest.fixture
-def mock_unifi_client() -> Generator[MagicMock, None, None]:
+def mock_unifi_client() -> Generator[MagicMock]:
     """Mock UniFiClient so tests never make real HTTP calls."""
     with patch("custom_components.unifi_alerts.unifi_client.UniFiClient") as mock_cls:
         instance = mock_cls.return_value
-        instance.authenticate = AsyncMock(return_value="userpass")
+        instance.authenticate = AsyncMock(return_value=None)
         instance.categorise_alarms = AsyncMock(return_value={})
         instance.probe_system_log_endpoint = AsyncMock(return_value=False)
         instance.close = AsyncMock()
@@ -71,6 +70,27 @@ def sample_alarm_record() -> dict[str, Any]:
 # ── shared plain-function helpers (importable from any test file) ─────────────
 
 
+def run_sync[T](coro: Coroutine[Any, Any, T]) -> T:
+    """Run a coroutine to completion for a sync (typically hypothesis @given)
+    test, without leaving the process-wide event loop unset afterward.
+
+    `asyncio.run()` calls `asyncio.set_event_loop(None)` in its cleanup, and
+    on Python 3.12+ that makes any later `asyncio.get_event_loop()` call
+    raise `RuntimeError: There is no current event loop`. The older
+    pytest-asyncio pulled in by the CI minimum-HA leg
+    (`pytest-homeassistant-custom-component==0.13.317`) hits exactly that
+    call when setting up the next `@pytest.mark.asyncio` test, which fails
+    the entire remainder of the suite. Using our own loop here, and
+    re-installing a fresh one afterward instead of clearing it, avoids that.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
 def make_hass() -> MagicMock:
     """Return a minimal hass mock wired up for config-entry setup/unload tests."""
     hass = MagicMock()
@@ -98,8 +118,7 @@ def make_entry(
     entry.entry_id = entry_id
     entry.data = data or {
         CONF_CONTROLLER_URL: "https://192.168.1.1",
-        CONF_USERNAME: "admin",
-        CONF_PASSWORD: "password",
+        CONF_API_KEY: "test-api-key",
         CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
         CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
         CONF_CLEAR_TIMEOUT: DEFAULT_CLEAR_TIMEOUT,

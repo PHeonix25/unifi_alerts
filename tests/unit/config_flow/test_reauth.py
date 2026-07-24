@@ -8,8 +8,7 @@ import pytest
 
 from custom_components.unifi_alerts.config_flow import UniFiAlertsConfigFlow
 from custom_components.unifi_alerts.const import (
-    CONF_PASSWORD,
-    CONF_USERNAME,
+    CONF_API_KEY,
 )
 
 from .conftest import make_reauth_flow, make_session_mock
@@ -83,6 +82,84 @@ class TestReauthStep:
         mock_create.assert_called_once()
         assert mock_create.call_args.args[2] == "auth_failed_entry-1"
 
+    def test_create_apikey_migration_issue_calls_issue_registry(self) -> None:
+        from custom_components.unifi_alerts.config_flow import _create_apikey_migration_issue
+
+        hass = MagicMock()
+        entry = MagicMock()
+        entry.entry_id = "entry-1"
+        entry.title = "Controller"
+
+        with patch(
+            "custom_components.unifi_alerts.config_flow.ir.async_create_issue"
+        ) as mock_create:
+            _create_apikey_migration_issue(hass, entry)
+
+        mock_create.assert_called_once()
+        assert mock_create.call_args.args[2] == "apikey_migration_required_entry-1"
+        assert mock_create.call_args.kwargs["translation_key"] == "apikey_migration_required"
+
+    @pytest.mark.asyncio
+    async def test_migrated_entry_raises_migration_issue(self) -> None:
+        """A migrated userpass entry (no api_key) must raise the migration issue, not auth_failed."""
+        flow = UniFiAlertsConfigFlow()
+        entry_id = "entry-migrated"
+        flow.context = {"entry_id": entry_id}
+
+        mock_entry = MagicMock()
+        mock_entry.entry_id = entry_id
+        mock_entry.title = "Test"
+        # Post-migration userpass entry: credentials stripped, no api_key.
+        mock_entry.data = {"controller_url": "https://192.168.1.1", "auth_method": "apikey"}
+
+        hass = MagicMock()
+        hass.config_entries.async_get_entry = MagicMock(return_value=mock_entry)
+        flow.hass = hass
+        flow.async_step_reauth_confirm = AsyncMock(return_value={"type": "form"})
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow._create_apikey_migration_issue"
+            ) as mock_migration,
+            patch(
+                "custom_components.unifi_alerts.config_flow._create_auth_failed_issue"
+            ) as mock_auth_failed,
+        ):
+            await flow.async_step_reauth({})
+
+        mock_migration.assert_called_once_with(hass, mock_entry)
+        mock_auth_failed.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_entry_with_api_key_raises_auth_failed_issue(self) -> None:
+        """An entry that still has an api_key (genuine failure) must raise auth_failed."""
+        flow = UniFiAlertsConfigFlow()
+        entry_id = "entry-authfail"
+        flow.context = {"entry_id": entry_id}
+
+        mock_entry = MagicMock()
+        mock_entry.entry_id = entry_id
+        mock_entry.title = "Test"
+        mock_entry.data = {"controller_url": "https://192.168.1.1", "api_key": "some-key"}
+
+        hass = MagicMock()
+        hass.config_entries.async_get_entry = MagicMock(return_value=mock_entry)
+        flow.hass = hass
+        flow.async_step_reauth_confirm = AsyncMock(return_value={"type": "form"})
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow._create_apikey_migration_issue"
+            ) as mock_migration,
+            patch(
+                "custom_components.unifi_alerts.config_flow._create_auth_failed_issue"
+            ) as mock_auth_failed,
+        ):
+            await flow.async_step_reauth({})
+
+        mock_auth_failed.assert_called_once_with(hass, mock_entry)
+        mock_migration.assert_not_called()
+
 
 class TestReauthConfirmStep:
     """Tests for async_step_reauth_confirm."""
@@ -102,12 +179,24 @@ class TestReauthConfirmStep:
         assert not call_kwargs["errors"]
 
     @pytest.mark.asyncio
-    async def test_valid_credentials_updates_entry_and_aborts(self) -> None:
-        """Valid credentials must update entry.data and abort with reauth_successful."""
+    async def test_form_offers_only_api_key_field(self) -> None:
+        """The reauth form must present a single API-key field (userpass removed)."""
+        flow = make_reauth_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "reauth_confirm"})
+
+        await flow.async_step_reauth_confirm(user_input=None)
+
+        schema = flow.async_show_form.call_args.kwargs["data_schema"]
+        field_names = {str(key) for key in schema.schema}
+        assert field_names == {CONF_API_KEY}
+
+    @pytest.mark.asyncio
+    async def test_valid_api_key_updates_entry_and_aborts(self) -> None:
+        """A valid API key must update entry.data and abort with reauth_successful."""
         flow = make_reauth_flow()
         flow.async_abort = MagicMock(return_value={"type": "abort", "reason": "reauth_successful"})
 
-        new_creds = {CONF_USERNAME: "admin", CONF_PASSWORD: "newpassword"}
+        new_creds = {CONF_API_KEY: "new-api-key"}
 
         with (
             patch(
@@ -118,17 +207,17 @@ class TestReauthConfirmStep:
             patch("custom_components.unifi_alerts.config_flow.ir.async_delete_issue") as mock_del,
         ):
             instance = mock_cls.return_value
-            instance.authenticate = AsyncMock(return_value="userpass")
-            instance._is_unifi_os = False
+            instance.authenticate = AsyncMock(return_value="apikey")
 
             result = await flow.async_step_reauth_confirm(user_input=new_creds)
 
         assert result["reason"] == "reauth_successful"
         flow.hass.config_entries.async_update_entry.assert_called_once()
         flow.hass.config_entries.async_reload.assert_awaited_once()
-        mock_del.assert_called_once_with(
-            flow.hass, "unifi_alerts", f"auth_failed_{flow._reauth_entry.entry_id}"
-        )
+        # Both possible repair issues are cleared on success.
+        entry_id = flow._reauth_entry.entry_id
+        deleted = {call.args[2] for call in mock_del.call_args_list}
+        assert deleted == {f"auth_failed_{entry_id}", f"apikey_migration_required_{entry_id}"}
 
     @pytest.mark.asyncio
     async def test_invalid_credentials_shows_error(self) -> None:
@@ -138,7 +227,7 @@ class TestReauthConfirmStep:
         flow = make_reauth_flow()
         flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "reauth_confirm"})
 
-        new_creds = {CONF_USERNAME: "admin", CONF_PASSWORD: "wrongpassword"}
+        new_creds = {CONF_API_KEY: "bad-key"}
 
         with (
             patch(
@@ -174,9 +263,7 @@ class TestReauthConfirmStep:
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(side_effect=CannotConnectError("down"))
 
-            result = await flow.async_step_reauth_confirm(
-                user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "pass"}
-            )
+            result = await flow.async_step_reauth_confirm(user_input={CONF_API_KEY: "some-key"})
 
         assert result["step_id"] == "reauth_confirm"
         call_kwargs = flow.async_show_form.call_args.kwargs
@@ -200,9 +287,7 @@ class TestReauthConfirmStep:
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(side_effect=SslCertificateError("cert"))
 
-            result = await flow.async_step_reauth_confirm(
-                user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "pass"}
-            )
+            result = await flow.async_step_reauth_confirm(user_input={CONF_API_KEY: "some-key"})
 
         assert result["step_id"] == "reauth_confirm"
         call_kwargs = flow.async_show_form.call_args.kwargs
@@ -227,9 +312,7 @@ class TestReauthConfirmStep:
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(side_effect=InvalidAuthError("bad"))
 
-            await flow.async_step_reauth_confirm(
-                user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "wrong"}
-            )
+            await flow.async_step_reauth_confirm(user_input={CONF_API_KEY: "bad-key"})
 
         mock_del.assert_not_called()
 

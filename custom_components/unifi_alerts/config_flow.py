@@ -6,32 +6,37 @@ import logging
 import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Final, cast
 
 import voluptuous as vol
 from homeassistant.components.webhook import async_generate_url
 
 if TYPE_CHECKING:
-    from homeassistant.components import ssdp
+    from homeassistant.helpers.service_info import ssdp
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 from yarl import URL
 
 from .const import (
     ALL_CATEGORIES,
     CONF_API_KEY,
-    CONF_AUTH_METHOD,
     CONF_CLEAR_TIMEOUT,
     CONF_CONTROLLER_URL,
+    CONF_DEVICE_SERIAL,
     CONF_ENABLED_CATEGORIES,
-    CONF_PASSWORD,
+    CONF_MIN_SEVERITY,
     CONF_POLL_INTERVAL,
     CONF_REGENERATE_WEBHOOK_SECRET,
     CONF_SITE,
-    CONF_USERNAME,
     CONF_VERIFY_SSL,
     CONF_WEBHOOK_ID_SUFFIX,
     CONF_WEBHOOK_SECRET,
@@ -40,15 +45,49 @@ from .const import (
     DEFAULT_SITE,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
+    ISSUE_ID_APIKEY_MIGRATION,
     ISSUE_ID_AUTH_FAILED,
     ISSUE_ID_WEBHOOK_SECRET_ROTATED,
     webhook_id_for_category,
 )
 from .models import UniFiClientConfig
+from .severity import (
+    MIN_SEVERITY_NO_FILTER,
+    SEVERITY_HIGH,
+    SEVERITY_LOW,
+    SEVERITY_MEDIUM,
+    SEVERITY_VERY_HIGH,
+)
 from .unifi_auth import CannotConnectError, InvalidAuthError, SslCertificateError
 from .unifi_client import InvalidSiteError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
+
+# Minimum_Severity_Setting selector, shared by the Config_Flow and
+# Options_Flow categories steps.
+# hassfest requires translation keys to be lowercase slugs, so the widget
+# offers lowercase option values with a `selector.min_severity.options`
+# translation-key section (strings.json / translations/en.json) for the
+# display text, while the stored config value stays the upper-case
+# Severity_Level constant (e.g. "LOW") that the rest of the integration
+# compares against. `_MIN_SEVERITY_TO_WIDGET`/`_WIDGET_TO_MIN_SEVERITY`
+# convert between the two at the Config_Flow/Options_Flow boundary; nothing
+# outside this module ever sees the widget-only lowercase form.
+_MIN_SEVERITY_TO_WIDGET: Final[dict[str, str]] = {
+    MIN_SEVERITY_NO_FILTER: MIN_SEVERITY_NO_FILTER,
+    SEVERITY_LOW: "low",
+    SEVERITY_MEDIUM: "medium",
+    SEVERITY_HIGH: "high",
+    SEVERITY_VERY_HIGH: "very_high",
+}
+_WIDGET_TO_MIN_SEVERITY: Final[dict[str, str]] = {
+    widget: stored for stored, widget in _MIN_SEVERITY_TO_WIDGET.items()
+}
+_min_severity_selector = SelectSelector(
+    SelectSelectorConfig(
+        options=list(_MIN_SEVERITY_TO_WIDGET.values()), translation_key="min_severity"
+    )
+)
 
 
 def _create_auth_failed_issue(hass: Any, entry: Any) -> None:
@@ -64,19 +103,67 @@ def _create_auth_failed_issue(hass: Any, entry: Any) -> None:
     )
 
 
+def _create_apikey_migration_issue(hass: Any, entry: Any) -> None:
+    """Create a repair issue explaining that reauth is an API-key migration.
+
+    Raised when a username/password entry has been migrated to the version-4
+    API-key-only schema (see __init__._migrate_v3_to_v4). Distinct from the
+    generic auth-failed issue so the repair card explains the upgrade instead
+    of reading like a credential failure.
+    """
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"{ISSUE_ID_APIKEY_MIGRATION}_{entry.entry_id}",
+        is_fixable=True,
+        severity=ir.IssueSeverity.ERROR,
+        translation_key=ISSUE_ID_APIKEY_MIGRATION,
+        translation_placeholders={"name": entry.title},
+    )
+
+
+def _entry_needs_apikey_migration(entry: Any) -> bool:
+    """Return True when an entry is in reauth because of the API-key migration.
+
+    After __init__._migrate_v3_to_v4 strips username/password from a userpass
+    entry, it has no API key stored. A genuine credential failure, by contrast,
+    still has its api_key in entry.data. The absence of an API key therefore
+    distinguishes a migration-driven reauth from an ordinary one.
+    """
+    return not entry.data.get(CONF_API_KEY)
+
+
+def _find_entry_by_serial(hass: Any, serial: str) -> ConfigEntry | None:
+    """Return the config entry whose stored device serial matches `serial`, or None.
+
+    `unique_id` is keyed on the controller URL (see `async_step_user`), which
+    changes if the controller's IP address changes. The UPnP serial number
+    carried in SSDP discovery payloads does not, so it is how
+    `async_step_ssdp` finds a previously configured entry to refresh when a
+    known console reappears at a new address (#343).
+    """
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get(CONF_DEVICE_SERIAL) == serial:
+            return cast(ConfigEntry, entry)
+    return None
+
+
 class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the initial setup flow shown in Settings → Integrations."""
 
-    VERSION = 3
+    VERSION = 4
 
     def __init__(self) -> None:
         self._controller_url: str = ""
-        self._detected_auth_method: str | None = None
         self._credentials: dict[str, Any] = {}
         self._entry_data: dict[str, Any] = {}
+        # Set by async_step_ssdp when the discovery payload carries a UPnP
+        # serial number; persisted onto the new entry so a future rediscovery
+        # at a different address can find and refresh it (#343).
+        self._device_serial: str = ""
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Step 1: controller URL + credentials."""
+        """Step 1: controller URL + API key."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -97,7 +184,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
                 client = UniFiClient(session, url, cast(UniFiClientConfig, user_input))
                 try:
-                    auth_method = await client.authenticate()
+                    await client.authenticate()
                     await client.fetch_alarms()  # validate alarm endpoint reachable
                 except InvalidAuthError:
                     errors["base"] = "invalid_auth"
@@ -108,7 +195,6 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                     errors["base"] = "cannot_connect"
                 else:
                     self._controller_url = url
-                    self._detected_auth_method = auth_method
                     # CONF_WEBHOOK_ID_SUFFIX is generated per-entry so two
                     # config entries can never collide on a webhook ID.
                     # 8 hex chars = 32 bits of entropy, plenty to avoid
@@ -118,46 +204,35 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_WEBHOOK_SECRET: secrets.token_urlsafe(32),
                         CONF_WEBHOOK_ID_SUFFIX: secrets.token_hex(4),
                     }
+                    if self._device_serial:
+                        # Carried over from async_step_ssdp so a future
+                        # rediscovery at a different address can find this
+                        # entry again (#343).
+                        self._credentials[CONF_DEVICE_SERIAL] = self._device_serial
                     return await self.async_step_categories()
 
-        _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
-
-        if user_input is not None:
-            # Rebuild schema with submitted values as defaults so the user
-            # doesn't have to re-enter everything on a validation error.
-            # Password/API key fields deliberately omit `default=` so HA does
-            # not pre-fill sensitive values — the user must re-enter them.
-            # Username uses a conditional default: omit entirely when empty so
-            # HA treats the field as truly blank rather than pre-filled.
-            _username = user_input.get(CONF_USERNAME, "")
-            schema = vol.Schema(
-                {
-                    vol.Required(CONF_CONTROLLER_URL, default=user_input[CONF_CONTROLLER_URL]): str,
-                    vol.Optional(
-                        CONF_USERNAME, **({"default": _username} if _username else {})
-                    ): str,
-                    vol.Optional(CONF_PASSWORD): _password_selector,
-                    vol.Optional(CONF_API_KEY): _api_key_selector,
-                    vol.Optional(
-                        CONF_VERIFY_SSL,
-                        default=user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
-                    ): bool,
-                }
-            )
-        else:
-            # Use a pre-filled URL when arriving via SSDP discovery;
-            # fall back to the example placeholder for manual setup.
-            _url_default = self._controller_url or "https://192.168.1.1"
-            schema = vol.Schema(
-                {
-                    vol.Required(CONF_CONTROLLER_URL, default=_url_default): str,
-                    vol.Optional(CONF_USERNAME): str,
-                    vol.Optional(CONF_PASSWORD): _password_selector,
-                    vol.Optional(CONF_API_KEY): _api_key_selector,
-                    vol.Optional(CONF_VERIFY_SSL, default=DEFAULT_VERIFY_SSL): bool,
-                }
-            )
+        # Use a pre-filled URL when arriving via SSDP discovery or re-showing the
+        # form after a validation error; fall back to the example placeholder.
+        # The API key field deliberately omits `default=` so HA does not pre-fill
+        # the secret — the user must re-enter it.
+        _url_default = (
+            user_input[CONF_CONTROLLER_URL]
+            if user_input is not None
+            else (self._controller_url or "https://192.168.1.1")
+        )
+        _verify_ssl_default = (
+            user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+            if user_input is not None
+            else DEFAULT_VERIFY_SSL
+        )
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_CONTROLLER_URL, default=_url_default): str,
+                vol.Required(CONF_API_KEY): _api_key_selector,
+                vol.Optional(CONF_VERIFY_SSL, default=_verify_ssl_default): bool,
+            }
+        )
         return self.async_show_form(
             step_id="user",
             data_schema=schema,
@@ -174,6 +249,8 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         """
         from urllib.parse import urlparse
 
+        from homeassistant.helpers.service_info import ssdp as ssdp_info
+
         parsed = urlparse(discovery_info.ssdp_location or "")
         host = parsed.hostname or ""
         if not host:
@@ -182,6 +259,34 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         self._controller_url = f"https://{host}"
         await self.async_set_unique_id(self._controller_url)
         self._abort_if_unique_id_configured()
+
+        # The unique_id check above only catches rediscovery at an unchanged
+        # address, since unique_id is keyed on the controller URL (see
+        # async_step_user). If the controller's IP changed (DHCP lease
+        # change, console swap), the discovered UPnP serial number - stable
+        # across IP changes, unlike the URL - is used to find the previously
+        # configured entry and refresh its controller URL and unique_id in
+        # place, instead of leaving it pinned to the stale address until a
+        # human edits it manually (#343).
+        serial = discovery_info.upnp.get(ssdp_info.ATTR_UPNP_SERIAL)
+        if serial:
+            self._device_serial = serial
+            existing = _find_entry_by_serial(self.hass, serial)
+            if (
+                existing is not None
+                and existing.data.get(CONF_CONTROLLER_URL) != self._controller_url
+            ):
+                self.hass.config_entries.async_update_entry(
+                    existing,
+                    data={
+                        **existing.data,
+                        CONF_CONTROLLER_URL: self._controller_url,
+                        CONF_DEVICE_SERIAL: serial,
+                    },
+                    unique_id=self._controller_url,
+                )
+                return self.async_abort(reason="already_configured")
+
         self.context["title_placeholders"] = {"name": host}
         return await self.async_step_user()
 
@@ -193,19 +298,22 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             enabled = [cat for cat in ALL_CATEGORIES if user_input.get(f"cat_{cat}", False)]
+            min_severity = {
+                cat: _WIDGET_TO_MIN_SEVERITY.get(
+                    user_input.get(f"min_severity_{cat}", MIN_SEVERITY_NO_FILTER),
+                    MIN_SEVERITY_NO_FILTER,
+                )
+                for cat in ALL_CATEGORIES
+            }
             if not enabled:
                 errors["base"] = "at_least_one_category"
             else:
                 site = user_input.get(CONF_SITE, DEFAULT_SITE)
                 if site != DEFAULT_SITE:
-                    creds_with_method = {
-                        **self._credentials,
-                        CONF_AUTH_METHOD: self._detected_auth_method,
-                    }
                     verify_ssl = self._credentials.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
                     session = async_get_clientsession(self.hass, verify_ssl=verify_ssl)
                     client = UniFiClient(
-                        session, self._controller_url, cast(UniFiClientConfig, creds_with_method)
+                        session, self._controller_url, cast(UniFiClientConfig, self._credentials)
                     )
                     try:
                         await client.authenticate()
@@ -226,7 +334,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                             CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT
                         ),
                         CONF_SITE: site,
-                        CONF_AUTH_METHOD: self._detected_auth_method,
+                        CONF_MIN_SEVERITY: min_severity,
                     }
                     return await self.async_step_finish()
 
@@ -236,6 +344,9 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         _chatty = {"network_device", "network_client"}
         for cat in ALL_CATEGORIES:
             fields[vol.Optional(f"cat_{cat}", default=(cat not in _chatty))] = bool
+            fields[vol.Optional(f"min_severity_{cat}", default=MIN_SEVERITY_NO_FILTER)] = (
+                _min_severity_selector
+            )
 
         fields[vol.Optional(CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL)] = vol.All(
             int, vol.Range(min=10, max=3600)
@@ -266,14 +377,12 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         fields: dict[Any, Any] = {}
         for cat in ALL_CATEGORIES:
             if cat in enabled:
-                url = (
-                    f"{async_generate_url(self.hass, webhook_id_for_category(cat, suffix))}"
-                    f"?token={secret}"
-                )
+                url = async_generate_url(self.hass, webhook_id_for_category(cat, suffix))
                 fields[vol.Optional(f"webhook_url_{cat}", default=url)] = str
         return self.async_show_form(
             step_id="finish",
             data_schema=vol.Schema(fields),
+            description_placeholders={"webhook_secret": secret},
         )
 
     # ── Reauth flow ───────────────────────────────────────────────────────
@@ -282,12 +391,17 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         """Entry point called by HA when ConfigEntryAuthFailed is raised.
 
         Creates a repair issue so users see a repair card even if the standard
-        reauth notification is missed.
+        reauth notification is missed. An entry that has just been migrated to
+        the API-key-only schema (no api_key stored) gets a dedicated
+        migration-explanation issue instead of the generic auth-failed one.
         """
         self._reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         # Surface a repair card in addition to the standard reauth prompt
         if self._reauth_entry is not None:
-            _create_auth_failed_issue(self.hass, self._reauth_entry)
+            if _entry_needs_apikey_migration(self._reauth_entry):
+                _create_apikey_migration_issue(self.hass, self._reauth_entry)
+            else:
+                _create_auth_failed_issue(self.hass, self._reauth_entry)
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -305,7 +419,7 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             client = UniFiClient(session, url, cast(UniFiClientConfig, user_input))
             try:
-                auth_method = await client.authenticate()
+                await client.authenticate()
             except InvalidAuthError:
                 errors["base"] = "invalid_auth"
             except SslCertificateError:
@@ -314,31 +428,130 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.error("Cannot reach controller during reauth: %s", err)
                 errors["base"] = "cannot_connect"
             else:
-                # Merge updated credentials into the entry
+                # Merge the new API key into the entry. Any legacy
+                # username/password were already dropped by the version-4
+                # migration; the entry is updated in place so entry_id,
+                # unique_id, webhook suffix, and webhook secret are preserved.
                 new_data = {
                     **entry.data,
                     **user_input,
-                    CONF_AUTH_METHOD: auth_method,
                 }
                 self.hass.config_entries.async_update_entry(entry, data=new_data)
-                # Clear the repair issue now that auth is restored
-                ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_ID_AUTH_FAILED}_{entry.entry_id}")
+                # Clear both possible repair issues now that auth is restored.
+                # Deleting a non-existent issue is a no-op, so it is safe to
+                # clear both the generic auth-failed and the migration issue
+                # without first working out which one was raised.
+                for issue_base in (ISSUE_ID_AUTH_FAILED, ISSUE_ID_APIKEY_MIGRATION):
+                    ir.async_delete_issue(self.hass, DOMAIN, f"{issue_base}_{entry.entry_id}")
                 await self.hass.config_entries.async_reload(entry.entry_id)
                 return self.async_abort(reason="reauth_successful")
 
-        _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+        # API-key-only form: username/password auth is being removed (#277), so
+        # reauth restores the connection with a single API key.
         _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         schema = vol.Schema(
             {
-                vol.Optional(CONF_USERNAME): str,
-                vol.Optional(CONF_PASSWORD): _password_selector,
-                vol.Optional(CONF_API_KEY): _api_key_selector,
+                vol.Required(CONF_API_KEY): _api_key_selector,
             }
         )
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=schema,
             errors=errors,
+        )
+
+    # ── Reconfigure flow ─────────────────────────────────────────────────
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Entry point for HA's dedicated "Reconfigure" UI affordance.
+
+        Distinct from the options flow's "Configure" gear icon (which also
+        covers alert categories, polling, and webhook secret rotation), this
+        is what the Gold-tier `reconfiguration-flow` quality-scale rule
+        checks for. Lets the user update the controller URL, API key, and/or
+        verify_ssl for an existing entry without deleting and re-adding it.
+        Reuses the same credential-validation helpers as
+        `UniFiAlertsOptionsFlow`'s credentials step
+        (`_parse_credentials_form_input`, `_build_credentials_test_data`,
+        `_async_validate_controller_credentials`) so the two flows apply
+        identical validation instead of diverging.
+        """
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            parsed = _parse_credentials_form_input(user_input, entry.data)
+
+            if (
+                not parsed.credentials_changed
+                and not parsed.regenerate_secret
+                and not parsed.verify_ssl_changed
+            ):
+                # Nothing changed - nothing to persist or reload.
+                return self.async_abort(reason="reconfigure_successful")
+
+            if not parsed.credentials_changed:
+                # verify_ssl flip only - no controller round-trip needed.
+                new_data = _build_verify_ssl_and_secret_only_pending(entry.data, parsed)
+                return self.async_update_reload_and_abort(
+                    entry, data=new_data, reason="reconfigure_successful"
+                )
+
+            effective_url = (
+                parsed.new_url_raw.rstrip("/")
+                if parsed.new_url_raw
+                else entry.data[CONF_CONTROLLER_URL]
+            )
+
+            if not _is_valid_url_scheme(effective_url):
+                errors[CONF_CONTROLLER_URL] = "invalid_url_scheme"
+            else:
+                test_data = _build_credentials_test_data(entry.data, effective_url, parsed)
+                try:
+                    await _async_validate_controller_credentials(
+                        self.hass, effective_url, parsed.new_verify_ssl, test_data
+                    )
+                except InvalidAuthError:
+                    errors["base"] = "invalid_auth"
+                except SslCertificateError:
+                    errors["base"] = "invalid_ssl_cert"
+                except CannotConnectError as err:
+                    _LOGGER.error("Cannot reach controller during reconfigure: %s", err)
+                    errors["base"] = "cannot_connect"
+                else:
+                    url_changed = effective_url != entry.data[CONF_CONTROLLER_URL]
+                    if url_changed and _find_duplicate_entry(
+                        self.hass, entry.entry_id, effective_url
+                    ):
+                        return self.async_abort(reason="already_configured")
+
+                    new_data = _build_credentials_pending_data(entry.data, effective_url, parsed)
+                    update_kwargs: dict[str, Any] = {
+                        "data": new_data,
+                        "reason": "reconfigure_successful",
+                    }
+                    if url_changed:
+                        update_kwargs["unique_id"] = effective_url
+                    return self.async_update_reload_and_abort(entry, **update_kwargs)
+
+        _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+        current_url: str = entry.data.get(CONF_CONTROLLER_URL, "")
+        current_verify_ssl = entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_CONTROLLER_URL): str,
+                vol.Optional(CONF_API_KEY): _api_key_selector,
+                vol.Optional(CONF_VERIFY_SSL, default=current_verify_ssl): bool,
+            }
+        )
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"current_url": current_url},
         )
 
     @staticmethod
@@ -352,8 +565,6 @@ class _CredentialsFormInput:
     """Normalized values parsed from an options-flow credentials form submission."""
 
     new_url_raw: str
-    new_username: str
-    new_password: str
     new_api_key: str
     regenerate_secret: bool
     new_verify_ssl: bool
@@ -371,19 +582,15 @@ def _parse_credentials_form_input(
     without driving the full flow step.
     """
     new_url_raw = (user_input.get(CONF_CONTROLLER_URL) or "").strip()
-    new_username = (user_input.get(CONF_USERNAME) or "").strip()
-    new_password = (user_input.get(CONF_PASSWORD) or "").strip()
     new_api_key = (user_input.get(CONF_API_KEY) or "").strip()
     regenerate_secret = bool(user_input.get(CONF_REGENERATE_WEBHOOK_SECRET, False))
     current_verify_ssl = current_data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
     # verify_ssl always comes through as a bool (voluptuous default)
     new_verify_ssl = user_input.get(CONF_VERIFY_SSL, current_verify_ssl)
     verify_ssl_changed = new_verify_ssl != current_verify_ssl
-    credentials_changed = bool(new_url_raw or new_username or new_password or new_api_key)
+    credentials_changed = bool(new_url_raw or new_api_key)
     return _CredentialsFormInput(
         new_url_raw=new_url_raw,
-        new_username=new_username,
-        new_password=new_password,
         new_api_key=new_api_key,
         regenerate_secret=regenerate_secret,
         new_verify_ssl=new_verify_ssl,
@@ -424,10 +631,6 @@ def _credential_overrides(parsed: _CredentialsFormInput) -> dict[str, Any]:
     dict without clobbering unrelated stored values.
     """
     overrides: dict[str, Any] = {}
-    if parsed.new_username:
-        overrides[CONF_USERNAME] = parsed.new_username
-    if parsed.new_password:
-        overrides[CONF_PASSWORD] = parsed.new_password
     if parsed.new_api_key:
         overrides[CONF_API_KEY] = parsed.new_api_key
     return overrides
@@ -467,7 +670,6 @@ def _build_credentials_test_data(
 def _build_credentials_pending_data(
     current_data: Mapping[str, Any],
     effective_url: str,
-    auth_method: str,
     parsed: _CredentialsFormInput,
 ) -> dict[str, Any]:
     """Build the staged entry.data after new credentials validate successfully."""
@@ -475,7 +677,6 @@ def _build_credentials_pending_data(
         **current_data,
         CONF_CONTROLLER_URL: effective_url,
         CONF_VERIFY_SSL: parsed.new_verify_ssl,
-        CONF_AUTH_METHOD: auth_method,
         **_credential_overrides(parsed),
     }
     if parsed.regenerate_secret:
@@ -485,20 +686,18 @@ def _build_credentials_pending_data(
 
 async def _async_validate_controller_credentials(
     hass: Any, url: str, verify_ssl: bool, test_data: dict[str, Any]
-) -> str:
+) -> None:
     """Instantiate a UniFiClient and validate it can authenticate and reach
     the alarm endpoint.
 
-    Returns the detected auth method on success. `InvalidAuthError`,
-    `SslCertificateError`, and `CannotConnectError` propagate unchanged so
-    the caller classifies them into its `errors` dict — this function does
-    not know about the options-flow error-key mapping.
+    `InvalidAuthError`, `SslCertificateError`, and `CannotConnectError`
+    propagate unchanged so the caller classifies them into its `errors` dict —
+    this function does not know about the options-flow error-key mapping.
     """
     session = async_get_clientsession(hass, verify_ssl=verify_ssl)
     client = UniFiClient(session, url, cast(UniFiClientConfig, test_data))
-    auth_method = await client.authenticate()
+    await client.authenticate()
     await client.fetch_alarms()
-    return auth_method
 
 
 class UniFiAlertsOptionsFlow(OptionsFlow):
@@ -562,7 +761,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                     self._config_entry.data, effective_url, parsed
                 )
                 try:
-                    auth_method = await _async_validate_controller_credentials(
+                    await _async_validate_controller_credentials(
                         self.hass, effective_url, parsed.new_verify_ssl, test_data
                     )
                 except InvalidAuthError:
@@ -584,12 +783,11 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                     # in the finish step, so abandoning the flow leaves nothing
                     # behind. async_update_entry is intentionally NOT called here.
                     self._pending_data = _build_credentials_pending_data(
-                        self._config_entry.data, effective_url, auth_method, parsed
+                        self._config_entry.data, effective_url, parsed
                     )
                     return await self.async_step_categories()
 
         # Build the credentials form — all fields optional with current values as hints
-        _password_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         _api_key_selector = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
         current_url: str = self._config_entry.data.get(CONF_CONTROLLER_URL, "")
         current_verify_ssl = self._config_entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
@@ -597,8 +795,6 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Optional(CONF_CONTROLLER_URL): str,
-                vol.Optional(CONF_USERNAME): str,
-                vol.Optional(CONF_PASSWORD): _password_selector,
                 vol.Optional(CONF_API_KEY): _api_key_selector,
                 vol.Optional(CONF_VERIFY_SSL, default=current_verify_ssl): bool,
                 vol.Optional(CONF_REGENERATE_WEBHOOK_SECRET, default=False): bool,
@@ -619,6 +815,13 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
 
         if user_input is not None:
             enabled = [cat for cat in ALL_CATEGORIES if user_input.get(f"cat_{cat}", False)]
+            min_severity = {
+                cat: _WIDGET_TO_MIN_SEVERITY.get(
+                    user_input.get(f"min_severity_{cat}", MIN_SEVERITY_NO_FILTER),
+                    MIN_SEVERITY_NO_FILTER,
+                )
+                for cat in ALL_CATEGORIES
+            }
             if not enabled:
                 errors["base"] = "at_least_one_category"
             else:
@@ -649,6 +852,7 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
                             CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT
                         ),
                         CONF_SITE: site,
+                        CONF_MIN_SEVERITY: min_severity,
                     }
                     return await self.async_step_finish()
 
@@ -668,10 +872,23 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             CONF_SITE,
             self._config_entry.data.get(CONF_SITE, DEFAULT_SITE),
         )
+        current_min_severity: dict[str, str] = self._config_entry.options.get(
+            CONF_MIN_SEVERITY,
+            self._config_entry.data.get(CONF_MIN_SEVERITY, {}),
+        )
 
         fields: dict[Any, Any] = {}
         for cat in ALL_CATEGORIES:
             fields[vol.Optional(f"cat_{cat}", default=(cat in current_enabled))] = bool
+            fields[
+                vol.Optional(
+                    f"min_severity_{cat}",
+                    default=_MIN_SEVERITY_TO_WIDGET.get(
+                        current_min_severity.get(cat, MIN_SEVERITY_NO_FILTER),
+                        MIN_SEVERITY_NO_FILTER,
+                    ),
+                )
+            ] = _min_severity_selector
         fields[vol.Optional(CONF_POLL_INTERVAL, default=current_poll)] = vol.All(
             int, vol.Range(min=10, max=3600)
         )
@@ -737,12 +954,10 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
         fields: dict[Any, Any] = {}
         for cat in ALL_CATEGORIES:
             if cat in enabled:
-                url = (
-                    f"{async_generate_url(self.hass, webhook_id_for_category(cat, suffix))}"
-                    f"?token={secret}"
-                )
+                url = async_generate_url(self.hass, webhook_id_for_category(cat, suffix))
                 fields[vol.Optional(f"webhook_url_{cat}", default=url)] = str
         return self.async_show_form(
             step_id="finish",
             data_schema=vol.Schema(fields),
+            description_placeholders={"webhook_secret": secret},
         )

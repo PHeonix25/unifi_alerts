@@ -39,6 +39,15 @@ Provide expert-level engineering guidance that lifts the design quality of every
 5. **Track debt**
    - When debt is incurred or discovered, offer to create a GitHub Issue via `create_issue` with consequences and a remediation plan.
 
+## Repository focus areas
+
+Prioritise these integration-specific review paths:
+
+- `coordinator.py`: coordinator-owned state, async update flow, and clear-task lifecycle.
+- `webhook_handler.py`: mandatory `?token=` auth and fail-closed behaviour.
+- `config_flow.py`: setup/options parity and secret-rotation correctness.
+- entity platforms (`binary_sensor.py`, `sensor.py`, `event.py`, `button.py`): no cached state outside coordinator.
+
 ## Output Format
 
 ```markdown

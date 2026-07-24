@@ -10,7 +10,6 @@ from typing import Any
 import aiohttp
 
 from .const import (
-    AUTH_METHOD_USERPASS,
     CONF_VERIFY_SSL,
     DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS,
     DEFAULT_VERIFY_SSL,
@@ -31,31 +30,28 @@ _LOGGER = logging.getLogger(__name__)
 # UniFi OS consoles (UDM, UCG, etc.) prefix all network API paths
 UNIFI_OS_NETWORK_PREFIX = "/proxy/network"
 
-# After this many consecutive transient probe failures, stop re-probing and
-# fall back to the legacy path. A single network blip should not pin the
-# client to legacy mode, so the threshold is intentionally > 1.
-_PROBE_FAIL_LIMIT = 5
-# How long to wait before attempting another probe after the threshold is hit.
-_PROBE_RETRY_AFTER = timedelta(hours=1)
-
 
 class InvalidSiteError(CannotConnectError):
     """Raised when the site name does not exist on the controller."""
 
 
 class UniFiClient:
-    """Minimal async client for fetching alarms from a UniFi controller.
+    """Minimal, stateless async client for fetching alarms from a UniFi controller.
 
-    Supports:
-      - Username/password auth (session cookie)
-      - API key auth (X-API-Key header)
-      - Auto-detection: tries API key first, falls back to user/pass
+    Authenticates with an API key (X-API-Key header). API keys are stateless,
+    so there is no session bootstrap, cookie, or logout to manage. The client
+    itself holds no state across calls beyond its own connection config and
+    the per-site alarm-URL cache (a fixed discovery result, not mutable
+    retry/backoff state) — anything that needs to persist or accumulate
+    across poll cycles (e.g. system-log-probe backoff) lives on
+    UniFiAlertsCoordinator, which is the layer designed to hold that kind of
+    state (#240).
 
-    Requires UniFi OS (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+).
-    Classic self-hosted Network Application controllers are not supported.
+    Requires UniFi OS (UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+)
+    running Network Application 8.x+ (for API key support). Classic self-hosted
+    Network Application controllers are not supported.
 
-    Auth concerns are composed via a UniFiAuth instance (self._auth); this
-    class does not duplicate or proxy its state.
+    Auth concerns are composed via a UniFiAuth instance (self._auth).
     """
 
     def __init__(
@@ -68,56 +64,62 @@ class UniFiClient:
         self._base = controller_url.rstrip("/")
         self._config: UniFiClientConfig = config
         self._auth = UniFiAuth(session, self._base, config)
-        # None = not yet probed. authenticate() detects v2 system-log availability
-        # on first connect; fetch_alarms() falls back to legacy /list/alarm if False.
-        self._has_system_log: bool | None = None
-        # Consecutive transient probe failures. Resets to 0 on any definitive result.
-        self._probe_fail_count: int = 0
-        # Set when _probe_fail_count reaches _PROBE_FAIL_LIMIT; clears on retry window expiry.
-        self._probe_backoff_until: datetime | None = None
         # Keys seen during the most recent categorise_alarms() call that could not
         # be matched to any category. Reset each call; callers accumulate as needed.
         self._unrecognised_keys: dict[str, int] = {}
+        # Confirmed-working alarm endpoint URL per site, populated by
+        # _discover_alarm_url() the first time fetch_alarms() is called for a
+        # site. Cleared if the cached URL later stops resolving (e.g. a
+        # firmware upgrade removes/moves the path) so discovery runs again.
+        self._alarm_url_cache: dict[str, str] = {}
 
     # ── Public interface ──────────────────────────────────────────────────
 
-    async def authenticate(self) -> str:
-        """Authenticate to the UniFi OS controller. Returns the auth method used.
+    async def authenticate(self) -> None:
+        """Verify the configured API key against the UniFi OS controller.
 
-        Auth itself is delegated to UniFiAuth; the probe-backoff reset is a
-        client concern (probe state lives on the client, not on the auth seam),
-        so it runs here on every successful authentication.
+        Delegates entirely to UniFiAuth; see its docstring for what "verify"
+        means for API-key auth.
         """
-        method = await self._auth.authenticate()
-        self._clear_probe_backoff()
-        return method
-
-    def _clear_probe_backoff(self) -> None:
-        """Reset probe-backoff state after successful authentication.
-
-        Clears the transient-failure counter and backoff timer so the next
-        poll re-probes the system-log endpoint immediately. Only resets
-        _has_system_log when in backoff (i.e. the False came from hitting the
-        fail limit, not from a clean 404); a confirmed-True value is left alone.
-        """
-        self._probe_fail_count = 0
-        self._probe_backoff_until = None
-        if self._has_system_log is False:
-            self._has_system_log = None
+        await self._auth.authenticate()
 
     async def fetch_alarms(self, site: str = "default") -> list[dict[str, Any]]:
-        """Return all unarchived alarms from the controller."""
-        if not self._auth.authenticated:
-            await self.authenticate()
+        """Return all unarchived alarms from the controller.
 
-        # Different firmware versions expose the alarm endpoint at different paths.
-        # Try the newest path first so modern firmware succeeds in one call; fall
-        # back to older variants for backwards compatibility. Order matters —
-        # update docs/UNIFI.md § "Alarm API endpoint" if you change this list.
-        #
-        #   /list/alarm  — newest (UniFi Network 9.x+)
-        #   /alarm       — long-standing universal path
-        #   /stat/alarm  — older intermediate variant; some firmware exposes only this
+        The API key is a stateless header (see UniFiAuth), so there is no
+        session to bootstrap here; the key is verified once at setup. Uses
+        the cached endpoint URL for `site` once one has been discovered, so
+        steady-state polling is a single request with no path-fallback
+        iteration or HTTP 400 body parsing (see #239). Discovery only runs on
+        the first call for a site, or again later if the cached URL stops
+        resolving (e.g. a firmware upgrade moves the endpoint).
+        """
+        cached_url = self._alarm_url_cache.get(site)
+        if cached_url is not None:
+            result = await self._try_fetch_alarms(cached_url, site)
+            if result is not None:
+                return result
+            _LOGGER.debug(
+                "Cached alarm URL %s no longer resolves for site %s — rediscovering",
+                cached_url,
+                site,
+            )
+            del self._alarm_url_cache[site]
+
+        return await self._discover_alarm_url(site)
+
+    async def _discover_alarm_url(self, site: str) -> list[dict[str, Any]]:
+        """Probe candidate alarm endpoint paths and cache the first one that resolves.
+
+        Different firmware versions expose the alarm endpoint at different paths.
+        Try the newest path first so modern firmware succeeds in one call; fall
+        back to older variants for backwards compatibility. Order matters —
+        update docs/UNIFI.md § "Alarm API endpoint" if you change this list.
+
+          /list/alarm  — newest (UniFi Network 9.x+)
+          /alarm       — long-standing universal path
+          /stat/alarm  — older intermediate variant; some firmware exposes only this
+        """
         alarm_paths = [
             f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/list/alarm",
             f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/alarm",
@@ -126,6 +128,7 @@ class UniFiClient:
         for path in alarm_paths:
             result = await self._try_fetch_alarms(path, site)
             if result is not None:
+                self._alarm_url_cache[site] = path
                 return result
             # None means path not found (404 or api.err.InvalidObject) — try next
         raise InvalidSiteError(
@@ -133,7 +136,13 @@ class UniFiClient:
         )
 
     async def _try_fetch_alarms(self, url: str, site: str) -> list[dict[str, Any]] | None:
-        """Fetch alarms from one URL. Returns None on 404 (caller tries next URL)."""
+        """Fetch alarms from one URL. Returns None if this path doesn't exist here.
+
+        "Doesn't exist" covers both a plain 404 and the HTTP 400 +
+        api.err.InvalidObject some firmware returns instead of a 404 — see
+        _is_missing_alarm_path(). Any other error is a genuine failure and is
+        raised to the caller.
+        """
         _LOGGER.debug("Fetching alarms from %s", url)
         try:
             async with self._session.get(
@@ -149,28 +158,13 @@ class UniFiClient:
                         "request; refusing to follow to protect credentials"
                     )
                 if resp.status == 401:
-                    self._auth.invalidate()
-                    raise InvalidAuthError("Session expired")
+                    raise InvalidAuthError("API key rejected (HTTP 401)")
                 if resp.status == 404:
                     _LOGGER.debug("Alarm URL %s returned 404 — trying next URL", url)
                     return None
                 if resp.status == 400:
-                    # UniFi returns JSON even on 400 — parse the msg field.
-                    # Some firmware returns 400 + api.err.InvalidObject for paths that
-                    # don't exist on that firmware version (instead of 404), so treat
-                    # that error code as "path not found" and let the caller try the
-                    # next path. Any other 400 is a genuine error worth surfacing.
-                    unifi_msg = ""
-                    try:
-                        body = await resp.json(content_type=None)
-                        unifi_msg = body.get("meta", {}).get("msg", "")
-                    except (json.JSONDecodeError, UnicodeDecodeError) as err:
-                        _LOGGER.debug(
-                            "Could not parse 400 response body from %s: %s",
-                            url,
-                            type(err).__name__,
-                        )
-                    if unifi_msg == "api.err.InvalidObject":
+                    unifi_msg = await self._parse_unifi_error_msg(resp, url)
+                    if self._is_missing_alarm_path(unifi_msg):
                         _LOGGER.debug(
                             "Alarm URL %s returned 400 api.err.InvalidObject — trying next URL",
                             url,
@@ -196,39 +190,51 @@ class UniFiClient:
         except aiohttp.ClientError as err:
             raise CannotConnectError(type(err).__name__) from err
 
-    async def probe_system_log_endpoint(self, site: str = "default") -> bool:
-        """Probe the v2 system-log endpoint to determine whether it is available.
+    @staticmethod
+    async def _parse_unifi_error_msg(resp: aiohttp.ClientResponse, url: str) -> str:
+        """Best-effort extraction of the `meta.msg` field from a UniFi error body.
+
+        UniFi returns JSON even on error responses. Isolated from the fetch
+        loop so the endpoint-discovery heuristic in _is_missing_alarm_path()
+        can be tested independently of the HTTP body-parsing mechanics.
+        """
+        try:
+            body = await resp.json(content_type=None)
+            return str(body.get("meta", {}).get("msg", ""))
+        except (json.JSONDecodeError, UnicodeDecodeError) as err:
+            _LOGGER.debug(
+                "Could not parse 400 response body from %s: %s",
+                url,
+                type(err).__name__,
+            )
+            return ""
+
+    @staticmethod
+    def _is_missing_alarm_path(unifi_msg: str) -> bool:
+        """Decide whether a UniFi error message means "this endpoint path doesn't exist".
+
+        Some firmware returns HTTP 400 + api.err.InvalidObject for alarm paths
+        that don't exist on that firmware version, instead of a plain 404.
+        This heuristic is kept separate from the core fetch/parse flow in
+        _try_fetch_alarms so it can change (or be dropped, per #239's "legacy
+        controller support" scope) without touching data-retrieval code.
+        """
+        return unifi_msg == "api.err.InvalidObject"
+
+    async def probe_system_log_endpoint(self, site: str = "default") -> bool | None:
+        """Probe the v2 system-log endpoint once, with no caching or retry state.
 
         Calls POST /proxy/network/v2/api/site/{site}/system-log/count with an
-        empty body. A 200 response indicates availability; 404 is the
-        controller's definitive "endpoint not implemented" response. Any other
-        4xx/5xx or network error is treated as transient.
+        empty body. Returns True on HTTP 200 (endpoint available), False on
+        HTTP 404 (the controller's definitive "endpoint not implemented"
+        response), or None for any other outcome (unexpected status or
+        network error) — the caller should treat None as transient and retry
+        on the next poll.
 
-        Cache semantics:
-        - 200 sets _has_system_log=True (permanent until re-auth).
-        - 404 sets _has_system_log=False with no retry (_probe_backoff_until=None).
-        - A single transient failure leaves _has_system_log=None (re-probes next poll).
-        - After _PROBE_FAIL_LIMIT consecutive transient failures, _has_system_log is
-          set to False and _probe_backoff_until is set to now + _PROBE_RETRY_AFTER.
-          Once that window expires the probe resets to None and retries.
+        This is a single stateless HTTP call; caching the result across poll
+        cycles and backing off after repeated transient failures is the
+        coordinator's concern (see UniFiAlertsCoordinator._probe_has_system_log).
         """
-        if self._has_system_log is not None:
-            # For a backoff-triggered False, check whether the retry window has opened.
-            if self._has_system_log is False and self._probe_backoff_until is not None:
-                if datetime.now(UTC) >= self._probe_backoff_until:
-                    _LOGGER.debug("v2 system-log probe backoff expired; will retry")
-                    self._has_system_log = None
-                    self._probe_fail_count = 0
-                    self._probe_backoff_until = None
-                    # Fall through to probe below.
-                else:
-                    return False
-            else:
-                return self._has_system_log
-
-        if not self._auth.authenticated:
-            await self.authenticate()
-
         url = f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/v2/api/site/{site}/system-log/count"
         _LOGGER.debug("Probing v2 system-log endpoint: %s", url)
         try:
@@ -242,58 +248,23 @@ class UniFiClient:
             ) as resp:
                 if resp.status == 200:
                     _LOGGER.debug("v2 system-log endpoint available")
-                    self._has_system_log = True
-                    self._probe_fail_count = 0
-                    self._probe_backoff_until = None
                     return True
                 if resp.status == 404:
                     _LOGGER.debug(
                         "v2 system-log endpoint not implemented (HTTP 404); using legacy path"
                     )
-                    self._has_system_log = False
-                    self._probe_fail_count = 0
                     return False
-                self._probe_fail_count += 1
-                if self._probe_fail_count >= _PROBE_FAIL_LIMIT:
-                    self._has_system_log = False
-                    self._probe_backoff_until = datetime.now(UTC) + _PROBE_RETRY_AFTER
-                    _LOGGER.debug(
-                        "v2 system-log probe failed %d consecutive times (HTTP %d); "
-                        "switching to legacy path for %s",
-                        _PROBE_FAIL_LIMIT,
-                        resp.status,
-                        _PROBE_RETRY_AFTER,
-                    )
-                else:
-                    _LOGGER.debug(
-                        "v2 system-log probe got HTTP %d (transient, %d/%d); "
-                        "legacy path this poll, will retry next",
-                        resp.status,
-                        self._probe_fail_count,
-                        _PROBE_FAIL_LIMIT,
-                    )
-                return False
+                _LOGGER.debug(
+                    "v2 system-log probe got HTTP %d (transient); legacy path this poll",
+                    resp.status,
+                )
+                return None
         except aiohttp.ClientError as err:
-            self._probe_fail_count += 1
-            if self._probe_fail_count >= _PROBE_FAIL_LIMIT:
-                self._has_system_log = False
-                self._probe_backoff_until = datetime.now(UTC) + _PROBE_RETRY_AFTER
-                _LOGGER.debug(
-                    "v2 system-log probe failed %d consecutive times (%s); "
-                    "switching to legacy path for %s",
-                    _PROBE_FAIL_LIMIT,
-                    type(err).__name__,
-                    _PROBE_RETRY_AFTER,
-                )
-            else:
-                _LOGGER.debug(
-                    "v2 system-log probe failed with %s (transient, %d/%d); "
-                    "legacy path this poll, will retry next",
-                    type(err).__name__,
-                    self._probe_fail_count,
-                    _PROBE_FAIL_LIMIT,
-                )
-            return False
+            _LOGGER.debug(
+                "v2 system-log probe failed with %s (transient); legacy path this poll",
+                type(err).__name__,
+            )
+            return None
 
     async def fetch_system_log_alarms(
         self,
@@ -310,9 +281,6 @@ class UniFiClient:
         Only events with status="NEW" are returned (equivalent to the legacy
         archived=False filter). Events with any other status are skipped.
         """
-        if not self._auth.authenticated:
-            await self.authenticate()
-
         now = datetime.now(UTC)
         if since is not None:
             from_dt = since
@@ -352,8 +320,9 @@ class UniFiClient:
                             "request; refusing to follow to protect credentials"
                         )
                     if resp.status == 401:
-                        self._auth.invalidate()
-                        raise InvalidAuthError("Session expired during system-log fetch")
+                        raise InvalidAuthError(
+                            "API key rejected during system-log fetch (HTTP 401)"
+                        )
                     resp.raise_for_status()
                     data = await resp.json()
             except aiohttp.ClientConnectorCertificateError as err:
@@ -414,16 +383,13 @@ class UniFiClient:
         return result
 
     async def close(self) -> None:
-        if self._auth.method == AUTH_METHOD_USERPASS and self._auth.authenticated:
-            try:
-                await self._session.post(
-                    f"{self._base}/api/auth/logout",
-                    ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
-                    timeout=aiohttp.ClientTimeout(total=5),
-                    allow_redirects=False,
-                )
-            except (aiohttp.ClientError, OSError, TimeoutError) as err:
-                _LOGGER.warning("UniFi logout failed: %s", type(err).__name__)
+        """Release client resources.
+
+        API-key auth is stateless (no session to log out) and the aiohttp
+        session is owned by Home Assistant, so there is nothing to tear down.
+        Kept as an awaitable no-op so call sites (setup teardown, unload) need
+        no special-casing.
+        """
 
     # ── Private helpers ───────────────────────────────────────────────────
 

@@ -9,6 +9,7 @@ from conftest import make_entry, make_hass, patch_setup_entry_collaborators
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
+    CONF_API_KEY,
     CONF_CLEAR_TIMEOUT,
     CONF_CONTROLLER_URL,
     CONF_ENABLED_CATEGORIES,
@@ -40,7 +41,7 @@ def _patch_all(authenticate_side_effect=None, first_refresh_side_effect=None):
 
     mock_webhook_manager = MagicMock()
     mock_webhook_manager.register_all = MagicMock(
-        return_value={"network_wan": "http://ha/hook/abc?token=x"}
+        return_value={"network_wan": "http://ha/hook/abc"}
     )
     mock_webhook_manager.unregister_all = MagicMock()
 
@@ -314,7 +315,7 @@ class TestAsyncSetupEntry:
         from custom_components.unifi_alerts import async_setup_entry
 
         mock_client, mock_coordinator, mock_wm = _patch_all()
-        full_urls = {cat: f"http://ha/hook/{cat}?token=x" for cat in ALL_CATEGORIES}
+        full_urls = {cat: f"http://ha/hook/{cat}" for cat in ALL_CATEGORIES}
         mock_wm.register_all.side_effect = [RuntimeError("first attempt never gets here")]
 
         with patch_setup_entry_collaborators(mock_client, mock_coordinator, mock_wm):
@@ -443,7 +444,7 @@ class TestAsyncUnloadEntry:
 
 
 class TestAsyncRemoveEntry:
-    """async_remove_entry must delete the watermark store file and all four repair issues."""
+    """async_remove_entry must delete the watermark store file and all repair issues."""
 
     @pytest.mark.asyncio
     async def test_removes_watermark_store_file(self):
@@ -470,7 +471,7 @@ class TestAsyncRemoveEntry:
         mock_store.async_remove.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_deletes_all_four_per_entry_repair_issues(self):
+    async def test_deletes_all_per_entry_repair_issues(self):
         from custom_components.unifi_alerts import async_remove_entry
 
         hass = make_hass()
@@ -491,6 +492,8 @@ class TestAsyncRemoveEntry:
             "webhook_secret_rotated_entry-xyz",
             "webhook_urls_changed_entry-xyz",
             "watermark_persist_failed_entry-xyz",
+            "apikey_migration_required_entry-xyz",
+            "webhook_legacy_query_auth_entry-xyz",
         }
         for call in mock_delete_issue.call_args_list:
             assert call.args[0] is hass
@@ -563,12 +566,32 @@ class TestAsyncUpdateListener:
         hass.config_entries.async_reload.assert_awaited_once_with(entry.entry_id)
 
 
+def _capture_migrate_updates(hass):
+    """Wire hass.config_entries.async_update_entry to record every call.
+
+    Returns the list the calls are appended to. The entry's ``data`` and
+    ``version`` are applied as each call arrives so the sequential migration
+    steps chain exactly as they do under real HA.
+    """
+    update_calls: list[dict] = []
+
+    def capture_update(cfg_entry, **kwargs):
+        update_calls.append(dict(kwargs))
+        if "data" in kwargs:
+            cfg_entry.data = kwargs["data"]
+        if "version" in kwargs:
+            cfg_entry.version = kwargs["version"]
+
+    hass.config_entries.async_update_entry = capture_update
+    return update_calls
+
+
 class TestAsyncMigrateEntry:
     """Tests for async_migrate_entry version migration logic."""
 
     @pytest.mark.asyncio
-    async def test_v2_missing_secret_backfills_and_bumps_to_v3(self):
-        """A v2 entry without webhook_secret must get a fresh secret and version 3."""
+    async def test_v2_missing_secret_backfills_secret_and_reaches_v4(self):
+        """A v2 entry without webhook_secret gets a fresh secret and walks to version 4."""
         from custom_components.unifi_alerts import async_migrate_entry
 
         hass = make_hass()
@@ -580,64 +603,50 @@ class TestAsyncMigrateEntry:
         )
         entry.version = 2
 
-        captured_kwargs: dict = {}
+        update_calls = _capture_migrate_updates(hass)
 
-        def capture_update(cfg_entry, **kwargs):
-            captured_kwargs.update(kwargs)
-            # Apply the data update so subsequent reads work
-            if "data" in kwargs:
-                cfg_entry.data = kwargs["data"]
-            if "version" in kwargs:
-                cfg_entry.version = kwargs["version"]
-
-        hass.config_entries.async_update_entry = capture_update
-
-        result = await async_migrate_entry(hass, entry)
+        with patch("custom_components.unifi_alerts.ir.async_create_issue"):
+            result = await async_migrate_entry(hass, entry)
 
         assert result is True
-        assert captured_kwargs.get("version") == 3
-        assert CONF_WEBHOOK_SECRET in captured_kwargs.get("data", {})
-        secret = captured_kwargs["data"][CONF_WEBHOOK_SECRET]
-        assert secret  # non-empty
-        assert CONF_WEBHOOK_ID_SUFFIX in captured_kwargs["data"]
-        suffix = captured_kwargs["data"][CONF_WEBHOOK_ID_SUFFIX]
-        assert suffix  # non-empty
+        # v2->v3 update carries the backfilled secret/suffix.
+        v3_call = next(c for c in update_calls if c.get("version") == 3)
+        assert CONF_WEBHOOK_SECRET in v3_call["data"]
+        assert v3_call["data"][CONF_WEBHOOK_SECRET]  # non-empty
+        assert CONF_WEBHOOK_ID_SUFFIX in v3_call["data"]
+        assert v3_call["data"][CONF_WEBHOOK_ID_SUFFIX]  # non-empty
+        # Migration terminates at version 4.
+        assert entry.version == 4
 
     @pytest.mark.asyncio
-    async def test_v2_with_secret_already_set_bumps_version_only(self):
-        """A v2 entry that already has both values must be promoted to v3 with data unchanged."""
+    async def test_v2_with_secret_already_set_reaches_v4(self):
+        """A v2 entry that already has secret/suffix bumps to v3 (data unchanged) then v4."""
         from custom_components.unifi_alerts import async_migrate_entry
 
         hass = make_hass()
-        existing_secret = "already-set-secret-value"
-        existing_suffix = "deadbeef"
         entry = make_entry(
             data={
                 CONF_CONTROLLER_URL: "https://192.168.1.1",
                 CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
-                CONF_WEBHOOK_SECRET: existing_secret,
-                CONF_WEBHOOK_ID_SUFFIX: existing_suffix,
+                CONF_WEBHOOK_SECRET: "already-set-secret-value",
+                CONF_WEBHOOK_ID_SUFFIX: "deadbeef",
             }
         )
         entry.version = 2
 
-        captured_kwargs: dict = {}
-
-        def capture_update(cfg_entry, **kwargs):
-            captured_kwargs.update(kwargs)
-
-        hass.config_entries.async_update_entry = capture_update
+        update_calls = _capture_migrate_updates(hass)
 
         result = await async_migrate_entry(hass, entry)
 
         assert result is True
-        assert captured_kwargs.get("version") == 3
-        # Data must not have changed (no "data" key in the update call)
-        assert "data" not in captured_kwargs
+        # v2->v3 bump must not rewrite data (secret/suffix already present).
+        v3_call = next(c for c in update_calls if c.get("version") == 3)
+        assert "data" not in v3_call
+        assert entry.version == 4
 
     @pytest.mark.asyncio
-    async def test_v1_entry_is_migrated_through_both_steps(self):
-        """A v1 entry must pass through v1->2 (strip is_unifi_os) then v2->3 (backfill secret)."""
+    async def test_v1_entry_is_migrated_through_all_steps(self):
+        """A v1 entry chains v1->2 (strip is_unifi_os), v2->3 (backfill), v3->4 (apikey)."""
         from custom_components.unifi_alerts import async_migrate_entry
 
         hass = make_hass()
@@ -645,36 +654,114 @@ class TestAsyncMigrateEntry:
             data={
                 CONF_CONTROLLER_URL: "https://192.168.1.1",
                 CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+                "username": "admin",
+                "password": "password",
                 "is_unifi_os": True,  # legacy field to be stripped in v1->2
             }
         )
         entry.version = 1
 
-        update_calls: list[dict] = []
+        update_calls = _capture_migrate_updates(hass)
 
-        def capture_update(cfg_entry, **kwargs):
-            update_calls.append(dict(kwargs))
-            if "data" in kwargs:
-                cfg_entry.data = kwargs["data"]
-            if "version" in kwargs:
-                cfg_entry.version = kwargs["version"]
+        with patch("custom_components.unifi_alerts.ir.async_create_issue"):
+            result = await async_migrate_entry(hass, entry)
 
-        hass.config_entries.async_update_entry = capture_update
+        assert result is True
+        # Three update calls: v1->2, v2->3, v3->4.
+        assert len(update_calls) == 3
+        assert update_calls[0].get("version") == 2
+        assert "is_unifi_os" not in update_calls[0].get("data", {})
+        assert update_calls[1].get("version") == 3
+        assert CONF_WEBHOOK_SECRET in update_calls[1].get("data", {})
+        assert update_calls[2].get("version") == 4
+        assert entry.version == 4
+
+    @pytest.mark.asyncio
+    async def test_v3_with_api_key_migrates_silently_to_v4(self):
+        """A v3 entry with an API key drops legacy userpass keys and bumps to v4."""
+        from custom_components.unifi_alerts import async_migrate_entry
+
+        hass = make_hass()
+        entry = make_entry(
+            data={
+                CONF_CONTROLLER_URL: "https://192.168.1.1",
+                CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+                "username": "admin",
+                "password": "password",
+                "auth_method": "apikey",
+                CONF_API_KEY: "existing-api-key",
+                CONF_WEBHOOK_SECRET: "fake-secret",
+                CONF_WEBHOOK_ID_SUFFIX: "deadbeef",
+            }
+        )
+        entry.version = 3
+
+        _capture_migrate_updates(hass)
 
         result = await async_migrate_entry(hass, entry)
 
         assert result is True
-        # Two update calls: one for v1->2, one for v2->3
-        assert len(update_calls) == 2
-        # First call: version 2, is_unifi_os stripped
-        first = update_calls[0]
-        assert first.get("version") == 2
-        assert "is_unifi_os" not in first.get("data", {})
-        # Second call: version 3, webhook_secret backfilled
-        second = update_calls[1]
-        assert second.get("version") == 3
-        assert CONF_WEBHOOK_SECRET in second.get("data", {})
-        assert second["data"][CONF_WEBHOOK_SECRET]  # non-empty
+        assert entry.version == 4
+        assert entry.data[CONF_API_KEY] == "existing-api-key"
+        # Legacy userpass keys (and the now-unused auth_method marker) are dropped.
+        assert "username" not in entry.data
+        assert "password" not in entry.data
+        assert "auth_method" not in entry.data
+        # Identity-preserving fields untouched.
+        assert entry.data[CONF_WEBHOOK_SECRET] == "fake-secret"
+        assert entry.data[CONF_WEBHOOK_ID_SUFFIX] == "deadbeef"
+
+    @pytest.mark.asyncio
+    async def test_v3_userpass_only_migrates_to_v4_without_credentials(self):
+        """A v3 userpass-only entry loses its credentials, leaving no api_key for reauth."""
+        from custom_components.unifi_alerts import async_migrate_entry
+
+        hass = make_hass()
+        entry = make_entry(
+            data={
+                CONF_CONTROLLER_URL: "https://192.168.1.1",
+                CONF_ENABLED_CATEGORIES: ALL_CATEGORIES,
+                "username": "admin",
+                "password": "password",
+                CONF_WEBHOOK_SECRET: "fake-secret",
+                CONF_WEBHOOK_ID_SUFFIX: "deadbeef",
+            }
+        )
+        entry.version = 3
+
+        _capture_migrate_updates(hass)
+
+        result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        assert entry.version == 4
+        assert "username" not in entry.data
+        assert "password" not in entry.data
+        assert CONF_API_KEY not in entry.data
+        # Identity-preserving fields untouched, so entities/history/webhooks survive.
+        assert entry.data[CONF_WEBHOOK_SECRET] == "fake-secret"
+        assert entry.data[CONF_WEBHOOK_ID_SUFFIX] == "deadbeef"
+
+    @pytest.mark.asyncio
+    async def test_v4_entry_is_left_untouched(self):
+        """An entry already at version 4 must not be updated."""
+        from custom_components.unifi_alerts import async_migrate_entry
+
+        hass = make_hass()
+        entry = make_entry(
+            data={
+                CONF_CONTROLLER_URL: "https://192.168.1.1",
+                CONF_API_KEY: "key",
+            }
+        )
+        entry.version = 4
+
+        update_calls = _capture_migrate_updates(hass)
+
+        result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        assert update_calls == []
 
 
 class TestAsyncMigrateEntryRepairIssue:
@@ -782,29 +869,3 @@ class TestAsyncMigrateEntryRepairIssue:
 
         assert result is True
         mock_create_issue.assert_not_called()
-
-
-class TestRedactWebhookToken:
-    """`?token=<secret>` must be stripped from URLs before they hit DEBUG logs."""
-
-    def test_redacts_token_query_param(self):
-        from custom_components.unifi_alerts import _redact_webhook_token
-
-        url = "http://homeassistant.local:8123/api/webhook/unifi_alerts_x?token=supersecret123"
-        redacted = _redact_webhook_token(url)
-        assert "supersecret123" not in redacted
-        assert redacted.endswith("?token=***")
-
-    def test_passthrough_when_no_token_present(self):
-        from custom_components.unifi_alerts import _redact_webhook_token
-
-        url = "http://homeassistant.local:8123/api/webhook/unifi_alerts_x"
-        assert _redact_webhook_token(url) == url
-
-    def test_redacted_when_token_anywhere_after_question_mark(self):
-        """Even if the token is the only query param, redaction stops at end-of-string."""
-        from custom_components.unifi_alerts import _redact_webhook_token
-
-        url = "http://h/api/webhook/x?token=abc"
-        redacted = _redact_webhook_token(url)
-        assert "abc" not in redacted

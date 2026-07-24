@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import voluptuous as vol
+from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
@@ -139,18 +140,43 @@ class TestHandleClearCategory:
         coord_b.async_clear_category.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_unknown_entry_id_logs_warning_and_does_nothing(self):
+    async def test_unknown_entry_id_raises_service_validation_error(self):
         coordinator = make_coordinator()
         hass = make_hass({"entry-abc": coordinator})
         call = make_call(
             hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "no-such-entry"}
         )
 
-        with patch("custom_components.unifi_alerts.services._LOGGER") as mock_log:
+        with pytest.raises(ServiceValidationError) as exc_info:
             await _handle_clear_category(call)
 
-        mock_log.warning.assert_called_once()
+        assert exc_info.value.translation_domain == DOMAIN
+        assert exc_info.value.translation_key == "unknown_entry_id"
+        assert exc_info.value.translation_placeholders == {"entry_id": "no-such-entry"}
         coordinator.async_clear_category.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unloaded_entry_id_raises_service_validation_error(self):
+        """An entry_id that exists but is not currently loaded must also raise."""
+        from homeassistant.config_entries import ConfigEntryState
+
+        hass = make_hass()
+        entry = MagicMock(spec=["entry_id", "domain", "state"])
+        entry.entry_id = "entry-unloaded"
+        entry.domain = DOMAIN
+        entry.state = ConfigEntryState.NOT_LOADED
+        hass.config_entries.async_get_entry = MagicMock(return_value=entry)
+        hass.config_entries.async_entries = MagicMock(return_value=[entry])
+        call = make_call(
+            hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "entry-unloaded"}
+        )
+
+        with pytest.raises(ServiceValidationError) as exc_info:
+            await _handle_clear_category(call)
+
+        assert exc_info.value.translation_domain == DOMAIN
+        assert exc_info.value.translation_key == "entry_not_loaded"
+        assert exc_info.value.translation_placeholders == {"entry_id": "entry-unloaded"}
 
     @pytest.mark.asyncio
     async def test_affects_all_entries_when_entry_id_omitted(self):
@@ -203,6 +229,41 @@ class TestHandleClearAll:
 
         coord_a.async_clear_all.assert_awaited_once()
         coord_b.async_clear_all.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_unknown_entry_id_raises_service_validation_error(self):
+        coordinator = make_coordinator()
+        hass = make_hass({"entry-abc": coordinator})
+        call = make_call(hass, {ATTR_ENTRY_ID: "no-such-entry"})
+
+        with pytest.raises(ServiceValidationError) as exc_info:
+            await _handle_clear_all(call)
+
+        assert exc_info.value.translation_domain == DOMAIN
+        assert exc_info.value.translation_key == "unknown_entry_id"
+        assert exc_info.value.translation_placeholders == {"entry_id": "no-such-entry"}
+        coordinator.async_clear_all.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unloaded_entry_id_raises_service_validation_error(self):
+        """An entry_id that exists but is not currently loaded must also raise."""
+        from homeassistant.config_entries import ConfigEntryState
+
+        hass = make_hass()
+        entry = MagicMock(spec=["entry_id", "domain", "state"])
+        entry.entry_id = "entry-unloaded"
+        entry.domain = DOMAIN
+        entry.state = ConfigEntryState.NOT_LOADED
+        hass.config_entries.async_get_entry = MagicMock(return_value=entry)
+        hass.config_entries.async_entries = MagicMock(return_value=[entry])
+        call = make_call(hass, {ATTR_ENTRY_ID: "entry-unloaded"})
+
+        with pytest.raises(ServiceValidationError) as exc_info:
+            await _handle_clear_all(call)
+
+        assert exc_info.value.translation_domain == DOMAIN
+        assert exc_info.value.translation_key == "entry_not_loaded"
+        assert exc_info.value.translation_placeholders == {"entry_id": "entry-unloaded"}
 
 
 # ── async_register_services / async_unregister_services ──────────────────────
@@ -399,9 +460,10 @@ class TestGetCoordinatorsGuard:
         coord_loaded.async_clear_all.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_single_entry_setup_retry_logs_warning_and_does_not_raise(self):
+    async def test_single_entry_setup_retry_logs_warning_and_raises(self):
         """Calling clear_category with a specific entry_id that is in SETUP_RETRY state
-        must log a warning and return without raising AttributeError.
+        must log a warning and raise ServiceValidationError, never AttributeError from
+        touching the absent runtime_data.
         """
         from homeassistant.config_entries import ConfigEntryState
 
@@ -418,10 +480,13 @@ class TestGetCoordinatorsGuard:
 
         call = make_call(hass, {ATTR_CATEGORY: CATEGORY_NETWORK_WAN, ATTR_ENTRY_ID: "entry-retry"})
 
-        with patch("custom_components.unifi_alerts.services._LOGGER") as mock_log:
-            # Must not raise — the guard should log and return early
+        with (
+            patch("custom_components.unifi_alerts.services._LOGGER") as mock_log,
+            pytest.raises(ServiceValidationError) as exc_info,
+        ):
             await _handle_clear_category(call)
 
+        assert exc_info.value.translation_key == "entry_not_loaded"
         mock_log.warning.assert_called_once()
         warning_msg = mock_log.warning.call_args[0][0]
         assert "not loaded" in warning_msg

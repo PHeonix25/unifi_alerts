@@ -4,7 +4,7 @@ Reference for Home Assistant-specific patterns used in this integration. Consult
 
 ## Minimum supported version
 
-**Home Assistant 2025.1** (requires Python 3.12), enforced by `hacs.json` and the pinned minimum-version CI leg. `ConfigEntry.runtime_data` (introduced in HA 2024.2), `ConfigFlowResult` return type annotation, and `Platform` enum usage require this version or newer. See `docs/DEVELOPING.md` § "Minimum supported Home Assistant version" for how the floor is kept in sync across `hacs.json`, CI, and the README.
+**Home Assistant 2026.3** (requires Python 3.14), enforced by `hacs.json` and the pinned minimum-version CI leg. `ConfigEntry.runtime_data` (introduced in HA 2024.2), `ConfigFlowResult` return type annotation, and `Platform` enum usage require this version or newer. See `docs/DEVELOPING.md` § "Minimum supported Home Assistant version" for how the floor is kept in sync across `hacs.json`, CI, and the README.
 
 ## Config entries
 
@@ -91,7 +91,7 @@ Calling `await session.close()` on either triggers a deprecation warning from `h
 # DO: HA-managed, no try/finally needed
 session = async_get_clientsession(hass, verify_ssl=verify_ssl)
 client = UniFiClient(session, url, user_input)
-auth_method = await client.authenticate()
+await client.authenticate()
 
 # DON'T: bare ClientSession bypasses HA's proxy + pool + verify_ssl wiring
 async with aiohttp.ClientSession() as session:

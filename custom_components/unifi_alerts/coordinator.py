@@ -9,6 +9,7 @@ from collections.abc import Coroutine
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import issue_registry as ir
@@ -26,11 +27,14 @@ from .const import (
     DEFAULT_SITE,
     DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS,
     DOMAIN,
+    EXCEPTION_POLL_AUTH_FAILED,
+    EXCEPTION_POLL_CANNOT_CONNECT,
     ISSUE_ID_PERSIST_FAILED,
     STORAGE_VERSION_WATERMARKS,
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
-from .models import CategoryState, UniFiAlert, UniFiClientConfig
+from .models import CategoryState, UniFiAlert, UniFiClientConfig, ensure_aware
+from .severity import filter_by_min_severity, get_effective_min_severity, meets_minimum
 from .unifi_auth import CannotConnectError, InvalidAuthError
 from .unifi_client import UniFiClient
 
@@ -41,6 +45,14 @@ _LOGGER = logging.getLogger(__name__)
 # coalesces a burst into a single durable write instead of one fire-and-forget
 # save per push.
 _PERSIST_DELAY_SECONDS = 1
+
+# After this many consecutive transient v2 system-log-probe outcomes, stop
+# re-probing every poll and fall back to the legacy path. A single network
+# blip should not pin the coordinator to legacy mode, so the threshold is
+# intentionally > 1.
+_PROBE_FAIL_LIMIT = 5
+# How long to wait before attempting another probe after the threshold is hit.
+_PROBE_RETRY_AFTER = timedelta(hours=1)
 
 
 class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
@@ -60,12 +72,13 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         hass: HomeAssistant,
         client: UniFiClient,
         config: UniFiClientConfig,
-        entry_id: str = "",
+        config_entry: ConfigEntry,
     ) -> None:
         poll_interval = config.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=poll_interval),
         )
@@ -74,9 +87,9 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._clear_timeout_minutes: int = config.get(CONF_CLEAR_TIMEOUT, DEFAULT_CLEAR_TIMEOUT)
         self._enabled_categories: list[str] = config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         self._site: str = config.get(CONF_SITE, DEFAULT_SITE)
-        self._entry_id: str = entry_id
+        self._entry_id: str = config_entry.entry_id
         self._store: Store[dict[str, Any]] = Store(
-            hass, STORAGE_VERSION_WATERMARKS, f"{DOMAIN}_watermarks_{entry_id}"
+            hass, STORAGE_VERSION_WATERMARKS, f"{DOMAIN}_watermarks_{self._entry_id}"
         )
 
         # Category state is long-lived; do NOT reset between coordinator refreshes
@@ -103,6 +116,17 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         # without needing DEBUG logging. Never reset; grows until the entry reloads.
         self._unrecognised_keys: dict[str, int] = {}
 
+        # v2 system-log-probe cache/backoff state (#240). UniFiClient's probe
+        # is a single stateless HTTP call; caching the result and backing off
+        # after repeated transient failures is the coordinator's concern,
+        # since this is the layer designed to hold cross-poll state.
+        # None = not yet probed (or backoff has expired and a re-probe is due).
+        self._has_system_log: bool | None = None
+        # Consecutive transient probe outcomes. Resets to 0 on any definitive result.
+        self._probe_fail_count: int = 0
+        # Set when _probe_fail_count reaches _PROBE_FAIL_LIMIT; cleared on retry window expiry.
+        self._probe_backoff_until: datetime | None = None
+
     # ── DataUpdateCoordinator override ───────────────────────────────────
 
     async def _async_update_data(self) -> dict[str, CategoryState]:
@@ -122,42 +146,39 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         try:
             categorised = await self._fetch_categorised()
         except InvalidAuthError as err:
-            # Re-authenticate once then retry
-            _LOGGER.warning("Auth expired, re-authenticating: %s", err)
-            try:
-                await self._client.authenticate()
-            except (InvalidAuthError, CannotConnectError) as reauth_err:
-                _LOGGER.error(
-                    "Re-authentication failed; credentials may have changed: %s", reauth_err
-                )
-                raise ConfigEntryAuthFailed(
-                    f"Re-authentication failed; credentials may have changed: {reauth_err}"
-                ) from reauth_err
-            try:
-                categorised = await self._fetch_categorised()
-            except InvalidAuthError as retry_err:
-                raise ConfigEntryAuthFailed(
-                    f"Re-authentication succeeded but the controller still returned 401: {retry_err}"
-                ) from retry_err
-            except CannotConnectError as retry_err:
-                raise UpdateFailed(
-                    f"Cannot reach UniFi controller after re-authentication: {retry_err}"
-                ) from retry_err
+            # The API key is a static credential with no session to refresh, so
+            # a 401 means the key was revoked or is otherwise no longer valid.
+            # Surface reauth directly instead of retrying.
+            _LOGGER.error("UniFi controller rejected the API key: %s", err)
+            raise ConfigEntryAuthFailed(
+                f"UniFi controller rejected the API key: {err}",
+                translation_domain=DOMAIN,
+                translation_key=EXCEPTION_POLL_AUTH_FAILED,
+                translation_placeholders={"error": str(err)},
+            ) from err
         except CannotConnectError as err:
-            raise UpdateFailed(f"Cannot reach UniFi controller: {err}") from err
+            raise UpdateFailed(
+                f"Cannot reach UniFi controller: {err}",
+                translation_domain=DOMAIN,
+                translation_key=EXCEPTION_POLL_CANNOT_CONNECT,
+                translation_placeholders={"error": str(err)},
+            ) from err
 
         for cat, alerts in categorised.items():
             if cat in self._category_states:
                 state = self._category_states[cat]
                 if not state.enabled:
                     continue
+                minimum = get_effective_min_severity(self._config, cat)
+                eligible = filter_by_min_severity(alerts, minimum)
+                self._track_newest_seen(state, eligible)
                 # Count only alarms newer than last_cleared_at so open_count reads as
                 # "since last Clear", not a lifetime total.
                 watermark = state.last_cleared_at
                 counted = (
-                    [a for a in alerts if a.received_at > watermark]
+                    [a for a in eligible if a.received_at > watermark]
                     if watermark is not None
-                    else alerts
+                    else eligible
                 )
                 state.open_count = len(counted)
                 # If polling finds open alerts and we're not already alerting,
@@ -182,25 +203,40 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         return self._category_states
 
+    @staticmethod
+    def _track_newest_seen(state: CategoryState, alerts: list[UniFiAlert]) -> None:
+        """Advance ``last_alarm_received_at`` to the newest polled alarm, if any.
+
+        Feeds the Clear watermark (see ``CategoryState.clear()``) so it can be
+        anchored to the controller's own timeline instead of the HA host
+        clock (#268).
+        """
+        if not alerts:
+            return
+        newest_seen = max(ensure_aware(a.received_at) for a in alerts)
+        if state.last_alarm_received_at is None or newest_seen > state.last_alarm_received_at:
+            state.last_alarm_received_at = newest_seen
+
     async def _fetch_categorised(self) -> dict[str, list[UniFiAlert]]:
         """Fetch and categorise alarms using v2 or legacy path as appropriate.
 
-        Calls probe_system_log_endpoint() once per client instance. On success,
-        fetches from system-log/all with a timestampFrom watermark and parses
-        each event with UniFiAlert.from_system_log_event(). Skips events whose
-        resolved category is empty (unknown keys with no broad enum fallback).
+        Calls _probe_has_system_log() once per poll (cached across polls). On
+        success, fetches from system-log/all with a timestampFrom watermark
+        and parses each event with UniFiAlert.from_system_log_event(). Skips
+        events whose resolved category is empty (unknown keys with no broad
+        enum fallback).
 
         Falls back to legacy categorise_alarms() if:
-          - the probe returns False (404 / 4xx from the controller)
+          - the probe returns False (404, or repeated transient failures past backoff)
           - the probe itself raises a network error (logged at DEBUG)
           - this is an older controller without the v2 endpoint
         """
         try:
-            has_v2 = await self._client.probe_system_log_endpoint(self._site)
+            has_v2 = await self._probe_has_system_log()
         except (InvalidAuthError, CannotConnectError) as probe_err:
-            # probe_system_log_endpoint() only raises via its internal re-auth
-            # attempt (authenticate() when not yet authenticated); the HTTP probe
-            # itself catches aiohttp.ClientError internally and returns False.
+            # Defensive: the HTTP probe catches aiohttp.ClientError internally and
+            # returns None, so it should not raise. Guard anyway and fall back to
+            # the legacy path rather than failing the whole poll on a probe error.
             _LOGGER.debug(
                 "v2 system-log probe raised %s; falling back to legacy path",
                 type(probe_err).__name__,
@@ -250,6 +286,66 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         return categorised
 
+    async def _probe_has_system_log(self) -> bool:
+        """Determine whether the v2 system-log endpoint is available, with caching and backoff.
+
+        Wraps UniFiClient.probe_system_log_endpoint() — a single stateless
+        HTTP call — with the cross-poll cache/backoff state that keeps
+        steady-state polling from re-probing every cycle (#240):
+
+        - True is cached permanently (a fresh probe only happens via a new
+          coordinator instance, i.e. a config-entry reload).
+        - False from a definitive HTTP 404 is cached permanently, no backoff.
+        - A single transient outcome (None) leaves the cache at None so the
+          next poll re-probes immediately.
+        - After _PROBE_FAIL_LIMIT consecutive transient outcomes, the cache is
+          pinned to False for _PROBE_RETRY_AFTER before the next re-probe.
+        """
+        if self._has_system_log is not None:
+            # For a backoff-triggered False, check whether the retry window has opened.
+            if self._has_system_log is False and self._probe_backoff_until is not None:
+                if datetime.now(UTC) >= self._probe_backoff_until:
+                    _LOGGER.debug("v2 system-log probe backoff expired; will retry")
+                    self._has_system_log = None
+                    self._probe_fail_count = 0
+                    self._probe_backoff_until = None
+                    # Fall through to probe below.
+                else:
+                    return False
+            else:
+                return self._has_system_log
+
+        result = await self._client.probe_system_log_endpoint(self._site)
+
+        if result is True:
+            self._has_system_log = True
+            self._probe_fail_count = 0
+            self._probe_backoff_until = None
+            return True
+        if result is False:
+            self._has_system_log = False
+            self._probe_fail_count = 0
+            return False
+
+        # result is None: transient outcome. Only cached (pinned to False) once
+        # _PROBE_FAIL_LIMIT consecutive transient outcomes have been seen.
+        self._probe_fail_count += 1
+        if self._probe_fail_count >= _PROBE_FAIL_LIMIT:
+            self._has_system_log = False
+            self._probe_backoff_until = datetime.now(UTC) + _PROBE_RETRY_AFTER
+            _LOGGER.debug(
+                "v2 system-log probe failed %d consecutive times; switching to legacy path for %s",
+                _PROBE_FAIL_LIMIT,
+                _PROBE_RETRY_AFTER,
+            )
+        else:
+            _LOGGER.debug(
+                "v2 system-log probe transient failure (%d/%d); legacy path this poll, will retry next",
+                self._probe_fail_count,
+                _PROBE_FAIL_LIMIT,
+            )
+        return False
+
     # ── Webhook push path ────────────────────────────────────────────────
 
     def push_alert(self, category: str, alert: UniFiAlert) -> None:
@@ -270,6 +366,20 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
 
         state = self._category_states[category]
         if not state.enabled:
+            return
+
+        minimum = get_effective_min_severity(self._config, category)
+        if not meets_minimum(alert.severity_level, minimum):
+            # Below the configured Minimum_Severity_Setting: is_alerting,
+            # alert_count, open_count, and last_alert are left untouched.
+            # last_webhook_at still advances and is persisted so the
+            # webhook_health signal for this category isn't falsely marked
+            # stale, but no immediate broadcast is fired for a filtered
+            # event - the periodic poll refresh picks it up, which keeps a
+            # noisy filtered category from generating unbounded listener
+            # notifications.
+            state.last_webhook_at = alert.received_at
+            self._schedule_persist()
             return
 
         # Alerts without a key (e.g. the empty-body webhook ping) have no
@@ -386,27 +496,27 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 # Legacy format: bare ISO string watermark only.
                 try:
                     state.last_cleared_at = datetime.fromisoformat(entry)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, entry)
             elif isinstance(entry, dict):
                 ts_str = entry.get("last_cleared_at")
                 if ts_str is not None:
                     try:
                         state.last_cleared_at = datetime.fromisoformat(ts_str)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, ts_str)
                 state.alert_count = int(entry.get("alert_count", 0))
                 raw_alert = entry.get("last_alert")
                 if raw_alert is not None:
                     try:
                         state.last_alert = UniFiAlert.from_dict(raw_alert)
-                    except (KeyError, TypeError, ValueError):
+                    except KeyError, TypeError, ValueError:
                         _LOGGER.warning("Ignoring invalid stored last_alert for %s", cat)
                 webhook_ts = entry.get("last_webhook_at")
                 if webhook_ts is not None:
                     try:
                         state.last_webhook_at = datetime.fromisoformat(webhook_ts)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning(
                             "Ignoring invalid stored last_webhook_at for %s: %r", cat, webhook_ts
                         )

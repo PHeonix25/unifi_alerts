@@ -12,24 +12,13 @@ This integration monitors **UniFi Network** alerts: events surfaced in the Netwo
 
 **UniFi OS consoles only** as of v1.4.0. Tested on UDM, UDM-Pro, UDM-SE, UCG-Ultra, UCG-Max, Cloud Key Gen2+. Classic self-hosted Network Application (Linux/Windows bare-metal) is not supported and the legacy `/api/...` paths and `/api/login` endpoint were removed alongside detection logic.
 
-All requests are prefixed with `/proxy/network/`. Authentication uses `/api/auth/login` (userpass) or the `X-API-Key` header (API key). Logout uses `/api/auth/logout`.
+All requests are prefixed with `/proxy/network/`. Authentication uses the `X-API-Key` header exclusively.
 
 ## Authentication
 
-### Username/password
-
-```
-POST /api/auth/login
-{"username": "admin", "password": "..."}
-```
-
-Sets a session cookie; subsequent requests use the cookie automatically (aiohttp `ClientSession` handles this). Logout: `POST /api/auth/logout`.
-
-**Important:** Do not enable 2FA/MFA on the account used for API access; it breaks non-interactive login. Use a dedicated read-only local account.
-
 ### API key
 
-API keys are stateless: no login/logout. Generated in the UniFi OS web UI; the navigation path varies by firmware:
+API keys are stateless: no login/logout, no session cookie, and no CSRF token requirement. Generated in the UniFi OS web UI; the navigation path varies by firmware:
 
 - **Newer firmware (Network Application 8.x+):** Settings > Admins & Users > API Keys
 - **Some firmware versions:** Integrations > New API Key
@@ -53,11 +42,9 @@ X-API-Key: your-key-here
 
 > **Newer API (v2) note:** UniFi Network Application 8.x introduced a REST API under `/proxy/network/v2/api/`. `GET /proxy/network/v2/api/site` lists sites. The alarm endpoint is still at the classic `/proxy/network/api/s/{site}/alarm` (or `/list/alarm` / `/stat/alarm` depending on firmware). Note: `GET /proxy/network/v2/api/site/{site}/alarm` returns HTTP 404; the v2 alarm data lives at `POST /proxy/network/v2/api/site/{site}/system-log/all` (see "v2 system-log API" below).
 
-### Auto-detect logic (in `UniFiClient.authenticate()`)
+### Historical note: username/password removal
 
-1. If `api_key` is present in config, try API-key auth.
-2. If API-key auth fails (or no key supplied), fall back to username/password.
-3. Store the detected method in `self._auth_method`.
+Prior versions also supported username/password (cookie-session) authentication, with API key tried first and username/password as a fallback. This was removed (epic #277): cookie/session auth on UniFi OS requires an `x-csrf-token` header on non-GET requests, which the integration never sent, risking silent failure of the v2 system-log path. API keys are a stateless header with no login/logout and no CSRF requirement, so the fallback path was dropped rather than fixed. Config entries are migrated to an API-key-only schema; see `docs/ARCHITECTURE.md` for the migration detail.
 
 ## Alarm API endpoint
 
@@ -73,7 +60,9 @@ X-API-Key: your-key-here
 >
 > A path that doesn't exist may return either 404 or `400 api.err.InvalidObject` depending on firmware; both are treated as "try the next path". A genuine 400 (e.g. wrong site name) is surfaced only after every path is exhausted.
 >
-> **If UniFi changes the endpoint again:** add the new path to the head of `alarm_paths` in `unifi_client.py::fetch_alarms`, update the table above, and add a fallback test in `tests/unit/unifi_client/test_legacy.py` (see `TestFetchAlarms::test_falls_back_*`).
+> This probe chain only runs on the first `fetch_alarms()` call for a site (or again later if the cached URL stops resolving, e.g. after a firmware upgrade): see `unifi_client.py::_discover_alarm_url`. Once a path resolves it is cached per site and reused directly on every subsequent poll, so the 404/`api.err.InvalidObject` fallback parsing does not run on every poll ([#239](https://github.com/PHeonix25/unifi_alerts/issues/239)).
+>
+> **If UniFi changes the endpoint again:** add the new path to the head of `alarm_paths` in `unifi_client.py::_discover_alarm_url`, update the table above, and add a fallback test in `tests/unit/unifi_client/test_legacy.py` (see `TestFetchAlarms::test_falls_back_*`).
 
 Default site name is `default`. Multi-site is configurable via `CONF_SITE` per entry; per-category site selection is not implemented (see `docs/ROADMAP.md`, Deferred).
 
@@ -257,9 +246,11 @@ What the integration **cannot** do (controller-side state is read-only):
 
 - There is no documented write API to archive individual Network alarms. The community-discovered `POST /cmd/evtmgt {"cmd":"archive-all-alarms"}` returns `api.err.NotFound` on current firmware.
 - There is no UI option to dismiss or archive individual alarms.
-- Pressing Clear in HA resets HA-local state only (`is_alerting -> false`, `alert_count -> 0`, `last_cleared_at -> now`). The underlying alarms remain on the controller indefinitely. Without the watermark, `open_count` would grow to thousands without ever decreasing.
+- Pressing Clear in HA resets HA-local state only (`is_alerting -> false`, `alert_count -> 0`, `last_cleared_at -> newest known alarm, or now if none seen yet`). The underlying alarms remain on the controller indefinitely. Without the watermark, `open_count` would grow to thousands without ever decreasing.
 
-> **Design implication:** `open_count` without a watermark is a meaningless lifetime counter. The integration persists `last_cleared_at` per category via `homeassistant.helpers.storage.Store`. Polling counts only alarms newer than that timestamp; pressing Clear advances the timestamp to now.
+> **Design implication:** `open_count` without a watermark is a meaningless lifetime counter. The integration persists `last_cleared_at` per category via `homeassistant.helpers.storage.Store`. Polling counts only alarms newer than that timestamp.
+>
+> **Clock assumption:** `last_cleared_at` is anchored to the controller's own clock, not the HA host clock. On Clear, the watermark is set to the newest `received_at` among alarms already known for that category (poll or webhook), falling back to `datetime.now(UTC)` only when no alarm has ever been seen. This keeps the `open_count` comparison controller-clock vs controller-clock, so it is unaffected by clock skew between HA and the controller. The webhook path is the one exception: a webhook's `received_at` is stamped by HA at receipt time (there is no controller timestamp in the Alarm Manager payload), so a webhook-only alert's watermark contribution is still HA-clock-based by necessity.
 
 ### Event entities and webhooks
 
@@ -276,6 +267,51 @@ If webhooks are not configured in UniFi Alarm Manager, Event entities never fire
 2. Enable DEBUG logging for `custom_components.unifi_alerts` and look for `"Alert pushed to category"`; if absent, the webhook is not reaching the integration.
 3. Check HA logs for HTTP 401 responses; this indicates a webhook token mismatch.
 4. Verify the category configured in UniFi matches a category enabled in the HA integration options.
+
+## Severity normalisation
+
+Every alert, regardless of which ingestion path produced it (webhook push, legacy `/list/alarm` polling, or v2 `system-log` polling), is assigned a normalised `severity_level` in addition to its original raw `severity` string. `custom_components/unifi_alerts/severity.py` is the source of truth; this section documents its behaviour.
+
+### Ordering
+
+Exactly four Severity_Levels exist, ordered:
+
+```
+LOW < MEDIUM < HIGH < VERY_HIGH
+```
+
+`normalize_severity()` returns one of these four values, or the `UNKNOWN` sentinel described under Fallback below - never empty.
+
+### The `No_Filter` sentinel
+
+`No_Filter` (displayed to users as "No Filter") is a Minimum_Severity_Setting value, not a Severity_Level. It is used only for the per-category minimum-severity gate and is never assigned as an alert's own normalised severity. For the purposes of the Minimum_Severity_Setting selector's ordering only, `No_Filter` sits below `LOW`:
+
+```
+No_Filter < LOW < MEDIUM < HIGH < VERY_HIGH
+```
+
+A category set to `No_Filter` accepts every alert regardless of severity, with no comparison performed.
+
+### Legacy severity synonym table
+
+Legacy alarm severities are inconsistent free-form strings. `normalize_severity()` matches case-insensitively and ignores leading/trailing whitespace, first against the four canonical names above, then against this synonym table:
+
+| Raw value | Normalised Severity_Level |
+|---|---|
+| `critical` | `VERY_HIGH` |
+| `urgent` | `VERY_HIGH` |
+| `error` | `HIGH` |
+| `warning` | `MEDIUM` |
+| `info` | `LOW` |
+| `notice` | `LOW` |
+
+When a user reports a legacy severity string that isn't classified correctly, add it to `_SEVERITY_SYNONYMS` in `severity.py` and update the table above.
+
+### Fallback
+
+The webhook push path and the legacy `/list/alarm` poll path do not document a `severity` field at all: `UniFiAlert.from_webhook_payload`/`from_api_alarm` fall back to the record's `subsystem` (e.g. `wlan`, `lan`, `wan`) when `severity` is absent, which is not a recognised severity or synonym.
+
+If the raw severity string is empty, or matches neither a canonical name nor a synonym after case-folding and trimming, `normalize_severity()` returns the `UNKNOWN` sentinel rather than `LOW`. `UNKNOWN` is deliberately excluded from `SEVERITY_ORDER` and always passes the minimum-severity gate (`meets_minimum()` fails open): an alert whose severity could not be determined is never silently dropped by a category's Minimum_Severity_Setting, regardless of how high that minimum is set.
 
 ## Event key taxonomy
 

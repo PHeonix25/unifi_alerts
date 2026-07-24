@@ -1,4 +1,9 @@
-"""Tests for the UniFi authentication seam (UniFiAuth)."""
+"""Tests for the UniFi authentication seam (UniFiAuth).
+
+API-key auth only (#279): username/password login and method auto-detection
+were removed, so UniFiAuth verifies the configured key and builds the
+X-API-Key header, with no session state.
+"""
 
 from __future__ import annotations
 
@@ -19,8 +24,7 @@ def make_auth(config: dict | None = None) -> UniFiAuth:
     """Create a standalone UniFiAuth for unit-testing auth logic in isolation."""
     session = MagicMock()
     cfg = config or {
-        "username": "admin",
-        "password": "password",
+        "api_key": "test-key",
         "verify_ssl": False,
     }
     return UniFiAuth(session, "https://192.168.1.1", cfg)
@@ -41,125 +45,29 @@ def _make_response(status: int, headers: dict | None = None):
 
 
 class TestHeaders:
-    """Tests for UniFiAuth.headers() — auth header construction in isolation."""
+    """Tests for UniFiAuth.headers() — header construction in isolation."""
 
-    def test_userpass_auth_no_api_key_header(self):
-        auth = make_auth()
-        auth._method = "userpass"
-        headers = auth.headers()
-        assert "X-API-Key" not in headers
-
-    def test_apikey_auth_adds_header(self):
+    def test_headers_always_include_api_key(self):
         auth = make_auth({"api_key": "test-key-123", "verify_ssl": False})
-        auth._method = "apikey"
         headers = auth.headers()
-        assert headers.get("X-API-Key") == "test-key-123"
+        assert headers["X-API-Key"] == "test-key-123"
+        assert headers["Accept"] == "application/json"
 
-
-class TestLoginUserpass:
-    """Tests for UniFiAuth._login_userpass - tested in isolation via make_auth()."""
-
-    @pytest.mark.asyncio
-    async def test_http_400_raises_cannot_connect(self):
-        """HTTP 400 from the controller must raise CannotConnectError, not InvalidAuthError.
-
-        UCG-Ultra returns 400 for request format / endpoint mismatch — this is
-        NOT a credentials problem, so we must not show 'invalid credentials'.
-        """
-        auth = make_auth()
-        ctx = _make_response(400)
-        auth._session.post = ctx
-        with pytest.raises(CannotConnectError):
-            await auth._login_userpass()
-
-    @pytest.mark.asyncio
-    async def test_login_client_error_message_is_class_name_not_url(self):
-        """CannotConnectError from _login_userpass must use class name, not str(err).
-
-        Same credential-leak prevention as fetch_alarms: aiohttp errors can embed
-        the login URL (which may contain the password) in their string representation.
-        """
-        import aiohttp
-
-        auth = make_auth()
-
-        @asynccontextmanager
-        async def _raise(*args, **kwargs):
-            raise aiohttp.ClientConnectionError("https://admin:hunter2@192.168.1.1/api/login")
-            yield
-
-        auth._session.post = _raise
-        with pytest.raises(CannotConnectError) as exc_info:
-            await auth._login_userpass()
-        assert "hunter2" not in str(exc_info.value)
-        assert exc_info.value.args[0] == "ClientConnectionError"
-
-    @pytest.mark.asyncio
-    async def test_http_401_raises_invalid_auth(self):
-        """HTTP 401 should still raise InvalidAuthError (bad credentials)."""
-        auth = make_auth()
-        ctx = _make_response(401)
-        auth._session.post = ctx
-        with pytest.raises(InvalidAuthError):
-            await auth._login_userpass()
-
-    @pytest.mark.asyncio
-    async def test_http_403_raises_invalid_auth(self):
-        """HTTP 403 should still raise InvalidAuthError (bad credentials)."""
-        auth = make_auth()
-        ctx = _make_response(403)
-        auth._session.post = ctx
-        with pytest.raises(InvalidAuthError):
-            await auth._login_userpass()
-
-    @pytest.mark.asyncio
-    async def test_invalid_auth_error_carries_login_url(self):
-        """InvalidAuthError raised must carry login_url attribute pointing to /api/auth/login."""
-        auth = make_auth()
-        ctx = _make_response(401)
-        auth._session.post = ctx
-        with pytest.raises(InvalidAuthError) as exc_info:
-            await auth._login_userpass()
-        # UniFi OS path is the only path now.
-        assert exc_info.value.login_url.endswith("/api/auth/login")
-
-    @pytest.mark.asyncio
-    async def test_success_returns_without_error(self):
-        """HTTP 200 from the UniFi OS login path must succeed without raising."""
-        auth = make_auth()
-        ctx = _make_response(200)
-        auth._session.post = ctx
-        # Should not raise
-        await auth._login_userpass()
-
-    @pytest.mark.asyncio
-    async def test_redirect_raises_cannot_connect(self):
-        """3xx from the login endpoint must raise CannotConnectError, not follow the redirect."""
-        auth = make_auth()
-        ctx = _make_response(302)
-        auth._session.post = ctx
-        with pytest.raises(CannotConnectError, match="redirect"):
-            await auth._login_userpass()
-
-    @pytest.mark.asyncio
-    async def test_login_userpass_raises_ssl_cert_error(self):
-        """aiohttp.ClientConnectorCertificateError in _login_userpass must raise SslCertificateError."""
-        import aiohttp
-
-        auth = make_auth()
-
-        @asynccontextmanager
-        async def _raise(*args, **kwargs):
-            raise aiohttp.ClientConnectorCertificateError(MagicMock(), MagicMock())
-            yield  # type: ignore[misc]
-
-        auth._session.post = _raise
-        with pytest.raises(SslCertificateError):
-            await auth._login_userpass()
+    def test_headers_empty_api_key_when_missing(self):
+        auth = make_auth({"verify_ssl": False})
+        headers = auth.headers()
+        assert headers["X-API-Key"] == ""
 
 
 class TestVerifyApiKey:
     """Tests for UniFiAuth._verify_api_key - tested in isolation via make_auth()."""
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_raises_invalid_auth(self):
+        """No API key configured must raise InvalidAuthError before any request."""
+        auth = make_auth({"verify_ssl": False})
+        with pytest.raises(InvalidAuthError, match="No API key provided"):
+            await auth._verify_api_key()
 
     @pytest.mark.asyncio
     async def test_always_uses_proxy_network_prefix(self):
@@ -206,6 +114,26 @@ class TestVerifyApiKey:
             await auth._verify_api_key()
 
     @pytest.mark.asyncio
+    async def test_403_raises_invalid_auth(self):
+        """HTTP 403 from the API key endpoint must raise InvalidAuthError."""
+        auth = make_auth({"api_key": "bad-key", "verify_ssl": False})
+        ctx = _make_response(403)
+        auth._session.get = ctx
+
+        with pytest.raises(InvalidAuthError):
+            await auth._verify_api_key()
+
+    @pytest.mark.asyncio
+    async def test_invalid_auth_error_carries_login_url(self):
+        """InvalidAuthError raised on 401 must carry the verify endpoint as login_url."""
+        auth = make_auth({"api_key": "bad-key", "verify_ssl": False})
+        ctx = _make_response(401)
+        auth._session.get = ctx
+        with pytest.raises(InvalidAuthError) as exc_info:
+            await auth._verify_api_key()
+        assert exc_info.value.login_url.endswith("/api/s/default/self")
+
+    @pytest.mark.asyncio
     async def test_redirect_raises_cannot_connect(self):
         """A 3xx from the API key endpoint must raise CannotConnectError (no redirect)."""
         auth = make_auth({"api_key": "my-key", "verify_ssl": False})
@@ -233,65 +161,57 @@ class TestVerifyApiKey:
 
     @pytest.mark.asyncio
     async def test_verify_api_key_generic_client_error_raises_cannot_connect(self):
-        """A generic aiohttp.ClientError in _verify_api_key must raise CannotConnectError."""
+        """A generic aiohttp.ClientError in _verify_api_key must raise CannotConnectError.
+
+        The message must be the exception class name, not str(err), so a URL that
+        might embed the key is never surfaced.
+        """
         import aiohttp
 
         auth = make_auth({"api_key": "test-key", "verify_ssl": True})
 
         @asynccontextmanager
         async def _raise(*args, **kwargs):
-            raise aiohttp.ClientConnectionError("connection refused")
+            raise aiohttp.ClientConnectionError("https://10.0.0.1/proxy/network?api_key=leaked")
             yield  # type: ignore[misc]
 
         auth._session.get = _raise
-        with pytest.raises(CannotConnectError):
+        with pytest.raises(CannotConnectError) as exc_info:
             await auth._verify_api_key()
+        assert "leaked" not in str(exc_info.value)
+        assert exc_info.value.args[0] == "ClientConnectionError"
 
 
 class TestAuthenticate:
-    """Tests for UniFiAuth.authenticate — method auto-detection and fallback.
+    """Tests for UniFiAuth.authenticate — API-key verification.
 
-    Exercised entirely at the HTTP layer (mocked session responses), not by
-    monkeypatching the private _verify_api_key/_login_userpass methods, so
-    these tests fail if the real request/response handling breaks.
+    Exercised at the HTTP layer (mocked session responses), not by
+    monkeypatching _verify_api_key, so these fail if the real request/response
+    handling breaks.
     """
 
     @pytest.mark.asyncio
-    async def test_apikey_method_used_when_configured(self):
-        auth = make_auth({"api_key": "my-key", "auth_method": "apikey", "verify_ssl": False})
+    async def test_valid_key_authenticates(self):
+        auth = make_auth({"api_key": "my-key", "verify_ssl": False})
         auth._session.get = _make_response(200)
 
-        result = await auth.authenticate()
-
-        assert result == "apikey"
-        assert auth.method == "apikey"
-        assert auth.authenticated is True
+        # Verification succeeds and returns nothing.
+        assert await auth.authenticate() is None
 
     @pytest.mark.asyncio
-    async def test_apikey_fallback_to_userpass_when_key_invalid(self):
-        """If api_key present but method not explicitly set to apikey, fall back to userpass on InvalidAuthError."""
+    async def test_invalid_key_raises_invalid_auth(self):
         auth = make_auth({"api_key": "bad-key", "verify_ssl": False})
         auth._session.get = _make_response(401)
-        auth._session.post = _make_response(200)
-
-        result = await auth.authenticate()
-
-        assert result == "userpass"
-        assert auth.method == "userpass"
-        assert auth.authenticated is True
-
-    @pytest.mark.asyncio
-    async def test_explicit_apikey_method_does_not_fallback(self):
-        """If auth_method=apikey is explicit, InvalidAuthError must propagate (no fallback)."""
-        auth = make_auth({"api_key": "bad-key", "auth_method": "apikey", "verify_ssl": False})
-        auth._session.get = _make_response(401)
-
-        post_calls = []
-        auth._session.post = lambda *a, **k: post_calls.append(1)
 
         with pytest.raises(InvalidAuthError):
             await auth.authenticate()
-        assert post_calls == [], "userpass login must not be attempted"
+
+    @pytest.mark.asyncio
+    async def test_missing_key_raises_invalid_auth(self):
+        auth = make_auth({"verify_ssl": False})
+
+        with pytest.raises(InvalidAuthError, match="No API key provided"):
+            await auth.authenticate()
 
 
 class TestSslCertificateError:

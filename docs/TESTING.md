@@ -7,7 +7,7 @@ Install all dev dependencies into the project venv:
 ```bash
 make setup
 # equivalent to:
-# python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+# python3.14 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 ```
 
 `requirements-dev.txt` is the single source of truth for dev dependencies - it is also used by both CI jobs, so local and CI environments are identical.
@@ -16,13 +16,7 @@ make setup
 
 ## Running checks
 
-```bash
-make check      # default target - runs everything below in sequence
-make lint       # ruff lint + format check
-make typecheck  # mypy
-make validate   # HACS manifest pre-flight (scripts/validate_hacs.py)
-make test       # pytest
-```
+Canonical `make` command definitions are maintained in [`AGENTS.md` > Build & test commands](../AGENTS.md#build--test-commands). Keep command descriptions single-homed there.
 
 Individual commands if you prefer to skip the Makefile:
 
@@ -53,8 +47,7 @@ Individual commands if you prefer to skip the Makefile:
 python3 scripts/validate_hacs.py
 
 # Translation drift check
-diff custom_components/unifi_alerts/strings.json \
-     custom_components/unifi_alerts/translations/en.json
+python3 scripts/check_translations.py
 ```
 
 ---
@@ -73,13 +66,34 @@ If the hook blocks your push, fix the reported issue - do not use `git push --no
 
 ## Windows
 
-`make check` works on Windows out of the box, but two Windows-specific things to know:
+**Native-Windows `pytest` is unsupported** as of the HA 2026.7 / `pytest-homeassistant-custom-component` 0.13.345 bump. `make test` / `make check` fail at collection with:
 
-- `tests/conftest.py` applies two Windows-only workarounds. Both are no-ops on Linux/macOS.
-  - **Event-loop type.** `aiodns` (transitive via `aiohttp`/HA) requires `SelectorEventLoop` but Python's default on Windows since 3.8 is `ProactorEventLoop`. The conftest both calls `asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy())` and rebinds `asyncio.WindowsProactorEventLoopPolicy._loop_factory = SelectorEventLoop`. The second patch is essential because HA's `HassEventLoopPolicy(asyncio.DefaultEventLoopPolicy)` is installed per test by the `hass` fixture and would otherwise produce Proactor loops via its inherited `super().new_event_loop()`. `_loop_factory` is resolved via MRO at call time, so the rebind affects HA's subclass too. See [aiodns#86](https://github.com/saghul/aiodns/issues/86).
-  - **Socket disable.** It rebinds `pytest_socket.disable_socket` to a no-op via `pytest_configure`. HA core's test conftest (pulled in via `pytest-homeassistant-custom-component`) calls `socket_allow_hosts(["127.0.0.1"])` followed by `disable_socket(allow_unix_socket=True)` in a `pytest_runtest_setup` hook. The second call swaps `socket.socket` for a `GuardedSocket` whose `__new__` raises `SocketBlockedError` unless family is `AF_UNIX`. Linux/macOS asyncio uses `os.pipe()` for its event-loop self-pipe so the swap is invisible; on Windows both `ProactorEventLoop` and `SelectorEventLoop` call `socket.socketpair()` (loopback TCP) and hit `SocketBlockedError`, with a follow-up `'ProactorEventLoop' object has no attribute '_ssock'` from the half-initialised loop's `__del__`. Neutralising `disable_socket` leaves the earlier `socket_allow_hosts` restriction in place, so external network egress is still blocked, only loopback creation is permitted.
-- The Makefile uses `.venv/Scripts/<tool>.exe` paths on Windows. If `make check` reports "command not found", confirm `.venv` was built with `py -3.12 -m venv .venv` rather than a different interpreter.
-- After a green run on Windows you may see a flood of `DEBUG:asyncio:...` and `DEBUG:homeassistant.*` lines printed *after* the `Results` summary. This is captured log output from HA's test fixtures being flushed out-of-order by `pytest-sugar` on Windows console buffers. It is harmless: scroll up to the `NNN passed` line and ignore the trailing dump.
+```
+ModuleNotFoundError: No module named 'fcntl'
+```
+
+`fcntl` wraps POSIX-only `fcntl()`/`ioctl()` syscalls and is compiled only into POSIX CPython builds; it cannot be installed or built on Windows. `homeassistant/runner.py` has imported it unconditionally for years, but nothing on the test import path used to reach it. A recent `pytest-homeassistant-custom-component` release added `from homeassistant import runner` to `patch_time.py`, which the plugin imports at startup, so `runner` (and its `fcntl` import) is now dragged into every pytest run. This is an upstream change, not a regression in this repo, and matches HA's own [WSL-only dev-environment guidance](https://developers.home-assistant.io/docs/development_environment).
+
+The `tests/conftest.py` Windows workarounds (Selector event-loop rebind, `disable_socket` no-op) **cannot** catch this: the crash happens inside `load_setuptools_entrypoints("pytest11")` during pytest's `_prepareconfig`, which runs before pytest imports any `conftest.py`. Those workarounds are left in place (see the module docstring) in case a future dependency bump removes the `fcntl` import and native-Windows collection becomes viable again, but on their own they no longer unblock the pytest leg.
+
+**What still runs natively on Windows:**
+
+- Lint, typecheck, and the HACS/docs validators never import Home Assistant, so they are unaffected:
+  ```powershell
+  make setup-lint
+  make lint
+  make typecheck
+  make validate
+  make doc-check
+  ```
+- The Makefile uses `.venv/Scripts/<tool>.exe` paths on Windows. If a target reports "command not found", confirm `.venv` was built with `py -3.14 -m venv .venv` rather than a different interpreter.
+
+**For the pytest leg, use one of:**
+
+- The repo's [Dev Container](../.devcontainer/devcontainer.json) (`.devcontainer/devcontainer.json`) - opens in VS Code Dev Containers (Docker Desktop / WSL2 backend) or GitHub Codespaces and runs `make setup` on create.
+- WSL2 directly.
+- GitHub Codespaces.
+- CI, which runs the full suite on every push and PR.
 
 ---
 

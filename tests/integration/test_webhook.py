@@ -19,10 +19,13 @@ from __future__ import annotations
 import pytest
 
 from custom_components.unifi_alerts.const import (
+    CATEGORY_NETWORK_DEVICE,
     CATEGORY_NETWORK_WAN,
+    CONF_MIN_SEVERITY,
     CONF_WEBHOOK_SECRET,
     webhook_id_for_category,
 )
+from custom_components.unifi_alerts.severity import SEVERITY_HIGH, SEVERITY_LOW
 
 from .conftest import (
     BASE_CONFIG,
@@ -56,6 +59,46 @@ async def test_valid_post_flips_binary_sensor(hass, entry, hass_client):
     await hass.async_block_till_done()
 
     assert hass.states.get(eid).state == "on"
+
+
+@pytest.mark.integration
+async def test_valid_post_with_authorization_header_flips_binary_sensor(hass, entry, hass_client):
+    """POST with Authorization: Bearer <secret> (#176 preferred form) and no
+    ?token= flips the matching binary sensor to ON."""
+    uid = f"{ENTRY_ID}_{TEST_CATEGORY}_binary"
+    eid = entity_id_for(hass, "binary_sensor", uid)
+    assert hass.states.get(eid).state == "off"
+
+    client = await hass_client()
+    resp = await client.post(
+        f"/api/webhook/{TEST_WEBHOOK_ID}",
+        json=TEST_PAYLOAD,
+        headers={"Authorization": f"Bearer {WEBHOOK_SECRET}"},
+    )
+    assert resp.status == 200
+    await resp.read()
+    await hass.async_block_till_done()
+
+    assert hass.states.get(eid).state == "on"
+
+
+@pytest.mark.integration
+async def test_wrong_authorization_header_and_no_query_returns_401(hass, entry, hass_client):
+    """A wrong Authorization header with no ?token= must return 401."""
+    uid = f"{ENTRY_ID}_{TEST_CATEGORY}_binary"
+    eid = entity_id_for(hass, "binary_sensor", uid)
+
+    client = await hass_client()
+    resp = await client.post(
+        f"/api/webhook/{TEST_WEBHOOK_ID}",
+        json=TEST_PAYLOAD,
+        headers={"Authorization": "Bearer wrong-token"},
+    )
+    assert resp.status == 401
+    await resp.read()
+    await hass.async_block_till_done()
+
+    assert hass.states.get(eid).state == "off"
 
 
 @pytest.mark.integration
@@ -175,6 +218,106 @@ async def test_post_after_unload_does_not_dispatch_and_entity_is_gone(
     assert resp.status == 200  # HA always responds 200, registered or not — see docstring
     assert "unregistered webhook" in caplog.text.lower()
     assert hass.states.get(eid).state == STATE_UNAVAILABLE  # nothing live could have flipped
+
+
+async def _setup_min_severity_entry(hass, category, min_sev_suffix):
+    """Set up a config entry with min_severity=HIGH on the given category."""
+    from homeassistant.setup import async_setup_component
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.unifi_alerts.const import CONF_WEBHOOK_ID_SUFFIX, DOMAIN
+
+    await hass.config.async_update(internal_url="http://homeassistant.test:8123")
+    await async_setup_component(hass, "webhook", {})
+    await hass.async_block_till_done()
+
+    min_sev_config = {
+        **BASE_CONFIG,
+        CONF_WEBHOOK_ID_SUFFIX: min_sev_suffix,
+        CONF_MIN_SEVERITY: {category: SEVERITY_HIGH},
+    }
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=min_sev_config,
+        entry_id="test-entry-min-severity",
+        version=3,
+    )
+    config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    return config_entry
+
+
+async def _post_webhook(hass_client, webhook_id, payload):
+    client = await hass_client()
+    resp = await client.post(
+        f"/api/webhook/{webhook_id}?token={WEBHOOK_SECRET}",
+        json=payload,
+    )
+    assert resp.status == 200
+    await resp.read()
+    return resp
+
+
+@pytest.mark.integration
+async def test_below_threshold_push_then_at_or_above_threshold_push(
+    hass, mock_unifi_client, hass_client
+):
+    """A below-threshold push is a true no-op except for the webhook health
+    signal; a subsequent at/above-threshold push is accepted exactly as
+    before this feature existed.
+
+    Full config-entry setup with a non-default ``min_severity`` for one
+    category (network_device -> HIGH), exercised end to end via the real
+    HTTP webhook path.
+    """
+    category = CATEGORY_NETWORK_DEVICE
+    min_sev_suffix = "minsev"
+    config_entry = await _setup_min_severity_entry(hass, category, min_sev_suffix)
+
+    uid = f"{config_entry.entry_id}_{category}_binary"
+    eid = entity_id_for(hass, "binary_sensor", uid)
+    assert hass.states.get(eid).state == "off"
+
+    coordinator = get_coordinator(hass, config_entry)
+    webhook_id = webhook_id_for_category(category, min_sev_suffix)
+
+    # Below-threshold push (LOW < HIGH): must not flip the sensor, must not
+    # touch alert_count/open_count/last_alert, but must still advance the
+    # webhook health signal (last_webhook_at).
+    below_payload = {
+        "key": "EVT_AP_Disconnected",
+        "message": "AP offline (low severity)",
+        "severity": SEVERITY_LOW,
+    }
+    await _post_webhook(hass_client, webhook_id, below_payload)
+    await hass.async_block_till_done()
+
+    state = coordinator.get_category_state(category)
+    assert hass.states.get(eid).state == "off"
+    assert state.alert_count == 0
+    assert state.open_count == 0
+    assert state.last_alert is None
+    assert state.last_webhook_at is not None
+
+    # At/above-threshold push (HIGH >= HIGH): accepted exactly as before
+    # this feature existed — sensor flips on, counts increment.
+    above_payload = {
+        "key": "EVT_AP_Disconnected",
+        "message": "AP offline (high severity)",
+        "severity": SEVERITY_HIGH,
+    }
+    await _post_webhook(hass_client, webhook_id, above_payload)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(eid).state == "on"
+    assert state.alert_count == 1
+    assert state.open_count == 1
+    assert state.last_alert is not None
+    assert state.last_alert.message == "AP offline (high severity)"
+
+    await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.async_block_till_done()
 
 
 @pytest.mark.integration

@@ -6,10 +6,13 @@ test_persistence.py, and test_autoclear.py in this package.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from conftest import run_sync
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
@@ -17,10 +20,16 @@ from custom_components.unifi_alerts.const import (
     CATEGORY_SECURITY_THREAT,
     CONF_CLEAR_TIMEOUT,
     CONF_ENABLED_CATEGORIES,
+    CONF_MIN_SEVERITY,
     CONF_POLL_INTERVAL,
 )
 from custom_components.unifi_alerts.coordinator import UniFiAlertsCoordinator
-from custom_components.unifi_alerts.models import UniFiAlert
+from custom_components.unifi_alerts.models import UniFiAlert, ensure_aware
+from custom_components.unifi_alerts.severity import (
+    MIN_SEVERITY_ORDER,
+    SEVERITY_ORDER,
+    meets_minimum,
+)
 
 from .conftest import make_alert, make_full_coordinator, make_hass_and_client
 
@@ -75,95 +84,26 @@ class TestPollingErrorPaths:
     """Tests for _async_update_data error handling."""
 
     @pytest.mark.asyncio
-    async def test_invalid_auth_triggers_re_auth_and_retries(self):
-        """On InvalidAuthError the coordinator re-authenticates once and retries."""
-        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
+    async def test_invalid_auth_raises_config_entry_auth_failed(self):
+        """A 401 on a static API key must raise ConfigEntryAuthFailed directly, no retry.
 
-        hass, client = make_hass_and_client()
-        # First call raises InvalidAuthError; after re-auth the second call succeeds
-        client.categorise_alarms = AsyncMock(side_effect=[InvalidAuthError("expired"), {}])
-        client.authenticate = AsyncMock()
-        coord = make_full_coordinator(hass, client)
-
-        # Should not raise
-        await coord._async_update_data()
-        client.authenticate.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        ("categorise_side_effect", "authenticate_side_effect"),
-        [
-            pytest.param(
-                "auth_error",
-                "auth_error",
-                id="reauth-itself-raises-invalid-auth",
-            ),
-            pytest.param(
-                "auth_error",
-                "cannot_connect",
-                id="reauth-itself-raises-cannot-connect",
-            ),
-            pytest.param(
-                "auth_error_twice",
-                None,
-                id="reauth-succeeds-but-retry-still-401",
-            ),
-        ],
-    )
-    async def test_reauth_failure_paths_raise_config_entry_auth_failed(
-        self, categorise_side_effect, authenticate_side_effect
-    ):
-        """Every path that ends without a valid session must raise ConfigEntryAuthFailed.
-
-        Covers: re-auth itself raising InvalidAuthError, re-auth itself raising
-        CannotConnectError, and re-auth succeeding but the retried fetch still
-        returning 401.
+        The API key has no session to refresh, so a rejected key means it was
+        revoked/regenerated: surface reauth immediately rather than re-attempting.
         """
         from homeassistant.exceptions import ConfigEntryAuthFailed
 
-        from custom_components.unifi_alerts.unifi_client import CannotConnectError, InvalidAuthError
-
-        categorise_effects = {
-            "auth_error": InvalidAuthError("expired"),
-            "auth_error_twice": [InvalidAuthError("expired"), InvalidAuthError("still 401")],
-        }
-        authenticate_effects = {
-            None: None,
-            "auth_error": InvalidAuthError("still bad"),
-            "cannot_connect": CannotConnectError("unreachable during reauth"),
-        }
+        from custom_components.unifi_alerts.unifi_client import InvalidAuthError
 
         hass, client = make_hass_and_client()
-        client.categorise_alarms = AsyncMock(side_effect=categorise_effects[categorise_side_effect])
-        client.authenticate = AsyncMock(side_effect=authenticate_effects[authenticate_side_effect])
+        client.categorise_alarms = AsyncMock(side_effect=InvalidAuthError("revoked"))
+        client.authenticate = AsyncMock()
         coord = make_full_coordinator(hass, client)
 
         with pytest.raises(ConfigEntryAuthFailed):
             await coord._async_update_data()
 
-        client.authenticate.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_reauth_succeeds_but_retry_fails_raises_update_failed_with_distinctive_message(
-        self,
-    ):
-        """Re-auth succeeds but retried categorise_alarms fails → UpdateFailed with 'after re-authentication'."""
-        from homeassistant.helpers.update_coordinator import UpdateFailed
-
-        from custom_components.unifi_alerts.unifi_client import CannotConnectError, InvalidAuthError
-
-        hass, client = make_hass_and_client()
-        # First categorise_alarms call fails with auth error; re-auth succeeds; second call fails
-        client.categorise_alarms = AsyncMock(
-            side_effect=[InvalidAuthError("expired"), CannotConnectError("controller 500")]
-        )
-        client.authenticate = AsyncMock()  # re-auth succeeds
-        coord = make_full_coordinator(hass, client)
-
-        with pytest.raises(UpdateFailed) as exc_info:
-            await coord._async_update_data()
-
-        assert "after re-authentication" in str(exc_info.value)
+        # No re-authentication is attempted for a static key.
+        client.authenticate.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_cannot_connect_raises_update_failed(self):
@@ -230,7 +170,8 @@ class TestSiteConfig:
         }
         if site_configured is not None:
             config[CONF_SITE] = site_configured
-        coord = UniFiAlertsCoordinator(hass, client, config)
+        config_entry = MagicMock(entry_id="test-entry")
+        coord = UniFiAlertsCoordinator(hass, client, config, config_entry)
         coord.async_set_updated_data = MagicMock()
 
         await coord._async_update_data()
@@ -468,6 +409,191 @@ class TestCoordinatorV2Dispatch:
         client.fetch_system_log_alarms.assert_awaited_once()
         _, kwargs = client.fetch_system_log_alarms.call_args
         assert kwargs.get("since") is None
+
+
+class TestPollingSeverityGate:
+    """Minimum_Severity_Setting gate on the polling path (_async_update_data)."""
+
+    # Severity-filtered polling must drive open_count, alerting selection, and
+    # the newest-seen watermark consistently from the same eligible subset.
+    @given(
+        category=st.sampled_from(ALL_CATEGORIES),
+        minimum=st.sampled_from(MIN_SEVERITY_ORDER),
+        watermark_offset=st.one_of(st.none(), st.integers(min_value=-100_000, max_value=100_000)),
+        alert_specs=st.lists(
+            st.tuples(
+                st.sampled_from(SEVERITY_ORDER),
+                st.integers(min_value=-100_000, max_value=100_000),
+            ),
+            max_size=8,
+        ),
+    )
+    @settings(max_examples=25, deadline=None)
+    def test_severity_filtered_polling_drives_open_count_alerting_and_watermark(
+        self,
+        category: str,
+        minimum: str,
+        watermark_offset: int | None,
+        alert_specs: list[tuple[str, int]],
+    ) -> None:
+        """open_count, is_alerting/last_alert selection, and the newest-seen
+        watermark must all derive from the same severity-eligible subset,
+        with open_count/is_alerting/last_alert further restricted to the
+        watermark-eligible portion of that subset."""
+        base_time = datetime(2024, 1, 1, tzinfo=UTC)
+        watermark = (
+            base_time + timedelta(seconds=watermark_offset)
+            if watermark_offset is not None
+            else None
+        )
+        alerts = [
+            UniFiAlert(
+                category=category,
+                message=f"alert-{idx}",
+                received_at=base_time + timedelta(seconds=offset),
+                severity=severity,
+            )
+            for idx, (severity, offset) in enumerate(alert_specs)
+        ]
+
+        hass, client = make_hass_and_client()
+        client.categorise_alarms = AsyncMock(return_value={category: alerts})
+        coord = make_full_coordinator(hass, client)
+        coord._config[CONF_MIN_SEVERITY] = {category: minimum}
+        state = coord.get_category_state(category)
+        state.last_cleared_at = watermark
+
+        run_sync(coord._async_update_data())
+
+        # Same severity-eligible subset feeds both open_count/alerting selection
+        # (further restricted by the watermark) and the newest-seen watermark.
+        eligible = [a for a in alerts if meets_minimum(a.severity_level, minimum)]
+        counted = (
+            [a for a in eligible if a.received_at > watermark]
+            if watermark is not None
+            else eligible
+        )
+
+        assert state.open_count == len(counted)
+
+        if counted:
+            expected_last_alert = max(counted, key=lambda a: a.received_at)
+            assert state.is_alerting is True
+            assert state.last_alert is expected_last_alert
+        else:
+            assert state.is_alerting is False
+            assert state.last_alert is None
+
+        if eligible:
+            expected_newest_seen = max(ensure_aware(a.received_at) for a in eligible)
+            assert state.last_alarm_received_at == expected_newest_seen
+        else:
+            assert state.last_alarm_received_at is None
+
+    @pytest.mark.asyncio
+    async def test_legacy_alarm_with_no_severity_field_is_not_gated_out(self):
+        """A realistic legacy /list/alarm payload (no `severity` key at all,
+        the actual shape documented in docs/UNIFI.md) must never be dropped
+        by a category's Minimum_Severity_Setting, however high it is set.
+
+        from_api_alarm() falls back to `subsystem` when `severity` is
+        absent, which normalize_severity() maps to SEVERITY_UNKNOWN - the
+        gate must fail open on that, not silently mute the alarm."""
+        from custom_components.unifi_alerts.const import CATEGORY_NETWORK_DEVICE
+        from custom_components.unifi_alerts.severity import SEVERITY_VERY_HIGH
+
+        hass, client = make_hass_and_client()
+        legacy_alarm = {
+            "key": "EVT_AP_Lost_Contact",
+            "msg": "AP lost contact",
+            "subsystem": "wlan",
+            "datetime": "2024-01-01T10:00:00Z",
+            # No "severity" key - matches the undocumented legacy payload shape.
+        }
+        client.categorise_alarms = AsyncMock(
+            return_value={
+                CATEGORY_NETWORK_DEVICE: [
+                    UniFiAlert.from_api_alarm(CATEGORY_NETWORK_DEVICE, legacy_alarm)
+                ]
+            }
+        )
+        coord = make_full_coordinator(hass, client)
+        # The strictest possible setting - if fail-open works, this still
+        # must not filter the alarm out.
+        coord._config[CONF_MIN_SEVERITY] = {CATEGORY_NETWORK_DEVICE: SEVERITY_VERY_HIGH}
+
+        await coord._async_update_data()
+
+        state = coord.get_category_state(CATEGORY_NETWORK_DEVICE)
+        assert state.open_count == 1
+        assert state.is_alerting is True
+
+    # A disabled category must be untouched by a poll cycle regardless of
+    # severity content
+    @given(
+        category=st.sampled_from(ALL_CATEGORIES),
+        minimum=st.sampled_from(MIN_SEVERITY_ORDER),
+        prior_is_alerting=st.booleans(),
+        prior_open_count=st.integers(min_value=0, max_value=1000),
+        prior_last_alert_offset=st.one_of(
+            st.none(), st.integers(min_value=-100_000, max_value=100_000)
+        ),
+        alert_specs=st.lists(
+            st.tuples(
+                st.sampled_from(SEVERITY_ORDER),
+                st.integers(min_value=-100_000, max_value=100_000),
+            ),
+            max_size=8,
+        ),
+    )
+    @settings(max_examples=25, deadline=None)
+    def test_disabled_category_untouched_by_poll_cycle(
+        self,
+        category: str,
+        minimum: str,
+        prior_is_alerting: bool,
+        prior_open_count: int,
+        prior_last_alert_offset: int | None,
+        alert_specs: list[tuple[str, int]],
+    ) -> None:
+        """A disabled category's is_alerting/last_alert/open_count must never be
+        touched by a poll cycle, no matter what severities are polled or what
+        Minimum_Severity_Setting is configured for it."""
+        base_time = datetime(2024, 1, 1, tzinfo=UTC)
+        prior_last_alert = (
+            UniFiAlert(
+                category=category,
+                message="prior alert",
+                received_at=base_time + timedelta(seconds=prior_last_alert_offset),
+            )
+            if prior_last_alert_offset is not None
+            else None
+        )
+        alerts = [
+            UniFiAlert(
+                category=category,
+                message=f"alert-{idx}",
+                received_at=base_time + timedelta(seconds=offset),
+                severity=severity,
+            )
+            for idx, (severity, offset) in enumerate(alert_specs)
+        ]
+
+        hass, client = make_hass_and_client()
+        client.categorise_alarms = AsyncMock(return_value={category: alerts})
+        coord = make_full_coordinator(hass, client)
+        coord._config[CONF_MIN_SEVERITY] = {category: minimum}
+        state = coord.get_category_state(category)
+        state.enabled = False
+        state.is_alerting = prior_is_alerting
+        state.open_count = prior_open_count
+        state.last_alert = prior_last_alert
+
+        run_sync(coord._async_update_data())
+
+        assert state.is_alerting is prior_is_alerting
+        assert state.last_alert is prior_last_alert
+        assert state.open_count == prior_open_count
 
 
 class TestUnrecognisedKeys:

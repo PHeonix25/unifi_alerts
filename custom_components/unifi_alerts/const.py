@@ -13,21 +13,23 @@ DOMAIN = "unifi_alerts"
 # UniFiClientConfig TypedDict keys; without this, `.get(key, default)`
 # returns `object` instead of the field's declared type.
 CONF_CONTROLLER_URL: Final = "controller_url"
-CONF_USERNAME: Final = "username"
-CONF_PASSWORD: Final = "password"
 CONF_API_KEY: Final = "api_key"
-CONF_AUTH_METHOD: Final = "auth_method"
 CONF_POLL_INTERVAL: Final = "poll_interval"
 CONF_CLEAR_TIMEOUT: Final = "clear_timeout"
 CONF_ENABLED_CATEGORIES: Final = "enabled_categories"
+CONF_MIN_SEVERITY: Final = "min_severity"
 CONF_VERIFY_SSL: Final = "verify_ssl"
 CONF_WEBHOOK_SECRET: Final = "webhook_secret"
 CONF_WEBHOOK_ID_SUFFIX: Final = "webhook_id_suffix"
 CONF_REGENERATE_WEBHOOK_SECRET: Final = "regenerate_webhook_secret"
 CONF_SITE: Final = "site"
-
-AUTH_METHOD_USERPASS = "userpass"
-AUTH_METHOD_APIKEY = "apikey"
+# Stable UPnP serial number (MAC address) captured from SSDP discovery.
+# Unlike CONF_CONTROLLER_URL (what unique_id is keyed on), this survives an
+# IP address change, so it is how async_step_ssdp finds and refreshes a
+# previously configured entry when a known console reappears at a new
+# address instead of leaving it pinned to the stale URL (#343). Only set on
+# entries created via SSDP discovery; absent on entries added manually.
+CONF_DEVICE_SERIAL: Final = "device_serial"
 
 DEFAULT_POLL_INTERVAL = 60  # seconds
 DEFAULT_CLEAR_TIMEOUT = 30  # minutes
@@ -77,6 +79,31 @@ ISSUE_ID_AUTH_FAILED: Final = "auth_failed"
 ISSUE_ID_WEBHOOK_SECRET_ROTATED: Final = "webhook_secret_rotated"
 ISSUE_ID_WEBHOOK_URLS_CHANGED: Final = "webhook_urls_changed"
 ISSUE_ID_PERSIST_FAILED: Final = "watermark_persist_failed"
+# Raised the first time a webhook authenticates via the legacy ?token= query
+# parameter (#176) rather than the Authorization: Bearer header. Nudges
+# users still on the legacy form to migrate; cleared as soon as a header-
+# authenticated webhook is received for the same entry.
+ISSUE_ID_WEBHOOK_LEGACY_QUERY_AUTH: Final = "webhook_legacy_query_auth"
+# Raised when a username/password entry is migrated to the API-key-only schema
+# (version 4) and needs an API key supplied via reauth. Distinct from
+# ISSUE_ID_AUTH_FAILED so the repair card explains the upgrade rather than
+# looking like a credential failure.
+ISSUE_ID_APIKEY_MIGRATION: Final = "apikey_migration_required"
+
+# Translation keys for exceptions raised during setup and polling (Gold
+# quality-scale rule exception-translations, #341). These are distinct from
+# the ISSUE_ID_* constants above: those key repair issues in the issue
+# registry, these key the "exceptions" section in strings.json/translations
+# consumed via translation_domain/translation_key/translation_placeholders on
+# the raised exception itself (ConfigEntryAuthFailed, ConfigEntryNotReady,
+# UpdateFailed). Scoped only to exceptions HA actually surfaces to the user;
+# unifi_auth.py's internal CannotConnectError/InvalidAuthError/
+# SslCertificateError are caught and re-raised as these, so they do not need
+# their own translation keys.
+EXCEPTION_SETUP_AUTH_FAILED: Final = "setup_auth_failed"
+EXCEPTION_SETUP_CANNOT_CONNECT: Final = "setup_cannot_connect"
+EXCEPTION_POLL_AUTH_FAILED: Final = "poll_auth_failed"
+EXCEPTION_POLL_CANNOT_CONNECT: Final = "poll_cannot_connect"
 
 # ──────────────────────────────────────────────
 # Category identifiers

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-07-24
+
+### Added
+
+- Added a dedicated reconfigure flow, so the controller URL, API key, and SSL verification can be updated through Home Assistant's "Reconfigure" affordance without deleting and re-adding the entry. The existing "Configure" options flow is unchanged. ([#344])
+- Added a per-category minimum-severity option (Config Flow and Options Flow), with an explicit "No Filter" value, so noisy categories can be enabled without accepting every low-value alert; alerts with no recognisable severity are never filtered out. ([#135])
+
+### Changed
+
+- **Breaking:** username and password authentication has been removed; an API key is now the only supported credential. Config entries are migrated to a new version-4 schema on upgrade. Entries that already have an API key stored migrate silently and keep working. Entries set up with only a username and password are walked through re-authentication: a repair notice explains that an API key is now required and a single-field form accepts it. The entry is updated in place, so existing sensors, history, and Alarm Manager webhook URLs are preserved. The initial setup form now requires an API key, and the reconfigure form asks only for an API key. Generate one in the UniFi OS web UI (**Settings > Admins & Users > API Keys**, **Integrations > New API Key**, or **Settings > Control Plane > API Keys**, depending on firmware). Upgrading users: create an API key and Home Assistant will prompt for it via the reauth flow after upgrading; see the [README Setup section](README.md#setup) for the full walkthrough. ([#278], [#279])
+- Raised the tooling and CI baseline to Python 3.14 and the declared minimum supported Home Assistant version to 2026.3.1, the first HA release that requires Python 3.14. `DataUpdateCoordinator` now receives `config_entry` explicitly instead of a bare `entry_id` string, and SSDP discovery imports `SsdpServiceInfo` from its new `homeassistant.helpers.service_info.ssdp` location. ([#228], [#311])
+- `fetch_alarms()` now discovers the working alarm endpoint once per site and caches it, instead of walking the `[/list/alarm, /alarm, /stat/alarm]` fallback chain and parsing the HTTP 400 `api.err.InvalidObject` body on every poll. Endpoint discovery (`_discover_alarm_url()`) is now separate from the core fetch/parse flow in `_try_fetch_alarms()`; discovery only re-runs if the cached URL stops resolving. Behaviour is unchanged; this is a refactor. ([#239])
+- **Breaking:** inbound webhook authentication now checks an `Authorization: Bearer <secret>` header in addition to the legacy `?token=<secret>` query parameter. The header is the preferred form: query strings are routinely captured by reverse-proxy and access logs, browser history, and screenshots of the config flow, so the secret has more exposure surface than a header. The `?token=` form is still accepted during a deprecation window (no earlier than v3.0.0) so existing UniFi Alarm Manager configurations keep working, but a `webhook_legacy_query_auth` repair issue nudges affected entries to migrate. The config and options flow "Webhook URLs" screens no longer embed the secret in the displayed URL; it is shown separately for use as the header value. ([#335])
+- `UniFiClient` is now fully stateless: the v2 system-log-probe cache and backoff (previously `_has_system_log`/`_probe_fail_count`/`_probe_backoff_until` on the client) moved to `UniFiAlertsCoordinator`, which already owns all other cross-poll state. Behaviour is unchanged; this is a refactor. ([#240])
+- The setup and polling errors surfaced to the user (`ConfigEntryAuthFailed`, `ConfigEntryNotReady`, `UpdateFailed`) now carry translation keys instead of hard-coded English messages, so they can be localised the same way repair issues already are. ([#341])
+- The minimum-severity selector's option labels ("No Filter", "Low", "Medium", "High", "Very High") are now defined in `translations/en.json` instead of being hard-coded English strings in the selector config, so translators can provide locale-specific versions. Stored values are unchanged. ([#353])
+- The "Webhook URLs" finish step of the config and options flows now shows the `Authorization` header key and `Bearer <secret>` header value as their own labelled block above the webhook URLs, instead of burying the header value inside the step description, so the credentials are easier to copy before pasting the URLs into Alarm Manager. ([#368])
+
+### Fixed
+
+- Unselected alert categories no longer create entities that sit at Unknown; entities are created only for chosen categories, and orphaned entities from deselected categories are removed on reload.
+- Clearing a category now anchors the acknowledgement watermark to the newest alarm timestamp already known for that category (falling back to the HA clock only when none has ever been seen), instead of the HA host clock. This keeps `open_count` correct when the UniFi controller's clock and the HA host clock drift apart. ([#268])
+- The `clear_category` and `clear_all` services now raise a translatable error when called with an `entry_id` that is unknown or not currently loaded, instead of silently doing nothing. Calling without an `entry_id` to act on every loaded entry is unaffected. ([#340])
+- SSDP rediscovery of a UniFi OS console at a new IP address (DHCP lease change, console swap) now updates the existing config entry's controller URL in place instead of leaving it pinned to the stale address until a human edited it manually. The console is matched by its UPnP serial number, which stays stable across IP changes. ([#343])
+
 ## [1.9.0] - 2026-07-06
 
 ### Changed
@@ -254,7 +279,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v2.0.0
 [1.9.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.9.0
 [1.8.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.8.0
 [1.7.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.7.0
@@ -315,6 +341,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#175]: https://github.com/PHeonix25/unifi_alerts/issues/175
 [#233]: https://github.com/PHeonix25/unifi_alerts/issues/233
 [#238]: https://github.com/PHeonix25/unifi_alerts/issues/238
+[#239]: https://github.com/PHeonix25/unifi_alerts/issues/239
 [#241]: https://github.com/PHeonix25/unifi_alerts/issues/241
 [#257]: https://github.com/PHeonix25/unifi_alerts/pull/257
 [#290]: https://github.com/PHeonix25/unifi_alerts/pull/290
@@ -324,9 +351,21 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#295]: https://github.com/PHeonix25/unifi_alerts/pull/295
 [#297]: https://github.com/PHeonix25/unifi_alerts/pull/297
 [#298]: https://github.com/PHeonix25/unifi_alerts/pull/298
-[#284]: https://github.com/PHeonix25/unifi_alerts/issues/284
+[#228]: https://github.com/PHeonix25/unifi_alerts/issues/228
 [#265]: https://github.com/PHeonix25/unifi_alerts/issues/265
+[#268]: https://github.com/PHeonix25/unifi_alerts/issues/268
 [#270]: https://github.com/PHeonix25/unifi_alerts/issues/270
+[#278]: https://github.com/PHeonix25/unifi_alerts/issues/278
+[#279]: https://github.com/PHeonix25/unifi_alerts/issues/279
 [#282]: https://github.com/PHeonix25/unifi_alerts/issues/282
 [#283]: https://github.com/PHeonix25/unifi_alerts/issues/283
-[#PR]: https://github.com/PHeonix25/unifi_alerts/pull/PR
+[#284]: https://github.com/PHeonix25/unifi_alerts/issues/284
+[#311]: https://github.com/PHeonix25/unifi_alerts/pull/311
+[#335]: https://github.com/PHeonix25/unifi_alerts/pull/335
+[#240]: https://github.com/PHeonix25/unifi_alerts/issues/240
+[#340]: https://github.com/PHeonix25/unifi_alerts/issues/340
+[#341]: https://github.com/PHeonix25/unifi_alerts/issues/341
+[#343]: https://github.com/PHeonix25/unifi_alerts/issues/343
+[#344]: https://github.com/PHeonix25/unifi_alerts/issues/344
+[#353]: https://github.com/PHeonix25/unifi_alerts/issues/353
+[#368]: https://github.com/PHeonix25/unifi_alerts/issues/368

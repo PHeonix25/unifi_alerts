@@ -1,0 +1,23 @@
+[
+  {
+    "name": "claude-opus-4-8",
+    "provider": "anthropic",
+    "base_url": "https://api.anthropic.com",
+    "model": "claude-opus-4-8",
+    "token_env": "ANTHROPIC_API_KEY"
+  },
+  {
+    "name": "claude-sonnet-5",
+    "provider": "anthropic",
+    "base_url": "https://api.anthropic.com",
+    "model": "claude-sonnet-5",
+    "token_env": "ANTHROPIC_API_KEY"
+  },
+  {
+    "name": "claude-haiku-4-5",
+    "provider": "anthropic",
+    "base_url": "https://api.anthropic.com",
+    "model": "claude-haiku-4-5-20251001",
+    "token_env": "ANTHROPIC_API_KEY"
+  }
+]

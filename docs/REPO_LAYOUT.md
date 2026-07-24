@@ -8,20 +8,21 @@ custom_components/unifi_alerts/   # integration source
   manifest.json                   # HA metadata (domain, version, iot_class); do NOT add "homeassistant" min-version key - it is not in the HA manifest schema and breaks hassfest
   const.py                        # all constants, category defs, UniFi key>category map; DEFAULT_VERIFY_SSL = True (secure by default); CONF_WEBHOOK_SECRET = "webhook_secret"
   models.py                       # UniFiAlert and CategoryState dataclasses; all datetimes are UTC-aware (datetime.now(UTC))
-  unifi_client.py                 # async HTTP client (alarm fetch, pagination, system-log probe); composes a UniFiAuth instance (self._auth) for all auth concerns - does not proxy or duplicate its state
-  unifi_auth.py                   # UniFiAuth: auth-method auto-detection, credential verification, session state, header construction; also owns CannotConnectError/SslCertificateError/InvalidAuthError (unifi_client.py re-exports them, so existing `from .unifi_client import ...` call sites elsewhere in the integration are unaffected)
-  coordinator.py                  # DataUpdateCoordinator, owns all category state; polling path sets is_alerting/last_alert directly (does NOT call apply_alert, so alert_count is not incremented); open_count filtered by last_cleared_at watermark (alarms since last Clear only); async_clear_category()/async_clear_all() are the sole clear entry points - they cancel tasks, advance watermark, persist via Store, notify; cancel_clear(category) cancels pending auto-clear tasks; async_restore_watermarks() loads persisted watermarks from storage on startup; async_shutdown() cancels all pending clear tasks on unload
-  webhook_handler.py              # registers HA webhooks (POST-only), dispatches to coordinator; rejects requests missing/wrong ?token= with HTTP 401; bearer secret from CONF_WEBHOOK_SECRET
-  config_flow.py                  # three-step UI setup (credentials > categories > webhook URLs with token) + options flow; generates CONF_WEBHOOK_SECRET via secrets.token_urlsafe(32) on first auth; network_device and network_client default OFF; options flow reads entry.options first, falls back to entry.data
-  diagnostics.py                  # HA diagnostics platform; redacts password/api_key/username, exposes webhook URLs + coordinator state
-  binary_sensor.py                # per-category + rollup binary sensors
-  sensor.py                       # message, count, and rollup count sensors
-  event.py                        # event entities, fire per alert
-  button.py                       # manual clear buttons
+  unifi_client.py                 # stateless async HTTP client (alarm fetch, pagination, system-log probe); composes a UniFiAuth instance (self._auth) for all auth concerns - does not proxy or duplicate its state; probe_system_log_endpoint() is a single stateless call (True/False/None) with no cache/backoff (#240) - see coordinator.py
+  unifi_auth.py                   # UniFiAuth: API-key verification and X-API-Key header construction (the only supported auth method); also owns CannotConnectError/SslCertificateError/InvalidAuthError (unifi_client.py re-exports them, so existing `from .unifi_client import ...` call sites elsewhere in the integration are unaffected)
+  coordinator.py                  # DataUpdateCoordinator, owns all category state; polling path sets is_alerting/last_alert directly (does NOT call apply_alert, so alert_count is not incremented); open_count filtered by last_cleared_at watermark (alarms since last Clear only); async_clear_category()/async_clear_all() are the sole clear entry points - they cancel tasks, advance watermark, persist via Store, notify; cancel_clear(category) cancels pending auto-clear tasks; async_restore_watermarks() loads persisted watermarks from storage on startup; async_shutdown() cancels all pending clear tasks on unload; _probe_has_system_log() owns the v2 system-log-probe cache/backoff state moved out of UniFiClient (#240)
+  webhook_handler.py              # registers HA webhooks (POST-only), dispatches to coordinator; rejects requests missing/wrong Authorization: Bearer header or legacy ?token= with HTTP 401; bearer secret from CONF_WEBHOOK_SECRET; raises webhook_legacy_query_auth repair issue on query-param auth
+  config_flow.py                  # three-step UI setup (credentials > categories > webhook URLs, secret shown separately for the Authorization header) + options flow; generates CONF_WEBHOOK_SECRET via secrets.token_urlsafe(32) on first auth; network_device and network_client default OFF; options flow reads entry.options first, falls back to entry.data
+  diagnostics.py                  # HA diagnostics platform; redacts api_key/webhook_secret, exposes webhook URLs + coordinator state
+  binary_sensor.py                # per-category + rollup binary sensors; PARALLEL_UPDATES = 0 (coordinator-based, no per-entity throttling needed); on/off icons come from icons.json state mapping, not a property (the entity's own state IS the alerting/ok discriminator)
+  sensor.py                       # message, count, and rollup count sensors; PARALLEL_UPDATES = 0; UniFiCategoryMessageSensor.icon stays a property (native_value is the alert message text, not a valid icons.json discriminator) - the count sensors' static icons moved to icons.json
+  event.py                        # event entities, fire per alert; PARALLEL_UPDATES = 0; static per-category icon moved to icons.json
+  button.py                       # manual clear buttons; PARALLEL_UPDATES = 0; static icons moved to icons.json; no _handle_coordinator_update override - CoordinatorEntity's default (async_write_ha_state()) is exactly what both button classes need
   services.py                     # registers unifi_alerts.clear_category and unifi_alerts.clear_all HA service calls; delegates to coordinator
   services.yaml                   # HA service schema definition (clear_category: category field, clear_all: no fields)
   strings.json                    # UI copy for config flow; must be identical to translations/en.json - CI enforces this
   translations/en.json            # runtime translation file loaded by HA; must be identical to strings.json - CI enforces this
+  icons.json                      # per-entity icon overrides keyed by translation_key; binary_sensor entries use "state": {"on": ..., "off": ...} since is_on is the icon discriminator; button/sensor(count)/event entries use a flat "default" (static, no state discriminator)
 tests/
   conftest.py                     # root shared fixtures; Windows-only event-loop and socket workarounds (no-op on Linux/macOS)
   unit/                           # plain-mock unit tests - no real HA instance
@@ -42,11 +43,12 @@ tests/
       test_persistence.py         # watermark persist/restore, legacy string format, persist-failed repair issue
       test_polling.py             # _async_update_data: v2/legacy dispatch, open_count, already-alerting guard, auth retry
       test_push_dedup.py          # push_alert: apply_alert, webhook dedup window, optimistic open_count increment
+      test_system_log_probe.py    # _probe_has_system_log(): cache/backoff state moved out of UniFiClient (#240)
     unifi_client/                 # UniFiClient tests (split from monolithic test_unifi_client.py)
       __init__.py
       conftest.py                 # shared client fixtures
       test_legacy.py              # _classify, fetch_alarms probe chain, categorise_alarms, authenticate, close
-      test_v2.py                  # probe_system_log_endpoint (cache/backoff), fetch_system_log_alarms (pagination, watermark)
+      test_v2.py                  # probe_system_log_endpoint (single stateless call, no cache/backoff - #240), fetch_system_log_alarms (pagination, watermark)
     test_console_helper.py        # tests scripts/_console.py UTF-8 stdout forcing on Windows
     test_diagnostics.py           # diagnostics platform: redaction, webhook URL exposure, coordinator state
     test_entities.py              # all entity property methods: binary_sensor, sensor, event, button
@@ -65,8 +67,8 @@ tests/
   ci.yml                          # hassfest + hacs-preflight + HACS action + lint (ruff, mypy, translation drift) + pytest; runs on push/PR to main and dev
   version-check.yml               # enforces version format per branch: main=X.Y.Z stable, dev=X.Y.Z-preN; runs on push/PR to main and dev
   release.yml                     # triggered by version tags (v1.0.0 stable, v1.0.0-pre1 pre-release); validates tag matches manifest, packages the integration, and publishes via `gh release create --generate-notes` (NOT softprops/action-gh-release - that was removed; do not re-introduce it). Pre-release detection regex uses `grep -qE -- '-pre[0-9]+$'` (the `--` terminator is load-bearing).
-  pr-labeler.yml                  # auto-applies a release-notes label to PRs based on Conventional Commit title prefix (feat/fix/docs/tests/ci/security). Manual labels always win. Eliminates the need to follow up `mcp__github__create_pull_request` with a manual `issue_write` label call.
-  pr-guards.yml                   # three PR checks on dev/main PRs: changelog-guard (custom_components/ edits need a CHANGELOG.md bullet), label-guard (PR must carry a release-notes label), history-guard (docs/HISTORY.md only changes on claude/bump-* branches)
+  pr-release-label.yml            # applies a release-notes label from the PR's Conventional Commit title prefix (feat/fix/docs/tests/ci/security) and verifies one is present, in a single job so the two steps can't race across separate workflow runs. Manual labels always win.
+  pr-guards.yml                   # two PR checks on dev/main PRs: changelog-guard (custom_components/ edits need a CHANGELOG.md bullet), history-guard (docs/HISTORY.md only changes on claude/bump-* branches)
   codeql.yml                      # CodeQL workflow scaffold; Python SAST actually runs via GitHub's CodeQL default setup (Settings > Code security and analysis), not this workflow - see docs/DEVELOPING.md CI overview
   dependency-audit.yml            # pip-audit dependency vulnerability scan; advisory only (continue-on-error on the audit step); runs on push/PR to dev and main plus a weekly Monday 06:00 UTC schedule
   copilot-setup-steps.yml         # provisions .venv (make setup) before the GitHub Copilot coding agent starts a session
@@ -74,7 +76,7 @@ tests/
   dependabot.yml                  # tracks the github-actions ecosystem only (weekly, Brisbane TZ); minor+patch grouped, major bumps individual. Required to keep the SHA pins fresh - do NOT remove. Python deps stay manual.
   release.yml                     # release-notes categories file used by `gh release create --generate-notes` to group merged PRs by label (Security / Bug Fixes / Features / Documentation / Tests / CI / Other). DIFFERENT FILE from .github/workflows/release.yml.
   ISSUE_TEMPLATE/
-    bug_report.yml                # required-field bug template; warns users to redact `?token=...` from logs.
+    bug_report.yml                # required-field bug template; warns users to redact bearer secrets (Authorization header or legacy ?token=...) from logs.
     feature_request.yml           # problem > solution > alternatives template.
     config.yml                    # disables blank issues; surfaces the security-advisory link + Discussions.
     unclassified_event_key.yml    # for reporting UniFi event keys not yet in UNIFI_KEY_TO_CATEGORY.
@@ -90,7 +92,7 @@ scripts/
   seed_issues.py                  # one-shot migration tool that seeded the v1.8/v1.9/v2.0 backlog into GitHub Issues. Not intended for re-use; kept for reference.
   _console.py                     # shared stdout encoding helper; forces UTF-8 on Windows cp1252 consoles so scripts that print non-ASCII glyphs (e.g. the ✅ check mark) do not crash. Imported at the top of every standalone scripts/*.py entry point.
   setup-labels.sh                 # one-shot script that creates the non-default labels referenced in `.github/release.yml` (`security`, `feat`, `fix`, `tests`, `ci`, `github-actions`, `dependencies`). Run once per fork via `./scripts/setup-labels.sh`. Idempotent - existing labels skipped. The `bug`, `enhancement`, and `documentation` labels are GitHub defaults; the rest do not exist on a fresh fork and the categories file is inert without them. `feat` and `fix` are Conventional-Commits aliases for `enhancement` and `bug` respectively - either label works for those categories.
-Makefile                          # convenience targets: setup, setup-lint, lint, typecheck, validate, doc-check, test, check, help (default = help). Cross-platform: detects Windows vs Unix and uses .venv/Scripts/*.exe or .venv/bin/* accordingly. `py -3.12` on Windows, `python3.12` on Unix.
+Makefile                          # convenience targets: setup, setup-lint, lint, typecheck, validate, doc-check, test, check, help (default = help). Cross-platform: detects Windows vs Unix and uses .venv/Scripts/*.exe or .venv/bin/* accordingly. `py -3.14` on Windows, `python3.14` on Unix.
 requirements-dev.txt              # full dev dependencies (Home Assistant + test stack); used by make setup and CI test/lint jobs
 requirements-lint.txt             # minimal lint deps (ruff + mypy only); used by make setup-lint for fast lint-only workflows
 hacs.json

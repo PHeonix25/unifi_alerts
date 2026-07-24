@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Python 3.12 or newer
+- Python 3.14 or newer
 - Git
 
 ## Local setup
@@ -11,14 +11,14 @@
 git clone https://github.com/PHeonix25/unifi_alerts
 cd unifi_alerts
 git config core.hooksPath .githooks   # enable the pre-push gate
-make setup                             # python3.12 -m venv .venv + pip install -r requirements-dev.txt
+make setup                             # python3.14 -m venv .venv + pip install -r requirements-dev.txt
 ```
 
 `requirements-dev.txt` is the single source of truth for dev dependencies; both CI jobs install from the same file.
 
 ## Agent session bootstrap
 
-AI coding agents start from a cold container each session. Before any test can run, the `.venv` (Home Assistant plus the full test stack, roughly 200 packages) has to be installed via `make setup`. Each agent surface provisions that environment through its own entry point, and all three run the identical `python3.12 -m venv .venv` + `pip install -r requirements-dev.txt` sequence so every surface matches CI:
+AI coding agents start from a cold container each session. Before any test can run, the `.venv` (Home Assistant plus the full test stack, roughly 200 packages) has to be installed via `make setup`. Each agent surface provisions that environment through its own entry point, and all three run the identical `python3.14 -m venv .venv` + `pip install -r requirements-dev.txt` sequence so every surface matches CI:
 
 | Surface | Entry point | Behaviour |
 |---|---|---|
@@ -30,13 +30,7 @@ Why not a slimmer `requirements-test.txt`? The install is dominated by Home Assi
 
 ## Running checks
 
-```bash
-make check       # default; runs lint + typecheck + HACS preflight + translation drift + pytest
-make lint        # ruff lint + format check
-make typecheck   # mypy
-make validate    # scripts/validate_hacs.py (HACS manifest pre-flight)
-make test        # pytest
-```
+Canonical command definitions live in [`AGENTS.md` > Build & test commands](../AGENTS.md#build--test-commands). Use those targets directly.
 
 All `make` targets use `.venv` in the repo root; never the system Python.
 
@@ -124,17 +118,25 @@ Static security analysis (CodeQL SAST) for Python runs through GitHub's CodeQL *
 
 ### PR guards (`pr-guards.yml`)
 
-Three additional checks run on every pull request to `dev` or `main`:
+Two additional checks run on every pull request to `dev` or `main`:
 
 | Check | What it enforces |
 |---|---|
 | `changelog-guard` | `custom_components/` edits must be accompanied by a `CHANGELOG.md` update. Fails if code changes but the changelog does not. |
-| `label-guard` | The PR must carry at least one label recognised by `.github/release.yml` (`security`, `bug`/`fix`, `enhancement`/`feat`, `documentation`, `tests`, `ci`, `github-actions`, `dependencies`). `pr-labeler.yml` auto-applies labels for PRs with Conventional Commit prefixes; for others, apply manually. |
 | `history-guard` | `docs/HISTORY.md` may only be modified on `claude/bump-*` branches (version-bump PRs). Feature and fix PRs must not touch it. |
 
 **Escaping the changelog guard:** apply the `skip-changelog` label if a code change genuinely has no user-visible effect (e.g. a coverage-only test change that incidentally touches a production file). The `ci`, `tests`, `documentation`, `dependencies`, and `github-actions` labels also bypass the guard automatically, since those categories of work rarely need a user-facing changelog entry.
 
-**Label timing:** `pr-labeler.yml` and `label-guard` run concurrently on PR open. If the auto-labeller wins first, both pass in a single round. If `label-guard` fires before the label is applied, it fails on the first run but re-runs on the `labeled` event and passes once the label is present. This is expected behaviour; the status check clears without any manual intervention. The self-heal flow depends on `pr-labeler.yml` having write access to apply the label, which is why that workflow uses the `pull_request_target` trigger: a plain `pull_request` trigger gets a read-only token on PRs from forks and cannot label them, leaving `label-guard` stuck red.
+### Release-notes label (`pr-release-label.yml`)
+
+A separate workflow applies and verifies the release-notes label in a single
+job: it reads the PR's current labels, applies one derived from the
+Conventional Commit title prefix if none of the recognised labels
+(`security`, `bug`/`fix`, `enhancement`/`feat`, `documentation`, `tests`,
+`ci`, `github-actions`, `dependencies`) is present, then checks the result in
+the same run. For PRs whose title has no mapped prefix (`chore`, `build`,
+`refactor`, `perf`, `style`, or no Conventional Commit prefix at all), apply
+a label manually or the check fails.
 
 ## Minimum supported Home Assistant version
 
@@ -146,7 +148,9 @@ The declared minimum HA version lives in three places that must always agree:
 
 `requirements-dev.txt` uses `homeassistant>=` as a soft floor only. Pip resolves the latest version satisfying `>=`, not the floor, so that line does not test the minimum on its own; the pinned CI leg does.
 
-**Policy: when the floor moves, update all three in the same PR.** Pick the new floor, find the `pytest-homeassistant-custom-component` release that maps to it (each release title on the [p-h-c-c releases page](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component/releases) names its `homeassistant version`), and update `hacs.json`, the pinned CI leg (both the `homeassistant==` and `pytest-homeassistant-custom-component==` pins), and the README together. A floor that no CI leg installs is an unverified promise, so never lower the declared floor below the version the pinned leg tests.
+**Policy: when the floor moves, update all three in the same PR**, plus the mirror in the Makefile below. Pick the new floor, find the `pytest-homeassistant-custom-component` release that maps to it (each release title on the [p-h-c-c releases page](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component/releases) names its `homeassistant version`), and update `hacs.json`, the pinned CI leg (both the `homeassistant==` and `pytest-homeassistant-custom-component==` pins), and the README together. A floor that no CI leg installs is an unverified promise, so never lower the declared floor below the version the pinned leg tests.
+
+**Validating the floor locally:** `make test-min-ha` reruns the full suite in the existing `.venv` with `homeassistant`/`pytest-homeassistant-custom-component` overridden down to the same pin as the CI minimum-HA leg (run `make setup` first if you haven't). This is the local equivalent of the "minimum HA" CI job and needs a real Python 3.14 interpreter, same as `make test`. `make test` on its own only exercises the "latest HA" leg (whatever `requirements-dev.txt` resolves).
 
 ## Branching and PRs
 
