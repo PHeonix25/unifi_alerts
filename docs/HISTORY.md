@@ -2,6 +2,10 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-07-24
+
+- **release**: v2.0.0 stable. Promotes the "HACS default catalogue" cycle to `main`. No further changes landed on `dev` since `v2.0.0-pre2`, so this is a straight version promotion; every pre1/pre2 item ships as-is. The cycle's umbrella issue (#143) closed the same day: repository topics set, the brand icon self-hosted under `custom_components/unifi_alerts/brand/` (replacing the retired `home-assistant/brands` submission path), and a PR opened against `hacs/default`.
+
 ## 2026-07-23
 
 - **release**: v2.0.0-pre2 tagged. Second v2.0.0 checkpoint: per-category severity filtering for noisy categories lands, the HA quality-scale gaps found in the pre1 audit are closed (reconfigure flow, translated exceptions, service-call validation, SSDP host updates, localised selector labels), and the final config step now spells out the `Authorization` header for the new webhook auth. Everything bar the HACS default-catalogue submission (#143) is on `dev`.
