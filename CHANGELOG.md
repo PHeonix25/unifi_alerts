@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-07-24
+
 ### Added
 
 - Added a dedicated reconfigure flow, so the controller URL, API key, and SSL verification can be updated through Home Assistant's "Reconfigure" affordance without deleting and re-adding the entry. The existing "Configure" options flow is unchanged. ([#344])
@@ -277,7 +279,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v2.0.0
 [1.9.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.9.0
 [1.8.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.8.0
 [1.7.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.7.0
