@@ -22,11 +22,26 @@ AI coding agents start from a cold container each session. Before any test can r
 
 | Surface | Entry point | Behaviour |
 |---|---|---|
-| Claude Code (web / remote) | `SessionStart` hook in `.claude/settings.json` calling `scripts/bootstrap_venv.sh` | Runs `make setup` only when `.venv` is absent; a no-op otherwise. Registered as an async hook, so the session starts immediately while the install runs in the background. Gated on `$CLAUDE_CODE_REMOTE`, so local sessions are untouched. Tolerant: a failed install logs and exits 0 rather than breaking the session. |
+| Claude Code (web / remote) | `SessionStart` hook in `.claude/settings.json` calling `scripts/bootstrap_venv.sh` | Runs `make setup` only when `.venv` is absent; a no-op otherwise. Registered as an async hook, so the session starts immediately while the install runs in the background. Gated on `$CLAUDE_CODE_REMOTE`, so local sessions are untouched. Tolerant: a failed install logs and exits 0 rather than breaking the session. If `python3.14` is not already on `PATH`, it self-provisions one via `uv` first (see below) before calling `make setup`. |
 | GitHub Copilot coding agent | `.github/workflows/copilot-setup-steps.yml` | GitHub runs this workflow before the agent starts, creating `.venv` and installing `requirements-dev.txt`. |
 | Local developer | `make setup` (run manually, see [Local setup](#local-setup)) | Explicit and one-off. The Claude hook deliberately skips local sessions so it never installs behind your back. |
 
 Why not a slimmer `requirements-test.txt`? The install is dominated by Home Assistant, which `pytest-homeassistant-custom-component` pulls in transitively regardless of what else is trimmed. A pytest-only requirements file would still drag in the same heavy tree, so it would not meaningfully shorten setup. The full `requirements-dev.txt` install is required; the hook plus the container's pip cache is the mitigation, not a reduced dependency set.
+
+### Python 3.14 on a remote container without it
+
+Claude Code web/remote containers are built from a base image pinned to whatever Python the OS ships (3.11-3.13 as of writing), not necessarily 3.14. The obvious fix, `apt-get install python3.14` from the deadsnakes PPA, fails on these sessions: the network egress policy allowlists specific hosts (`pypi.org`, `files.pythonhosted.org`, GitHub, etc.) and `ppa.launchpadcontent.net` is not one of them, so the proxy returns `403 Forbidden` on the package download (the `apt-cache policy` candidate resolves fine because the index is mirrored locally; only the `.deb` fetch is blocked).
+
+`scripts/bootstrap_venv.sh` works around this with [`uv`](https://docs.astral.sh/uv/)'s standalone Python builds, which are fetched from `python-build-standalone` via GitHub release assets - a host the same policy does allow:
+
+```bash
+python3 -m pip install --user --upgrade uv   # skip if uv is already present and current
+uv python install 3.14                        # fetches a real CPython 3.14 build, no apt/root needed
+```
+
+This produces a genuine CPython interpreter (verified: `venv`, `pip`/`ensurepip`, and `ssl` all work normally), not a container image swap or a policy exception. The hook prepends the resulting interpreter's directory to `PATH` for the rest of its run so `make setup`'s `python3.14 -m venv .venv` picks it up unmodified. A locally installed `python3.14` (or a future base image that already has one) is always preferred and this step is skipped entirely.
+
+If you hit the same wall outside of `bootstrap_venv.sh` (e.g. a manual session), run the two commands above yourself before `make setup`.
 
 ## Running checks
 
