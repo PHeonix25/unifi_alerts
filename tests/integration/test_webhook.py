@@ -223,6 +223,48 @@ async def test_malformed_json_returns_400_and_sensor_stays_off(hass, entry, hass
 
 
 @pytest.mark.integration
+async def test_webhook_arrives_after_coordinator_shutdown_before_unregister(
+    hass, entry, hass_client
+):
+    """A webhook landing in the unload window between coordinator.async_shutdown()
+    and WebhookManager.unregister_all() must be handled gracefully.
+
+    custom_components/unifi_alerts/__init__.py's async_unload_entry calls
+    coordinator.async_shutdown() (cancels pending auto-clear tasks) *before*
+    runtime_data.unregister_webhooks() (tears down the HTTP route) — so this
+    window is real in production, not synthetic (Issue #382). We reproduce it
+    deterministically by driving the two steps directly in that order rather
+    than racing real concurrency, which would be non-deterministic in a test.
+    coordinator.async_shutdown() has no "dead" flag, so push_alert still runs
+    normally; the entry's own teardown (which unloads again) cancels the
+    fresh auto-clear task this webhook schedules, so nothing leaks past this
+    test.
+    """
+    uid = f"{ENTRY_ID}_{TEST_CATEGORY}_binary"
+    eid = entity_id_for(hass, "binary_sensor", uid)
+    coordinator = get_coordinator(hass, entry)
+
+    # Step 1 of the unload sequence: cancel pending auto-clear tasks.
+    await coordinator.async_shutdown()
+
+    # Step 2 (unregister_webhooks) has not run yet - the route is still live.
+    client = await hass_client()
+    resp = await client.post(
+        f"/api/webhook/{TEST_WEBHOOK_ID}?token={WEBHOOK_SECRET}",
+        json=TEST_PAYLOAD,
+    )
+    assert resp.status == 200
+    await resp.read()
+    await hass.async_block_till_done()
+
+    # Coordinator state must still update correctly despite shutdown having run.
+    state = coordinator.get_category_state(TEST_CATEGORY)
+    assert state.is_alerting is True
+    assert state.alert_count == 1
+    assert hass.states.get(eid).state == "on"
+
+
+@pytest.mark.integration
 async def test_post_after_unload_does_not_dispatch_and_entity_is_gone(
     hass, entry, hass_client, caplog
 ):
