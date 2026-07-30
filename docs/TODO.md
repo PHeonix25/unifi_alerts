@@ -23,7 +23,3 @@ Each issue carries a **milestone**, a **category** label, a **size** label, and 
 - File new work with the **Task** issue template (or Bug / Feature where they fit). Apply a category, `size`, and `priority` label and assign a milestone.
 - Close items by landing a PR that references the issue (`Closes #NN`); do not delete lines here.
 - The seed/migration tool is `scripts/seed_issues.py` (idempotent; re-run to add new backlog items in bulk).
-
-## Known issues: intentional, do not action
-
-- **`_device_info()` duplication**: duplicated identically across `binary_sensor.py`, `sensor.py`, `event.py`, `button.py`. Intentional for platform isolation; extract to a shared `entity_base.py` only if it becomes a maintenance burden. Not tracked as an issue on purpose.
