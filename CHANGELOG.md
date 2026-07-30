@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Internal
+
+- Closed the v2.1.0 test-coverage gaps for the webhook and entity-action paths: real-HTTP-server integration coverage for oversized-body (413) and malformed-JSON (400) webhook rejection, consecutive rapid `alert_received` events each firing exactly once, and a webhook landing in the window between `coordinator.async_shutdown()` and webhook unregistration during entry unload. No behaviour change. ([#381], [#380], [#382])
+
 ## [2.0.1] - 2026-07-24
 
 ### Fixed
@@ -377,3 +381,6 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#353]: https://github.com/PHeonix25/unifi_alerts/issues/353
 [#368]: https://github.com/PHeonix25/unifi_alerts/issues/368
 [#375]: https://github.com/PHeonix25/unifi_alerts/issues/375
+[#380]: https://github.com/PHeonix25/unifi_alerts/issues/380
+[#381]: https://github.com/PHeonix25/unifi_alerts/issues/381
+[#382]: https://github.com/PHeonix25/unifi_alerts/issues/382
