@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- Added v2.1.0, v2.2.0, and v2.3.0 sections to `docs/ROADMAP.md`, each summarising the theme and main threads of its milestone's open issues. ([#398])
+- Resolved a documentation conflict around the duplicated `_device_info()` helper: `CLAUDE.md`, `docs/ROADMAP.md`, and `docs/TODO.md` previously described the four-copy duplication as an intentional, un-tracked trade-off, contradicting #383 (which schedules the extraction for v2.1.0). All three now point at #383 and describe the decision as revisited in favour of DRY. ([#399])
+
 ### Internal
 
 - Closed the v2.1.0 test-coverage gaps for the webhook and entity-action paths: real-HTTP-server integration coverage for oversized-body (413) and malformed-JSON (400) webhook rejection, consecutive rapid `alert_received` events each firing exactly once, and a webhook landing in the window between `coordinator.async_shutdown()` and webhook unregistration during entry unload. No behaviour change. ([#381], [#380], [#382])
@@ -384,3 +389,5 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#380]: https://github.com/PHeonix25/unifi_alerts/issues/380
 [#381]: https://github.com/PHeonix25/unifi_alerts/issues/381
 [#382]: https://github.com/PHeonix25/unifi_alerts/issues/382
+[#398]: https://github.com/PHeonix25/unifi_alerts/pull/398
+[#399]: https://github.com/PHeonix25/unifi_alerts/pull/399
