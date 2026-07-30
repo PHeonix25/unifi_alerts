@@ -23,6 +23,7 @@ from custom_components.unifi_alerts.const import (
     CATEGORY_NETWORK_WAN,
     CONF_MIN_SEVERITY,
     CONF_WEBHOOK_SECRET,
+    WEBHOOK_MAX_BODY_BYTES,
     webhook_id_for_category,
 )
 from custom_components.unifi_alerts.severity import SEVERITY_HIGH, SEVERITY_LOW
@@ -169,6 +170,55 @@ async def test_get_request_does_not_dispatch_alert(hass, entry, hass_client):
     # Regardless of HTTP status, the coordinator must not have dispatched an alert
     coordinator = get_coordinator(hass, entry)
     assert not coordinator.get_category_state(TEST_CATEGORY).is_alerting
+    assert hass.states.get(eid).state == "off"
+
+
+@pytest.mark.integration
+async def test_oversized_body_returns_413_and_sensor_stays_off(hass, entry, hass_client):
+    """A body larger than WEBHOOK_MAX_BODY_BYTES must be rejected with HTTP 413.
+
+    Unit coverage in test_webhook_handler.py exercises this against a mocked
+    request; this integration test proves the same contract holds over the
+    real HA HTTP server (Issue #381).
+    """
+    uid = f"{ENTRY_ID}_{TEST_CATEGORY}_binary"
+    eid = entity_id_for(hass, "binary_sensor", uid)
+    assert hass.states.get(eid).state == "off"
+
+    client = await hass_client()
+    oversized_body = b"x" * (WEBHOOK_MAX_BODY_BYTES + 1)
+    resp = await client.post(
+        f"/api/webhook/{TEST_WEBHOOK_ID}?token={WEBHOOK_SECRET}",
+        data=oversized_body,
+    )
+    assert resp.status == 413
+    await resp.read()
+    await hass.async_block_till_done()
+
+    assert hass.states.get(eid).state == "off"
+
+
+@pytest.mark.integration
+async def test_malformed_json_returns_400_and_sensor_stays_off(hass, entry, hass_client):
+    """A body that fails JSON parsing must be rejected with HTTP 400.
+
+    Unit coverage in test_webhook_handler.py exercises this against a mocked
+    request; this integration test proves the same contract holds over the
+    real HA HTTP server (Issue #381).
+    """
+    uid = f"{ENTRY_ID}_{TEST_CATEGORY}_binary"
+    eid = entity_id_for(hass, "binary_sensor", uid)
+    assert hass.states.get(eid).state == "off"
+
+    client = await hass_client()
+    resp = await client.post(
+        f"/api/webhook/{TEST_WEBHOOK_ID}?token={WEBHOOK_SECRET}",
+        data=b"not valid json {{",
+    )
+    assert resp.status == 400
+    await resp.read()
+    await hass.async_block_till_done()
+
     assert hass.states.get(eid).state == "off"
 
 
