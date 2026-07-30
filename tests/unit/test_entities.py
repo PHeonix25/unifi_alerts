@@ -548,6 +548,21 @@ class TestUniFiAlertEventEntity:
         entity._handle_coordinator_update()
         entity._trigger_event.assert_called_once()
 
+    def test_multiple_rapid_alerts_each_fire_exactly_once(self):
+        """Several webhook pushes in quick succession must each fire their
+        own alert_received event - no event may be skipped or double-fired."""
+        alert = make_alert()
+        state = make_state(is_alerting=True, alert_count=0, last_alert=alert)
+        entity = self._make(state)
+        entity._last_seen_count = 0
+
+        for expected_count in (1, 2, 3):
+            state.alert_count = expected_count
+            entity._handle_coordinator_update()
+
+        assert entity._trigger_event.call_count == 3
+        assert entity._last_seen_count == 3
+
     @pytest.mark.asyncio
     async def test_added_to_hass_no_state_leaves_seed_zero(self):
         """Fresh install / unknown category: no restored state → seed stays 0."""
