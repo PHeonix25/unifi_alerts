@@ -9,7 +9,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import voluptuous as vol
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
@@ -171,24 +170,21 @@ class TestWebhookSecretRotation:
         ):
             await flow.async_step_categories(cat_input)
 
-        # Inspect the form schema's default URLs -- displayed URLs no longer
-        # embed the secret (#176); the NEW secret must instead be surfaced via
-        # description_placeholders for the Authorization header instructions.
+        # Inspect the finish step's description placeholders -- displayed
+        # URLs no longer embed the secret (#176); the NEW secret must instead
+        # be surfaced via its own placeholder for the Authorization header
+        # instructions. URLs are rendered as Markdown text (#395), not form
+        # fields, so the schema itself carries no data.
         finish_call = flow.async_show_form.call_args_list[-1]
-        schema = finish_call.kwargs["data_schema"]
-        url_defaults = [
-            marker.default()
-            for marker in schema.schema
-            if isinstance(marker, vol.Optional)
-            and isinstance(marker.schema, str)
-            and marker.schema.startswith("webhook_url_")
-        ]
-        assert url_defaults, "Expected at least one webhook_url_* field on the finish step"
-        for url in url_defaults:
+        assert finish_call.kwargs["data_schema"].schema == {}
+        placeholders = finish_call.kwargs["description_placeholders"]
+        url_values = [placeholders[f"url_{cat}"] for cat in ALL_CATEGORIES]
+        assert url_values, "Expected a url_* placeholder for every category on the finish step"
+        for url in url_values:
             assert new_secret not in url, (
                 f"Finish step must not embed the secret in the URL. URL: {url}"
             )
-        assert finish_call.kwargs["description_placeholders"]["webhook_secret"] == new_secret
+        assert placeholders["webhook_secret"] == new_secret
 
 
 class TestWebhookSecretRotationRepairIssue:

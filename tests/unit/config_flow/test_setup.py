@@ -578,7 +578,13 @@ class TestFinishStep:
 
     @pytest.mark.asyncio
     async def test_shows_webhook_urls(self) -> None:
-        """async_step_finish with no input should show a form with webhook URL fields in data_schema."""
+        """async_step_finish with no input should surface webhook URLs as description placeholders.
+
+        The URLs are rendered as plain Markdown text in the finish-step
+        description (#395), not as form fields, so they're reachable with
+        ordinary keyboard text selection and screen readers instead of an
+        editable input whose value the flow silently discards.
+        """
         flow = make_flow()
         flow._controller_url = "https://192.168.1.1"
         fake_secret = "test-secret-token"
@@ -597,15 +603,36 @@ class TestFinishStep:
 
         assert result["step_id"] == "finish"
         call_kwargs = flow.async_show_form.call_args.kwargs
-        schema = call_kwargs["data_schema"]
-        # Webhook URLs must be present as field defaults in the schema
-        schema_defaults = {str(k): k.default() for k in schema.schema}
+        # No form fields left; the finish step is informational only.
+        assert call_kwargs["data_schema"].schema == {}
+        placeholders = call_kwargs["description_placeholders"]
         # Displayed URLs must no longer embed the secret (#176) — it is
         # surfaced separately via description_placeholders for the
         # Authorization header.
-        assert not any(f"token={fake_secret}" in v for v in schema_defaults.values())
-        assert any(fake_url in v for v in schema_defaults.values())
-        assert call_kwargs["description_placeholders"]["webhook_secret"] == fake_secret
+        assert not any(f"token={fake_secret}" in v for v in placeholders.values())
+        assert all(placeholders[f"url_{cat}"] == fake_url for cat in ALL_CATEGORIES)
+        assert placeholders["webhook_secret"] == fake_secret
+
+    @pytest.mark.asyncio
+    async def test_shows_not_enabled_note_for_disabled_categories(self) -> None:
+        """Disabled categories get an explanatory placeholder instead of a URL."""
+        flow = make_flow()
+        flow._controller_url = "https://192.168.1.1"
+        flow._entry_data = {
+            CONF_ENABLED_CATEGORIES: [ALL_CATEGORIES[0]],
+            CONF_WEBHOOK_SECRET: "test-secret-token",
+        }
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "finish"})
+
+        with patch(
+            "custom_components.unifi_alerts.config_flow.async_generate_url",
+            return_value="http://homeassistant.local:8123/api/webhook/unifi_alerts_network_device",
+        ):
+            await flow.async_step_finish(user_input=None)
+
+        placeholders = flow.async_show_form.call_args.kwargs["description_placeholders"]
+        for cat in ALL_CATEGORIES[1:]:
+            assert "not enabled" in placeholders[f"url_{cat}"]
 
     @pytest.mark.asyncio
     async def test_submit_creates_entry(self) -> None:
