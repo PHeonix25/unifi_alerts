@@ -168,7 +168,7 @@ def _webhook_url_placeholders(hass: Any, enabled: list[str], suffix: str) -> dic
                 hass, webhook_id_for_category(cat, suffix)
             )
         else:
-            placeholders[f"url_{cat}"] = "not enabled - go back and enable this category"
+            placeholders[f"url_{cat}"] = "not enabled"
     return placeholders
 
 
