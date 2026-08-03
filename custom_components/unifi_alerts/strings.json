@@ -34,20 +34,20 @@
           "poll_interval": "Polling interval (seconds)",
           "clear_timeout": "Auto-clear timeout (minutes)",
           "site": "UniFi site name (leave as \"default\" for single-site setups)"
+        },
+        "data_description": {
+          "min_severity_network_device": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts.",
+          "min_severity_network_wan": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts.",
+          "min_severity_network_client": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts.",
+          "min_severity_security_threat": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts.",
+          "min_severity_security_honeypot": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts.",
+          "min_severity_security_firewall": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts.",
+          "min_severity_power": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts."
         }
       },
       "finish": {
         "title": "Webhook URLs",
-        "description": "**Header key:** `Authorization`\n\n**Header value:** `Bearer {webhook_secret}`\n\nAdd this custom header in each alarm's Advanced Settings in UniFi Alarm Manager first; it is the preferred authentication method. Then copy each webhook URL below into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. If your Alarm Manager version has no custom-header option, append `?token={webhook_secret}` to the URL instead; this legacy method still works but is deprecated. You can retrieve these URLs and the secret later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough.",
-        "data": {
-          "webhook_url_network_device": "Network: Device offline/online webhook URL",
-          "webhook_url_network_wan": "Network: WAN offline/latency webhook URL",
-          "webhook_url_network_client": "Network: Client connect/disconnect webhook URL",
-          "webhook_url_security_threat": "Security: Threat / IDS detected webhook URL",
-          "webhook_url_security_honeypot": "Security: Honeypot triggered webhook URL",
-          "webhook_url_security_firewall": "Security: Firewall block webhook URL",
-          "webhook_url_power": "Power: PoE / power loss webhook URL"
-        }
+        "description": "### Authentication\n\n**Header key:** `Authorization`\n**Header value:** `Bearer {webhook_secret}`\n\nAdd this custom header in each alarm's Advanced Settings in UniFi Alarm Manager first; it is the preferred authentication method. Then copy each webhook URL below into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit.\n\n- **Network: Device offline/online**: `{url_network_device}`\n- **Network: WAN offline/latency**: `{url_network_wan}`\n- **Network: Client connect/disconnect**: `{url_network_client}`\n- **Security: Threat / IDS detected**: `{url_security_threat}`\n- **Security: Honeypot triggered**: `{url_security_honeypot}`\n- **Security: Firewall block**: `{url_security_firewall}`\n- **Power: PoE / power loss**: `{url_power}`\n\n### Legacy Method\n\nIf your Alarm Manager version has no custom-header option, append `?token={webhook_secret}` to the URL instead. This legacy method still works but is deprecated.\n\n### Retrieve Later\n\nYou can retrieve these URLs and the secret later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough."
       },
       "reauth_confirm": {
         "title": "Re-authenticate UniFi Alerts",
@@ -269,20 +269,20 @@
           "poll_interval": "Polling interval (seconds)",
           "clear_timeout": "Auto-clear timeout (minutes)",
           "site": "UniFi site name"
+        },
+        "data_description": {
+          "min_severity_network_device": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts.",
+          "min_severity_network_wan": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts.",
+          "min_severity_network_client": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts.",
+          "min_severity_security_threat": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts.",
+          "min_severity_security_honeypot": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts.",
+          "min_severity_security_firewall": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts.",
+          "min_severity_power": "Only alerts at this severity level or higher will be tracked. Use 'No Filter' to capture all alerts."
         }
       },
       "finish": {
         "title": "Webhook URLs",
-        "description": "**Header key:** `Authorization`\n\n**Header value:** `Bearer {webhook_secret}`\n\nAdd this custom header in each alarm's Advanced Settings in UniFi Alarm Manager first; it is the preferred authentication method. Then copy each webhook URL below into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit. If your Alarm Manager version has no custom-header option, append `?token={webhook_secret}` to the URL instead; this legacy method still works but is deprecated. You can retrieve these URLs and the secret later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough.",
-        "data": {
-          "webhook_url_network_device": "Network: Device offline/online webhook URL",
-          "webhook_url_network_wan": "Network: WAN offline/latency webhook URL",
-          "webhook_url_network_client": "Network: Client connect/disconnect webhook URL",
-          "webhook_url_security_threat": "Security: Threat / IDS detected webhook URL",
-          "webhook_url_security_honeypot": "Security: Honeypot triggered webhook URL",
-          "webhook_url_security_firewall": "Security: Firewall block webhook URL",
-          "webhook_url_power": "Power: PoE / power loss webhook URL"
-        }
+        "description": "### Authentication\n\n**Header key:** `Authorization`\n**Header value:** `Bearer {webhook_secret}`\n\nAdd this custom header in each alarm's Advanced Settings in UniFi Alarm Manager first; it is the preferred authentication method. Then copy each webhook URL below into UniFi Network > Settings > Notifications > Alarm Manager **before** clicking Submit.\n\n- **Network: Device offline/online**: `{url_network_device}`\n- **Network: WAN offline/latency**: `{url_network_wan}`\n- **Network: Client connect/disconnect**: `{url_network_client}`\n- **Security: Threat / IDS detected**: `{url_security_threat}`\n- **Security: Honeypot triggered**: `{url_security_honeypot}`\n- **Security: Firewall block**: `{url_security_firewall}`\n- **Power: PoE / power loss**: `{url_power}`\n\n### Legacy Method\n\nIf your Alarm Manager version has no custom-header option, append `?token={webhook_secret}` to the URL instead. This legacy method still works but is deprecated.\n\n### Retrieve Later\n\nYou can retrieve these URLs and the secret later via Settings > Devices & Services > UniFi Alerts > Configure. See docs/ALARM_MANAGER_SETUP.md for a full walkthrough."
       }
     }
   },

@@ -151,6 +151,27 @@ def _find_entry_by_serial(hass: Any, serial: str) -> ConfigEntry | None:
     return None
 
 
+def _webhook_url_placeholders(hass: Any, enabled: list[str], suffix: str) -> dict[str, str]:
+    """Build a `url_<category>` description placeholder for every category.
+
+    The finish step renders these as plain Markdown text rather than form
+    fields, so the URLs are reachable with ordinary keyboard text selection
+    and screen readers instead of needing focus inside an editable input
+    whose value the flow silently discards on submit (#395). Disabled
+    categories get an explanatory note instead of a URL, since their webhook
+    is never registered and calling it would just 404.
+    """
+    placeholders: dict[str, str] = {}
+    for cat in ALL_CATEGORIES:
+        if cat in enabled:
+            placeholders[f"url_{cat}"] = async_generate_url(
+                hass, webhook_id_for_category(cat, suffix)
+            )
+        else:
+            placeholders[f"url_{cat}"] = "not enabled"
+    return placeholders
+
+
 class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the initial setup flow shown in Settings → Integrations."""
 
@@ -377,15 +398,12 @@ class UniFiAlertsConfigFlow(ConfigFlow, domain=DOMAIN):
         enabled: list[str] = self._entry_data.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         secret: str = self._entry_data.get(CONF_WEBHOOK_SECRET, "")
         suffix: str = self._entry_data.get(CONF_WEBHOOK_ID_SUFFIX, "")
-        fields: dict[Any, Any] = {}
-        for cat in ALL_CATEGORIES:
-            if cat in enabled:
-                url = async_generate_url(self.hass, webhook_id_for_category(cat, suffix))
-                fields[vol.Optional(f"webhook_url_{cat}", default=url)] = str
+        placeholders = _webhook_url_placeholders(self.hass, enabled, suffix)
+        placeholders["webhook_secret"] = secret
         return self.async_show_form(
             step_id="finish",
-            data_schema=vol.Schema(fields),
-            description_placeholders={"webhook_secret": secret},
+            data_schema=vol.Schema({}),
+            description_placeholders=placeholders,
         )
 
     # ── Reauth flow ───────────────────────────────────────────────────────
@@ -954,13 +972,10 @@ class UniFiAlertsOptionsFlow(OptionsFlow):
             self._config_entry.data.get(CONF_WEBHOOK_SECRET, ""),
         )
         suffix: str = self._config_entry.data.get(CONF_WEBHOOK_ID_SUFFIX, "")
-        fields: dict[Any, Any] = {}
-        for cat in ALL_CATEGORIES:
-            if cat in enabled:
-                url = async_generate_url(self.hass, webhook_id_for_category(cat, suffix))
-                fields[vol.Optional(f"webhook_url_{cat}", default=url)] = str
+        placeholders = _webhook_url_placeholders(self.hass, enabled, suffix)
+        placeholders["webhook_secret"] = secret
         return self.async_show_form(
             step_id="finish",
-            data_schema=vol.Schema(fields),
-            description_placeholders={"webhook_secret": secret},
+            data_schema=vol.Schema({}),
+            description_placeholders=placeholders,
         )
