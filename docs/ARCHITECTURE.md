@@ -128,7 +128,7 @@ All entity classes extend `CoordinatorEntity[UniFiAlertsCoordinator]` and overri
 
 **Event entities** (`event.py`) detect new alerts by comparing `state.alert_count` to `self._last_seen_count` in `_handle_coordinator_update`. Event entities fire on change, not on state. Polling does not increment `alert_count`, so events fire only on real webhook pushes.
 
-**Device grouping**: all entities share the same `_device_info` dict (`identifiers={(DOMAIN, entry.entry_id)}`); HA groups them under a single "UniFi Alerts" device with `entry_type=DeviceEntryType.SERVICE` and `configuration_url` pointing at the controller.
+**Device grouping**: all entities share the same device info, built by the shared `entity_helpers.device_info_for_entry()` helper (`identifiers={(DOMAIN, entry.entry_id)}`); HA groups them under a single "UniFi Alerts" device with `entry_type=DeviceEntryType.SERVICE` and `configuration_url` pointing at the controller.
 
 ## Config entry data structure
 

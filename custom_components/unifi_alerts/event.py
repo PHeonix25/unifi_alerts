@@ -9,16 +9,12 @@ from __future__ import annotations
 from homeassistant.components.event import EventEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    ALL_CATEGORIES,
-    CONF_CONTROLLER_URL,
-    DOMAIN,
-)
+from .const import ALL_CATEGORIES
 from .coordinator import UniFiAlertsCoordinator
+from .entity_helpers import device_info_for_entry
 from .models import CategoryState, UniFiAlert
 
 PARALLEL_UPDATES = 0
@@ -62,7 +58,7 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_event"
         self._attr_translation_key = f"event_{category}"
-        self._attr_device_info = _device_info(entry)
+        self._attr_device_info = device_info_for_entry(entry)
         # Track alert_count to detect new alerts on coordinator update
         self._last_seen_count: int = 0
 
@@ -109,14 +105,3 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
     def available(self) -> bool:
         state = self.coordinator.get_category_state(self._category)
         return state is not None and state.enabled
-
-
-def _device_info(entry: ConfigEntry) -> DeviceInfo:
-    return DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name="UniFi Alerts",
-        manufacturer="Ubiquiti",
-        model="UniFi Network Controller",
-        entry_type=DeviceEntryType.SERVICE,
-        configuration_url=entry.data.get(CONF_CONTROLLER_URL),
-    )

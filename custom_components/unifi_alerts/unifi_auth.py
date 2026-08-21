@@ -23,13 +23,11 @@ from .const import (
     CONF_API_KEY,
     CONF_VERIFY_SSL,
     DEFAULT_VERIFY_SSL,
+    UNIFI_OS_NETWORK_PREFIX,
 )
 from .models import UniFiClientConfig
 
 _LOGGER = logging.getLogger(__name__)
-
-# UniFi OS consoles (UDM, UCG, etc.) prefix all network API paths
-UNIFI_OS_NETWORK_PREFIX = "/proxy/network"
 
 
 class CannotConnectError(Exception):

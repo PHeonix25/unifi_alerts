@@ -48,7 +48,7 @@ Core hard rules shared across all agent surfaces are canonical in [`AGENTS.md` >
 
 - Module-level `_LOGGER = logging.getLogger(__name__)` in every file that logs.
 - `_attr_*` class attributes for HA entity properties - only override as `@property` if the value is dynamic.
-- `_device_info()` is a module-level helper function (not a method) currently duplicated across platform files. That duplication was originally deliberate (platform isolation), but the decision has been revisited: the DRY win now outweighs it, and the helper is being extracted into a shared module in [#383](https://github.com/PHeonix25/unifi_alerts/issues/383). Keep the copies identical until that lands; do not add a fifth.
+- Device info for all four entity platforms is built by the shared `entity_helpers.device_info_for_entry()` helper (extracted in [#383](https://github.com/PHeonix25/unifi_alerts/issues/383)). Do not reintroduce a local, per-platform copy.
 - All `const.py` additions go in the appropriate labelled section with a comment.
 - Tests use `MagicMock` / `AsyncMock` for the UniFi client - never make real HTTP calls in tests.
 

@@ -569,6 +569,18 @@ class TestAlertSerialization:
         assert isinstance(restored.received_at, datetime)
         assert restored.received_at.tzinfo == UTC
 
+    def test_from_dict_severity_truncated_at_32(self):
+        """from_dict() must apply the same [:32] truncation as the live constructors."""
+        restored = UniFiAlert.from_dict(
+            {
+                "category": CATEGORY_NETWORK_WAN,
+                "message": "oversized severity",
+                "received_at": "2024-01-15T10:30:00+00:00",
+                "severity": "S" * 100,
+            }
+        )
+        assert len(restored.severity) == 32
+
     def test_to_dict_omits_raw_payload(self):
         """to_dict() must drop `raw` — it carries client MACs / IPs / hostnames that should not hit disk."""
         alert = UniFiAlert.from_webhook_payload(

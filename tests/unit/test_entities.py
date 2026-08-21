@@ -699,33 +699,27 @@ class TestUniFiClearAllButton:
 
 
 class TestDeviceInfo:
-    """_device_info() helpers in all four platforms must include configuration_url."""
+    """entity_helpers.device_info_for_entry() must include configuration_url and be
+    the single shared implementation used by all four platforms (no local copies)."""
+
+    def test_device_info_has_configuration_url(self):
+        from custom_components.unifi_alerts.entity_helpers import device_info_for_entry
+
+        entry = make_entry()
+        info = device_info_for_entry(entry)
+        assert info["configuration_url"] == entry.data["controller_url"]
 
     @pytest.mark.parametrize(
         "platform",
         ["binary_sensor", "sensor", "event", "button"],
     )
-    def test_device_info_has_configuration_url(self, platform):
+    def test_platform_imports_shared_device_info_helper(self, platform):
         import importlib
 
-        _device_info = importlib.import_module(
-            f"custom_components.unifi_alerts.{platform}"
-        )._device_info
+        from custom_components.unifi_alerts.entity_helpers import device_info_for_entry
 
-        entry = make_entry()
-        info = _device_info(entry)
-        assert info["configuration_url"] == entry.data["controller_url"]
-
-    def test_all_platforms_share_identical_identifiers(self):
-        from custom_components.unifi_alerts.binary_sensor import _device_info as bs_info
-        from custom_components.unifi_alerts.button import _device_info as btn_info
-        from custom_components.unifi_alerts.event import _device_info as ev_info
-        from custom_components.unifi_alerts.sensor import _device_info as s_info
-
-        entry = make_entry()
-        assert bs_info(entry)["identifiers"] == s_info(entry)["identifiers"]
-        assert bs_info(entry)["identifiers"] == ev_info(entry)["identifiers"]
-        assert bs_info(entry)["identifiers"] == btn_info(entry)["identifiers"]
+        module = importlib.import_module(f"custom_components.unifi_alerts.{platform}")
+        assert module.device_info_for_entry is device_info_for_entry
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

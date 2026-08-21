@@ -44,7 +44,7 @@ Unique IDs must be stable across restarts. They are based on `entry.entry_id` (a
 
 ## Device registry
 
-All entities use the same `_device_info` dict:
+All entities use the same device info, built by `entity_helpers.device_info_for_entry()`:
 
 ```python
 {

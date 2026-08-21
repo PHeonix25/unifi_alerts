@@ -6,16 +6,12 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    ALL_CATEGORIES,
-    CONF_CONTROLLER_URL,
-    DOMAIN,
-)
+from .const import ALL_CATEGORIES
 from .coordinator import UniFiAlertsCoordinator
+from .entity_helpers import device_info_for_entry
 
 PARALLEL_UPDATES = 0
 
@@ -52,7 +48,7 @@ class UniFiClearCategoryButton(CoordinatorEntity[UniFiAlertsCoordinator], Button
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_clear"
         self._attr_translation_key = f"clear_{category}"
-        self._attr_device_info = _device_info(entry)
+        self._attr_device_info = device_info_for_entry(entry)
 
     @property
     def available(self) -> bool:
@@ -79,7 +75,7 @@ class UniFiClearAllButton(CoordinatorEntity[UniFiAlertsCoordinator], ButtonEntit
     ) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_clear_all"
-        self._attr_device_info = _device_info(entry)
+        self._attr_device_info = device_info_for_entry(entry)
 
     @property
     def available(self) -> bool:
@@ -87,14 +83,3 @@ class UniFiClearAllButton(CoordinatorEntity[UniFiAlertsCoordinator], ButtonEntit
 
     async def async_press(self) -> None:
         await self.coordinator.async_clear_all()
-
-
-def _device_info(entry: ConfigEntry) -> DeviceInfo:
-    return DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name="UniFi Alerts",
-        manufacturer="Ubiquiti",
-        model="UniFi Network Controller",
-        entry_type=DeviceEntryType.SERVICE,
-        configuration_url=entry.data.get(CONF_CONTROLLER_URL),
-    )

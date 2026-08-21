@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `UniFiAlert.from_dict()` now truncates `severity` to 32 characters, matching `from_webhook_payload()`, `from_api_alarm()`, and `from_system_log_event()`. Previously an oversized `severity` value restored from the persisted Store could exceed the length applied everywhere else. ([#359])
+
 ### Documentation
 
 - Added v2.1.0, v2.2.0, and v2.3.0 sections to `docs/ROADMAP.md`, each summarising the theme and main threads of its milestone's open issues. ([#398])
@@ -13,6 +17,7 @@
 
 ### Internal
 
+- Extracted the `_device_info()` helper duplicated across `binary_sensor.py`, `sensor.py`, `event.py`, and `button.py` into a single `entity_helpers.device_info_for_entry()`, and moved `UNIFI_OS_NETWORK_PREFIX` (previously defined separately in `unifi_auth.py` and `unifi_client.py`) into `const.py` as the single source of truth. No behaviour change. ([#383])
 - Closed the v2.1.0 test-coverage gaps for the webhook and entity-action paths: real-HTTP-server integration coverage for oversized-body (413) and malformed-JSON (400) webhook rejection, consecutive rapid `alert_received` events each firing exactly once, and a webhook landing in the window between `coordinator.async_shutdown()` and webhook unregistration during entry unload. No behaviour change. ([#381], [#380], [#382])
 - Cleaned up `severity.py`: removed the unused legacy-severity synonym table, added `Literal` type aliases for severity and minimum-severity strings, inlined `filter_by_min_severity()` at its single call site to remove the `severity.py`/`models.py` import cycle, and trimmed over-dense comments. No behaviour change. ([#351], [#352], [#358], [#360])
 
@@ -401,3 +406,5 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#352]: https://github.com/PHeonix25/unifi_alerts/issues/352
 [#358]: https://github.com/PHeonix25/unifi_alerts/issues/358
 [#360]: https://github.com/PHeonix25/unifi_alerts/issues/360
+[#359]: https://github.com/PHeonix25/unifi_alerts/issues/359
+[#383]: https://github.com/PHeonix25/unifi_alerts/issues/383
