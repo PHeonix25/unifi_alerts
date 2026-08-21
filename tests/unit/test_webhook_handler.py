@@ -803,9 +803,6 @@ class TestWebhookLegacyQueryAuthRepairIssue:
         mock_create.assert_not_called()
 
 
-# ── request URL / query-string never logged (#379) ───────────────────────────
-
-
 class TestRequestUrlNeverLogged:
     """The legacy ``?token=`` query param (kept during the #176 deprecation
     window) means a webhook secret can appear in the request URL. Nothing in
