@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypedDict
 
-from .severity import normalize_severity
+from .severity import MinimumSeverity, normalize_severity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,13 +91,12 @@ class UniFiAlert:
     severity: str = ""
 
     @property
-    def severity_level(self) -> str:
+    def severity_level(self) -> MinimumSeverity:
         """Normalised severity, derived from self.severity on every access.
 
         Computed on demand rather than stored so it can never drift from
-        `self.severity`, and is intentionally not a dataclass field: it is
-        not serialised by `to_dict`/`from_dict`, and is recomputed from the
-        persisted raw `severity` string on restore.
+        `self.severity`; not a dataclass field, so it is never serialised by
+        `to_dict`/`from_dict` either.
         """
         return normalize_severity(self.severity)
 
