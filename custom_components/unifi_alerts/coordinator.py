@@ -34,7 +34,7 @@ from .const import (
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
 from .models import CategoryState, UniFiAlert, UniFiClientConfig, ensure_aware
-from .severity import filter_by_min_severity, get_effective_min_severity, meets_minimum
+from .severity import get_effective_min_severity, meets_minimum
 from .unifi_auth import CannotConnectError, InvalidAuthError
 from .unifi_client import UniFiClient
 
@@ -170,7 +170,9 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 if not state.enabled:
                     continue
                 minimum = get_effective_min_severity(self._config, cat)
-                eligible = filter_by_min_severity(alerts, minimum)
+                eligible = [
+                    alert for alert in alerts if meets_minimum(alert.severity_level, minimum)
+                ]
                 self._track_newest_seen(state, eligible)
                 # Count only alarms newer than last_cleared_at so open_count reads as
                 # "since last Clear", not a lifetime total.

@@ -294,24 +294,15 @@ A category set to `No_Filter` accepts every alert regardless of severity, with n
 
 ### Legacy severity synonym table
 
-Legacy alarm severities are inconsistent free-form strings. `normalize_severity()` matches case-insensitively and ignores leading/trailing whitespace, first against the four canonical names above, then against this synonym table:
+Legacy alarm severities are inconsistent free-form strings. `normalize_severity()` matches case-insensitively and ignores leading/trailing whitespace against the four canonical names above. There is currently no synonym table: unmatched values fall back to `UNKNOWN` (see Fallback below).
 
-| Raw value | Normalised Severity_Level |
-|---|---|
-| `critical` | `VERY_HIGH` |
-| `urgent` | `VERY_HIGH` |
-| `error` | `HIGH` |
-| `warning` | `MEDIUM` |
-| `info` | `LOW` |
-| `notice` | `LOW` |
-
-When a user reports a legacy severity string that isn't classified correctly, add it to `_SEVERITY_SYNONYMS` in `severity.py` and update the table above.
+When a user reports a legacy severity string that should map to a canonical Severity_Level instead of falling back to `UNKNOWN`, add a synonym table to `severity.py` (mirroring how `UNIFI_KEY_TO_CATEGORY` is expanded) and document it here.
 
 ### Fallback
 
-The webhook push path and the legacy `/list/alarm` poll path do not document a `severity` field at all: `UniFiAlert.from_webhook_payload`/`from_api_alarm` fall back to the record's `subsystem` (e.g. `wlan`, `lan`, `wan`) when `severity` is absent, which is not a recognised severity or synonym.
+The webhook push path and the legacy `/list/alarm` poll path do not document a `severity` field at all: `UniFiAlert.from_webhook_payload`/`from_api_alarm` fall back to the record's `subsystem` (e.g. `wlan`, `lan`, `wan`) when `severity` is absent, which is not a recognised severity.
 
-If the raw severity string is empty, or matches neither a canonical name nor a synonym after case-folding and trimming, `normalize_severity()` returns the `UNKNOWN` sentinel rather than `LOW`. `UNKNOWN` is deliberately excluded from `SEVERITY_ORDER` and always passes the minimum-severity gate (`meets_minimum()` fails open): an alert whose severity could not be determined is never silently dropped by a category's Minimum_Severity_Setting, regardless of how high that minimum is set.
+If the raw severity string is empty, or matches no canonical name after case-folding and trimming, `normalize_severity()` returns the `UNKNOWN` sentinel rather than `LOW`. `UNKNOWN` is deliberately excluded from `SEVERITY_ORDER` and always passes the minimum-severity gate (`meets_minimum()` fails open): an alert whose severity could not be determined is never silently dropped by a category's Minimum_Severity_Setting, regardless of how high that minimum is set.
 
 ## Event key taxonomy
 
