@@ -2,6 +2,29 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-08-21
+
+- **release**: v2.1.0-pre1 tagged. First checkpoint of the v2.1.0 "severity follow-through and test coverage" cycle: closes most of the #331 review follow-ups (config/options flow accessibility fixes, `severity.py` cleanup, a latent `from_dict` truncation bug), the deferred `_device_info()` duplication (issue #383), a regression test locking down webhook secret-leak safety (issue #379), and the remaining v2.1.0 test-coverage gaps for entity actions, webhook edge cases, and coordinator/service error handling. The "Test Webhook" button (issue #384) was descoped: its literal spec (a live button embedded in the options flow finish step) doesn't fit how HA config flows work, and the auto-clear timing needs more design thought. Issues #355, #356, #357, #385 remain open for the next checkpoint.
+- **feat**: restructured the config/options flow finish-step description into headed sections (Authentication, Legacy Method, Retrieve Later) and replaced per-category webhook URL form fields, which looked editable but silently discarded any edits, with plain-text placeholders; added help text for all 7 `min_severity_*` selectors on the categories step ([#405]). Closes #395, #354.
+- **security**: added a regression test asserting webhook error-log output never leaks the legacy `?token=` query string, across the malformed-body and auth-failure paths ([#407]). Closes #379.
+- **fix**: `UniFiAlert.from_dict()` now truncates `severity` to 32 characters, matching `from_webhook_payload()`/`from_api_alarm()`/`from_system_log_event()`; extracted the four duplicated `_device_info()` helpers into `entity_helpers.device_info_for_entry()` and centralised `UNIFI_OS_NETWORK_PREFIX` into `const.py` ([#409]). Closes #359, #383.
+- **chore**: cleaned up `severity.py`: removed the unused legacy-severity synonym table, added `Literal` type aliases for severity/minimum-severity strings, inlined `filter_by_min_severity()` to remove the `severity.py`/`models.py` import cycle, and trimmed over-dense comments ([#408]). Closes #351, #352, #358, #360.
+- **tests**: closed the remaining v2.1.0 test-coverage gaps: entity action coverage for `alert_received` events and button presses ([#401]), webhook body-size and malformed-JSON rejection ([#400]), and a webhook landing in the window between coordinator shutdown and webhook unregistration ([#402]). Closes #380, #381, #382.
+- **docs**: added v2.1.0/v2.2.0/v2.3.0 sections to `docs/ROADMAP.md` ([#398]); resolved a documentation conflict that described the `_device_info()` duplication as an intentional trade-off instead of scheduled work ([#399]); consolidated the day's `CHANGELOG.md` `[Unreleased]` entries ([#403]).
+- **ci**: hardened Python 3.14 provisioning to use `uv` when the CI base image doesn't already have it available ([#404]).
+
+[#398]: https://github.com/PHeonix25/unifi_alerts/pull/398
+[#399]: https://github.com/PHeonix25/unifi_alerts/pull/399
+[#400]: https://github.com/PHeonix25/unifi_alerts/pull/400
+[#401]: https://github.com/PHeonix25/unifi_alerts/pull/401
+[#402]: https://github.com/PHeonix25/unifi_alerts/pull/402
+[#403]: https://github.com/PHeonix25/unifi_alerts/pull/403
+[#404]: https://github.com/PHeonix25/unifi_alerts/pull/404
+[#405]: https://github.com/PHeonix25/unifi_alerts/pull/405
+[#407]: https://github.com/PHeonix25/unifi_alerts/pull/407
+[#408]: https://github.com/PHeonix25/unifi_alerts/pull/408
+[#409]: https://github.com/PHeonix25/unifi_alerts/pull/409
+
 ## 2026-07-24
 
 - **release**: v2.0.1 stable. Critical hotfix promoted straight to `main` as a patch release, shipping the single fix below.
