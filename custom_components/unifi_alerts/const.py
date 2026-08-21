@@ -41,6 +41,13 @@ WEBHOOK_DEDUP_WINDOW_SECONDS = (
 )
 
 # ──────────────────────────────────────────────
+# UniFi OS API
+# ──────────────────────────────────────────────
+# UniFi OS consoles (UDM, UCG, etc.) prefix all network API paths.
+# Single source of truth shared by unifi_auth.py and unifi_client.py.
+UNIFI_OS_NETWORK_PREFIX: Final = "/proxy/network"
+
+# ──────────────────────────────────────────────
 # Webhook health signal
 # ──────────────────────────────────────────────
 # A per-category onboarding/health indicator. After pasting webhook URLs into

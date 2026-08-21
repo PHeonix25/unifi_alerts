@@ -15,6 +15,7 @@ from .const import (
     DEFAULT_VERIFY_SSL,
     MAX_SYSTEM_LOG_PAGES,
     SYSTEM_LOG_PAGE_SIZE,
+    UNIFI_OS_NETWORK_PREFIX,
     classify_event_key,
 )
 from .models import UniFiAlert, UniFiClientConfig
@@ -26,9 +27,6 @@ from .unifi_auth import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-# UniFi OS consoles (UDM, UCG, etc.) prefix all network API paths
-UNIFI_OS_NETWORK_PREFIX = "/proxy/network"
 
 
 class InvalidSiteError(CannotConnectError):

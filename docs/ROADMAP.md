@@ -12,9 +12,7 @@ What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `
 
 Finish the severity-filtering feature started in #331 and close the test gaps on the paths users depend on most. Adds the first way to verify a webhook setup without waiting for a real alert.
 
-Main threads: the #331 review follow-ups (UI copy, filtered-alert diagnostics, `severity.py` cleanups), coverage for entity actions, webhook edge cases and coordinator/service error handling, a send-test-alert button, the config flow accessibility blockers, and extracting the duplicated `_device_info()` helper (#383).
-
-The `_device_info()` duplication was previously listed here as deferred, on the grounds that keeping each platform self-contained was worth the repetition. That decision has been revisited: with four identical copies the DRY win now outweighs the isolation benefit, so the extraction is scheduled rather than deferred and is tracked in #383.
+Main threads: the #331 review follow-ups (UI copy, filtered-alert diagnostics, `severity.py` cleanups), coverage for entity actions, webhook edge cases and coordinator/service error handling, a send-test-alert button, and the config flow accessibility blockers.
 
 ## v2.2.0 - Structural simplification
 

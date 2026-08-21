@@ -273,7 +273,7 @@ class UniFiAlert:
             key=data.get("key", ""),
             device_name=data.get("device_name", ""),
             site=data.get("site", ""),
-            severity=data.get("severity", ""),
+            severity=str(data.get("severity", ""))[:32],
         )
 
 
