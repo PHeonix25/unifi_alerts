@@ -2,6 +2,13 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-09-08
+
+- **release**: v2.1.0-pre2 tagged. Second checkpoint of the v2.1.0 cycle, closing the UniFi Network 10.6+ setup failure ([#412]). Closes #406.
+- **fix**: setup, credential rotation, and controller-URL changes no longer fail on UniFi Network 10.6+, which removed every legacy alarm endpoint; the config flow now accepts either the v2 system-log transport or the legacy transport via a new `UniFiClient.validate_connectivity()`. The failure was previously misreported as a missing site (`InvalidSiteError`); it is now reported correctly as a missing alarm endpoint (`AlarmEndpointUnavailableError`), and a genuine missing site is detected directly from the controller's `api.err.NoSiteContext` response rather than inferred by exhausting the probe chain. The coordinator no longer falls back to a legacy path it has confirmed is dead, closing a latent outage that could take every entity unavailable for up to an hour. A rejected API key returned with HTTP 200 is no longer misreported as a successful login, and v2 event keys carrying a numeric variant suffix (e.g. `CLIENT_ROAMED_2`) are now matched correctly instead of falling through to the coarse category fallback ([#412]). Closes #406.
+
+[#412]: https://github.com/PHeonix25/unifi_alerts/pull/412
+
 ## 2026-08-21
 
 - **release**: v2.1.0-pre1 tagged. First checkpoint of the v2.1.0 "severity follow-through and test coverage" cycle: closes most of the #331 review follow-ups (config/options flow accessibility fixes, `severity.py` cleanup, a latent `from_dict` truncation bug), the deferred `_device_info()` duplication (issue #383), a regression test locking down webhook secret-leak safety (issue #379), and the remaining v2.1.0 test-coverage gaps for entity actions, webhook edge cases, and coordinator/service error handling. The "Test Webhook" button (issue #384) was descoped: its literal spec (a live button embedded in the options flow finish step) doesn't fit how HA config flows work, and the auto-clear timing needs more design thought. Issues #355, #356, #357, #385 remain open for the next checkpoint.

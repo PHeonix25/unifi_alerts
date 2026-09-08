@@ -2,13 +2,15 @@
 
 What's planned next. Items ship from `dev` under `X.Y.Z-preN`, then promote to `main` as `X.Y.Z`. Completed work is removed from this file; the historical record lives in `docs/HISTORY.md`, and the user-visible release summary lives in `CHANGELOG.md`.
 
-> **Status (2026-08-21):** v2.1.0-pre1 tagged, the first checkpoint of the v2.1.0 cycle. Closed: most of the #331 review follow-ups (UI copy, `severity.py` cleanups, config/options flow accessibility fixes), the `_device_info()` extraction (#383), a webhook secret-leak regression test (#379), and the remaining entity/webhook/coordinator test-coverage gaps (#380, #381, #382). Descoped: the "Test Webhook" button (#384), whose literal spec doesn't fit HA's config-flow architecture. Item-level work is tracked in GitHub Issues, grouped by milestone: <https://github.com/PHeonix25/unifi_alerts/milestones>.
+> **Status (2026-09-08):** v2.1.0-pre2 tagged, the second checkpoint of the v2.1.0 cycle. Closed: the UniFi Network 10.6+ setup failure (#406) - the config flow now accepts the v2 system-log transport instead of hard-requiring the legacy alarm paths that firmware removed. First checkpoint (v2.1.0-pre1) closed most of the #331 review follow-ups (UI copy, `severity.py` cleanups, config/options flow accessibility fixes), the `_device_info()` extraction (#383), a webhook secret-leak regression test (#379), and the remaining entity/webhook/coordinator test-coverage gaps (#380, #381, #382). Descoped: the "Test Webhook" button (#384), whose literal spec doesn't fit HA's config-flow architecture. Item-level work is tracked in GitHub Issues, grouped by milestone: <https://github.com/PHeonix25/unifi_alerts/milestones>.
 
 > **Branching model:** see `CLAUDE.md § Branching and releasing`.
 
 ---
 
 ## v2.1.0 - Severity follow-through and test coverage
+
+Second checkpoint (v2.1.0-pre2) closed the UniFi Network 10.6+ setup failure (#406): Network 10.6 removed every legacy alarm endpoint, so the config flow now accepts the v2 system-log transport instead of hard-requiring the legacy alarm paths; also fixed the underlying misdiagnosis (`InvalidSiteError` reported for a missing endpoint, not a missing site), a coordinator outage path that could take every entity unavailable for up to an hour, an API-key rejection that could be reported as a successful login, and a v2 event-key matching gap for numeric-variant keys.
 
 First checkpoint (v2.1.0-pre1) closed most of the #331 review follow-ups (`severity.py` cleanups, the min_severity UI copy, config/options flow accessibility fixes), the extracted `_device_info()` helper (#383), a latent `from_dict` severity-truncation fix (#359), a webhook secret-leak regression test (#379), and the remaining entity/webhook/coordinator test-coverage gaps (#380, #381, #382). The "Test Webhook" button (#384) was descoped: a live button embedded in the options flow finish step doesn't fit how HA config flows work, and the 30-second auto-clear timing needs more design thought than a first pass gave it.
 
