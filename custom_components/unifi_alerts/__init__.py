@@ -21,7 +21,9 @@ from .const import (
     ALL_CATEGORIES,
     CONF_API_KEY,
     CONF_CONTROLLER_URL,
+    CONF_SITE,
     CONF_VERIFY_SSL,
+    DEFAULT_SITE,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
     EXCEPTION_SETUP_AUTH_FAILED,
@@ -160,6 +162,21 @@ def _prune_disabled_category_entities(
             registry.async_remove(reg_entry.entity_id)
 
 
+async def _log_controller_version(client: UniFiClient, entry: ConfigEntry) -> None:
+    """Best-effort: log the Network application version at setup.
+
+    Distinct from the UniFi OS version, and easy to omit from a bug report
+    since only the UniFi OS version is visible on the console login screen.
+    Never blocks setup (#406).
+    """
+    site = entry.data.get(CONF_SITE, DEFAULT_SITE)
+    controller_version = await client.fetch_controller_version(site)
+    if controller_version:
+        _LOGGER.info("UniFi Network application version: %s", controller_version)
+    else:
+        _LOGGER.debug("Could not determine the UniFi Network application version at setup")
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up UniFi Alerts from a config entry."""
     verify_ssl: bool = entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
@@ -196,6 +213,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             translation_key=EXCEPTION_SETUP_CANNOT_CONNECT,
             translation_placeholders={"error": type(err).__name__},
         ) from err
+
+    await _log_controller_version(client, entry)
 
     # Proactively register the hub device so it appears in HA's Services section
     # immediately after setup — before any entity is registered.

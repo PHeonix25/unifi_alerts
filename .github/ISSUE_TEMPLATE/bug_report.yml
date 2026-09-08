@@ -61,9 +61,18 @@ body:
   - type: input
     id: controller
     attributes:
-      label: Controller model and firmware
-      description: e.g. "UDM-Pro firmware 4.0.21" or "UCG-Ultra firmware 3.2.7"
-      placeholder: "UDM-Pro firmware 4.0.21"
+      label: Controller model and UniFi OS version
+      description: e.g. "UDM-Pro, UniFi OS 4.0.21" or "UCG-Ultra, UniFi OS 3.2.7". This is the UniFi OS/firmware version shown on the console's login screen or Settings → System, not the Network application version below — the two version numbers are independent and both matter for diagnosing controller-firmware bugs.
+      placeholder: "UDM-Pro, UniFi OS 4.0.21"
+    validations:
+      required: true
+
+  - type: input
+    id: network_app_version
+    attributes:
+      label: UniFi Network application version
+      description: From Settings → System → About, or the version shown next to "UniFi Network" in the app switcher. Distinct from the UniFi OS version above — e.g. a UDM on UniFi OS 5.1.26 can be running Network application 10.6.101. Needed to diagnose bugs specific to a Network application release (see issue #406).
+      placeholder: "10.6.101"
     validations:
       required: true
 

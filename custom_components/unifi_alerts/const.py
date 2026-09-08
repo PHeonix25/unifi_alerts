@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Final
 
 DOMAIN = "unifi_alerts"
@@ -334,17 +335,30 @@ def webhook_id_for_category(category: str, suffix: str = "") -> str:
     return f"{WEBHOOK_ID_PREFIX}{category}"
 
 
+# Real v2 system-log payloads carry numeric-variant keys for the same event
+# (e.g. "key": "CLIENT_ROAMED_2" alongside "event": "CLIENT_ROAMED") — field-
+# confirmed (#406). SYSTEM_LOG_KEY_TO_CATEGORY is exact-match, so the suffixed
+# variant otherwise misses, falls through to the coarse enum fallback, and is
+# logged as an undocumented key on every occurrence.
+_TRAILING_NUMERIC_SUFFIX = re.compile(r"_\d+$")
+
+
 def classify_event_key(key: str, v2_category_enum: str = "") -> str:
     """Map a UniFi event key to an integration category string.
 
     Checks (in order):
     1. Exact match in SYSTEM_LOG_KEY_TO_CATEGORY (v2 system-log flat keys)
-    2. Prefix match in UNIFI_KEY_TO_CATEGORY (legacy EVT_* keys)
-    3. Broad enum fallback via SYSTEM_LOG_CATEGORY_FALLBACK (v2 category field)
+    2. The same lookup with a trailing numeric variant suffix stripped
+       (e.g. "CLIENT_ROAMED_2" -> "CLIENT_ROAMED")
+    3. Prefix match in UNIFI_KEY_TO_CATEGORY (legacy EVT_* keys)
+    4. Broad enum fallback via SYSTEM_LOG_CATEGORY_FALLBACK (v2 category field)
 
     Returns "" when no match is found.
     """
     if result := SYSTEM_LOG_KEY_TO_CATEGORY.get(key):
+        return result
+    stripped = _TRAILING_NUMERIC_SUFFIX.sub("", key)
+    if stripped != key and (result := SYSTEM_LOG_KEY_TO_CATEGORY.get(stripped)):
         return result
     for prefix, category in UNIFI_KEY_TO_CATEGORY.items():
         if key.startswith(prefix):

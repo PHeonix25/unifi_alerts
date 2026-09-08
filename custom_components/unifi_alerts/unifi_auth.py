@@ -15,6 +15,7 @@ no real gain and lose the isolated test surface in ``test_unifi_auth.py``.
 
 from __future__ import annotations
 
+import json
 import logging
 
 import aiohttp
@@ -118,6 +119,19 @@ class UniFiAuth:
                     )
                     raise InvalidAuthError("Invalid API key", login_url=endpoint)
                 resp.raise_for_status()
+                # UniFi returns HTTP 200 even for a rejected key; the envelope's
+                # meta.rc is the only reliable signal (#406). Checking status
+                # alone lets a rejected key be reported as a successful login.
+                try:
+                    body = await resp.json(content_type=None)
+                except json.JSONDecodeError, UnicodeDecodeError:
+                    body = {}
+                if body.get("meta", {}).get("rc") != "ok":
+                    msg = body.get("meta", {}).get("msg", "unknown error")
+                    _LOGGER.warning(
+                        "API key rejected for %s (HTTP 200, meta.rc=error: %s)", endpoint, msg
+                    )
+                    raise InvalidAuthError(f"Invalid API key ({msg})", login_url=endpoint)
         except CannotConnectError, InvalidAuthError:
             raise
         except aiohttp.ClientConnectorCertificateError as err:

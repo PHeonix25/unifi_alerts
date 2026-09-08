@@ -29,8 +29,11 @@ from .conftest import (
     find_calls,
     list_alarm_url,
     make_client,
+    probe_url,
     queue_responses,
+    self_sites_url,
     stat_alarm_url,
+    sysinfo_url,
     system_log_url,
     total_calls,
 )
@@ -332,11 +335,17 @@ class TestFetchAlarms:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_all_paths_404_raises_invalid_site_error(
+    async def test_all_paths_404_raises_alarm_endpoint_unavailable_error(
         self, aioclient_mock: AiohttpClientMocker
     ):
-        """When all alarm paths return 404, raise InvalidSiteError (subclass of CannotConnectError)."""
-        from custom_components.unifi_alerts.unifi_client import InvalidSiteError
+        """When all alarm paths return 404, raise AlarmEndpointUnavailableError (#406).
+
+        This firmware has no legacy alarm endpoint the integration knows
+        about — a missing-endpoint problem, not a missing-site problem
+        (InvalidSiteError is reserved for a genuine site miss; see
+        TestValidateConnectivity and TestInvalidSiteDetection).
+        """
+        from custom_components.unifi_alerts.unifi_client import AlarmEndpointUnavailableError
 
         client = make_client(aioclient_mock)
         client._auth._authenticated = True
@@ -344,8 +353,9 @@ class TestFetchAlarms:
         aioclient_mock.get(list_alarm_url(), status=404)
         aioclient_mock.get(alarm_url(), status=404)
         aioclient_mock.get(stat_alarm_url(), status=404)
-        with pytest.raises(InvalidSiteError, match="not found on the controller"):
+        with pytest.raises(AlarmEndpointUnavailableError, match="No legacy alarm endpoint"):
             await client.fetch_alarms()
+        assert client.legacy_alarm_endpoint_confirmed_unavailable("default") is True
 
     @pytest.mark.asyncio
     async def test_http_400_raises_cannot_connect_with_site_hint(
@@ -787,3 +797,217 @@ class TestSslCertificateError:
         )
         with pytest.raises(SslCertificateError):
             await client.fetch_system_log_alarms()
+
+
+_INVALID_OBJECT_BODY = {"meta": {"rc": "error", "msg": "api.err.InvalidObject"}}
+
+
+def _mock_dead_legacy_chain(aioclient_mock: AiohttpClientMocker, site: str = "default") -> None:
+    """Register every legacy alarm path as removed (400 api.err.InvalidObject), as on Network 10.6+."""
+    aioclient_mock.get(list_alarm_url(site), status=400, json=_INVALID_OBJECT_BODY)
+    aioclient_mock.get(alarm_url(site), status=400, json=_INVALID_OBJECT_BODY)
+    aioclient_mock.get(stat_alarm_url(site), status=400, json=_INVALID_OBJECT_BODY)
+
+
+class TestNoSiteContextDetection:
+    """Tests for the 401 api.err.NoSiteContext → InvalidSiteError distinction (#406).
+
+    A genuinely missing site returns 401 + api.err.NoSiteContext, not the 400
+    api.err.InvalidObject a removed/renamed path returns. Confusing the two
+    was the root cause of #406's misleading "Site not found" error.
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_site_context_raises_invalid_site_error(
+        self, aioclient_mock: AiohttpClientMocker
+    ):
+        from custom_components.unifi_alerts.unifi_client import InvalidSiteError
+
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        body = {"meta": {"rc": "error", "msg": "api.err.NoSiteContext"}, "data": []}
+        aioclient_mock.get(list_alarm_url("missing"), status=401, json=body)
+
+        with pytest.raises(InvalidSiteError, match="does not exist"):
+            await client.fetch_alarms("missing")
+
+    @pytest.mark.asyncio
+    async def test_plain_401_still_raises_invalid_auth(self, aioclient_mock: AiohttpClientMocker):
+        """A 401 without api.err.NoSiteContext is still a genuine auth failure."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.get(list_alarm_url(), status=401)
+
+        with pytest.raises(InvalidAuthError):
+            await client.fetch_alarms()
+
+
+class TestSiteExists:
+    """Tests for UniFiClient._site_exists() — the GET /api/self/sites confirmation check."""
+
+    @pytest.mark.asyncio
+    async def test_true_when_name_matches(self, aioclient_mock: AiohttpClientMocker):
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.get(
+            self_sites_url(),
+            status=200,
+            json={"data": [{"name": "default"}, {"name": "branch"}]},
+        )
+        assert await client._site_exists("branch") is True
+
+    @pytest.mark.asyncio
+    async def test_false_when_name_absent(self, aioclient_mock: AiohttpClientMocker):
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.get(self_sites_url(), status=200, json={"data": [{"name": "default"}]})
+        assert await client._site_exists("bogus") is False
+
+    @pytest.mark.asyncio
+    async def test_true_on_network_error(self, aioclient_mock: AiohttpClientMocker):
+        """A failure to reach /api/self/sites must never be reported as a missing site."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.get(self_sites_url(), exc=aiohttp.ClientError())
+        assert await client._site_exists("anything") is True
+
+    @pytest.mark.asyncio
+    async def test_true_on_non_200_status(self, aioclient_mock: AiohttpClientMocker):
+        """A non-200 response from /api/self/sites must never be reported as a missing site."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.get(self_sites_url(), status=500)
+        assert await client._site_exists("anything") is True
+
+
+class TestValidateConnectivity:
+    """Tests for UniFiClient.validate_connectivity() — the #406 setup-time transport check.
+
+    This is the check config_flow.py now runs instead of authenticate() +
+    fetch_alarms(), so a controller with only a v2 transport (UniFi Network
+    10.6+) completes setup without ever touching the dead legacy chain.
+    """
+
+    @pytest.mark.asyncio
+    async def test_v2_only_returns_v2_without_touching_legacy(
+        self, aioclient_mock: AiohttpClientMocker
+    ):
+        """v2 available, legacy unmocked: must return "v2" and never call a legacy path.
+
+        Reproduces the #406 setup path on Network 10.6+, where every legacy
+        alarm path has been removed and only v2 works.
+        """
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.post(probe_url(), status=200, json={"categories": []})
+
+        transport = await client.validate_connectivity()
+
+        assert transport == "v2"
+        assert find_calls("GET", list_alarm_url()) == []
+        assert find_calls("GET", alarm_url()) == []
+        assert find_calls("GET", stat_alarm_url()) == []
+
+    @pytest.mark.asyncio
+    async def test_legacy_only_returns_legacy(self, aioclient_mock: AiohttpClientMocker):
+        """v2 unavailable (404), a legacy path resolves: must return "legacy"."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.post(probe_url(), status=404)
+        aioclient_mock.get(list_alarm_url(), status=200, json={"meta": {"rc": "ok"}, "data": []})
+
+        transport = await client.validate_connectivity()
+
+        assert transport == "legacy"
+
+    @pytest.mark.asyncio
+    async def test_both_available_prefers_v2(self, aioclient_mock: AiohttpClientMocker):
+        """Both transports work: v2 is tried first and legacy is never touched."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.post(probe_url(), status=200, json={"categories": []})
+        aioclient_mock.get(list_alarm_url(), status=200, json={"meta": {"rc": "ok"}, "data": []})
+
+        transport = await client.validate_connectivity()
+
+        assert transport == "v2"
+        assert find_calls("GET", list_alarm_url()) == []
+
+    @pytest.mark.asyncio
+    async def test_neither_available_raises_alarm_endpoint_unavailable(
+        self, aioclient_mock: AiohttpClientMocker
+    ):
+        """Neither transport reachable, site confirmed valid: AlarmEndpointUnavailableError.
+
+        This is the regression test for #406: a controller whose legacy
+        alarm paths are all gone (Network 10.6+) and whose v2 probe also
+        fails must be reported as a missing endpoint, never as a missing site.
+        """
+        from custom_components.unifi_alerts.unifi_client import AlarmEndpointUnavailableError
+
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.post(probe_url(), status=404)
+        _mock_dead_legacy_chain(aioclient_mock)
+        aioclient_mock.get(self_sites_url(), status=200, json={"data": [{"name": "default"}]})
+
+        with pytest.raises(AlarmEndpointUnavailableError):
+            await client.validate_connectivity()
+
+    @pytest.mark.asyncio
+    async def test_neither_available_and_site_missing_raises_invalid_site_error(
+        self, aioclient_mock: AiohttpClientMocker
+    ):
+        """Neither transport reachable AND the site is confirmed absent: InvalidSiteError."""
+        from custom_components.unifi_alerts.unifi_client import InvalidSiteError
+
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.post(probe_url("bogus"), status=404)
+        _mock_dead_legacy_chain(aioclient_mock, site="bogus")
+        aioclient_mock.get(self_sites_url(), status=200, json={"data": [{"name": "default"}]})
+
+        with pytest.raises(InvalidSiteError):
+            await client.validate_connectivity("bogus")
+
+
+class TestFetchControllerVersion:
+    """Tests for UniFiClient.fetch_controller_version() — diagnostic-only, never raises (#406)."""
+
+    @pytest.mark.asyncio
+    async def test_returns_and_caches_version(self, aioclient_mock: AiohttpClientMocker):
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.get(sysinfo_url(), status=200, json={"data": [{"version": "10.6.101"}]})
+
+        version = await client.fetch_controller_version()
+
+        assert version == "10.6.101"
+        assert client.controller_version == "10.6.101"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_failure_without_raising(
+        self, aioclient_mock: AiohttpClientMocker
+    ):
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.get(sysinfo_url(), status=404)
+
+        version = await client.fetch_controller_version()
+
+        assert version is None
+        assert client.controller_version is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_network_error_without_raising(
+        self, aioclient_mock: AiohttpClientMocker
+    ):
+        """A network error fetching sysinfo must never raise or block setup."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.get(sysinfo_url(), exc=aiohttp.ClientError())
+
+        version = await client.fetch_controller_version()
+
+        assert version is None
+        assert client.controller_version is None

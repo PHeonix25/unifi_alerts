@@ -272,7 +272,7 @@ async def test_options_flow_saves_submitted_values() -> None:
     ):
         instance = mock_cls.return_value
         instance.authenticate = AsyncMock(return_value=None)
-        instance.fetch_alarms = AsyncMock(return_value=[])
+        instance.validate_connectivity = AsyncMock(return_value="v2")
         await flow.async_step_categories(user_input)
 
     # Submit finish -> creates entry
@@ -376,7 +376,7 @@ class TestOptionsFlowCredentials:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
 
             result = await flow.async_step_credentials(new_creds)
 
@@ -475,7 +475,7 @@ class TestOptionsFlowCredentials:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             instance._is_unifi_os = False
 
             result = await flow.async_step_credentials(new_creds)
@@ -509,7 +509,7 @@ class TestOptionsFlowCredentials:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             instance._is_unifi_os = True
 
             await flow.async_step_credentials(new_creds)
@@ -574,7 +574,7 @@ class TestOptionsFlowCredentials:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             instance._is_unifi_os = False
             await flow.async_step_credentials(new_creds)
 
@@ -742,7 +742,7 @@ class TestOptionsCredentialsErrorsAndStaging:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             result = await flow.async_step_credentials(user_input)
 
         assert result["step_id"] == "categories"

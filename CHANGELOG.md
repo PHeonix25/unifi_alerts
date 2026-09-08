@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Setup, credential rotation, and controller-URL changes no longer fail on UniFi Network 10.6+, which removed every legacy alarm endpoint. The config flow now accepts either the v2 system-log transport or the legacy alarm transport (`UniFiClient.validate_connectivity()`), instead of hard-requiring the now-removed legacy path. The failure was previously misreported as "Site not found" (`InvalidSiteError`); it is now correctly reported as a missing alarm endpoint (`AlarmEndpointUnavailableError`), and a genuine missing-site error is detected directly from the controller's `api.err.NoSiteContext` response rather than inferred by exhausting the probe chain. The coordinator also no longer falls back to a legacy path it has confirmed is dead, which previously took every entity unavailable for up to an hour on Network 10.6+ if the v2 probe hit a transient failure. ([#406])
+- v2 system-log event keys carrying a numeric variant suffix (e.g. `CLIENT_ROAMED_2`) are now matched to their base key (`CLIENT_ROAMED`) instead of missing the exact-match lookup and falling through to the coarse category fallback on every occurrence. ([#406])
+- A rejected API key is no longer misreported as a successful login: UniFi Network returns HTTP 200 with `meta.rc: "error"` for some rejected-key cases, which `_verify_api_key()` previously did not check. ([#406])
 - `UniFiAlert.from_dict()` now truncates `severity` to 32 characters, matching `from_webhook_payload()`, `from_api_alarm()`, and `from_system_log_event()`. Previously an oversized `severity` value restored from the persisted Store could exceed the length applied everywhere else. ([#359])
 
 ### Documentation
@@ -407,4 +410,5 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#358]: https://github.com/PHeonix25/unifi_alerts/issues/358
 [#360]: https://github.com/PHeonix25/unifi_alerts/issues/360
 [#359]: https://github.com/PHeonix25/unifi_alerts/issues/359
+[#406]: https://github.com/PHeonix25/unifi_alerts/issues/406
 [#383]: https://github.com/PHeonix25/unifi_alerts/issues/383

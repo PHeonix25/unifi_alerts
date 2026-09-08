@@ -86,7 +86,7 @@ class TestWebhookSecretRotation:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             await flow.async_step_credentials(new_input)
 
         # No eager persistence; staged for finish.
@@ -324,7 +324,7 @@ class TestOptionsFlowUniqueIdFollowsUrl:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             instance._is_unifi_os = False
             await flow.async_step_credentials(new_creds)
 
@@ -411,7 +411,7 @@ class TestOptionsFlowUniqueIdFollowsUrl:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             instance._is_unifi_os = False
             result = await flow.async_step_credentials(new_creds)
 
@@ -458,7 +458,7 @@ class TestOptionsFlowSiteValidation:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(
+            instance.validate_connectivity = AsyncMock(
                 side_effect=InvalidSiteError("Site 'bogus-site' not found")
             )
             result = await flow.async_step_categories(cat_input)
@@ -466,6 +466,36 @@ class TestOptionsFlowSiteValidation:
         assert result["step_id"] == "categories"
         call_kwargs = flow.async_show_form.call_args.kwargs
         assert call_kwargs["errors"].get(CONF_SITE) == "invalid_site"
+
+    @pytest.mark.asyncio
+    async def test_alarm_endpoint_unavailable_shows_dedicated_error(self) -> None:
+        """AlarmEndpointUnavailableError during site validation must not be misreported as invalid_site (#406)."""
+        from custom_components.unifi_alerts.const import CONF_SITE
+        from custom_components.unifi_alerts.unifi_client import AlarmEndpointUnavailableError
+
+        flow = make_options_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
+
+        cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+        cat_input[CONF_SITE] = "bogus-site"
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+                return_value=MagicMock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value=None)
+            instance.validate_connectivity = AsyncMock(
+                side_effect=AlarmEndpointUnavailableError("No legacy alarm endpoint found")
+            )
+            result = await flow.async_step_categories(cat_input)
+
+        assert result["step_id"] == "categories"
+        call_kwargs = flow.async_show_form.call_args.kwargs
+        assert call_kwargs["errors"].get("base") == "alarm_endpoint_unavailable"
 
     @pytest.mark.asyncio
     async def test_default_site_skips_validation(self) -> None:
@@ -504,7 +534,7 @@ class TestOptionsFlowSiteValidation:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             result = await flow.async_step_categories(cat_input)
 
         assert result["step_id"] == "finish"
@@ -534,7 +564,7 @@ class TestOptionsFlowSiteValidation:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             result = await flow.async_step_categories(cat_input)
 
         # Client must have been created with the pending (updated) controller URL
@@ -563,7 +593,9 @@ class TestOptionsFlowSiteValidation:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(side_effect=CannotConnectError("Connection refused"))
+            instance.validate_connectivity = AsyncMock(
+                side_effect=CannotConnectError("Connection refused")
+            )
             result = await flow.async_step_categories(cat_input)
 
         assert result["step_id"] == "categories"
