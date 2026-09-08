@@ -30,7 +30,26 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class InvalidSiteError(CannotConnectError):
-    """Raised when the site name does not exist on the controller."""
+    """Raised when the site name does not exist on the controller.
+
+    Reserved for a genuine site miss: HTTP 401 + ``api.err.NoSiteContext``
+    from the controller, or a site name absent from ``GET /api/self/sites``
+    (see ``validate_connectivity``). A firmware that has simply removed the
+    legacy alarm paths (UniFi Network 10.6+) is not a site error — that is
+    ``AlarmEndpointUnavailableError`` (#406).
+    """
+
+
+class AlarmEndpointUnavailableError(CannotConnectError):
+    """Raised when no alarm endpoint this integration knows about is reachable.
+
+    UniFi Network 10.6 removed every legacy alarm path (``/list/alarm``,
+    ``/alarm``, ``/stat/alarm``); only the v2 ``system-log`` API remains.
+    Distinct from ``InvalidSiteError`` — the site and API key are both
+    valid here, the firmware simply no longer exposes a compatible alarm
+    endpoint. ``validate_connectivity`` is the setup-time check that treats
+    this as recoverable (fall through to v2) rather than fatal.
+    """
 
 
 class UniFiClient:
@@ -70,8 +89,60 @@ class UniFiClient:
         # site. Cleared if the cached URL later stops resolving (e.g. a
         # firmware upgrade removes/moves the path) so discovery runs again.
         self._alarm_url_cache: dict[str, str] = {}
+        # Set per site the first time _discover_alarm_url() exhausts the
+        # legacy probe chain (UniFi Network 10.6+ has removed every legacy
+        # alarm path). In-memory only, no config-entry migration — lets the
+        # coordinator stop retrying a path it already knows is dead instead
+        # of failing every poll until the v2-probe backoff window expires (#406).
+        self._legacy_confirmed_unavailable: dict[str, bool] = {}
+        # Network application version, fetched by fetch_controller_version()
+        # at setup and surfaced in diagnostics.py so the next firmware-specific
+        # bug report carries the Network application version, not just the
+        # UniFi OS version (#406).
+        self._controller_version: str | None = None
 
     # ── Public interface ──────────────────────────────────────────────────
+
+    @property
+    def controller_version(self) -> str | None:
+        """Network application version last fetched by fetch_controller_version(), if any."""
+        return self._controller_version
+
+    def discovered_alarm_url(self, site: str) -> str | None:
+        """Return the cached legacy alarm URL for `site`, if discovery has found one."""
+        return self._alarm_url_cache.get(site)
+
+    async def fetch_controller_version(self, site: str = "default") -> str | None:
+        """Fetch and cache the Network application version from stat/sysinfo.
+
+        Best-effort and diagnostic only (#406): failure here must never block
+        setup, so any error is swallowed and logged at DEBUG, returning None
+        (or the previously cached value, if one exists).
+        """
+        url = f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/stat/sysinfo"
+        try:
+            async with self._session.get(
+                url,
+                headers=self._auth.headers(),
+                ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+                timeout=aiohttp.ClientTimeout(total=10),
+                allow_redirects=False,
+            ) as resp:
+                if resp.status != 200:
+                    _LOGGER.debug(
+                        "Could not fetch controller version from %s (HTTP %d)", url, resp.status
+                    )
+                    return self._controller_version
+                body = await resp.json(content_type=None)
+        except (aiohttp.ClientError, json.JSONDecodeError, UnicodeDecodeError) as err:
+            _LOGGER.debug("Could not fetch controller version from %s: %s", url, err)
+            return self._controller_version
+
+        data = body.get("data") or []
+        version = data[0].get("version") if data else None
+        if version:
+            self._controller_version = str(version)
+        return self._controller_version
 
     async def authenticate(self) -> None:
         """Verify the configured API key against the UniFi OS controller.
@@ -80,6 +151,65 @@ class UniFiClient:
         means for API-key auth.
         """
         await self._auth.authenticate()
+
+    async def validate_connectivity(self, site: str = "default") -> str:
+        """Determine which transport reaches alarms for `site`: "v2" or "legacy".
+
+        Tries the v2 ``system-log/count`` probe first so a modern controller
+        (UniFi Network 10.6+, which has removed every legacy alarm path)
+        succeeds without ever touching the dead legacy chain. Falls back to
+        the legacy alarm-path chain for older controllers. Only raises
+        ``AlarmEndpointUnavailableError`` when neither transport is
+        reachable and the site itself is confirmed valid; raises
+        ``InvalidSiteError`` instead when `site` genuinely does not exist,
+        either signalled directly by the controller (``api.err.NoSiteContext``)
+        or confirmed against ``GET /api/self/sites`` (#406).
+        """
+        if await self.probe_system_log_endpoint(site):
+            return "v2"
+        try:
+            await self.fetch_alarms(site)
+        except AlarmEndpointUnavailableError:
+            if await self._site_exists(site):
+                raise
+            raise InvalidSiteError(f"Site '{site}' not found on the controller.") from None
+        else:
+            return "legacy"
+
+    def legacy_alarm_endpoint_confirmed_unavailable(self, site: str) -> bool:
+        """Return True once discovery has confirmed no legacy alarm endpoint exists for `site`.
+
+        Learned the first time ``_discover_alarm_url`` exhausts the probe
+        chain for this site. The coordinator consults this to avoid
+        re-probing a path it already knows is dead (#406).
+        """
+        return self._legacy_confirmed_unavailable.get(site, False)
+
+    async def _site_exists(self, site: str) -> bool:
+        """Check whether `site` is a real site name on the controller.
+
+        Calls ``GET /api/self/sites`` and matches the `name` field — the
+        same identifier used in the legacy ``/api/s/<site>/`` URL segment.
+        Any failure to reach or parse this endpoint is treated as "cannot
+        confirm the site is missing" so a transient network blip is never
+        misreported as InvalidSiteError.
+        """
+        url = f"{self._base}{UNIFI_OS_NETWORK_PREFIX}/api/self/sites"
+        try:
+            async with self._session.get(
+                url,
+                headers=self._auth.headers(),
+                ssl=self._config.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+                timeout=aiohttp.ClientTimeout(total=10),
+                allow_redirects=False,
+            ) as resp:
+                if resp.status != 200:
+                    return True
+                data = await resp.json()
+        except aiohttp.ClientError, json.JSONDecodeError:
+            return True
+        sites: list[dict[str, Any]] = data.get("data", [])
+        return any(entry.get("name") == site for entry in sites)
 
     async def fetch_alarms(self, site: str = "default") -> list[dict[str, Any]]:
         """Return all unarchived alarms from the controller.
@@ -129,8 +259,11 @@ class UniFiClient:
                 self._alarm_url_cache[site] = path
                 return result
             # None means path not found (404 or api.err.InvalidObject) — try next
-        raise InvalidSiteError(
-            f"Site '{site}' not found on the controller. Tried: {', '.join(alarm_paths)}"
+        self._legacy_confirmed_unavailable[site] = True
+        raise AlarmEndpointUnavailableError(
+            f"No legacy alarm endpoint found for site '{site}'. This firmware has "
+            f"removed all legacy alarm paths (UniFi Network 10.6+); the integration "
+            f"needs the v2 system-log API instead. Tried: {', '.join(alarm_paths)}"
         )
 
     async def _try_fetch_alarms(self, url: str, site: str) -> list[dict[str, Any]] | None:
@@ -156,6 +289,15 @@ class UniFiClient:
                         "request; refusing to follow to protect credentials"
                     )
                 if resp.status == 401:
+                    unifi_msg = await self._parse_unifi_error_msg(resp, url)
+                    if unifi_msg == "api.err.NoSiteContext":
+                        # A genuinely missing site, not an auth failure — confirmed
+                        # across several upstream projects. Distinct from InvalidObject
+                        # below, which just means this particular path doesn't exist (#406).
+                        raise InvalidSiteError(
+                            f"Site '{site}' does not exist on the controller "
+                            "(api.err.NoSiteContext)"
+                        )
                     raise InvalidAuthError("API key rejected (HTTP 401)")
                 if resp.status == 404:
                     _LOGGER.debug("Alarm URL %s returned 404 — trying next URL", url)

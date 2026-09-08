@@ -36,7 +36,7 @@ from .const import (
 from .models import CategoryState, UniFiAlert, UniFiClientConfig, ensure_aware
 from .severity import get_effective_min_severity, meets_minimum
 from .unifi_auth import CannotConnectError, InvalidAuthError
-from .unifi_client import UniFiClient
+from .unifi_client import AlarmEndpointUnavailableError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -232,6 +232,13 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
           - the probe returns False (404, or repeated transient failures past backoff)
           - the probe itself raises a network error (logged at DEBUG)
           - this is an older controller without the v2 endpoint
+
+        Never falls back to the legacy path once the client has confirmed it
+        does not exist on this firmware (UniFi Network 10.6+ removed every
+        legacy alarm path, #406): that would fail every poll for the
+        _PROBE_RETRY_AFTER backoff window even though v2 works fine. Instead,
+        try v2 immediately here too — either because the probe already knows
+        this, or because legacy categorise_alarms() just found out.
         """
         try:
             has_v2 = await self._probe_has_system_log()
@@ -245,11 +252,22 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             )
             has_v2 = False
 
-        if not has_v2:
-            result = await self._client.categorise_alarms(self._site)
-            for key, count in self._client.unrecognised_keys.items():
-                self._unrecognised_keys[key] = self._unrecognised_keys.get(key, 0) + count
-            return result
+        use_legacy = not has_v2 and not self._client.legacy_alarm_endpoint_confirmed_unavailable(
+            self._site
+        )
+        if use_legacy:
+            try:
+                result = await self._client.categorise_alarms(self._site)
+            except AlarmEndpointUnavailableError:
+                _LOGGER.debug(
+                    "Legacy alarm endpoint confirmed unavailable for site %s; "
+                    "using v2 system-log for this and future polls",
+                    self._site,
+                )
+            else:
+                for key, count in self._client.unrecognised_keys.items():
+                    self._unrecognised_keys[key] = self._unrecognised_keys.get(key, 0) + count
+                return result
 
         # v2 path: compute the oldest watermark across enabled categories so we
         # fetch everything since the oldest unacknowledged window. Clamp to
@@ -455,6 +473,20 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     @property
     def rollup_open_count(self) -> int:
         return sum(s.open_count for s in self._category_states.values() if s.enabled)
+
+    @property
+    def resolved_transport(self) -> str:
+        """Best-known alarm transport for this site, for diagnostics (#406).
+
+        "v2" once the system-log probe has confirmed it; "legacy" once
+        discovery has cached a working legacy alarm URL; "unknown" before
+        either has happened (e.g. the very first poll has not completed).
+        """
+        if self._has_system_log:
+            return "v2"
+        if self._client.discovered_alarm_url(self._site) is not None:
+            return "legacy"
+        return "unknown"
 
     @property
     def unrecognised_keys(self) -> dict[str, int]:

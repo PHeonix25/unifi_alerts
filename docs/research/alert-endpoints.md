@@ -20,6 +20,7 @@ dead ends.
 | 2 | IPS events live at `/stat/ips/event`, not `/list/alarm` | Disproven | `/stat/ips/event` returns `api.err.NotFound`; `/list/alarm` contains `EVT_IPS_IpsAlert` with full payload. |
 | 3 | Today's alarms appear in `/list/alarm` but are below the watermark | Disproven | Field-confirmed: today's alarms do NOT appear in `/list/alarm` at all (3000-record cap). |
 | 4 | `/list/alarm` has a 3000-record cap sorted oldest-first | Confirmed | Both `/list/alarm` and `/rest/alarm` return the same 3000 records covering only the oldest end of the retention window; today's events are absent. Confirmed present via `/system-log/all`. |
+| 5 | Setup failure on Network 10.6 ("Site 'default' not found") is a genuine site error | Disproven | The site exists and the API key is valid (`GET /api/s/default/self` and `GET /api/self/sites` both succeed). Network 10.6 removed every legacy alarm path outright; every probed path returns `400 api.err.InvalidObject`, which the old code misreported as a missing site. A genuinely missing site returns `401 api.err.NoSiteContext` instead, confirmed across several upstream projects. See #406. |
 
 ## Endpoints probed
 
@@ -55,6 +56,46 @@ returned regardless:
 | `/proxy/network/v2/api/site/{site}/system-log/count` | POST | Returns category and event counts. Confirmed working. |
 | `/proxy/network/v2/api/site/{site}/system-log/all` | POST | Returns paginated events with timestamp filtering. Confirmed working. |
 | `/proxy/network/v2/api/site/{site}/system-log/critical` | POST | Returns `[]`. No events classified as "critical" on this controller. |
+
+## Network 10.6 legacy-endpoint removal (2026-08, issue #406)
+
+Follow-up field research against a UCG-Ultra upgraded from Network 10.5.67 to
+10.6.101 (`stat/sysinfo` reports `previous_version: 10.5.67`, which worked).
+Two independent reporters saw the same setup failure on a UDM (UniFi OS
+5.1.26) and a UDM-Pro (UniFi OS 5.1.31 / Network 10.6.101).
+
+Probe results on 10.6.101 with a valid API key:
+
+| Endpoint | Result |
+|---|---|
+| `GET /proxy/network/api/s/default/self` | 200 `rc: ok` |
+| `GET /proxy/network/api/self/sites` | 200, site `default` present |
+| `GET /proxy/network/api/s/default/list/alarm` | 400 `api.err.InvalidObject` |
+| `GET /proxy/network/api/s/default/alarm` | 400 `api.err.InvalidObject` |
+| `GET /proxy/network/api/s/default/stat/alarm` | 404 `api.err.NotFound` |
+| `GET /proxy/network/api/s/default/rest/alarm` | 400 `api.err.InvalidObject` |
+| `GET /proxy/network/api/s/default/cnt/alarm` | 400 `api.err.InvalidObject` |
+| `POST /proxy/network/v2/api/site/default/system-log/count` | 200 with data |
+| `POST /proxy/network/v2/api/site/default/system-log/all` | 200 with data |
+
+Conclusions:
+
+- The site exists and the API key is valid; the `InvalidSiteError` the
+  integration was raising was a misdiagnosis. A genuinely missing site
+  returns `401 api.err.NoSiteContext`, not `400 api.err.InvalidObject`.
+- No legacy alarm path survives on Network 10.6, on any of the three
+  controllers tested. The v2 `system-log` API is the only route; it works
+  with the same API key that the legacy paths reject.
+- `coordinator.py` already preferred v2 at runtime for existing installs, so
+  polling kept working through the upgrade. Only `config_flow.py` hard-gated
+  on the legacy path, which is why new setups and credential changes failed
+  while polling quietly kept working.
+- The coordinator's own v2-probe backoff (`_PROBE_FAIL_LIMIT` transient
+  failures pin `_has_system_log` to `False` for `_PROBE_RETRY_AFTER`) could
+  fall back to the now-dead legacy path and take every entity unavailable for
+  the full backoff window: a latent outage distinct from the setup failure.
+  Fixed by having the coordinator retry v2 instead of falling back once the
+  client has confirmed no legacy endpoint exists (#406).
 
 ## The 3000-record cap
 

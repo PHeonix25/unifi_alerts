@@ -10,7 +10,9 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_API_KEY,
+    CONF_SITE,
     CONF_WEBHOOK_SECRET,
+    DEFAULT_SITE,
 )
 
 _TO_REDACT: set[str] = {CONF_API_KEY, CONF_WEBHOOK_SECRET}
@@ -27,6 +29,8 @@ async def async_get_config_entry_diagnostics(
     """
     runtime_data = getattr(entry, "runtime_data", None)
     coordinator = runtime_data.coordinator if runtime_data is not None else None
+    client = runtime_data.client if runtime_data is not None else None
+    site = entry.data.get(CONF_SITE, DEFAULT_SITE)
     # register_all() no longer embeds the bearer secret in these URLs (#176),
     # so no redaction is needed before including them in shared diagnostics.
     webhook_urls: dict[str, str] = (
@@ -58,6 +62,9 @@ async def async_get_config_entry_diagnostics(
             "unrecognised_keys": dict(
                 sorted(coordinator.unrecognised_keys.items(), key=lambda kv: kv[1], reverse=True)
             ),
+            # Alarm transport, endpoint, and controller version — the fields the
+            # #406 setup failure was missing from every early bug report (#406).
+            "resolved_transport": coordinator.resolved_transport,
             # Per-category alert content (message, device_name, last_alert.raw) is
             # intentionally excluded. Those fields carry controller-supplied strings
             # that may contain client hostnames, MAC addresses, or IP addresses and
@@ -68,9 +75,15 @@ async def async_get_config_entry_diagnostics(
     else:
         coordinator_info = {}
 
+    controller_info: dict[str, Any] = {
+        "discovered_alarm_url": client.discovered_alarm_url(site) if client is not None else None,
+        "controller_version": client.controller_version if client is not None else None,
+    }
+
     return {
         "config_entry": async_redact_data(dict(entry.data), _TO_REDACT),
         "options": async_redact_data(dict(entry.options), _TO_REDACT),
         "webhook_urls": webhook_urls,
         "coordinator": coordinator_info,
+        "controller": controller_info,
     }

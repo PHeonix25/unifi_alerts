@@ -50,15 +50,17 @@ Prior versions also supported username/password (cookie-session) authentication,
 
 `GET /proxy/network/api/s/{site}/<path>`
 
-> **Path variation by firmware.** UniFi has changed the alarm path multiple times. The integration probes them newest-to-oldest so modern firmware succeeds in one call:
+> **Path variation by firmware, and removal on Network 10.6+.** UniFi has changed the alarm path multiple times, and **Network 10.6 removed all three of these legacy paths outright**: confirmed by direct probing of a UCG-Ultra on 10.6.101 and reproduced independently on a UDM (5.1.26) and a UDM-Pro (5.1.31 / 10.6.101) ([#406](https://github.com/PHeonix25/unifi_alerts/issues/406)). The integration probes them newest-to-oldest so pre-10.6 firmware succeeds in one call, then falls back to the v2 `system-log` API (see below) when none resolve:
 >
 > | Path | Era | Notes |
 > |---|---|---|
-> | `/list/alarm` | newest (UniFi Network 9.x+) | Tried first. Replaced `/stat/alarm` somewhere in the 9.x line. |
-> | `/alarm` | long-standing | Universal historical path; still present on most firmware. Tried second. |
-> | `/stat/alarm` | older intermediate | Some firmware exposes only this. Tried last. |
+> | `/list/alarm` | UniFi Network 9.x-10.5 | Tried first. Replaced `/stat/alarm` somewhere in the 9.x line. Removed in Network 10.6. |
+> | `/alarm` | long-standing | Universal historical path on pre-10.6 firmware. Tried second. Removed in Network 10.6. |
+> | `/stat/alarm` | older intermediate | Some firmware exposes only this. Tried last. Removed in Network 10.6. |
 >
-> A path that doesn't exist may return either 404 or `400 api.err.InvalidObject` depending on firmware; both are treated as "try the next path". A genuine 400 (e.g. wrong site name) is surfaced only after every path is exhausted.
+> A path that doesn't exist may return either 404 or `400 api.err.InvalidObject` depending on firmware; both are treated as "try the next path". On Network 10.6+ every path returns `400 api.err.InvalidObject`, so the chain always exhausts.
+>
+> A genuinely missing site is a distinct, earlier signal: HTTP 401 + `api.err.NoSiteContext` (not `InvalidObject`), surfaced immediately as `InvalidSiteError` rather than waiting for the chain to exhaust. Once the chain does exhaust with no site-miss signal, `unifi_client.py::_discover_alarm_url` raises `AlarmEndpointUnavailableError`: "this firmware exposes no alarm endpoint we know about", not a site or auth problem. `UniFiClient.validate_connectivity()` is the setup-time entry point that tries the v2 probe first and only falls back to this legacy chain (and only treats `AlarmEndpointUnavailableError` as fatal) when v2 is also unreachable, so a Network 10.6+ controller sets up successfully on the v2 path alone.
 >
 > This probe chain only runs on the first `fetch_alarms()` call for a site (or again later if the cached URL stops resolving, e.g. after a firmware upgrade): see `unifi_client.py::_discover_alarm_url`. Once a path resolves it is cached per site and reused directly on every subsequent poll, so the 404/`api.err.InvalidObject` fallback parsing does not run on every poll ([#239](https://github.com/PHeonix25/unifi_alerts/issues/239)).
 >
@@ -122,11 +124,15 @@ The controller returns HTTP 200 even for application-level errors. The `meta.rc`
 
 ## v2 system-log API (Network 9.x+)
 
-> **This is the correct modern polling path for UniFi OS consoles.** The legacy
-> `/list/alarm` endpoint has a hard 3000-record cap sorted oldest-first; on busy
-> controllers it returns no recent alarms at all. The v2 system-log API supports
-> timestamp-range filtering and real pagination. The integration must migrate to
-> this path for `open_count` to be reliable on high-volume installations.
+> **This is the correct modern polling path for UniFi OS consoles, and the
+> only path on Network 10.6+.** The legacy `/list/alarm` endpoint has a hard
+> 3000-record cap sorted oldest-first; on busy controllers it returns no
+> recent alarms at all, and Network 10.6 removed it (and every other legacy
+> alarm path) entirely ([#406](https://github.com/PHeonix25/unifi_alerts/issues/406)).
+> The v2 system-log API supports timestamp-range filtering and real
+> pagination. The integration must use this path for `open_count` to be
+> reliable on high-volume installations, and needs it outright on Network
+> 10.6+ controllers, where no legacy alarm endpoint exists to fall back to.
 
 ### Probe for v2 availability
 

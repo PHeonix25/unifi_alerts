@@ -417,6 +417,24 @@ class TestFromSystemLogEvent:
         alert = UniFiAlert.from_system_log_event(event)
         assert alert.category == CATEGORY_NETWORK_CLIENT
 
+    def test_maps_numeric_variant_key_to_category(self):
+        """A trailing numeric variant suffix (e.g. "_2") must not defeat the exact-match lookup.
+
+        Field-confirmed real payload shape (#406): "key": "CLIENT_ROAMED_2"
+        alongside "event": "CLIENT_ROAMED". Before the fix this missed
+        SYSTEM_LOG_KEY_TO_CATEGORY's exact match on "CLIENT_ROAMED", fell
+        through to the coarse enum fallback, and was logged as an
+        undocumented key on every roam.
+        """
+        event = dict(
+            self._BASE_EVENT,
+            key="CLIENT_ROAMED_2",
+            event="CLIENT_ROAMED",
+            category="CLIENT_DEVICES",
+        )
+        alert = UniFiAlert.from_system_log_event(event, seen_keys=set())
+        assert alert.category == CATEGORY_NETWORK_CLIENT
+
     def test_maps_power_key_to_power(self):
         event = dict(self._BASE_EVENT, key="POE_OVERLOAD", category="POWER")
         alert = UniFiAlert.from_system_log_event(event)

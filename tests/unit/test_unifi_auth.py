@@ -7,8 +7,10 @@ X-API-Key header, with no session state.
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
-from unittest.mock import MagicMock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -30,12 +32,22 @@ def make_auth(config: dict | None = None) -> UniFiAuth:
     return UniFiAuth(session, "https://192.168.1.1", cfg)
 
 
-def _make_response(status: int, headers: dict | None = None):
-    """Build a minimal mock aiohttp response for use in async context managers."""
+def _make_response(
+    status: int, headers: dict | None = None, json_body: dict[str, Any] | None = None
+):
+    """Build a minimal mock aiohttp response for use in async context managers.
+
+    json_body defaults to a successful envelope (meta.rc: "ok") so every
+    existing 200-status test keeps exercising a real "success" response,
+    matching what _verify_api_key now parses after raise_for_status() (#406).
+    """
     resp = MagicMock()
     resp.status = status
     resp.headers = headers or {}
     resp.raise_for_status = MagicMock()
+    resp.json = AsyncMock(
+        return_value=json_body if json_body is not None else {"meta": {"rc": "ok"}}
+    )
 
     @asynccontextmanager
     async def _ctx(*args, **kwargs):
@@ -83,6 +95,7 @@ class TestVerifyApiKey:
             resp.status = 200
             resp.headers = {}
             resp.raise_for_status = MagicMock()
+            resp.json = AsyncMock(return_value={"meta": {"rc": "ok"}})
             yield resp
 
         auth._session.get = _ctx
@@ -157,6 +170,55 @@ class TestVerifyApiKey:
 
         auth._session.get = _raise
         with pytest.raises(SslCertificateError):
+            await auth._verify_api_key()
+
+    @pytest.mark.asyncio
+    async def test_200_with_meta_rc_error_raises_invalid_auth(self):
+        """HTTP 200 with meta.rc == "error" must be treated as a rejected key, not a success.
+
+        UniFi returns HTTP 200 for some rejected-key cases, with the envelope
+        carrying `meta.rc: "error"`. Checking status alone previously let this
+        be reported as a successful login (#406).
+        """
+        auth = make_auth({"api_key": "bad-key", "verify_ssl": False})
+        auth._session.get = _make_response(
+            200, json_body={"meta": {"rc": "error", "msg": "api.err.Invalid"}}
+        )
+
+        with pytest.raises(InvalidAuthError, match=r"api\.err\.Invalid"):
+            await auth._verify_api_key()
+
+    @pytest.mark.asyncio
+    async def test_200_with_meta_rc_ok_authenticates(self):
+        """HTTP 200 with meta.rc == "ok" must succeed (the normal case)."""
+        auth = make_auth({"api_key": "good-key", "verify_ssl": False})
+        auth._session.get = _make_response(200, json_body={"meta": {"rc": "ok"}})
+
+        assert await auth._verify_api_key() is None
+
+    @pytest.mark.asyncio
+    async def test_200_with_unparseable_body_raises_invalid_auth(self):
+        """A 200 response whose body isn't valid JSON must fail closed, not crash or succeed.
+
+        Mirrors unifi_client.py's _parse_unifi_error_msg: an unparseable body
+        must not propagate a JSONDecodeError, and must not be treated as a
+        successful meta.rc == "ok" response either.
+        """
+        auth = make_auth({"api_key": "some-key", "verify_ssl": False})
+        resp = MagicMock()
+        resp.status = 200
+        resp.headers = {}
+        resp.raise_for_status = MagicMock()
+        resp.json = AsyncMock(
+            side_effect=json.JSONDecodeError("Expecting value", "not valid json", 0)
+        )
+
+        @asynccontextmanager
+        async def _ctx(*args, **kwargs):
+            yield resp
+
+        auth._session.get = _ctx
+        with pytest.raises(InvalidAuthError):
             await auth._verify_api_key()
 
     @pytest.mark.asyncio

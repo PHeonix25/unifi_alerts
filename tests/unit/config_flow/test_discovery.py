@@ -236,7 +236,7 @@ async def test_user_step_carries_ssdp_serial_into_credentials() -> None:
     ):
         instance = mock_cls.return_value
         instance.authenticate = AsyncMock(return_value=None)
-        instance.fetch_alarms = AsyncMock(return_value=[])
+        instance.validate_connectivity = AsyncMock(return_value="v2")
 
         await flow.async_step_user(_VALID_INPUT)
 

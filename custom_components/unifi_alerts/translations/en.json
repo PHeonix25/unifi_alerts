@@ -75,7 +75,8 @@
       "invalid_ssl_cert": "SSL certificate verification failed. If this controller uses a self-signed certificate, untick \"Verify SSL certificate\" and try again.",
       "invalid_url_scheme": "Controller URL must start with http:// or https://.",
       "at_least_one_category": "Please enable at least one alert category.",
-      "invalid_site": "Site not found on the controller. Check the site name (the URL slug, not the display name). The default single-site name is 'default'."
+      "invalid_site": "Site not found on the controller. Check the site name (the URL slug, not the display name). The default single-site name is 'default'.",
+      "alarm_endpoint_unavailable": "This controller's firmware no longer exposes a compatible alarm endpoint (UniFi Network 10.6 and later removed the legacy alarm API). The integration needs the newer system-log API; check that the API key has permission to read it and that the controller has finished upgrading."
     },
     "abort": {
       "already_configured": "This UniFi controller is already configured.",
@@ -232,7 +233,8 @@
       "invalid_ssl_cert": "SSL certificate verification failed. If this controller uses a self-signed certificate, untick \"Verify SSL certificate\" and try again.",
       "invalid_url_scheme": "Controller URL must start with http:// or https://.",
       "at_least_one_category": "Please enable at least one alert category.",
-      "invalid_site": "Site not found on the controller. Check the site name (the URL slug, not the display name). The default single-site name is 'default'."
+      "invalid_site": "Site not found on the controller. Check the site name (the URL slug, not the display name). The default single-site name is 'default'.",
+      "alarm_endpoint_unavailable": "This controller's firmware no longer exposes a compatible alarm endpoint (UniFi Network 10.6 and later removed the legacy alarm API). The integration needs the newer system-log API; check that the API key has permission to read it and that the controller has finished upgrading."
     },
     "step": {
       "credentials": {

@@ -411,7 +411,7 @@ class TestAsyncValidateControllerCredentials:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
 
             result = await _async_validate_controller_credentials(
                 MagicMock(), "https://10.0.0.1", True, {CONF_API_KEY: "key"}
@@ -420,7 +420,7 @@ class TestAsyncValidateControllerCredentials:
         assert result is None
         mock_get_session.assert_called_once()
         instance.authenticate.assert_awaited_once()
-        instance.fetch_alarms.assert_awaited_once()
+        instance.validate_connectivity.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_invalid_auth_error_propagates_unchanged(self) -> None:
@@ -482,7 +482,7 @@ class TestAsyncValidateControllerCredentials:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(side_effect=CannotConnectError("down"))
+            instance.validate_connectivity = AsyncMock(side_effect=CannotConnectError("down"))
 
             with pytest.raises(CannotConnectError):
                 await _async_validate_controller_credentials(

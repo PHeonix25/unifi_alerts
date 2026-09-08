@@ -63,7 +63,8 @@ See [docs/EXAMPLES.md](docs/EXAMPLES.md) for a working example of each: a Lovela
 | UDM-SE | 4.0.x | Reported by users |
 | UCG-Max | 4.0.x | Reported by users |
 | Cloud Key Gen2+ | 4.0.x | Reported by users |
-| UDM / UDM-Pro | 4.0.x | Should work; not yet reported |
+| UDM / UDM-Pro | 5.1.x | Reported by users |
+| Any UniFi OS console | Network 10.6+ | Confirmed on a UCG-Ultra (Network 10.6.101), UDM (UniFi OS 5.1.26), and UDM-Pro (UniFi OS 5.1.31 / Network 10.6.101). Network 10.6 removed every legacy alarm endpoint; the integration falls back to the v2 system-log API automatically ([#406](https://github.com/PHeonix25/unifi_alerts/issues/406)) |
 
 If your model is not listed, open an [issue](https://github.com/PHeonix25/unifi_alerts/issues) with controller model and firmware so we can grow this table.
 
@@ -100,8 +101,8 @@ An API key is required; the integration no longer supports username/password aut
 
 | Firmware / UI version | Path |
 |---|---|
-| Network Application 8.x+ | **Settings > Admins & Users > API Keys > Create** |
-| Some UCG / UDM firmware | **Integrations > API > New API Key** |
+| Network Application 9.x+ (including 10.6+) | **Integrations > API > New API Key** |
+| Network Application 8.x | **Settings > Admins & Users > API Keys > Create** |
 | Older Cloud Key Gen2+ | **Settings > Control Plane > API Keys** |
 
 The key is shown only once at creation - copy it immediately.
