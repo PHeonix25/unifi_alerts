@@ -287,11 +287,17 @@ class CategoryState:
     last_alert: UniFiAlert | None = None
     alert_count: int = 0  # incremented by webhooks
     open_count: int = 0  # set by polling (unarchived alarms)
+    # Count of webhook pushes dropped by the Minimum_Severity_Setting gate.
+    # Webhook-only, like alert_count/last_webhook_at: the poll path
+    # re-observes the same uncleared alarms on every cycle, so counting
+    # there would inflate this beyond "number of distinct filtered events".
+    filtered_count: int = 0
     last_cleared_at: datetime | None = None
     # Timestamp of the last webhook actually received for this category. Set
     # only on the push path (never by polling) so it reflects webhook
     # connectivity specifically, which powers the onboarding/health signal.
     last_webhook_at: datetime | None = None
+    last_filtered_at: datetime | None = None
     # Newest `received_at` seen for this category, from either the push or
     # polling path. Tracked so Clear can anchor `last_cleared_at` to the
     # controller's own timeline instead of the HA host clock (#268): using
@@ -306,6 +312,11 @@ class CategoryState:
         received_at = ensure_aware(alert.received_at)
         if self.last_alarm_received_at is None or received_at > self.last_alarm_received_at:
             self.last_alarm_received_at = received_at
+
+    def record_filtered(self, alert: UniFiAlert) -> None:
+        """Record a webhook alert dropped by the Minimum_Severity_Setting gate."""
+        self.filtered_count += 1
+        self.last_filtered_at = ensure_aware(alert.received_at)
 
     def clear(self) -> None:
         """Acknowledge everything seen so far for this category.

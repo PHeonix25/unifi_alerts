@@ -230,6 +230,33 @@ class TestCategoryState:
         state = CategoryState(category=CATEGORY_NETWORK_WAN)
         assert state.last_webhook_at is None
 
+    def test_filtered_count_and_last_filtered_at_default(self):
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        assert state.filtered_count == 0
+        assert state.last_filtered_at is None
+
+    def test_record_filtered_increments_count_and_stamps_last_filtered_at(self):
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": "test"})
+        state.record_filtered(alert)
+        assert state.filtered_count == 1
+        assert state.last_filtered_at == alert.received_at
+
+    def test_record_filtered_does_not_affect_alerting_fields(self):
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": "test"})
+        state.record_filtered(alert)
+        assert state.is_alerting is False
+        assert state.alert_count == 0
+        assert state.last_alert is None
+
+    def test_record_filtered_increments_across_calls(self):
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        for i in range(3):
+            alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": f"alert {i}"})
+            state.record_filtered(alert)
+        assert state.filtered_count == 3
+
 
 class TestWebhookHealth:
     """Tests for CategoryState.webhook_health()."""

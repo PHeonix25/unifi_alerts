@@ -7,7 +7,7 @@ test_persistence.py, and test_autoclear.py in this package.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from conftest import run_sync
@@ -527,6 +527,54 @@ class TestPollingSeverityGate:
         state = coord.get_category_state(CATEGORY_NETWORK_DEVICE)
         assert state.open_count == 1
         assert state.is_alerting is True
+
+    def test_severity_filtered_polling_logs_debug_for_filtered_alerts(self):
+        """A filtered alert during polling must leave a DEBUG trail, analogous
+        to the push-path filter log, so a user can tell "alert never arrived"
+        from "alert arrived but was filtered" without enabling raw payload
+        logging (#357)."""
+        category = CATEGORY_NETWORK_WAN
+        alert = UniFiAlert(
+            category=category,
+            message="below-threshold alert",
+            received_at=datetime(2024, 1, 1, tzinfo=UTC),
+            severity=SEVERITY_ORDER[0],
+        )
+
+        hass, client = make_hass_and_client()
+        client.categorise_alarms = AsyncMock(return_value={category: [alert]})
+        coord = make_full_coordinator(hass, client)
+        coord._config[CONF_MIN_SEVERITY] = {category: SEVERITY_ORDER[-1]}
+
+        with patch("custom_components.unifi_alerts.coordinator._LOGGER") as mock_logger:
+            run_sync(coord._async_update_data())
+
+        debug_messages = [call.args[0] for call in mock_logger.debug.call_args_list]
+        assert any("Filtered polled alert" in msg for msg in debug_messages)
+
+    def test_polling_does_not_touch_filtered_diagnostic_trail(self):
+        """The poll path re-observes the same uncleared alarms every cycle, so
+        it must never touch filtered_count/last_filtered_at — those are
+        webhook-only, mirroring alert_count/last_webhook_at (#357)."""
+        category = CATEGORY_NETWORK_WAN
+        alert = UniFiAlert(
+            category=category,
+            message="below-threshold alert",
+            received_at=datetime(2024, 1, 1, tzinfo=UTC),
+            severity=SEVERITY_ORDER[0],
+        )
+
+        hass, client = make_hass_and_client()
+        client.categorise_alarms = AsyncMock(return_value={category: [alert]})
+        coord = make_full_coordinator(hass, client)
+        coord._config[CONF_MIN_SEVERITY] = {category: SEVERITY_ORDER[-1]}
+
+        run_sync(coord._async_update_data())
+        run_sync(coord._async_update_data())
+
+        state = coord.get_category_state(category)
+        assert state.filtered_count == 0
+        assert state.last_filtered_at is None
 
     # A disabled category must be untouched by a poll cycle regardless of
     # severity content

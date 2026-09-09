@@ -127,6 +127,7 @@ class TestDiagnosticsContent:
     @pytest.mark.asyncio
     async def test_exposes_per_category_state(self) -> None:
         cleared_at = datetime(2026, 4, 30, 12, 0, 0, tzinfo=UTC)
+        filtered_at = datetime(2026, 4, 30, 12, 5, 0, tzinfo=UTC)
         cat = ALL_CATEGORIES[0]
         states = {c: CategoryState(category=c) for c in ALL_CATEGORIES}
         # Use a current timestamp so webhook_health() reads "healthy" (within the
@@ -138,8 +139,10 @@ class TestDiagnosticsContent:
             is_alerting=True,
             alert_count=4,
             open_count=2,
+            filtered_count=6,
             last_cleared_at=cleared_at,
             last_webhook_at=webhook_at,
+            last_filtered_at=filtered_at,
         )
         coordinator = _make_coordinator(category_states=states)
         entry = _make_entry_with_runtime(coordinator)
@@ -154,8 +157,10 @@ class TestDiagnosticsContent:
             "is_alerting": True,
             "open_count": 2,
             "alert_count": 4,
+            "filtered_count": 6,
             "last_cleared_at": cleared_at.isoformat(),
             "last_webhook_at": webhook_at.isoformat(),
+            "last_filtered_at": filtered_at.isoformat(),
             "webhook_health": "healthy",
         }
 
@@ -171,6 +176,8 @@ class TestDiagnosticsContent:
             cat_entry = result["coordinator"]["categories"][cat]
             assert cat_entry["last_cleared_at"] is None
             assert cat_entry["last_webhook_at"] is None
+            assert cat_entry["last_filtered_at"] is None
+            assert cat_entry["filtered_count"] == 0
             assert cat_entry["webhook_health"] == "never_received"
 
     @pytest.mark.asyncio

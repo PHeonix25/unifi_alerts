@@ -46,11 +46,17 @@ async def async_get_config_entry_diagnostics(
                 "is_alerting": state.is_alerting,
                 "open_count": state.open_count,
                 "alert_count": state.alert_count,
+                "filtered_count": state.filtered_count,
                 "last_cleared_at": (
                     state.last_cleared_at.isoformat() if state.last_cleared_at is not None else None
                 ),
                 "last_webhook_at": (
                     state.last_webhook_at.isoformat() if state.last_webhook_at is not None else None
+                ),
+                "last_filtered_at": (
+                    state.last_filtered_at.isoformat()
+                    if state.last_filtered_at is not None
+                    else None
                 ),
                 "webhook_health": state.webhook_health(),
             }
