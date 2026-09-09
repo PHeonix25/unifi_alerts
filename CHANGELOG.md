@@ -5,6 +5,7 @@
 ### Added
 
 - The category message sensor, category and rollup binary sensors, and the `alert_received` event now expose `severity_level` (`last_severity_level` on the binary sensors and the rollup count sensor) alongside the existing raw `severity` attribute: the same normalised `LOW`/`MEDIUM`/`HIGH`/`VERY_HIGH`/`UNKNOWN` value already used internally for the minimum-severity gate, now available for automations to key off directly. ([#356])
+- An alert dropped by a category's minimum-severity gate now leaves a diagnostic trail instead of vanishing silently: a DEBUG log on both the webhook push path and the polling path, and new `filtered_count`/`last_filtered_at` per-category fields in the diagnostics download (webhook-driven, alongside the existing `webhook_health`/`unrecognised_keys` diagnostics). Previously there was no way to tell "alert never arrived" from "alert arrived but was filtered" without reading source code. ([#357])
 
 ### Fixed
 
@@ -417,3 +418,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#406]: https://github.com/PHeonix25/unifi_alerts/issues/406
 [#383]: https://github.com/PHeonix25/unifi_alerts/issues/383
 [#356]: https://github.com/PHeonix25/unifi_alerts/issues/356
+[#357]: https://github.com/PHeonix25/unifi_alerts/issues/357

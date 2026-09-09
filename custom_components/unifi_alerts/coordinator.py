@@ -170,9 +170,18 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 if not state.enabled:
                     continue
                 minimum = get_effective_min_severity(self._config, cat)
-                eligible = [
-                    alert for alert in alerts if meets_minimum(alert.severity_level, minimum)
-                ]
+                eligible: list[UniFiAlert] = []
+                for alert in alerts:
+                    if meets_minimum(alert.severity_level, minimum):
+                        eligible.append(alert)
+                    else:
+                        _LOGGER.debug(
+                            "Filtered polled alert for category %s: severity_level %s "
+                            "below minimum %s",
+                            cat,
+                            alert.severity_level,
+                            minimum,
+                        )
                 self._track_newest_seen(state, eligible)
                 # Count only alarms newer than last_cleared_at so open_count reads as
                 # "since last Clear", not a lifetime total.
@@ -398,6 +407,13 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             # event - the periodic poll refresh picks it up, which keeps a
             # noisy filtered category from generating unbounded listener
             # notifications.
+            _LOGGER.debug(
+                "Filtered webhook alert for category %s: severity_level %s below minimum %s",
+                category,
+                alert.severity_level,
+                minimum,
+            )
+            state.record_filtered(alert)
             state.last_webhook_at = alert.received_at
             self._schedule_persist()
             return

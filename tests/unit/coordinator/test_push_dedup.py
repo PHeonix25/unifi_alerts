@@ -594,6 +594,9 @@ class TestPushAlertSeverityGate:
         assert state.last_alert is prior_last_alert
         # No immediate broadcast for a filtered event either.
         coord.async_set_updated_data.assert_not_called()
+        # The filtered-alert diagnostic trail must still advance.
+        assert state.filtered_count == 1
+        assert state.last_filtered_at == alert.received_at
 
     # last_webhook_at must still advance on a gated (below-threshold) push.
     @given(
@@ -643,6 +646,8 @@ class TestPushAlertSeverityGate:
         assert state.alert_count == prior_alert_count
         assert state.open_count == prior_open_count
         assert state.last_alert is prior_last_alert
+        assert state.filtered_count == 1
+        assert state.last_filtered_at == alert.received_at
 
     def test_realistic_webhook_payload_with_no_severity_field_is_not_gated_out(
         self,
@@ -746,6 +751,27 @@ class TestPushAlertSeverityGate:
             prior_open_count + 1 if expect_open_count_incremented else prior_open_count
         )
         assert state.open_count == expected_open_count
+        # An accepted push must never touch the filtered-alert diagnostic trail.
+        assert state.filtered_count == 0
+        assert state.last_filtered_at is None
+
+    def test_below_threshold_push_logs_debug(self):
+        """A below-threshold push must leave a DEBUG trail, analogous to the
+        existing dedup-suppression debug log, so a user can tell "alert
+        never arrived" from "alert arrived but was filtered" (#357)."""
+        category = CATEGORY_NETWORK_WAN
+        coord = make_coordinator(enabled=[category])
+        coord.async_set_updated_data = MagicMock()
+        coord._config[CONF_MIN_SEVERITY] = {category: SEVERITY_ORDER[-1]}
+
+        alert = make_alert(category, "below-threshold alert")
+        alert.severity = SEVERITY_ORDER[0]
+
+        with patch("custom_components.unifi_alerts.coordinator._LOGGER") as mock_logger:
+            coord.push_alert(category, alert)
+
+        mock_logger.debug.assert_called_once()
+        assert "Filtered webhook alert" in mock_logger.debug.call_args[0][0]
 
     # A disabled category must never evaluate the severity gate.
     @given(
@@ -809,3 +835,7 @@ class TestPushAlertSeverityGate:
         assert state.last_webhook_at == prior_last_webhook_at
         # No notification either — a disabled-category push is a full no-op.
         coord.async_set_updated_data.assert_not_called()
+        # The severity gate (and its filtered-alert diagnostic trail) is
+        # never reached for a disabled category.
+        assert state.filtered_count == 0
+        assert state.last_filtered_at is None
