@@ -92,6 +92,7 @@ class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sens
             "device_name": state.last_alert.device_name,
             "alert_key": state.last_alert.key,
             "severity": state.last_alert.severity,
+            "severity_level": state.last_alert.severity_level,
             "site": state.last_alert.site,
         }
 
@@ -206,4 +207,5 @@ class UniFiRollupCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEn
             attrs["last_message"] = last.message
             attrs["last_category"] = last.category
             attrs["last_alert_at"] = last.received_at.isoformat()
+            attrs["last_severity_level"] = last.severity_level
         return attrs

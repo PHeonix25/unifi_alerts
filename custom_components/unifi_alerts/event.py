@@ -94,6 +94,7 @@ class UniFiAlertEventEntity(CoordinatorEntity[UniFiAlertsCoordinator], EventEnti
                     "device_name": alert.device_name,
                     "alert_key": alert.key,
                     "severity": alert.severity,
+                    "severity_level": alert.severity_level,
                     "site": alert.site,
                     "received_at": alert.received_at.isoformat(),
                 },

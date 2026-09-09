@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- The category message sensor, category and rollup binary sensors, and the `alert_received` event now expose `severity_level` (`last_severity_level` on the binary sensors and the rollup count sensor) alongside the existing raw `severity` attribute: the same normalised `LOW`/`MEDIUM`/`HIGH`/`VERY_HIGH`/`UNKNOWN` value already used internally for the minimum-severity gate, now available for automations to key off directly. ([#356])
+
 ### Fixed
 
 - Setup, credential rotation, and controller-URL changes no longer fail on UniFi Network 10.6+, which removed every legacy alarm endpoint. The config flow now accepts either the v2 system-log transport or the legacy alarm transport (`UniFiClient.validate_connectivity()`), instead of hard-requiring the now-removed legacy path. The failure was previously misreported as "Site not found" (`InvalidSiteError`); it is now correctly reported as a missing alarm endpoint (`AlarmEndpointUnavailableError`), and a genuine missing-site error is detected directly from the controller's `api.err.NoSiteContext` response rather than inferred by exhausting the probe chain. The coordinator also no longer falls back to a legacy path it has confirmed is dead, which previously took every entity unavailable for up to an hour on Network 10.6+ if the v2 probe hit a transient failure. ([#406])
@@ -412,3 +416,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#359]: https://github.com/PHeonix25/unifi_alerts/issues/359
 [#406]: https://github.com/PHeonix25/unifi_alerts/issues/406
 [#383]: https://github.com/PHeonix25/unifi_alerts/issues/383
+[#356]: https://github.com/PHeonix25/unifi_alerts/issues/356
