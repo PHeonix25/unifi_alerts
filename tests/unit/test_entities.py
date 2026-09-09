@@ -19,14 +19,18 @@ from custom_components.unifi_alerts.models import CategoryState, UniFiAlert
 # ── shared helpers ────────────────────────────────────────────────────────────
 
 
-def make_alert(category: str = CATEGORY_NETWORK_WAN, message: str = "WAN offline") -> UniFiAlert:
+def make_alert(
+    category: str = CATEGORY_NETWORK_WAN,
+    message: str = "WAN offline",
+    severity: str = "critical",
+) -> UniFiAlert:
     return UniFiAlert(
         category=category,
         message=message,
         received_at=datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC),
         key="EVT_GW_WANTransition",
         device_name="UDM-Pro",
-        severity="critical",
+        severity=severity,
         site="default",
     )
 
@@ -130,7 +134,15 @@ class TestUniFiCategoryBinarySensor:
         assert attrs["last_device"] == "UDM-Pro"
         assert attrs["last_key"] == "EVT_GW_WANTransition"
         assert attrs["last_severity"] == "critical"
+        assert attrs["last_severity_level"] == "UNKNOWN"
         assert "last_alert_at" in attrs
+
+    def test_extra_attrs_last_severity_level_normalizes_known_severity(self):
+        alert = make_alert(severity="high")
+        state = make_state(last_alert=alert)
+        entity = self._make(state)
+        attrs = entity.extra_state_attributes
+        assert attrs["last_severity_level"] == "HIGH"
 
     def test_extra_attrs_without_alert(self):
         state = make_state()
@@ -206,12 +218,14 @@ class TestUniFiRollupBinarySensor:
         assert attrs["last_message"] == "WAN offline"
         assert attrs["last_category"] == CATEGORY_NETWORK_WAN
         assert attrs["last_severity"] == "critical"
+        assert attrs["last_severity_level"] == "UNKNOWN"
 
     def test_extra_attrs_without_last_alert(self):
         states = {CATEGORY_NETWORK_WAN: make_state()}
         entity = self._make(states)
         attrs = entity.extra_state_attributes
         assert "last_message" not in attrs
+        assert "last_severity_level" not in attrs
         assert attrs["total_alert_count"] == 0
 
 
@@ -275,8 +289,16 @@ class TestUniFiCategoryMessageSensor:
         assert attrs["device_name"] == "UDM-Pro"
         assert attrs["alert_key"] == "EVT_GW_WANTransition"
         assert attrs["severity"] == "critical"
+        assert attrs["severity_level"] == "UNKNOWN"
         assert attrs["site"] == "default"
         assert "received_at" in attrs
+
+    def test_extra_attrs_severity_level_normalizes_known_severity(self):
+        alert = make_alert(severity="high")
+        state = make_state(last_alert=alert)
+        entity = self._make(state)
+        attrs = entity.extra_state_attributes
+        assert attrs["severity_level"] == "HIGH"
 
     def test_extra_attrs_empty_when_no_alert(self):
         state = make_state()
@@ -407,6 +429,7 @@ class TestUniFiRollupCountSensor:
         assert attrs["total_webhook_count"] == 1
         assert attrs["last_message"] == "WAN offline"
         assert attrs["last_category"] == CATEGORY_NETWORK_WAN
+        assert attrs["last_severity_level"] == "UNKNOWN"
         assert "last_alert_at" in attrs
 
     def test_extra_attrs_without_last_alert(self):
@@ -414,6 +437,7 @@ class TestUniFiRollupCountSensor:
         entity = self._make(states)
         attrs = entity.extra_state_attributes
         assert "last_message" not in attrs
+        assert "last_severity_level" not in attrs
         assert attrs["total_webhook_count"] == 0
 
     def test_state_class_is_measurement(self):
@@ -510,10 +534,21 @@ class TestUniFiAlertEventEntity:
             "device_name",
             "alert_key",
             "severity",
+            "severity_level",
             "site",
             "received_at",
         ):
             assert key in payload
+        assert payload["severity_level"] == "UNKNOWN"
+
+    def test_event_payload_severity_level_normalizes_known_severity(self):
+        alert = make_alert(severity="high")
+        state = make_state(is_alerting=True, alert_count=1, last_alert=alert)
+        entity = self._make(state)
+        entity._last_seen_count = 0
+        entity._handle_coordinator_update()
+        _, payload = entity._trigger_event.call_args[0]
+        assert payload["severity_level"] == "HIGH"
 
     @pytest.mark.asyncio
     async def test_reload_does_not_replay_restored_alert(self):
