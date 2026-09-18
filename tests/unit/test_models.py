@@ -475,10 +475,28 @@ class TestFromSystemLogEvent:
         assert alert.category == CATEGORY_SECURITY_THREAT
 
     def test_unknown_key_and_unknown_category_gives_empty_category(self):
-        """Fully unknown key + unknown category results in category='' (caller skips)."""
+        """Fully unknown key + AUDIT category results in category='' (caller skips).
+
+        AUDIT is deliberately absent from SYSTEM_LOG_CATEGORY_FALLBACK: it is
+        the admin audit trail, not an alertable condition (#411).
+        """
         event = dict(self._BASE_EVENT, key="TOTALLY_UNKNOWN", category="AUDIT")
         alert = UniFiAlert.from_system_log_event(event)
         assert alert.category == ""
+
+    def test_unmapped_key_with_vpn_category_falls_back_to_network_wan(self):
+        """An unmapped key with category="VPN" resolves via the coarse enum fallback (#411)."""
+        event = dict(self._BASE_EVENT, key="SOME_FUTURE_VPN_KEY", category="VPN")
+        alert = UniFiAlert.from_system_log_event(event)
+        assert alert.category == CATEGORY_NETWORK_WAN
+
+    def test_unmapped_key_with_software_updates_category_falls_back_to_network_device(self):
+        """An unmapped key with category="SOFTWARE_UPDATES" resolves via the coarse enum fallback (#411)."""
+        event = dict(
+            self._BASE_EVENT, key="SOME_FUTURE_SOFTWARE_UPDATES_KEY", category="SOFTWARE_UPDATES"
+        )
+        alert = UniFiAlert.from_system_log_event(event)
+        assert alert.category == CATEGORY_NETWORK_DEVICE
 
     def test_key_field_preserved(self):
         alert = UniFiAlert.from_system_log_event(dict(self._BASE_EVENT))

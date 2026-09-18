@@ -183,9 +183,19 @@ Response envelope:
 | `UNIFI_DEVICES` | AP/switch/gateway offline/online | `cat_network_device` |
 | `CLIENT_DEVICES` | Client connect/disconnect/roam | `cat_network_client` |
 | `POWER` | PoE / power loss | `cat_power` |
-| `AUDIT` | Admin-action events | (no current category) |
-| `SOFTWARE_UPDATES` | Firmware updates | (no current category) |
-| `VPN` | VPN tunnel events | (no current category) |
+| `AUDIT` | Admin-action events | deliberately unmapped: admin audit trail, not alertable |
+| `SOFTWARE_UPDATES` | Firmware updates | `cat_network_device` |
+| `VPN` | VPN tunnel events | `cat_network_wan` |
+
+`UNIFI_ETHERNET_PORTS` and `UNKNOWN` also appear in the published v2 category
+enum schema, but neither has been observed on a reference controller and
+neither is confirmed here; they are omitted from the table above rather than
+listed as though verified. `UNKNOWN` would not be meaningfully mappable to a
+concrete category in any case.
+
+An event whose `category` enum has no entry above is dropped by
+`UniFiAlertsCoordinator`: it is counted into `unrecognised_keys`, surfaced in
+the diagnostics download, but never produces an alert.
 
 ### Event record schema
 
