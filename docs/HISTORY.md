@@ -2,6 +2,23 @@
 
 Dated record of completed work. Newest first. Format per entry: category, short description, PR or commit reference, short why.
 
+## 2026-09-18
+
+- **release**: v2.1.0 tagged. Promotes the v2.1.0 "severity follow-through and test coverage" cycle to stable, closing the last severity follow-ups from the #331 review, the remaining entity test-coverage gap, an entity availability inconsistency, and a v2 category-mapping gap that silently dropped events. Closes #356, #357, #385, #411, #417.
+- **feat**: the category message sensor, the category and rollup binary sensors, and the `alert_received` event now expose `severity_level` alongside the raw `severity` attribute, as `last_severity_level` on the binary sensors and the rollup count sensor ([#414]). The normalised value already drove the minimum-severity gate internally but was not reachable from automations. Closes #356.
+- **feat**: an alert dropped by a category's minimum-severity gate now leaves a diagnostic trail: a DEBUG log on both the webhook push and polling paths, plus `filtered_count` and `last_filtered_at` per-category fields in the diagnostics download ([#415]). Previously "alert never arrived" and "alert arrived but was filtered" were indistinguishable without reading source. Closes #357.
+- **feat**: the `VPN` and `SOFTWARE_UPDATES` v2 system-log category enums now map to `network_wan` and `network_device` respectively in `SYSTEM_LOG_CATEGORY_FALLBACK` ([#420]). Neither had a coarse fallback, so every event in those categories fell through key and category resolution and was discarded, visible only as a count in the diagnostics download. `AUDIT` and `UNKNOWN` stay deliberately unmapped and are now documented as such: `AUDIT` is the admin audit trail rather than an alertable condition, and `UNKNOWN` cannot be meaningfully mapped. Closes #411.
+- **fix**: the rollup "any alert" binary sensor and "total open" count sensor no longer go unavailable when a controller poll fails ([#419]). Both now derive `available` from whether any category is enabled, matching every other entity; they were the only two inheriting the coordinator's poll-success default, so a transient poll failure hid the aggregate view while every per-category entity stayed visible. Closes #417.
+- **tests**: closed the remaining entity state and attribute coverage gaps, including availability behaviour across every platform and push-path deduplication ([#416]). Tests only; no production code changed. Closes #385.
+- **ci**: bumped `github/codeql-action` init and analyze from 4.37.0 to 4.37.3 ([#349]).
+
+[#349]: https://github.com/PHeonix25/unifi_alerts/pull/349
+[#414]: https://github.com/PHeonix25/unifi_alerts/pull/414
+[#415]: https://github.com/PHeonix25/unifi_alerts/pull/415
+[#416]: https://github.com/PHeonix25/unifi_alerts/pull/416
+[#419]: https://github.com/PHeonix25/unifi_alerts/pull/419
+[#420]: https://github.com/PHeonix25/unifi_alerts/pull/420
+
 ## 2026-09-08
 
 - **release**: v2.1.0-pre2 tagged. Second checkpoint of the v2.1.0 cycle, closing the UniFi Network 10.6+ setup failure ([#412]). Closes #406.
