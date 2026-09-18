@@ -117,6 +117,10 @@ class UniFiRollupBinarySensor(CoordinatorEntity[UniFiAlertsCoordinator], BinaryS
         return self.coordinator.any_alerting
 
     @property
+    def available(self) -> bool:
+        return any(state.enabled for state in self.coordinator.category_states.values())
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         last = self.coordinator.rollup_last_alert
         attrs: dict[str, Any] = {
