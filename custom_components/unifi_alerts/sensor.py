@@ -200,6 +200,10 @@ class UniFiRollupCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEn
         return self.coordinator.rollup_open_count
 
     @property
+    def available(self) -> bool:
+        return any(state.enabled for state in self.coordinator.category_states.values())
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         last = self.coordinator.rollup_last_alert
         attrs: dict[str, Any] = {"total_webhook_count": self.coordinator.rollup_alert_count}

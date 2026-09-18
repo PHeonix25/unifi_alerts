@@ -34,6 +34,8 @@ This integration uses config entries exclusively; no `configuration.yaml` suppor
 | `event` | `CoordinatorEntity[...], EventEntity` | Override `_handle_coordinator_update` to fire |
 | `button` | `CoordinatorEntity[...], ButtonEntity` | `available` reflects category-enabled state |
 
+Every entity on every platform overrides `available` to reflect category-enabled state rather than inheriting `CoordinatorEntity`'s poll-success default. This includes the rollup sensors, which derive `available` from whether any category is enabled, not from `coordinator.last_update_success`.
+
 All entities set `_attr_has_entity_name = True`. HA prefixes the entity name with the device name in the UI; entity IDs are of the form `binary_sensor.unifi_alerts_network_device`.
 
 ## Entity unique IDs

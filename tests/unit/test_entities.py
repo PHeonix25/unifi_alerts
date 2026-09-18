@@ -1213,20 +1213,18 @@ class TestClearAllButtonIgnoresPollFailure:
         assert entity.available is True
 
 
-class TestRollupSensorAvailabilityFollowsCoordinatorPollHealth:
-    """Unlike the category-scoped entities and buttons above, the two rollup
-    sensors (UniFiRollupCountSensor, UniFiRollupBinarySensor) define no
-    `available` override, so they inherit CoordinatorEntity's default:
-    available exactly tracks `coordinator.last_update_success`. This test
-    locks in that (currently divergent) real behaviour; it does not assert
-    that the divergence is correct."""
+class TestRollupSensorAvailabilityIgnoresPollFailure:
+    """The two rollup sensors (UniFiRollupCountSensor, UniFiRollupBinarySensor)
+    define `available` from "any category enabled", matching
+    `UniFiClearAllButton`, fully overriding CoordinatorEntity's default
+    (which checks `coordinator.last_update_success`). So a webhook-pushed
+    alert keeps them visible while polling is failing."""
 
     @pytest.mark.parametrize(
         "entity_cls_path",
         ["sensor.UniFiRollupCountSensor", "binary_sensor.UniFiRollupBinarySensor"],
     )
-    @pytest.mark.parametrize("last_update_success", [True, False])
-    def test_available_tracks_last_update_success(self, entity_cls_path, last_update_success):
+    def test_available_true_despite_last_update_success_false(self, entity_cls_path):
         import importlib
 
         module_name, cls_name = entity_cls_path.rsplit(".", 1)
@@ -1234,9 +1232,29 @@ class TestRollupSensorAvailabilityFollowsCoordinatorPollHealth:
             importlib.import_module(f"custom_components.unifi_alerts.{module_name}"), cls_name
         )
         coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state(enabled=True)})
+        coord.last_update_success = False
+        entry = make_entry()
+
+        entity = entity_cls(coord, entry)
+
+        assert entity.available is True
+
+    @pytest.mark.parametrize(
+        "entity_cls_path",
+        ["sensor.UniFiRollupCountSensor", "binary_sensor.UniFiRollupBinarySensor"],
+    )
+    @pytest.mark.parametrize("last_update_success", [True, False])
+    def test_available_false_when_no_category_enabled(self, entity_cls_path, last_update_success):
+        import importlib
+
+        module_name, cls_name = entity_cls_path.rsplit(".", 1)
+        entity_cls = getattr(
+            importlib.import_module(f"custom_components.unifi_alerts.{module_name}"), cls_name
+        )
+        coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state(enabled=False)})
         coord.last_update_success = last_update_success
         entry = make_entry()
 
         entity = entity_cls(coord, entry)
 
-        assert entity.available is last_update_success
+        assert entity.available is False
