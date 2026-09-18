@@ -14,6 +14,7 @@
 - v2 system-log event keys carrying a numeric variant suffix (e.g. `CLIENT_ROAMED_2`) are now matched to their base key (`CLIENT_ROAMED`) instead of missing the exact-match lookup and falling through to the coarse category fallback on every occurrence. ([#406])
 - A rejected API key is no longer misreported as a successful login: UniFi Network returns HTTP 200 with `meta.rc: "error"` for some rejected-key cases, which `_verify_api_key()` previously did not check. ([#406])
 - `UniFiAlert.from_dict()` now truncates `severity` to 32 characters, matching `from_webhook_payload()`, `from_api_alarm()`, and `from_system_log_event()`. Previously an oversized `severity` value restored from the persisted Store could exceed the length applied everywhere else. ([#359])
+- The rollup "any alert" binary sensor and "total open" count sensor no longer go unavailable when a controller poll fails. Both now derive `available` from whether any alert category is enabled, matching every other entity in the integration; previously they alone inherited the coordinator's poll-success default, so a transient poll failure hid the aggregate view while every per-category entity stayed visible. ([#417])
 
 ### Documentation
 
@@ -421,3 +422,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#356]: https://github.com/PHeonix25/unifi_alerts/issues/356
 [#357]: https://github.com/PHeonix25/unifi_alerts/issues/357
 [#411]: https://github.com/PHeonix25/unifi_alerts/issues/411
+[#417]: https://github.com/PHeonix25/unifi_alerts/issues/417
