@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-18
+
 ### Added
 
 - The category message sensor, category and rollup binary sensors, and the `alert_received` event now expose `severity_level` (`last_severity_level` on the binary sensors and the rollup count sensor) alongside the existing raw `severity` attribute: the same normalised `LOW`/`MEDIUM`/`HIGH`/`VERY_HIGH`/`UNKNOWN` value already used internally for the minimum-severity gate, now available for automations to key off directly. ([#356])
@@ -314,7 +316,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v2.1.0
 [2.0.1]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v2.0.1
 [2.0.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v2.0.0
 [1.9.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.9.0
