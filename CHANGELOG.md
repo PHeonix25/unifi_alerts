@@ -20,6 +20,7 @@
 
 ### Documentation
 
+- Documented the entity surfaces added during this cycle, which had shipped without reference documentation: the `severity_level` / `last_severity_level` attributes and the uniform category-based availability rule (`README.md`), `severity_level` on the `alert_received` event payload (`docs/EXAMPLES.md`), and the `filtered_count` / `last_filtered_at` / `resolved_transport` fields in the diagnostics download (`docs/DATA_HANDLING.md`, `docs/ARCHITECTURE.md`). Also corrected the `pip-audit` note in `docs/DEVELOPING.md`, which still described a Home Assistant pin and an upstream blocker that no longer apply.
 - Added v2.1.0, v2.2.0, and v2.3.0 sections to `docs/ROADMAP.md`, each summarising the theme and main threads of its milestone's open issues. ([#398])
 - Resolved a documentation conflict around the duplicated `_device_info()` helper: `CLAUDE.md`, `docs/ROADMAP.md`, and `docs/TODO.md` previously described the four-copy duplication as an intentional, un-tracked trade-off, contradicting #383 (which schedules the extraction for v2.1.0). All three now point at #383 and describe the decision as revisited in favour of DRY. ([#399])
 

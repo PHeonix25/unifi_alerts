@@ -198,6 +198,10 @@ Rollup entities (one per config entry, regardless of enabled categories):
 | Rollup count | `sensor.unifi_alerts_total_open_alerts` | Total open count |
 | Clear all button | `button.unifi_alerts_clear_all_alerts` | Clear everything |
 
+**Severity attributes.** Alert-carrying entities expose a normalised severity (`LOW`, `MEDIUM`, `HIGH`, `VERY_HIGH`, or `UNKNOWN`) alongside the raw `severity` string from UniFi, so automations can compare severities consistently regardless of which ingestion path produced the alert. The message sensor and the event entity call it `severity_level`; the category binary sensor, the rollup binary sensor, and the rollup count sensor call it `last_severity_level`. This is the same value the per-category minimum-severity filter uses.
+
+**Availability.** Every entity reports available or unavailable based on whether its category is enabled, not on whether the last controller poll succeeded. A transient poll failure therefore does not hide entities, which matters because webhook pushes keep updating state without polling.
+
 See [docs/EXAMPLES.md](docs/EXAMPLES.md) for a Lovelace dashboard card and an automation that fires on security threats.
 
 ---

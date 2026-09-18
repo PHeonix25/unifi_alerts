@@ -50,6 +50,7 @@ The event data attributes are:
 | `device_name` | UniFi device that raised the alert |
 | `alert_key` | Raw UniFi event key (e.g. `EVT_IPS_ThreatDetected`) |
 | `severity` | Severity string from the UniFi payload |
+| `severity_level` | Normalised severity: `LOW`, `MEDIUM`, `HIGH`, `VERY_HIGH`, or `UNKNOWN`. Prefer this over `severity` in conditions; it is the same value the minimum-severity gate uses, so it is consistent across every ingestion path |
 | `site` | UniFi site name (default: `default`) |
 | `received_at` | ISO-8601 UTC timestamp |
 
