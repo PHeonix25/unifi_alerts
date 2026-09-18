@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Final
 
 DOMAIN = "unifi_alerts"
@@ -39,6 +40,13 @@ WEBHOOK_MAX_BODY_BYTES = 8192  # 8 KB ceiling on inbound webhook bodies
 WEBHOOK_DEDUP_WINDOW_SECONDS = (
     5.0  # suppress duplicate (category, alert_key) pushes within this window
 )
+
+# ──────────────────────────────────────────────
+# UniFi OS API
+# ──────────────────────────────────────────────
+# UniFi OS consoles (UDM, UCG, etc.) prefix all network API paths.
+# Single source of truth shared by unifi_auth.py and unifi_client.py.
+UNIFI_OS_NETWORK_PREFIX: Final = "/proxy/network"
 
 # ──────────────────────────────────────────────
 # Webhook health signal
@@ -302,12 +310,21 @@ SYSTEM_LOG_KEY_TO_CATEGORY: dict[str, str] = {
 
 # v2 category field values that map to integration categories.
 # Used when key-level mapping fails to provide coarse-grained fallback.
+# VPN maps to network_wan: VPN tunnels are WAN-edge connectivity, the closest
+# existing home. SOFTWARE_UPDATES maps to network_device: firmware updates are
+# already a network_device concern per DEVICE_UPGRADED above (#411).
+# AUDIT and UNKNOWN are deliberately absent: AUDIT is the admin audit trail
+# (logins, config changes), not an alertable condition, and UNKNOWN cannot be
+# meaningfully mapped to a concrete category. Events in these two enums are
+# dropped by the coordinator and counted into unrecognised_keys.
 SYSTEM_LOG_CATEGORY_FALLBACK: dict[str, str] = {
     "SECURITY": CATEGORY_SECURITY_THREAT,
     "INTERNET_AND_WAN": CATEGORY_NETWORK_WAN,
     "UNIFI_DEVICES": CATEGORY_NETWORK_DEVICE,
     "CLIENT_DEVICES": CATEGORY_NETWORK_CLIENT,
     "POWER": CATEGORY_POWER,
+    "VPN": CATEGORY_NETWORK_WAN,
+    "SOFTWARE_UPDATES": CATEGORY_NETWORK_DEVICE,
 }
 
 # Webhook IDs — one per category, auto-registered by the integration.
@@ -327,17 +344,30 @@ def webhook_id_for_category(category: str, suffix: str = "") -> str:
     return f"{WEBHOOK_ID_PREFIX}{category}"
 
 
+# Real v2 system-log payloads carry numeric-variant keys for the same event
+# (e.g. "key": "CLIENT_ROAMED_2" alongside "event": "CLIENT_ROAMED") — field-
+# confirmed (#406). SYSTEM_LOG_KEY_TO_CATEGORY is exact-match, so the suffixed
+# variant otherwise misses, falls through to the coarse enum fallback, and is
+# logged as an undocumented key on every occurrence.
+_TRAILING_NUMERIC_SUFFIX = re.compile(r"_\d+$")
+
+
 def classify_event_key(key: str, v2_category_enum: str = "") -> str:
     """Map a UniFi event key to an integration category string.
 
     Checks (in order):
     1. Exact match in SYSTEM_LOG_KEY_TO_CATEGORY (v2 system-log flat keys)
-    2. Prefix match in UNIFI_KEY_TO_CATEGORY (legacy EVT_* keys)
-    3. Broad enum fallback via SYSTEM_LOG_CATEGORY_FALLBACK (v2 category field)
+    2. The same lookup with a trailing numeric variant suffix stripped
+       (e.g. "CLIENT_ROAMED_2" -> "CLIENT_ROAMED")
+    3. Prefix match in UNIFI_KEY_TO_CATEGORY (legacy EVT_* keys)
+    4. Broad enum fallback via SYSTEM_LOG_CATEGORY_FALLBACK (v2 category field)
 
     Returns "" when no match is found.
     """
     if result := SYSTEM_LOG_KEY_TO_CATEGORY.get(key):
+        return result
+    stripped = _TRAILING_NUMERIC_SUFFIX.sub("", key)
+    if stripped != key and (result := SYSTEM_LOG_KEY_TO_CATEGORY.get(stripped)):
         return result
     for prefix, category in UNIFI_KEY_TO_CATEGORY.items():
         if key.startswith(prefix):

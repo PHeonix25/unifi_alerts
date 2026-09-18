@@ -96,7 +96,7 @@ class TestReconfigureStep:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
 
             result = await flow.async_step_reconfigure(new_creds)
 
@@ -132,7 +132,7 @@ class TestReconfigureStep:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
 
             await flow.async_step_reconfigure(new_creds)
 
@@ -307,7 +307,7 @@ class TestReconfigureStep:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
 
             result = await flow.async_step_reconfigure(new_creds)
 

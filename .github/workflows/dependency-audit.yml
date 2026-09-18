@@ -10,14 +10,17 @@ name: Dependency audit
 # default setup (GitHub rejects the SARIF upload), so SAST lives there and this
 # workflow owns dependency auditing only.
 #
-# pip-audit is advisory only (continue-on-error on the audit step). As of
-# 2026-06, most findings are in transitive dependencies pinned by
-# pytest-homeassistant-custom-component (which sets homeassistant==2025.1.4).
-# The fix versions require homeassistant 2025.8+ or 2026.1, which are not
-# yet available on PyPI. When Dependabot bumps pytest-homeassistant-custom-
-# component to a version that pulls in a fixed homeassistant release, re-run
-# pip-audit locally, verify zero findings, then flip continue-on-error to
-# false on the audit step below to make the scan blocking.
+# pip-audit is advisory only (continue-on-error on the audit step). Findings
+# have historically sat in transitive dependencies pinned by
+# pytest-homeassistant-custom-component rather than in code this repository
+# controls, so a blocking scan would fail PRs for reasons no contributor can
+# fix. That pin has since moved forward (requirements-dev.txt now resolves
+# pytest-homeassistant-custom-component==0.13.345, pulling
+# homeassistant==2026.7.1), so the upstream blocker described here originally
+# no longer applies. Flipping to blocking is a pending re-evaluation: run
+# pip-audit locally against the current lock, and if it reports zero findings,
+# flip continue-on-error to false on the audit step below. See
+# docs/DEVELOPING.md for the same note in prose.
 
 on:
   push:

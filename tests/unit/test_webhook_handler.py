@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from yarl import URL
 
 from custom_components.unifi_alerts.const import (
     ALL_CATEGORIES,
@@ -799,3 +801,76 @@ class TestWebhookLegacyQueryAuthRepairIssue:
             await handler(manager._hass, "wh-id", req)
 
         mock_create.assert_not_called()
+
+
+class TestRequestUrlNeverLogged:
+    """The legacy ``?token=`` query param (kept during the #176 deprecation
+    window) means a webhook secret can appear in the request URL. Nothing in
+    the handler logs ``request.url`` today, but nothing structurally prevents
+    a future change from doing so by accident. These tests give a request a
+    real ``request.url`` carrying the token in its query string and assert,
+    via ``caplog``, that the token value never appears in any log record
+    emitted by the malformed-body path or the auth-failure path.
+    """
+
+    TOKEN = "s3cr3t-webhook-token-f8a41c9e"
+
+    def _request_with_url_token(
+        self,
+        url_token: str,
+        query_token: str | None = None,
+        json_body: dict | None = None,
+    ):
+        """Build a mock request whose ``.url`` carries ``?token=<url_token>``.
+
+        ``request.query`` (used by the handler for auth) defaults to the same
+        token so the request is internally consistent, matching how aiohttp
+        derives ``request.query`` from ``request.url`` in production.
+        """
+        req = make_request(
+            token=query_token if query_token is not None else url_token,
+            json_body=json_body,
+        )
+        req.url = URL(f"http://homeassistant.local:8123/api/webhook/abc123?token={url_token}")
+        return req
+
+    @pytest.mark.asyncio
+    async def test_malformed_body_path_never_logs_token(self, caplog):
+        """Malformed body, authenticated via the token-bearing URL."""
+        manager, push_cb = make_manager(secret=self.TOKEN)
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, self.TOKEN)
+        req = self._request_with_url_token(self.TOKEN)
+        req.content.read = AsyncMock(return_value=b"not valid json {{")
+
+        with caplog.at_level(
+            logging.DEBUG, logger="custom_components.unifi_alerts.webhook_handler"
+        ):
+            response = await handler(manager._hass, "wh-id", req)
+
+        assert response is not None
+        assert response.status == 400
+        push_cb.assert_not_called()
+        assert self.TOKEN not in caplog.text
+        assert str(req.url) not in caplog.text
+        for record in caplog.records:
+            assert self.TOKEN not in record.getMessage()
+
+    @pytest.mark.asyncio
+    async def test_auth_failure_path_never_logs_token(self, caplog):
+        """Auth failure: the URL carries a wrong/attacker-supplied token."""
+        manager, push_cb = make_manager(secret="the-real-secret")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "the-real-secret")
+        req = self._request_with_url_token(self.TOKEN)
+
+        with caplog.at_level(
+            logging.DEBUG, logger="custom_components.unifi_alerts.webhook_handler"
+        ):
+            response = await handler(manager._hass, "wh-id", req)
+
+        assert response is not None
+        assert response.status == 401
+        push_cb.assert_not_called()
+        assert self.TOKEN not in caplog.text
+        assert str(req.url) not in caplog.text
+        for record in caplog.records:
+            assert self.TOKEN not in record.getMessage()

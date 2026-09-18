@@ -25,7 +25,11 @@ from .conftest import make_options_flow, make_session_mock
 
 @pytest.mark.asyncio
 async def test_options_finish_includes_webhook_urls() -> None:
-    """Options flow finish step should include webhook URL fields with the stored secret."""
+    """Options flow finish step should surface webhook URLs with the stored secret.
+
+    URLs are rendered as plain Markdown text in the description (#395), not
+    as form fields, so the schema itself carries no data.
+    """
     fake_secret = "options-test-secret"
     config_entry = MagicMock()
     config_entry.data = {CONF_ENABLED_CATEGORIES: ALL_CATEGORIES, CONF_WEBHOOK_SECRET: fake_secret}
@@ -47,13 +51,13 @@ async def test_options_finish_includes_webhook_urls() -> None:
 
     assert result["step_id"] == "finish"
     call_kwargs = flow.async_show_form.call_args.kwargs
-    schema = call_kwargs["data_schema"]
-    str_defaults = [v for v in (k.default() for k in schema.schema) if isinstance(v, str)]
+    assert call_kwargs["data_schema"].schema == {}
+    placeholders = call_kwargs["description_placeholders"]
     # Displayed URLs must no longer embed the secret (#176) — it is surfaced
     # separately via description_placeholders for the Authorization header.
-    assert not any(f"token={fake_secret}" in v for v in str_defaults)
-    assert any(fake_url in v for v in str_defaults)
-    assert call_kwargs["description_placeholders"]["webhook_secret"] == fake_secret
+    assert not any(f"token={fake_secret}" in v for v in placeholders.values())
+    assert all(placeholders[f"url_{cat}"] == fake_url for cat in ALL_CATEGORIES)
+    assert placeholders["webhook_secret"] == fake_secret
 
 
 @pytest.mark.asyncio
@@ -268,7 +272,7 @@ async def test_options_flow_saves_submitted_values() -> None:
     ):
         instance = mock_cls.return_value
         instance.authenticate = AsyncMock(return_value=None)
-        instance.fetch_alarms = AsyncMock(return_value=[])
+        instance.validate_connectivity = AsyncMock(return_value="v2")
         await flow.async_step_categories(user_input)
 
     # Submit finish -> creates entry
@@ -372,7 +376,7 @@ class TestOptionsFlowCredentials:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
 
             result = await flow.async_step_credentials(new_creds)
 
@@ -471,7 +475,7 @@ class TestOptionsFlowCredentials:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             instance._is_unifi_os = False
 
             result = await flow.async_step_credentials(new_creds)
@@ -505,7 +509,7 @@ class TestOptionsFlowCredentials:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             instance._is_unifi_os = True
 
             await flow.async_step_credentials(new_creds)
@@ -570,7 +574,7 @@ class TestOptionsFlowCredentials:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             instance._is_unifi_os = False
             await flow.async_step_credentials(new_creds)
 
@@ -738,7 +742,7 @@ class TestOptionsCredentialsErrorsAndStaging:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             result = await flow.async_step_credentials(user_input)
 
         assert result["step_id"] == "categories"

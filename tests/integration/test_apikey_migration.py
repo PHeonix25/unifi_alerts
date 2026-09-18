@@ -57,6 +57,8 @@ def _make_client_mock() -> MagicMock:
     instance.authenticate = AsyncMock(return_value=None)
     instance.categorise_alarms = AsyncMock(return_value={})
     instance.probe_system_log_endpoint = AsyncMock(return_value=False)
+    instance.legacy_alarm_endpoint_confirmed_unavailable = MagicMock(return_value=False)
+    instance.fetch_controller_version = AsyncMock(return_value=None)
     instance.close = AsyncMock()
     return instance
 

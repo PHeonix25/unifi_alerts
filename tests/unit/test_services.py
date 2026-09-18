@@ -333,6 +333,7 @@ class TestServicesWiredFromInit:
 
         mock_client = MagicMock()
         mock_client.authenticate = AsyncMock()
+        mock_client.fetch_controller_version = AsyncMock(return_value=None)
         mock_client.close = AsyncMock()
 
         mock_wm = MagicMock()

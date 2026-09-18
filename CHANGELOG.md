@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-18
+
+### Added
+
+- The category message sensor, category and rollup binary sensors, and the `alert_received` event now expose `severity_level` (`last_severity_level` on the binary sensors and the rollup count sensor) alongside the existing raw `severity` attribute: the same normalised `LOW`/`MEDIUM`/`HIGH`/`VERY_HIGH`/`UNKNOWN` value already used internally for the minimum-severity gate, now available for automations to key off directly. ([#356])
+- An alert dropped by a category's minimum-severity gate now leaves a diagnostic trail instead of vanishing silently: a DEBUG log on both the webhook push path and the polling path, and new `filtered_count`/`last_filtered_at` per-category fields in the diagnostics download (webhook-driven, alongside the existing `webhook_health`/`unrecognised_keys` diagnostics). Previously there was no way to tell "alert never arrived" from "alert arrived but was filtered" without reading source code. ([#357])
+- v2 system-log events in the `VPN` and `SOFTWARE_UPDATES` categories now raise alerts instead of being silently dropped: `VPN` events map to the WAN category and `SOFTWARE_UPDATES` events to the device category. Previously neither enum had a coarse fallback mapping, so every such event fell through key and category resolution and was discarded, visible only as a count in the diagnostics download. `AUDIT` events remain deliberately unmapped, as the admin audit trail is not an alertable condition. ([#411])
+
+### Fixed
+
+- Setup, credential rotation, and controller-URL changes no longer fail on UniFi Network 10.6+, which removed every legacy alarm endpoint. The config flow now accepts either the v2 system-log transport or the legacy alarm transport (`UniFiClient.validate_connectivity()`), instead of hard-requiring the now-removed legacy path. The failure was previously misreported as "Site not found" (`InvalidSiteError`); it is now correctly reported as a missing alarm endpoint (`AlarmEndpointUnavailableError`), and a genuine missing-site error is detected directly from the controller's `api.err.NoSiteContext` response rather than inferred by exhausting the probe chain. The coordinator also no longer falls back to a legacy path it has confirmed is dead, which previously took every entity unavailable for up to an hour on Network 10.6+ if the v2 probe hit a transient failure. ([#406])
+- v2 system-log event keys carrying a numeric variant suffix (e.g. `CLIENT_ROAMED_2`) are now matched to their base key (`CLIENT_ROAMED`) instead of missing the exact-match lookup and falling through to the coarse category fallback on every occurrence. ([#406])
+- A rejected API key is no longer misreported as a successful login: UniFi Network returns HTTP 200 with `meta.rc: "error"` for some rejected-key cases, which `_verify_api_key()` previously did not check. ([#406])
+- `UniFiAlert.from_dict()` now truncates `severity` to 32 characters, matching `from_webhook_payload()`, `from_api_alarm()`, and `from_system_log_event()`. Previously an oversized `severity` value restored from the persisted Store could exceed the length applied everywhere else. ([#359])
+- The rollup "any alert" binary sensor and "total open" count sensor no longer go unavailable when a controller poll fails. Both now derive `available` from whether any alert category is enabled, matching every other entity in the integration; previously they alone inherited the coordinator's poll-success default, so a transient poll failure hid the aggregate view while every per-category entity stayed visible. ([#417])
+
+### Documentation
+
+- Documented the entity surfaces added during this cycle, which had shipped without reference documentation: the `severity_level` / `last_severity_level` attributes and the uniform category-based availability rule (`README.md`), `severity_level` on the `alert_received` event payload (`docs/EXAMPLES.md`), and the `filtered_count` / `last_filtered_at` / `resolved_transport` fields in the diagnostics download (`docs/DATA_HANDLING.md`, `docs/ARCHITECTURE.md`). Also corrected the `pip-audit` note in `docs/DEVELOPING.md`, which still described a Home Assistant pin and an upstream blocker that no longer apply.
+- Added v2.1.0, v2.2.0, and v2.3.0 sections to `docs/ROADMAP.md`, each summarising the theme and main threads of its milestone's open issues. ([#398])
+- Resolved a documentation conflict around the duplicated `_device_info()` helper: `CLAUDE.md`, `docs/ROADMAP.md`, and `docs/TODO.md` previously described the four-copy duplication as an intentional, un-tracked trade-off, contradicting #383 (which schedules the extraction for v2.1.0). All three now point at #383 and describe the decision as revisited in favour of DRY. ([#399])
+
+### Changed
+
+- Improved config flow and options flow accessibility: the "Webhook URLs" step now lists each category's URL as plain Markdown text under headed sections (Authentication, Legacy Method, Retrieve Later) instead of pre-filled form fields that looked editable but silently discarded any edits, and every per-category minimum-severity selector now has descriptive help text explaining what it filters. ([#395])
+
+### Internal
+
+- Extracted the `_device_info()` helper duplicated across `binary_sensor.py`, `sensor.py`, `event.py`, and `button.py` into a single `entity_helpers.device_info_for_entry()`, and moved `UNIFI_OS_NETWORK_PREFIX` (previously defined separately in `unifi_auth.py` and `unifi_client.py`) into `const.py` as the single source of truth. No behaviour change. ([#383])
+- Closed the v2.1.0 test-coverage gaps for the webhook and entity-action paths: real-HTTP-server integration coverage for oversized-body (413) and malformed-JSON (400) webhook rejection, consecutive rapid `alert_received` events each firing exactly once, and a webhook landing in the window between `coordinator.async_shutdown()` and webhook unregistration during entry unload. No behaviour change. ([#381], [#380], [#382])
+- Cleaned up `severity.py`: removed the unused legacy-severity synonym table, added `Literal` type aliases for severity and minimum-severity strings, inlined `filter_by_min_severity()` at its single call site to remove the `severity.py`/`models.py` import cycle, and trimmed over-dense comments. No behaviour change. ([#351], [#352], [#358], [#360])
+
 ## [2.0.1] - 2026-07-24
 
 ### Fixed
@@ -285,7 +317,8 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 - UCG-Ultra OS detection: two-stage fallback probe added.
 - Config-flow API-key field guidance reworded to be firmware-version agnostic.
 
-[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/PHeonix25/unifi_alerts/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v2.1.0
 [2.0.1]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v2.0.1
 [2.0.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v2.0.0
 [1.9.0]: https://github.com/PHeonix25/unifi_alerts/releases/tag/v1.9.0
@@ -377,3 +410,20 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#353]: https://github.com/PHeonix25/unifi_alerts/issues/353
 [#368]: https://github.com/PHeonix25/unifi_alerts/issues/368
 [#375]: https://github.com/PHeonix25/unifi_alerts/issues/375
+[#380]: https://github.com/PHeonix25/unifi_alerts/issues/380
+[#381]: https://github.com/PHeonix25/unifi_alerts/issues/381
+[#382]: https://github.com/PHeonix25/unifi_alerts/issues/382
+[#395]: https://github.com/PHeonix25/unifi_alerts/issues/395
+[#398]: https://github.com/PHeonix25/unifi_alerts/pull/398
+[#399]: https://github.com/PHeonix25/unifi_alerts/pull/399
+[#351]: https://github.com/PHeonix25/unifi_alerts/issues/351
+[#352]: https://github.com/PHeonix25/unifi_alerts/issues/352
+[#358]: https://github.com/PHeonix25/unifi_alerts/issues/358
+[#360]: https://github.com/PHeonix25/unifi_alerts/issues/360
+[#359]: https://github.com/PHeonix25/unifi_alerts/issues/359
+[#406]: https://github.com/PHeonix25/unifi_alerts/issues/406
+[#383]: https://github.com/PHeonix25/unifi_alerts/issues/383
+[#356]: https://github.com/PHeonix25/unifi_alerts/issues/356
+[#357]: https://github.com/PHeonix25/unifi_alerts/issues/357
+[#411]: https://github.com/PHeonix25/unifi_alerts/issues/411
+[#417]: https://github.com/PHeonix25/unifi_alerts/issues/417

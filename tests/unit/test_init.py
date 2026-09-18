@@ -37,6 +37,7 @@ def _patch_all(authenticate_side_effect=None, first_refresh_side_effect=None):
 
     mock_client = MagicMock()
     mock_client.authenticate = AsyncMock(side_effect=authenticate_side_effect)
+    mock_client.fetch_controller_version = AsyncMock(return_value=None)
     mock_client.close = AsyncMock()
 
     mock_webhook_manager = MagicMock()

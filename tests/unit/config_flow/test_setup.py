@@ -51,7 +51,7 @@ class TestUserStep:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
 
             await flow.async_step_user(
                 {**_VALID_INPUT, CONF_CONTROLLER_URL: "https://192.168.1.1/"}
@@ -116,13 +116,49 @@ class TestUserStep:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
 
             result = await flow.async_step_user(_VALID_INPUT)
 
         assert result == categories_result
         flow.async_set_unique_id.assert_called_once()
         flow._abort_if_unique_id_configured.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_dead_legacy_path_with_live_v2_completes_setup(self) -> None:
+        """A controller with a dead legacy alarm path but a live v2 transport completes setup (#406).
+
+        This is the regression test that would have caught #406: UniFi
+        Network 10.6+ removed every legacy alarm endpoint, so the old
+        authenticate() + fetch_alarms() check always failed setup even
+        though the v2 system-log transport worked fine with the same API
+        key. validate_connectivity() resolving to "v2" (proven against real
+        HTTP responses in tests/unit/unifi_client/test_legacy.py::
+        TestValidateConnectivity::test_v2_only_returns_v2_without_touching_legacy)
+        must let the flow proceed past the user step exactly as a legacy-only
+        controller would.
+        """
+        flow = make_flow()
+        categories_result = {"type": "form", "step_id": "categories"}
+        flow.async_step_categories = AsyncMock(return_value=categories_result)
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+                return_value=make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value=None)
+            # Models a Network 10.6+ controller: validate_connectivity() only
+            # succeeds via v2 because every legacy alarm path is gone.
+            instance.validate_connectivity = AsyncMock(return_value="v2")
+
+            result = await flow.async_step_user(_VALID_INPUT)
+
+        assert result == categories_result
+        instance.validate_connectivity.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_error_preserves_submitted_values(self) -> None:
@@ -189,7 +225,7 @@ class TestUserStep:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
 
             await flow.async_step_user({**_VALID_INPUT, CONF_VERIFY_SSL: False})
 
@@ -219,8 +255,8 @@ class TestUserStep:
         assert schema_defaults.get(CONF_VERIFY_SSL) == DEFAULT_VERIFY_SSL
 
     @pytest.mark.asyncio
-    async def test_fetch_alarms_failure_shows_cannot_connect(self) -> None:
-        """If fetch_alarms() raises CannotConnectError after successful auth, show cannot_connect error."""
+    async def test_validate_connectivity_failure_shows_cannot_connect(self) -> None:
+        """If validate_connectivity() raises CannotConnectError after successful auth, show cannot_connect error."""
         from custom_components.unifi_alerts.unifi_client import CannotConnectError
 
         flow = make_flow()
@@ -235,7 +271,7 @@ class TestUserStep:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(
+            instance.validate_connectivity = AsyncMock(
                 side_effect=CannotConnectError("UniFi API error: api.err.InvalidObject")
             )
 
@@ -244,6 +280,38 @@ class TestUserStep:
         assert result["step_id"] == "user"
         call_kwargs = flow.async_show_form.call_args.kwargs
         assert call_kwargs["errors"] == {"base": "cannot_connect"}
+
+    @pytest.mark.asyncio
+    async def test_alarm_endpoint_unavailable_shows_dedicated_error(self) -> None:
+        """AlarmEndpointUnavailableError must map to its own error key, not cannot_connect or invalid_site.
+
+        Reproduces #406: a controller (UniFi Network 10.6+) with no alarm
+        endpoint the integration knows about must be reported distinctly from
+        a generic connectivity failure or a missing site.
+        """
+        from custom_components.unifi_alerts.unifi_client import AlarmEndpointUnavailableError
+
+        flow = make_flow()
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "user"})
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+                return_value=make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value=None)
+            instance.validate_connectivity = AsyncMock(
+                side_effect=AlarmEndpointUnavailableError("No legacy alarm endpoint found")
+            )
+
+            result = await flow.async_step_user(_VALID_INPUT)
+
+        assert result["step_id"] == "user"
+        call_kwargs = flow.async_show_form.call_args.kwargs
+        assert call_kwargs["errors"] == {"base": "alarm_endpoint_unavailable"}
 
     @pytest.mark.asyncio
     async def test_ssl_cert_error_on_authenticate_shows_invalid_ssl_cert(self) -> None:
@@ -270,8 +338,8 @@ class TestUserStep:
         assert call_kwargs["errors"] == {CONF_CONTROLLER_URL: "invalid_ssl_cert"}
 
     @pytest.mark.asyncio
-    async def test_ssl_cert_error_on_fetch_alarms_shows_invalid_ssl_cert(self) -> None:
-        """SslCertificateError from fetch_alarms() must map to the invalid_ssl_cert field error."""
+    async def test_ssl_cert_error_on_validate_connectivity_shows_invalid_ssl_cert(self) -> None:
+        """SslCertificateError from validate_connectivity() must map to the invalid_ssl_cert field error."""
         from custom_components.unifi_alerts.unifi_client import SslCertificateError
 
         flow = make_flow()
@@ -286,7 +354,9 @@ class TestUserStep:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(side_effect=SslCertificateError("cert error"))
+            instance.validate_connectivity = AsyncMock(
+                side_effect=SslCertificateError("cert error")
+            )
 
             result = await flow.async_step_user(_VALID_INPUT)
 
@@ -320,7 +390,7 @@ class TestUserStep:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(return_value=[])
+            instance.validate_connectivity = AsyncMock(return_value="v2")
             instance._is_unifi_os = False
 
             await flow.async_step_user(_VALID_INPUT)
@@ -350,7 +420,7 @@ class TestUserStep:
             ):
                 instance = mock_cls.return_value
                 instance.authenticate = AsyncMock(return_value=None)
-                instance.fetch_alarms = AsyncMock(return_value=[])
+                instance.validate_connectivity = AsyncMock(return_value="v2")
                 instance._is_unifi_os = False
                 await flow.async_step_user(_VALID_INPUT)
             suffixes.append(flow._credentials[CONF_WEBHOOK_ID_SUFFIX])
@@ -469,7 +539,7 @@ class TestCategoriesStep:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value="apikey")
-            instance.fetch_alarms = AsyncMock(
+            instance.validate_connectivity = AsyncMock(
                 side_effect=InvalidSiteError("Site 'nonexistent' not found")
             )
 
@@ -524,13 +594,53 @@ class TestCategoriesStep:
         ):
             instance = mock_cls.return_value
             instance.authenticate = AsyncMock(return_value=None)
-            instance.fetch_alarms = AsyncMock(side_effect=CannotConnectError("Network timeout"))
+            instance.validate_connectivity = AsyncMock(
+                side_effect=CannotConnectError("Network timeout")
+            )
 
             result = await flow.async_step_categories(cat_input)
 
         assert result["step_id"] == "categories"
         call_kwargs = flow.async_show_form.call_args.kwargs
         assert call_kwargs["errors"].get("base") == "cannot_connect"
+
+    @pytest.mark.asyncio
+    async def test_site_validation_alarm_endpoint_unavailable_shows_dedicated_error(self) -> None:
+        """AlarmEndpointUnavailableError during site validation must not be misreported as invalid_site.
+
+        Reproduces #406 at the categories step: a non-default site on a
+        controller with no known alarm endpoint (UniFi Network 10.6+) must
+        show alarm_endpoint_unavailable, not invalid_site or cannot_connect.
+        """
+        from custom_components.unifi_alerts.const import CONF_SITE
+        from custom_components.unifi_alerts.unifi_client import AlarmEndpointUnavailableError
+
+        flow = make_flow()
+        flow._controller_url = "https://192.168.1.1"
+        flow._credentials = {**_VALID_INPUT}
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "categories"})
+
+        cat_input = {f"cat_{cat}": True for cat in ALL_CATEGORIES}
+        cat_input[CONF_SITE] = "mysite"
+
+        with (
+            patch(
+                "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+                return_value=make_session_mock(),
+            ),
+            patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+        ):
+            instance = mock_cls.return_value
+            instance.authenticate = AsyncMock(return_value=None)
+            instance.validate_connectivity = AsyncMock(
+                side_effect=AlarmEndpointUnavailableError("No legacy alarm endpoint found")
+            )
+
+            result = await flow.async_step_categories(cat_input)
+
+        assert result["step_id"] == "categories"
+        call_kwargs = flow.async_show_form.call_args.kwargs
+        assert call_kwargs["errors"].get("base") == "alarm_endpoint_unavailable"
 
     @pytest.mark.asyncio
     async def test_min_severity_selector_rendered_for_all_categories(self) -> None:
@@ -578,7 +688,13 @@ class TestFinishStep:
 
     @pytest.mark.asyncio
     async def test_shows_webhook_urls(self) -> None:
-        """async_step_finish with no input should show a form with webhook URL fields in data_schema."""
+        """async_step_finish with no input should surface webhook URLs as description placeholders.
+
+        The URLs are rendered as plain Markdown text in the finish-step
+        description (#395), not as form fields, so they're reachable with
+        ordinary keyboard text selection and screen readers instead of an
+        editable input whose value the flow silently discards.
+        """
         flow = make_flow()
         flow._controller_url = "https://192.168.1.1"
         fake_secret = "test-secret-token"
@@ -597,15 +713,36 @@ class TestFinishStep:
 
         assert result["step_id"] == "finish"
         call_kwargs = flow.async_show_form.call_args.kwargs
-        schema = call_kwargs["data_schema"]
-        # Webhook URLs must be present as field defaults in the schema
-        schema_defaults = {str(k): k.default() for k in schema.schema}
+        # No form fields left; the finish step is informational only.
+        assert call_kwargs["data_schema"].schema == {}
+        placeholders = call_kwargs["description_placeholders"]
         # Displayed URLs must no longer embed the secret (#176) — it is
         # surfaced separately via description_placeholders for the
         # Authorization header.
-        assert not any(f"token={fake_secret}" in v for v in schema_defaults.values())
-        assert any(fake_url in v for v in schema_defaults.values())
-        assert call_kwargs["description_placeholders"]["webhook_secret"] == fake_secret
+        assert not any(f"token={fake_secret}" in v for v in placeholders.values())
+        assert all(placeholders[f"url_{cat}"] == fake_url for cat in ALL_CATEGORIES)
+        assert placeholders["webhook_secret"] == fake_secret
+
+    @pytest.mark.asyncio
+    async def test_shows_not_enabled_note_for_disabled_categories(self) -> None:
+        """Disabled categories get an explanatory placeholder instead of a URL."""
+        flow = make_flow()
+        flow._controller_url = "https://192.168.1.1"
+        flow._entry_data = {
+            CONF_ENABLED_CATEGORIES: [ALL_CATEGORIES[0]],
+            CONF_WEBHOOK_SECRET: "test-secret-token",
+        }
+        flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "finish"})
+
+        with patch(
+            "custom_components.unifi_alerts.config_flow.async_generate_url",
+            return_value="http://homeassistant.local:8123/api/webhook/unifi_alerts_network_device",
+        ):
+            await flow.async_step_finish(user_input=None)
+
+        placeholders = flow.async_show_form.call_args.kwargs["description_placeholders"]
+        for cat in ALL_CATEGORIES[1:]:
+            assert "not enabled" in placeholders[f"url_{cat}"]
 
     @pytest.mark.asyncio
     async def test_submit_creates_entry(self) -> None:

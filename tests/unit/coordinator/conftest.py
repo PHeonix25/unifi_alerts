@@ -29,6 +29,7 @@ def make_coordinator(hass: MagicMock | None = None, enabled: list[str] | None = 
     client = MagicMock()
     client.categorise_alarms = AsyncMock(return_value={})
     client.probe_system_log_endpoint = AsyncMock(return_value=False)
+    client.legacy_alarm_endpoint_confirmed_unavailable = MagicMock(return_value=False)
 
     config = {
         CONF_ENABLED_CATEGORIES: enabled if enabled is not None else ALL_CATEGORIES,
@@ -92,6 +93,7 @@ def make_hass_and_client():
     client.probe_system_log_endpoint = AsyncMock(return_value=False)
     client.fetch_system_log_alarms = AsyncMock(return_value=[])
     client.categorise_alarms = AsyncMock(return_value={})
+    client.legacy_alarm_endpoint_confirmed_unavailable = MagicMock(return_value=False)
     return hass, client
 
 

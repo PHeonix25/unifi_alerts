@@ -48,6 +48,7 @@ These are never written to disk and reset to their defaults on every Home Assist
 - **`open_count` per category** - recomputed from a live controller poll every update cycle (`coordinator.py`). Not persisted because it is only ever a snapshot of current controller state, not a fact about the past.
 - **Webhook dedup window state (`_last_push_at`)** - per category+alert-key monotonic timestamps used to drop duplicate pushes from a noisy controller within a short window. Bounded in size, held only in the coordinator instance.
 - **`unrecognised_keys`** - a diagnostic counter of UniFi v2 system-log event keys seen during polling that don't map to a known category. Used to help users report gaps in the category mapping; not meaningful across restarts.
+- **`filtered_count` and `last_filtered_at` per category** - how many alerts the category's minimum-severity gate dropped, and when it last dropped one. Written by both the webhook push path and the polling path, surfaced only in diagnostics. Not persisted by `_build_persist_data()`, so both reset on restart.
 
 ## What's in a diagnostics download
 
@@ -57,7 +58,11 @@ Settings > Devices & Services > UniFi Alerts > Download diagnostics produces a J
 
 **Included:** webhook URLs are included (so a shared diagnostics file still shows what was configured). They no longer embed the bearer secret (breaking change, issue #176), so no stripping is required before inclusion.
 
-**Included, coordinator state only:** per-category `enabled`, `is_alerting`, `open_count`, `alert_count`, `last_cleared_at`, `last_webhook_at`, `webhook_health()`, plus the rollup counters (`any_alerting`, `rollup_alert_count`, `rollup_open_count`) and the `unrecognised_keys` counts.
+**Included, coordinator state only:** per-category `enabled`, `is_alerting`, `open_count`, `alert_count`, `filtered_count`, `last_cleared_at`, `last_webhook_at`, `last_filtered_at`, `webhook_health()`, plus the rollup counters (`any_alerting`, `rollup_alert_count`, `rollup_open_count`), the `unrecognised_keys` counts, and `resolved_transport` (`v2`, `legacy`, or `unknown`: which alarm transport this site resolved to, added because early reports of the UniFi Network 10.6+ setup failure had no way to show it).
+
+**Included, controller only:** `discovered_alarm_url` and `controller_version`, under `controller_info`.
+
+`filtered_count` and `last_filtered_at` record alerts dropped by a category's minimum-severity gate. They are memory-only (see above) and exist so "no alert arrived" can be told apart from "an alert arrived and was filtered" without reading source.
 
 **Deliberately excluded:** per-category alert content, meaning `message`, `device_name`, and any raw alert body. These fields can carry controller-supplied hostnames, MAC addresses, or IP addresses, which should not appear verbatim in a file a user might paste into a public support thread or bug report. This exclusion is documented inline in `diagnostics.py` next to `coordinator_info`; if alert detail is ever added to diagnostics in the future, it must be routed through `async_redact_data` with an explicit field list rather than included directly.
 

@@ -113,6 +113,16 @@ def self_url() -> str:
     return f"{BASE_URL}{UNIFI_OS_NETWORK_PREFIX}/api/s/default/self"
 
 
+def self_sites_url() -> str:
+    """The site-listing endpoint hit by UniFiClient._site_exists()."""
+    return f"{BASE_URL}{UNIFI_OS_NETWORK_PREFIX}/api/self/sites"
+
+
+def sysinfo_url(site: str = "default") -> str:
+    """The sysinfo endpoint hit by UniFiClient.fetch_controller_version()."""
+    return f"{BASE_URL}{UNIFI_OS_NETWORK_PREFIX}/api/s/{site}/stat/sysinfo"
+
+
 def probe_url(site: str = "default") -> str:
     return f"{BASE_URL}{UNIFI_OS_NETWORK_PREFIX}/v2/api/site/{site}/system-log/count"
 

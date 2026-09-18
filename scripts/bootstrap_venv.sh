@@ -16,6 +16,9 @@
 #   * Remote-only: gated on $CLAUDE_CODE_REMOTE so local sessions keep their
 #     existing behaviour (a local dev runs `make setup` deliberately).
 #   * POSIX sh, cross-platform-safe (checks both bin/ and Scripts/ layouts).
+#   * Self-provisions python3.14 via `uv` when the base image doesn't already
+#     have it on PATH, since this session's network policy blocks the
+#     deadsnakes PPA that `apt-get install python3.14` needs.
 set -u
 
 # Emit the async directive first so Claude Code starts the session immediately
@@ -40,6 +43,39 @@ if [ -x ".venv/bin/pytest" ] || [ -x ".venv/Scripts/pytest.exe" ]; then
 fi
 
 echo "[bootstrap] .venv missing; running 'make setup' (Home Assistant + test stack)." >&2
+
+# Remote containers ship whatever Python the base image has (3.11-3.13 as of
+# writing), and this session's network policy blocks the deadsnakes PPA that
+# `apt-get install python3.14` would otherwise pull from (403 from the egress
+# proxy - see docs/DEVELOPING.md). `uv python install` fetches a standalone
+# CPython build from python-build-standalone via GitHub release assets, which
+# the policy does allow, and needs no elevated privileges. Skip all of this
+# when python3.14 is already on PATH (local dev images, future base images).
+if ! command -v python3.14 >/dev/null 2>&1; then
+  echo "[bootstrap] python3.14 not found; provisioning via uv." >&2
+
+  if ! command -v uv >/dev/null 2>&1; then
+    python3 -m pip install --user --quiet --upgrade uv >&2 2>&1 || true
+    PATH="$HOME/.local/bin:$PATH"
+  fi
+
+  if command -v uv >/dev/null 2>&1; then
+    if uv python install 3.14 >&2 2>&1; then
+      UV_PY314_BIN="$(uv python find 3.14 2>/dev/null)"
+      if [ -n "$UV_PY314_BIN" ] && [ -x "$UV_PY314_BIN" ]; then
+        PATH="$(dirname "$UV_PY314_BIN"):$PATH"
+        export PATH
+        echo "[bootstrap] using uv-provisioned python3.14 ($UV_PY314_BIN)." >&2
+      else
+        echo "[bootstrap] uv reported success but python3.14 could not be located; falling back to whatever 'make setup' finds on PATH." >&2
+      fi
+    else
+      echo "[bootstrap] 'uv python install 3.14' failed; falling back to whatever 'make setup' finds on PATH." >&2
+    fi
+  else
+    echo "[bootstrap] uv unavailable after install attempt; falling back to whatever 'make setup' finds on PATH." >&2
+  fi
+fi
 
 # Tolerant install: a failure must not abort the session. Log and exit 0 either
 # way so the session stays usable for lint-only or read-only work.

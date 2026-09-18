@@ -8,7 +8,6 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, Sen
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -16,13 +15,12 @@ from .const import (
     ALL_CATEGORIES,
     CATEGORY_ICONS,
     CATEGORY_ICONS_OK,
-    CONF_CONTROLLER_URL,
-    DOMAIN,
     WEBHOOK_HEALTH_HEALTHY,
     WEBHOOK_HEALTH_NEVER,
     WEBHOOK_HEALTH_STALE,
 )
 from .coordinator import UniFiAlertsCoordinator
+from .entity_helpers import device_info_for_entry
 from .models import CategoryState
 
 PARALLEL_UPDATES = 0
@@ -63,7 +61,7 @@ class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sens
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_message"
         self._attr_translation_key = f"last_message_{category}"
-        self._attr_device_info = _device_info(entry)
+        self._attr_device_info = device_info_for_entry(entry)
 
     @property
     def native_value(self) -> str | None:
@@ -94,6 +92,7 @@ class UniFiCategoryMessageSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sens
             "device_name": state.last_alert.device_name,
             "alert_key": state.last_alert.key,
             "severity": state.last_alert.severity,
+            "severity_level": state.last_alert.severity_level,
             "site": state.last_alert.site,
         }
 
@@ -116,7 +115,7 @@ class UniFiCategoryCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sensor
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_count"
         self._attr_translation_key = f"open_count_{category}"
-        self._attr_device_info = _device_info(entry)
+        self._attr_device_info = device_info_for_entry(entry)
 
     @property
     def native_value(self) -> int:
@@ -151,7 +150,7 @@ class UniFiWebhookHealthSensor(CoordinatorEntity[UniFiAlertsCoordinator], Sensor
         self._category = category
         self._attr_unique_id = f"{entry.entry_id}_{category}_webhook_health"
         self._attr_translation_key = f"webhook_health_{category}"
-        self._attr_device_info = _device_info(entry)
+        self._attr_device_info = device_info_for_entry(entry)
         self._attr_options = [WEBHOOK_HEALTH_NEVER, WEBHOOK_HEALTH_HEALTHY, WEBHOOK_HEALTH_STALE]
 
     @property
@@ -194,11 +193,15 @@ class UniFiRollupCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEn
     ) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_rollup_count"
-        self._attr_device_info = _device_info(entry)
+        self._attr_device_info = device_info_for_entry(entry)
 
     @property
     def native_value(self) -> int:
         return self.coordinator.rollup_open_count
+
+    @property
+    def available(self) -> bool:
+        return any(state.enabled for state in self.coordinator.category_states.values())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -208,15 +211,5 @@ class UniFiRollupCountSensor(CoordinatorEntity[UniFiAlertsCoordinator], SensorEn
             attrs["last_message"] = last.message
             attrs["last_category"] = last.category
             attrs["last_alert_at"] = last.received_at.isoformat()
+            attrs["last_severity_level"] = last.severity_level
         return attrs
-
-
-def _device_info(entry: ConfigEntry) -> DeviceInfo:
-    return DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name="UniFi Alerts",
-        manufacturer="Ubiquiti",
-        model="UniFi Network Controller",
-        entry_type=DeviceEntryType.SERVICE,
-        configuration_url=entry.data.get(CONF_CONTROLLER_URL),
-    )

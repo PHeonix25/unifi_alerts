@@ -11,7 +11,6 @@ from hypothesis import strategies as st
 from custom_components.unifi_alerts.const import CONF_MIN_SEVERITY
 from custom_components.unifi_alerts.models import UniFiAlert
 from custom_components.unifi_alerts.severity import (
-    _SEVERITY_SYNONYMS,
     MIN_SEVERITY_NO_FILTER,
     MIN_SEVERITY_ORDER,
     SEVERITY_ORDER,
@@ -23,10 +22,8 @@ from custom_components.unifi_alerts.severity import (
 
 _CANONICAL_NAMES: list[str] = list(SEVERITY_ORDER)
 _CANONICAL_NAMES_LOWER: set[str] = {name.lower() for name in _CANONICAL_NAMES}
-_SYNONYM_KEYS: list[str] = list(_SEVERITY_SYNONYMS.keys())
-_ALL_MATCHED_NAMES: list[str] = _CANONICAL_NAMES + _SYNONYM_KEYS
 
-# Whitespace characters used to pad canonical/synonym names when testing
+# Whitespace characters used to pad canonical names when testing
 # whitespace-insensitivity. Kept to a small, deliberate set of ASCII/Unicode
 # whitespace rather than sampling st.text() for padding, since the property
 # under test is about matching, not about exercising exotic whitespace.
@@ -60,40 +57,31 @@ def test_normalize_severity_totality(raw: str) -> None:
     assert result != MIN_SEVERITY_NO_FILTER
 
 
-# Canonical and synonym matching must be case- and whitespace-insensitive.
+# Canonical matching must be case- and whitespace-insensitive.
 @given(
-    name=st.sampled_from(_ALL_MATCHED_NAMES),
+    name=st.sampled_from(_CANONICAL_NAMES),
     data=st.data(),
 )
 @settings(max_examples=25)
 def test_normalize_severity_case_and_whitespace_insensitive(name: str, data: st.DataObject) -> None:
-    """Any casing/whitespace-padding variant of a canonical name or documented
-    synonym must normalize to the Severity_Level that name/synonym maps to."""
+    """Any casing/whitespace-padding variant of a canonical name must
+    normalize to that Severity_Level."""
     cased = data.draw(_case_variants(name))
     padded = data.draw(_padded(cased))
 
-    expected = _SEVERITY_SYNONYMS.get(name, name)
-
-    assert normalize_severity(padded) == expected
+    assert normalize_severity(padded) == name
 
 
 # Unmatched or empty input must fall back to UNKNOWN, never LOW - conflating
 # "no recognised severity" with an explicit LOW would let a category's
 # Minimum_Severity_Setting silently drop alerts whose severity could not be
 # determined (the primary defect this gate must not reintroduce).
-@given(
-    raw=st.text().filter(
-        lambda s: (
-            s.strip().lower() not in _CANONICAL_NAMES_LOWER
-            and s.strip().lower() not in _SEVERITY_SYNONYMS
-        )
-    )
-)
+@given(raw=st.text().filter(lambda s: s.strip().lower() not in _CANONICAL_NAMES_LOWER))
 @settings(max_examples=25)
 def test_normalize_severity_unmatched_or_empty_falls_back_to_unknown(raw: str) -> None:
     """Any string that, after lowercasing and stripping, does not match a
-    canonical Severity_Level name or a documented synonym key (including the
-    empty string) must normalize to SEVERITY_UNKNOWN."""
+    canonical Severity_Level name (including the empty string) must
+    normalize to SEVERITY_UNKNOWN."""
     assert normalize_severity(raw) == SEVERITY_UNKNOWN
 
 

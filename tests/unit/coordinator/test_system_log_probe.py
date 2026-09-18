@@ -153,3 +153,85 @@ class TestProbeBackoff:
         assert coord._probe_backoff_until is None
         assert coord._probe_fail_count == 0
         client.probe_system_log_endpoint.assert_awaited_once()
+
+
+class TestLegacyEndpointConfirmedDead:
+    """Tests for the #406 outage fix: no fallback to a legacy path the client has confirmed dead.
+
+    Before the fix, a v2 probe backoff (this class's sibling TestProbeBackoff)
+    combined with a legacy path removed by firmware (UniFi Network 10.6+)
+    meant every poll during the backoff window called the dead legacy path,
+    raised, and failed the whole poll (UpdateFailed) — taking every entity
+    unavailable for up to an hour. _fetch_categorised() must instead keep
+    retrying v2 once the client confirms no legacy endpoint exists.
+    """
+
+    @pytest.mark.asyncio
+    async def test_dead_legacy_path_falls_through_to_v2_within_same_poll(self):
+        """categorise_alarms() raising AlarmEndpointUnavailableError must not fail the poll.
+
+        Models the exact failure sequence from #406: the v2 probe is
+        (transiently or definitively) not preferred this poll, so the
+        coordinator tries legacy first; legacy is dead, so it falls through
+        to fetch_system_log_alarms() within the same call instead of raising.
+        """
+        from custom_components.unifi_alerts.unifi_client import AlarmEndpointUnavailableError
+
+        hass, client = make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
+        client.categorise_alarms = AsyncMock(
+            side_effect=AlarmEndpointUnavailableError("no legacy alarm endpoint")
+        )
+        client.legacy_alarm_endpoint_confirmed_unavailable.return_value = False
+        client.fetch_system_log_alarms = AsyncMock(return_value=[])
+        coord = make_full_coordinator(hass, client)
+
+        result = await coord._fetch_categorised()
+
+        assert result == {}
+        client.categorise_alarms.assert_awaited_once()
+        client.fetch_system_log_alarms.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_confirmed_dead_legacy_skips_categorise_alarms_on_next_poll(self):
+        """Once legacy_alarm_endpoint_confirmed_unavailable() is True, never call categorise_alarms again."""
+        hass, client = make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=False)
+        client.legacy_alarm_endpoint_confirmed_unavailable.return_value = True
+        client.fetch_system_log_alarms = AsyncMock(return_value=[])
+        coord = make_full_coordinator(hass, client)
+
+        result = await coord._fetch_categorised()
+
+        assert result == {}
+        client.categorise_alarms.assert_not_called()
+        client.fetch_system_log_alarms.assert_awaited_once()
+
+
+class TestResolvedTransport:
+    """Tests for UniFiAlertsCoordinator.resolved_transport (diagnostics.py, #406)."""
+
+    @pytest.mark.asyncio
+    async def test_v2_confirmed(self):
+        hass, client = make_hass_and_client()
+        coord = make_full_coordinator(hass, client)
+        coord._has_system_log = True
+        assert coord.resolved_transport == "v2"
+
+    @pytest.mark.asyncio
+    async def test_legacy_confirmed(self):
+        hass, client = make_hass_and_client()
+        client.discovered_alarm_url = lambda site: (
+            "https://192.168.1.1/proxy/network/api/s/default/list/alarm"
+        )
+        coord = make_full_coordinator(hass, client)
+        coord._has_system_log = None
+        assert coord.resolved_transport == "legacy"
+
+    @pytest.mark.asyncio
+    async def test_unknown_before_first_poll(self):
+        hass, client = make_hass_and_client()
+        client.discovered_alarm_url = lambda site: None
+        coord = make_full_coordinator(hass, client)
+        coord._has_system_log = None
+        assert coord.resolved_transport == "unknown"

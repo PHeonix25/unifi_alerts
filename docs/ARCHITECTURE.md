@@ -55,7 +55,7 @@ The v2 system-log path (Network 9.x+) is the primary polling path on current fir
 Pure data; no HA dependencies. Three dataclasses:
 
 - **`UniFiAlert`**: immutable snapshot of a single alert event. Built from either a webhook payload (`from_webhook_payload`) or a polled alarm record (`from_api_alarm`). Both constructors normalise field names across the inconsistent UniFi API surface.
-- **`CategoryState`**: mutable runtime state for one category. Owned exclusively by the coordinator. Tracks `enabled`, `is_alerting`, `last_alert`, `alert_count` (webhook-incremented), `open_count` (poll-set), `last_cleared_at`, and `last_webhook_at`. The `last_cleared_at` field doubles as the **acknowledgement watermark**: `open_count` only counts polled alarms newer than this timestamp, so pressing Clear bounds the counter to "since last acknowledged" rather than a lifetime total. `last_webhook_at` is set only on the push path (never by polling) and feeds `webhook_health()`, which classifies delivery as `never_received` / `healthy` / `stale` (stale after `WEBHOOK_STALE_AFTER_SECONDS`, 7 days) - the basis for the per-category webhook health sensor.
+- **`CategoryState`**: mutable runtime state for one category. Owned exclusively by the coordinator. Tracks `enabled`, `is_alerting`, `last_alert`, `alert_count` (webhook-incremented), `open_count` (poll-set), `last_cleared_at`, `last_webhook_at`, and `filtered_count` / `last_filtered_at` (incremented on both the push and polling paths when an alert is dropped by the category's minimum-severity gate, surfaced in diagnostics only and never persisted). The `last_cleared_at` field doubles as the **acknowledgement watermark**: `open_count` only counts polled alarms newer than this timestamp, so pressing Clear bounds the counter to "since last acknowledged" rather than a lifetime total. `last_webhook_at` is set only on the push path (never by polling) and feeds `webhook_health()`, which classifies delivery as `never_received` / `healthy` / `stale` (stale after `WEBHOOK_STALE_AFTER_SECONDS`, 7 days) - the basis for the per-category webhook health sensor.
 - **`RuntimeData`**: container stored on `entry.runtime_data`. Holds the coordinator, generated webhook URLs, the unregister callable, and the `UniFiClient` instance.
 
 ### `const.py`
@@ -128,7 +128,7 @@ All entity classes extend `CoordinatorEntity[UniFiAlertsCoordinator]` and overri
 
 **Event entities** (`event.py`) detect new alerts by comparing `state.alert_count` to `self._last_seen_count` in `_handle_coordinator_update`. Event entities fire on change, not on state. Polling does not increment `alert_count`, so events fire only on real webhook pushes.
 
-**Device grouping**: all entities share the same `_device_info` dict (`identifiers={(DOMAIN, entry.entry_id)}`); HA groups them under a single "UniFi Alerts" device with `entry_type=DeviceEntryType.SERVICE` and `configuration_url` pointing at the controller.
+**Device grouping**: all entities share the same device info, built by the shared `entity_helpers.device_info_for_entry()` helper (`identifiers={(DOMAIN, entry.entry_id)}`); HA groups them under a single "UniFi Alerts" device with `entry_type=DeviceEntryType.SERVICE` and `configuration_url` pointing at the controller.
 
 ## Config entry data structure
 

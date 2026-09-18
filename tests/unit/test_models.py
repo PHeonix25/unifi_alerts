@@ -230,6 +230,33 @@ class TestCategoryState:
         state = CategoryState(category=CATEGORY_NETWORK_WAN)
         assert state.last_webhook_at is None
 
+    def test_filtered_count_and_last_filtered_at_default(self):
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        assert state.filtered_count == 0
+        assert state.last_filtered_at is None
+
+    def test_record_filtered_increments_count_and_stamps_last_filtered_at(self):
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": "test"})
+        state.record_filtered(alert)
+        assert state.filtered_count == 1
+        assert state.last_filtered_at == alert.received_at
+
+    def test_record_filtered_does_not_affect_alerting_fields(self):
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": "test"})
+        state.record_filtered(alert)
+        assert state.is_alerting is False
+        assert state.alert_count == 0
+        assert state.last_alert is None
+
+    def test_record_filtered_increments_across_calls(self):
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        for i in range(3):
+            alert = UniFiAlert.from_webhook_payload(CATEGORY_NETWORK_WAN, {"message": f"alert {i}"})
+            state.record_filtered(alert)
+        assert state.filtered_count == 3
+
 
 class TestWebhookHealth:
     """Tests for CategoryState.webhook_health()."""
@@ -417,6 +444,24 @@ class TestFromSystemLogEvent:
         alert = UniFiAlert.from_system_log_event(event)
         assert alert.category == CATEGORY_NETWORK_CLIENT
 
+    def test_maps_numeric_variant_key_to_category(self):
+        """A trailing numeric variant suffix (e.g. "_2") must not defeat the exact-match lookup.
+
+        Field-confirmed real payload shape (#406): "key": "CLIENT_ROAMED_2"
+        alongside "event": "CLIENT_ROAMED". Before the fix this missed
+        SYSTEM_LOG_KEY_TO_CATEGORY's exact match on "CLIENT_ROAMED", fell
+        through to the coarse enum fallback, and was logged as an
+        undocumented key on every roam.
+        """
+        event = dict(
+            self._BASE_EVENT,
+            key="CLIENT_ROAMED_2",
+            event="CLIENT_ROAMED",
+            category="CLIENT_DEVICES",
+        )
+        alert = UniFiAlert.from_system_log_event(event, seen_keys=set())
+        assert alert.category == CATEGORY_NETWORK_CLIENT
+
     def test_maps_power_key_to_power(self):
         event = dict(self._BASE_EVENT, key="POE_OVERLOAD", category="POWER")
         alert = UniFiAlert.from_system_log_event(event)
@@ -430,10 +475,28 @@ class TestFromSystemLogEvent:
         assert alert.category == CATEGORY_SECURITY_THREAT
 
     def test_unknown_key_and_unknown_category_gives_empty_category(self):
-        """Fully unknown key + unknown category results in category='' (caller skips)."""
+        """Fully unknown key + AUDIT category results in category='' (caller skips).
+
+        AUDIT is deliberately absent from SYSTEM_LOG_CATEGORY_FALLBACK: it is
+        the admin audit trail, not an alertable condition (#411).
+        """
         event = dict(self._BASE_EVENT, key="TOTALLY_UNKNOWN", category="AUDIT")
         alert = UniFiAlert.from_system_log_event(event)
         assert alert.category == ""
+
+    def test_unmapped_key_with_vpn_category_falls_back_to_network_wan(self):
+        """An unmapped key with category="VPN" resolves via the coarse enum fallback (#411)."""
+        event = dict(self._BASE_EVENT, key="SOME_FUTURE_VPN_KEY", category="VPN")
+        alert = UniFiAlert.from_system_log_event(event)
+        assert alert.category == CATEGORY_NETWORK_WAN
+
+    def test_unmapped_key_with_software_updates_category_falls_back_to_network_device(self):
+        """An unmapped key with category="SOFTWARE_UPDATES" resolves via the coarse enum fallback (#411)."""
+        event = dict(
+            self._BASE_EVENT, key="SOME_FUTURE_SOFTWARE_UPDATES_KEY", category="SOFTWARE_UPDATES"
+        )
+        alert = UniFiAlert.from_system_log_event(event)
+        assert alert.category == CATEGORY_NETWORK_DEVICE
 
     def test_key_field_preserved(self):
         alert = UniFiAlert.from_system_log_event(dict(self._BASE_EVENT))
@@ -568,6 +631,18 @@ class TestAlertSerialization:
         )
         assert isinstance(restored.received_at, datetime)
         assert restored.received_at.tzinfo == UTC
+
+    def test_from_dict_severity_truncated_at_32(self):
+        """from_dict() must apply the same [:32] truncation as the live constructors."""
+        restored = UniFiAlert.from_dict(
+            {
+                "category": CATEGORY_NETWORK_WAN,
+                "message": "oversized severity",
+                "received_at": "2024-01-15T10:30:00+00:00",
+                "severity": "S" * 100,
+            }
+        )
+        assert len(restored.severity) == 32
 
     def test_to_dict_omits_raw_payload(self):
         """to_dict() must drop `raw` — it carries client MACs / IPs / hostnames that should not hit disk."""

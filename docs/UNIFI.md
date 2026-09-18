@@ -50,15 +50,17 @@ Prior versions also supported username/password (cookie-session) authentication,
 
 `GET /proxy/network/api/s/{site}/<path>`
 
-> **Path variation by firmware.** UniFi has changed the alarm path multiple times. The integration probes them newest-to-oldest so modern firmware succeeds in one call:
+> **Path variation by firmware, and removal on Network 10.6+.** UniFi has changed the alarm path multiple times, and **Network 10.6 removed all three of these legacy paths outright**: confirmed by direct probing of a UCG-Ultra on 10.6.101 and reproduced independently on a UDM (5.1.26) and a UDM-Pro (5.1.31 / 10.6.101) ([#406](https://github.com/PHeonix25/unifi_alerts/issues/406)). The integration probes them newest-to-oldest so pre-10.6 firmware succeeds in one call, then falls back to the v2 `system-log` API (see below) when none resolve:
 >
 > | Path | Era | Notes |
 > |---|---|---|
-> | `/list/alarm` | newest (UniFi Network 9.x+) | Tried first. Replaced `/stat/alarm` somewhere in the 9.x line. |
-> | `/alarm` | long-standing | Universal historical path; still present on most firmware. Tried second. |
-> | `/stat/alarm` | older intermediate | Some firmware exposes only this. Tried last. |
+> | `/list/alarm` | UniFi Network 9.x-10.5 | Tried first. Replaced `/stat/alarm` somewhere in the 9.x line. Removed in Network 10.6. |
+> | `/alarm` | long-standing | Universal historical path on pre-10.6 firmware. Tried second. Removed in Network 10.6. |
+> | `/stat/alarm` | older intermediate | Some firmware exposes only this. Tried last. Removed in Network 10.6. |
 >
-> A path that doesn't exist may return either 404 or `400 api.err.InvalidObject` depending on firmware; both are treated as "try the next path". A genuine 400 (e.g. wrong site name) is surfaced only after every path is exhausted.
+> A path that doesn't exist may return either 404 or `400 api.err.InvalidObject` depending on firmware; both are treated as "try the next path". On Network 10.6+ every path returns `400 api.err.InvalidObject`, so the chain always exhausts.
+>
+> A genuinely missing site is a distinct, earlier signal: HTTP 401 + `api.err.NoSiteContext` (not `InvalidObject`), surfaced immediately as `InvalidSiteError` rather than waiting for the chain to exhaust. Once the chain does exhaust with no site-miss signal, `unifi_client.py::_discover_alarm_url` raises `AlarmEndpointUnavailableError`: "this firmware exposes no alarm endpoint we know about", not a site or auth problem. `UniFiClient.validate_connectivity()` is the setup-time entry point that tries the v2 probe first and only falls back to this legacy chain (and only treats `AlarmEndpointUnavailableError` as fatal) when v2 is also unreachable, so a Network 10.6+ controller sets up successfully on the v2 path alone.
 >
 > This probe chain only runs on the first `fetch_alarms()` call for a site (or again later if the cached URL stops resolving, e.g. after a firmware upgrade): see `unifi_client.py::_discover_alarm_url`. Once a path resolves it is cached per site and reused directly on every subsequent poll, so the 404/`api.err.InvalidObject` fallback parsing does not run on every poll ([#239](https://github.com/PHeonix25/unifi_alerts/issues/239)).
 >
@@ -122,11 +124,15 @@ The controller returns HTTP 200 even for application-level errors. The `meta.rc`
 
 ## v2 system-log API (Network 9.x+)
 
-> **This is the correct modern polling path for UniFi OS consoles.** The legacy
-> `/list/alarm` endpoint has a hard 3000-record cap sorted oldest-first; on busy
-> controllers it returns no recent alarms at all. The v2 system-log API supports
-> timestamp-range filtering and real pagination. The integration must migrate to
-> this path for `open_count` to be reliable on high-volume installations.
+> **This is the correct modern polling path for UniFi OS consoles, and the
+> only path on Network 10.6+.** The legacy `/list/alarm` endpoint has a hard
+> 3000-record cap sorted oldest-first; on busy controllers it returns no
+> recent alarms at all, and Network 10.6 removed it (and every other legacy
+> alarm path) entirely ([#406](https://github.com/PHeonix25/unifi_alerts/issues/406)).
+> The v2 system-log API supports timestamp-range filtering and real
+> pagination. The integration must use this path for `open_count` to be
+> reliable on high-volume installations, and needs it outright on Network
+> 10.6+ controllers, where no legacy alarm endpoint exists to fall back to.
 
 ### Probe for v2 availability
 
@@ -177,9 +183,19 @@ Response envelope:
 | `UNIFI_DEVICES` | AP/switch/gateway offline/online | `cat_network_device` |
 | `CLIENT_DEVICES` | Client connect/disconnect/roam | `cat_network_client` |
 | `POWER` | PoE / power loss | `cat_power` |
-| `AUDIT` | Admin-action events | (no current category) |
-| `SOFTWARE_UPDATES` | Firmware updates | (no current category) |
-| `VPN` | VPN tunnel events | (no current category) |
+| `AUDIT` | Admin-action events | deliberately unmapped: admin audit trail, not alertable |
+| `SOFTWARE_UPDATES` | Firmware updates | `cat_network_device` |
+| `VPN` | VPN tunnel events | `cat_network_wan` |
+
+`UNIFI_ETHERNET_PORTS` and `UNKNOWN` also appear in the published v2 category
+enum schema, but neither has been observed on a reference controller and
+neither is confirmed here; they are omitted from the table above rather than
+listed as though verified. `UNKNOWN` would not be meaningfully mappable to a
+concrete category in any case.
+
+An event whose `category` enum has no entry above is dropped by
+`UniFiAlertsCoordinator`: it is counted into `unrecognised_keys`, surfaced in
+the diagnostics download, but never produces an alert.
 
 ### Event record schema
 
@@ -294,24 +310,15 @@ A category set to `No_Filter` accepts every alert regardless of severity, with n
 
 ### Legacy severity synonym table
 
-Legacy alarm severities are inconsistent free-form strings. `normalize_severity()` matches case-insensitively and ignores leading/trailing whitespace, first against the four canonical names above, then against this synonym table:
+Legacy alarm severities are inconsistent free-form strings. `normalize_severity()` matches case-insensitively and ignores leading/trailing whitespace against the four canonical names above. There is currently no synonym table: unmatched values fall back to `UNKNOWN` (see Fallback below).
 
-| Raw value | Normalised Severity_Level |
-|---|---|
-| `critical` | `VERY_HIGH` |
-| `urgent` | `VERY_HIGH` |
-| `error` | `HIGH` |
-| `warning` | `MEDIUM` |
-| `info` | `LOW` |
-| `notice` | `LOW` |
-
-When a user reports a legacy severity string that isn't classified correctly, add it to `_SEVERITY_SYNONYMS` in `severity.py` and update the table above.
+When a user reports a legacy severity string that should map to a canonical Severity_Level instead of falling back to `UNKNOWN`, add a synonym table to `severity.py` (mirroring how `UNIFI_KEY_TO_CATEGORY` is expanded) and document it here.
 
 ### Fallback
 
-The webhook push path and the legacy `/list/alarm` poll path do not document a `severity` field at all: `UniFiAlert.from_webhook_payload`/`from_api_alarm` fall back to the record's `subsystem` (e.g. `wlan`, `lan`, `wan`) when `severity` is absent, which is not a recognised severity or synonym.
+The webhook push path and the legacy `/list/alarm` poll path do not document a `severity` field at all: `UniFiAlert.from_webhook_payload`/`from_api_alarm` fall back to the record's `subsystem` (e.g. `wlan`, `lan`, `wan`) when `severity` is absent, which is not a recognised severity.
 
-If the raw severity string is empty, or matches neither a canonical name nor a synonym after case-folding and trimming, `normalize_severity()` returns the `UNKNOWN` sentinel rather than `LOW`. `UNKNOWN` is deliberately excluded from `SEVERITY_ORDER` and always passes the minimum-severity gate (`meets_minimum()` fails open): an alert whose severity could not be determined is never silently dropped by a category's Minimum_Severity_Setting, regardless of how high that minimum is set.
+If the raw severity string is empty, or matches no canonical name after case-folding and trimming, `normalize_severity()` returns the `UNKNOWN` sentinel rather than `LOW`. `UNKNOWN` is deliberately excluded from `SEVERITY_ORDER` and always passes the minimum-severity gate (`meets_minimum()` fails open): an alert whose severity could not be determined is never silently dropped by a category's Minimum_Severity_Setting, regardless of how high that minimum is set.
 
 ## Event key taxonomy
 

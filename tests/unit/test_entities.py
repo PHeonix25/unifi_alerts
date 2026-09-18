@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -19,14 +19,18 @@ from custom_components.unifi_alerts.models import CategoryState, UniFiAlert
 # ── shared helpers ────────────────────────────────────────────────────────────
 
 
-def make_alert(category: str = CATEGORY_NETWORK_WAN, message: str = "WAN offline") -> UniFiAlert:
+def make_alert(
+    category: str = CATEGORY_NETWORK_WAN,
+    message: str = "WAN offline",
+    severity: str = "critical",
+) -> UniFiAlert:
     return UniFiAlert(
         category=category,
         message=message,
         received_at=datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC),
         key="EVT_GW_WANTransition",
         device_name="UDM-Pro",
-        severity="critical",
+        severity=severity,
         site="default",
     )
 
@@ -130,7 +134,15 @@ class TestUniFiCategoryBinarySensor:
         assert attrs["last_device"] == "UDM-Pro"
         assert attrs["last_key"] == "EVT_GW_WANTransition"
         assert attrs["last_severity"] == "critical"
+        assert attrs["last_severity_level"] == "UNKNOWN"
         assert "last_alert_at" in attrs
+
+    def test_extra_attrs_last_severity_level_normalizes_known_severity(self):
+        alert = make_alert(severity="high")
+        state = make_state(last_alert=alert)
+        entity = self._make(state)
+        attrs = entity.extra_state_attributes
+        assert attrs["last_severity_level"] == "HIGH"
 
     def test_extra_attrs_without_alert(self):
         state = make_state()
@@ -206,13 +218,37 @@ class TestUniFiRollupBinarySensor:
         assert attrs["last_message"] == "WAN offline"
         assert attrs["last_category"] == CATEGORY_NETWORK_WAN
         assert attrs["last_severity"] == "critical"
+        assert attrs["last_severity_level"] == "UNKNOWN"
 
     def test_extra_attrs_without_last_alert(self):
         states = {CATEGORY_NETWORK_WAN: make_state()}
         entity = self._make(states)
         attrs = entity.extra_state_attributes
         assert "last_message" not in attrs
+        assert "last_severity_level" not in attrs
         assert attrs["total_alert_count"] == 0
+
+    def test_extra_attrs_with_multiple_categories_reflects_most_recent_alert(self):
+        """With alerts in more than one enabled category, the rollup's
+        last_* attributes must reflect the most recently received alert
+        across all of them, not an arbitrary one (#385)."""
+        older = make_alert(CATEGORY_NETWORK_WAN, "older alert")
+        newer = UniFiAlert(
+            category=CATEGORY_SECURITY_THREAT,
+            message="newer alert",
+            received_at=older.received_at + timedelta(seconds=1),
+            severity="critical",
+        )
+        states = {
+            CATEGORY_NETWORK_WAN: make_state(category=CATEGORY_NETWORK_WAN, last_alert=older),
+            CATEGORY_SECURITY_THREAT: make_state(
+                category=CATEGORY_SECURITY_THREAT, last_alert=newer
+            ),
+        }
+        entity = self._make(states)
+        attrs = entity.extra_state_attributes
+        assert attrs["last_message"] == "newer alert"
+        assert attrs["last_category"] == CATEGORY_SECURITY_THREAT
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -275,8 +311,16 @@ class TestUniFiCategoryMessageSensor:
         assert attrs["device_name"] == "UDM-Pro"
         assert attrs["alert_key"] == "EVT_GW_WANTransition"
         assert attrs["severity"] == "critical"
+        assert attrs["severity_level"] == "UNKNOWN"
         assert attrs["site"] == "default"
         assert "received_at" in attrs
+
+    def test_extra_attrs_severity_level_normalizes_known_severity(self):
+        alert = make_alert(severity="high")
+        state = make_state(last_alert=alert)
+        entity = self._make(state)
+        attrs = entity.extra_state_attributes
+        assert attrs["severity_level"] == "HIGH"
 
     def test_extra_attrs_empty_when_no_alert(self):
         state = make_state()
@@ -380,6 +424,29 @@ class TestUniFiWebhookHealthSensor:
         entity = self._make(make_state())
         assert entity.unique_id.endswith(f"_{CATEGORY_NETWORK_WAN}_webhook_health")
 
+    def test_state_machine_never_received_healthy_stale_healthy_again(self):
+        """Full webhook_health lifecycle through the entity: never_received
+        (fresh install) -> healthy (webhook pushed) -> stale (8 days pass with
+        no further webhook) -> healthy again (webhook pushed once more) (#385).
+
+        Mirrors the existing house style (test_native_value_stale et al.):
+        drives the transition by setting last_webhook_at to a fixed point in
+        time relative to the real clock, rather than freezing wall time.
+        """
+        state = make_state()
+        entity = self._make(state)
+        assert entity.native_value == "never_received"
+
+        now = datetime.now(UTC)
+        state.last_webhook_at = now
+        assert entity.native_value == "healthy"
+
+        state.last_webhook_at = now - timedelta(days=8)
+        assert entity.native_value == "stale"
+
+        state.last_webhook_at = datetime.now(UTC)
+        assert entity.native_value == "healthy"
+
 
 class TestUniFiRollupCountSensor:
     def _make(self, states: dict[str, CategoryState]):
@@ -407,6 +474,7 @@ class TestUniFiRollupCountSensor:
         assert attrs["total_webhook_count"] == 1
         assert attrs["last_message"] == "WAN offline"
         assert attrs["last_category"] == CATEGORY_NETWORK_WAN
+        assert attrs["last_severity_level"] == "UNKNOWN"
         assert "last_alert_at" in attrs
 
     def test_extra_attrs_without_last_alert(self):
@@ -414,7 +482,30 @@ class TestUniFiRollupCountSensor:
         entity = self._make(states)
         attrs = entity.extra_state_attributes
         assert "last_message" not in attrs
+        assert "last_severity_level" not in attrs
         assert attrs["total_webhook_count"] == 0
+
+    def test_extra_attrs_with_multiple_categories_reflects_most_recent_alert(self):
+        """With alerts in more than one enabled category, the rollup's
+        last_* attributes must reflect the most recently received alert
+        across all of them, not an arbitrary one (#385)."""
+        older = make_alert(CATEGORY_NETWORK_WAN, "older alert")
+        newer = UniFiAlert(
+            category=CATEGORY_SECURITY_THREAT,
+            message="newer alert",
+            received_at=older.received_at + timedelta(seconds=1),
+            severity="critical",
+        )
+        states = {
+            CATEGORY_NETWORK_WAN: make_state(category=CATEGORY_NETWORK_WAN, last_alert=older),
+            CATEGORY_SECURITY_THREAT: make_state(
+                category=CATEGORY_SECURITY_THREAT, last_alert=newer
+            ),
+        }
+        entity = self._make(states)
+        attrs = entity.extra_state_attributes
+        assert attrs["last_message"] == "newer alert"
+        assert attrs["last_category"] == CATEGORY_SECURITY_THREAT
 
     def test_state_class_is_measurement(self):
         from homeassistant.components.sensor import SensorStateClass
@@ -510,10 +601,21 @@ class TestUniFiAlertEventEntity:
             "device_name",
             "alert_key",
             "severity",
+            "severity_level",
             "site",
             "received_at",
         ):
             assert key in payload
+        assert payload["severity_level"] == "UNKNOWN"
+
+    def test_event_payload_severity_level_normalizes_known_severity(self):
+        alert = make_alert(severity="high")
+        state = make_state(is_alerting=True, alert_count=1, last_alert=alert)
+        entity = self._make(state)
+        entity._last_seen_count = 0
+        entity._handle_coordinator_update()
+        _, payload = entity._trigger_event.call_args[0]
+        assert payload["severity_level"] == "HIGH"
 
     @pytest.mark.asyncio
     async def test_reload_does_not_replay_restored_alert(self):
@@ -547,6 +649,21 @@ class TestUniFiAlertEventEntity:
         # And a second identical update (no new push) must not re-fire.
         entity._handle_coordinator_update()
         entity._trigger_event.assert_called_once()
+
+    def test_multiple_rapid_alerts_each_fire_exactly_once(self):
+        """Several webhook pushes in quick succession must each fire their
+        own alert_received event - no event may be skipped or double-fired."""
+        alert = make_alert()
+        state = make_state(is_alerting=True, alert_count=0, last_alert=alert)
+        entity = self._make(state)
+        entity._last_seen_count = 0
+
+        for expected_count in (1, 2, 3):
+            state.alert_count = expected_count
+            entity._handle_coordinator_update()
+
+        assert entity._trigger_event.call_count == 3
+        assert entity._last_seen_count == 3
 
     @pytest.mark.asyncio
     async def test_added_to_hass_no_state_leaves_seed_zero(self):
@@ -684,33 +801,27 @@ class TestUniFiClearAllButton:
 
 
 class TestDeviceInfo:
-    """_device_info() helpers in all four platforms must include configuration_url."""
+    """entity_helpers.device_info_for_entry() must include configuration_url and be
+    the single shared implementation used by all four platforms (no local copies)."""
+
+    def test_device_info_has_configuration_url(self):
+        from custom_components.unifi_alerts.entity_helpers import device_info_for_entry
+
+        entry = make_entry()
+        info = device_info_for_entry(entry)
+        assert info["configuration_url"] == entry.data["controller_url"]
 
     @pytest.mark.parametrize(
         "platform",
         ["binary_sensor", "sensor", "event", "button"],
     )
-    def test_device_info_has_configuration_url(self, platform):
+    def test_platform_imports_shared_device_info_helper(self, platform):
         import importlib
 
-        _device_info = importlib.import_module(
-            f"custom_components.unifi_alerts.{platform}"
-        )._device_info
+        from custom_components.unifi_alerts.entity_helpers import device_info_for_entry
 
-        entry = make_entry()
-        info = _device_info(entry)
-        assert info["configuration_url"] == entry.data["controller_url"]
-
-    def test_all_platforms_share_identical_identifiers(self):
-        from custom_components.unifi_alerts.binary_sensor import _device_info as bs_info
-        from custom_components.unifi_alerts.button import _device_info as btn_info
-        from custom_components.unifi_alerts.event import _device_info as ev_info
-        from custom_components.unifi_alerts.sensor import _device_info as s_info
-
-        entry = make_entry()
-        assert bs_info(entry)["identifiers"] == s_info(entry)["identifiers"]
-        assert bs_info(entry)["identifiers"] == ev_info(entry)["identifiers"]
-        assert bs_info(entry)["identifiers"] == btn_info(entry)["identifiers"]
+        module = importlib.import_module(f"custom_components.unifi_alerts.{platform}")
+        assert module.device_info_for_entry is device_info_for_entry
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1045,3 +1156,105 @@ class TestPlatformSetupHonoursEnabled:
             f"{entry.entry_id}_{CATEGORY_SECURITY_THREAT}_binary",
             f"{entry.entry_id}_{CATEGORY_SECURITY_THREAT}_count",
         }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Availability vs. coordinator poll health (#385)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestAvailabilityIgnoresPollFailureForCategoryScopedEntities:
+    """Category-scoped entities and the per-category button define `available`
+    entirely from `state.enabled`, fully overriding CoordinatorEntity's
+    default `available` (which checks `coordinator.last_update_success`).
+    This is deliberate: docs/HOMEASSISTANT.md documents "available reflects
+    category-enabled state" for the buttons, and every category-scoped
+    sensor/binary_sensor/event entity follows the same pattern, so a
+    webhook-pushed alert keeps updating an entity's state even while polling
+    is failing (this is a local_push integration)."""
+
+    @pytest.mark.parametrize(
+        "entity_cls_path",
+        [
+            "sensor.UniFiCategoryMessageSensor",
+            "sensor.UniFiCategoryCountSensor",
+            "sensor.UniFiWebhookHealthSensor",
+            "binary_sensor.UniFiCategoryBinarySensor",
+            "event.UniFiAlertEventEntity",
+            "button.UniFiClearCategoryButton",
+        ],
+    )
+    def test_available_true_despite_last_update_success_false(self, entity_cls_path):
+        import importlib
+
+        module_name, cls_name = entity_cls_path.rsplit(".", 1)
+        entity_cls = getattr(
+            importlib.import_module(f"custom_components.unifi_alerts.{module_name}"), cls_name
+        )
+        coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state(enabled=True)})
+        coord.last_update_success = False
+        entry = make_entry()
+
+        entity = entity_cls(coord, entry, CATEGORY_NETWORK_WAN)
+
+        assert entity.available is True
+
+
+class TestClearAllButtonIgnoresPollFailure:
+    def test_available_true_despite_last_update_success_false(self):
+        from custom_components.unifi_alerts.button import UniFiClearAllButton
+
+        coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state(enabled=True)})
+        coord.last_update_success = False
+        entry = make_entry()
+
+        entity = UniFiClearAllButton(coord, entry)
+
+        assert entity.available is True
+
+
+class TestRollupSensorAvailabilityIgnoresPollFailure:
+    """The two rollup sensors (UniFiRollupCountSensor, UniFiRollupBinarySensor)
+    define `available` from "any category enabled", matching
+    `UniFiClearAllButton`, fully overriding CoordinatorEntity's default
+    (which checks `coordinator.last_update_success`). So a webhook-pushed
+    alert keeps them visible while polling is failing."""
+
+    @pytest.mark.parametrize(
+        "entity_cls_path",
+        ["sensor.UniFiRollupCountSensor", "binary_sensor.UniFiRollupBinarySensor"],
+    )
+    def test_available_true_despite_last_update_success_false(self, entity_cls_path):
+        import importlib
+
+        module_name, cls_name = entity_cls_path.rsplit(".", 1)
+        entity_cls = getattr(
+            importlib.import_module(f"custom_components.unifi_alerts.{module_name}"), cls_name
+        )
+        coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state(enabled=True)})
+        coord.last_update_success = False
+        entry = make_entry()
+
+        entity = entity_cls(coord, entry)
+
+        assert entity.available is True
+
+    @pytest.mark.parametrize(
+        "entity_cls_path",
+        ["sensor.UniFiRollupCountSensor", "binary_sensor.UniFiRollupBinarySensor"],
+    )
+    @pytest.mark.parametrize("last_update_success", [True, False])
+    def test_available_false_when_no_category_enabled(self, entity_cls_path, last_update_success):
+        import importlib
+
+        module_name, cls_name = entity_cls_path.rsplit(".", 1)
+        entity_cls = getattr(
+            importlib.import_module(f"custom_components.unifi_alerts.{module_name}"), cls_name
+        )
+        coord = make_coordinator({CATEGORY_NETWORK_WAN: make_state(enabled=False)})
+        coord.last_update_success = last_update_success
+        entry = make_entry()
+
+        entity = entity_cls(coord, entry)
+
+        assert entity.available is False
