@@ -310,12 +310,21 @@ SYSTEM_LOG_KEY_TO_CATEGORY: dict[str, str] = {
 
 # v2 category field values that map to integration categories.
 # Used when key-level mapping fails to provide coarse-grained fallback.
+# VPN maps to network_wan: VPN tunnels are WAN-edge connectivity, the closest
+# existing home. SOFTWARE_UPDATES maps to network_device: firmware updates are
+# already a network_device concern per DEVICE_UPGRADED above (#411).
+# AUDIT and UNKNOWN are deliberately absent: AUDIT is the admin audit trail
+# (logins, config changes), not an alertable condition, and UNKNOWN cannot be
+# meaningfully mapped to a concrete category. Events in these two enums are
+# dropped by the coordinator and counted into unrecognised_keys.
 SYSTEM_LOG_CATEGORY_FALLBACK: dict[str, str] = {
     "SECURITY": CATEGORY_SECURITY_THREAT,
     "INTERNET_AND_WAN": CATEGORY_NETWORK_WAN,
     "UNIFI_DEVICES": CATEGORY_NETWORK_DEVICE,
     "CLIENT_DEVICES": CATEGORY_NETWORK_CLIENT,
     "POWER": CATEGORY_POWER,
+    "VPN": CATEGORY_NETWORK_WAN,
+    "SOFTWARE_UPDATES": CATEGORY_NETWORK_DEVICE,
 }
 
 # Webhook IDs — one per category, auto-registered by the integration.

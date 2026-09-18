@@ -341,6 +341,33 @@ class TestCoordinatorV2Dispatch:
             assert state.open_count == 0
 
     @pytest.mark.asyncio
+    async def test_v2_vpn_category_event_is_categorised_not_skipped(self):
+        """A VPN-category event with an unmapped key must resolve via the coarse
+        enum fallback to network_wan, not be dropped (#411)."""
+        hass, client = make_hass_and_client()
+        client.probe_system_log_endpoint = AsyncMock(return_value=True)
+        client.fetch_system_log_alarms = AsyncMock(
+            return_value=[
+                {
+                    "key": "TOTALLY_UNKNOWN_VPN_KEY",
+                    "category": "VPN",  # mapped via SYSTEM_LOG_CATEGORY_FALLBACK
+                    "status": "NEW",
+                    "timestamp": 1778025612345,
+                    "message_raw": "Some VPN event.",
+                    "parameters": {},
+                    "severity": "LOW",
+                }
+            ]
+        )
+        coord = make_full_coordinator(hass, client)
+
+        await coord._async_update_data()
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.open_count == 1
+        assert "TOTALLY_UNKNOWN_VPN_KEY" not in coord.unrecognised_keys
+
+    @pytest.mark.asyncio
     async def test_v2_watermark_within_window_passed_as_since(self):
         """When the oldest watermark is within DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS,
         it is passed as-is to fetch_system_log_alarms (no clamping needed)."""

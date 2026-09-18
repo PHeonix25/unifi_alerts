@@ -155,6 +155,27 @@ type. Example (counts from field installation):
 Use this as the v2 availability probe: if the response is a JSON object (not
 HTTP 404 or `api.err.NotFound`), the v2 path is available on this controller.
 
+**2026-09-08 update (issue #411):** a later probe of the same reference
+controller (UCG-Ultra, UniFi Network 10.6.101) returned different counts,
+reproduced here rather than mixed into the example above:
+
+```json
+{
+  "categories": [
+    {"count": 8023, "name": "SECURITY"},
+    {"count": 4443, "name": "CLIENT_DEVICES"},
+    {"count": 160,  "name": "AUDIT"},
+    {"count": 119,  "name": "INTERNET_AND_WAN"},
+    {"count": 79,   "name": "VPN"},
+    {"count": 70,   "name": "UNIFI_DEVICES"},
+    {"count": 4,    "name": "SOFTWARE_UPDATES"}
+  ]
+}
+```
+
+This confirms `VPN` as a live category on this controller, not just a
+published-schema entry (see the category enum table below).
+
 ### Fetch with timestamp filter: `/system-log/all`
 
 `POST /proxy/network/v2/api/site/{site}/system-log/all`
@@ -240,7 +261,7 @@ Response envelope:
 | `CLIENT_DEVICES` | Client connect/disconnect/roam |
 | `UNIFI_DEVICES` | AP/switch/gateway device events |
 | `POWER` | PoE / power events (from published API schema; not confirmed in count response above) |
-| `VPN` | VPN tunnel events (from published API schema; not confirmed in count response above) |
+| `VPN` | VPN tunnel events (confirmed 2026-09-08, 79 events on the same reference controller, see #411) |
 
 ## aiounifi
 
