@@ -10,17 +10,23 @@ name: Dependency audit
 # default setup (GitHub rejects the SARIF upload), so SAST lives there and this
 # workflow owns dependency auditing only.
 #
-# pip-audit is advisory only (continue-on-error on the audit step). Findings
-# have historically sat in transitive dependencies pinned by
-# pytest-homeassistant-custom-component rather than in code this repository
-# controls, so a blocking scan would fail PRs for reasons no contributor can
-# fix. That pin has since moved forward (requirements-dev.txt now resolves
-# pytest-homeassistant-custom-component==0.13.345, pulling
-# homeassistant==2026.7.1), so the upstream blocker described here originally
-# no longer applies. Flipping to blocking is a pending re-evaluation: run
-# pip-audit locally against the current lock, and if it reports zero findings,
-# flip continue-on-error to false on the audit step below. See
-# docs/DEVELOPING.md for the same note in prose.
+# pip-audit is advisory only (continue-on-error on the audit step). Every
+# finding sits in a dependency whose version Home Assistant constrains, not in
+# code this repository controls, so a blocking scan would fail PRs for reasons
+# no contributor can fix. As of 2026-09-18 the scan exits non-zero with ~22
+# advisories across pillow (12.2.0, fixed 12.3.0), pyjwt (2.12.1, fixed
+# 2.13.0), cryptography (48.0.1, fixed 49.0.0/50.0.0) and aiohttp (3.14.1,
+# fixed 3.14.2). The first three are transitive through homeassistant; aiohttp
+# is listed directly as >=3.9.0 but homeassistant constrains which version
+# resolves.
+#
+# The Home Assistant pin moving forward does not by itself clear the findings:
+# an earlier revision of this comment assumed it had, and was wrong. After a
+# pytest-homeassistant-custom-component bump, read THIS JOB'S LOG rather than
+# the check's tick (continue-on-error makes it green either way); if there are
+# no findings, flip continue-on-error to false on the audit step below. See
+# docs/DEVELOPING.md for the same note in prose, including the --ignore-vuln
+# alternative if you want new disclosures to block while known ones do not.
 
 on:
   push:

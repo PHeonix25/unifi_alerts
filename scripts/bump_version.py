@@ -209,8 +209,15 @@ def create_bump_branch(new_version: str) -> str:
 
 
 def previous_tag() -> str | None:
-    """Get the most recent tag matching v*.
-    
+    """Get the most recent tag matching v* that is reachable from HEAD.
+
+    Note for the two-branch model: a stable tag (e.g. v2.1.0) is attached to
+    main's release merge commit, which is not in dev's ancestry. Run from a
+    branch cut off dev, this therefore reports the last PRE-RELEASE tag
+    (e.g. v2.1.0-pre2) rather than the stable one. That is correct, not a
+    bug: the range it feeds is "what has landed on dev since its last
+    checkpoint", which is exactly what the HISTORY block needs.
+
     Returns None if no tags exist.
     """
     try:
@@ -229,8 +236,21 @@ def previous_tag() -> str | None:
 
 
 def merges_since(tag: str) -> str:
-    """Get merge commits since the given tag."""
-    return run("git", "log", f"{tag}..HEAD", "--merges", "--oneline", capture=True)
+    """Get the PRs landed since the given tag, for the HISTORY block.
+
+    Prefers merge commits, which is what `main` carries: the dev -> main
+    release PR is merge-committed, so `--merges` names each release cleanly.
+
+    `dev` is squash-merge-only, so it has no merge commits at all and
+    `--merges` there always comes back empty. Fall back to listing every
+    commit in the range, which on a squash-only branch is exactly one line
+    per merged PR. Without the fallback this silently printed "No merges
+    since <tag>" for every bump PR cut from dev.
+    """
+    merges = run("git", "log", f"{tag}..HEAD", "--merges", "--oneline", capture=True)
+    if merges:
+        return merges
+    return run("git", "log", f"{tag}..HEAD", "--oneline", capture=True)
 
 
 def update_changelog_for_stable(new_version: str) -> None:
@@ -354,7 +374,7 @@ def main() -> int:
         merges = merges_since(prev)
         if merges:
             print(
-                f"Merges since {prev} (write these into docs/HISTORY.md as a "
+                f"Landed since {prev} (write these into docs/HISTORY.md as a "
                 f"single ## {date.today().isoformat()} block):"
             )
             print()
@@ -362,7 +382,7 @@ def main() -> int:
                 print(f"  {line}")
             print()
         else:
-            print(f"No merges since {prev}.")
+            print(f"Nothing landed since {prev}.")
             print()
     else:
         print("No previous tag found; skipping merges-since list.")
