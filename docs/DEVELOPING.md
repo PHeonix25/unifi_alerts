@@ -127,7 +127,22 @@ Static security analysis (CodeQL SAST) for Python runs through GitHub's CodeQL *
 
 `dependency-audit.yml` holds the `pip-audit` job. It runs on every push and pull request to `dev` and `main`, plus a weekly Monday 06:00 UTC schedule so newly disclosed vulnerabilities are caught even when the code has not changed. `pip-audit` is currently advisory: `continue-on-error` sits on the audit step (not the job) so a finding leaves the check green while the report still appears in the log.
 
-**Why advisory and not blocking:** findings have historically sat in transitive dependencies pinned by `pytest-homeassistant-custom-component` rather than in code this repository controls, so a blocking scan would have failed every PR for reasons no contributor could fix. That pin has since moved forward considerably (`requirements-dev.txt` now resolves `pytest-homeassistant-custom-component==0.13.345`, which pulls `homeassistant==2026.7.1`), so the upstream blocker the original note described no longer applies. Flipping the scan to blocking is therefore a pending re-evaluation, not something waiting on PyPI: run `pip-audit` locally against the current lock, and if it reports zero findings, flip `continue-on-error: true` to `false` on the audit step in `dependency-audit.yml`. Keep the comment block at the top of that workflow in step with whatever is decided.
+**Why advisory and not blocking:** every finding sits in a dependency whose version Home Assistant constrains, not in code this repository controls, so a blocking scan would fail every PR for reasons no contributor could fix.
+
+As of 2026-09-18 the scan exits non-zero with roughly 22 distinct advisories across four packages (read off the `Dependency audit` job log, since `continue-on-error` hides the exit status in the check UI):
+
+| Package | Resolved | Fix available | Distinct advisories |
+|---|---|---|---|
+| `pillow` | 12.2.0 | 12.3.0 | 13 |
+| `pyjwt` | 2.12.1 | 2.13.0 | 5 |
+| `cryptography` | 48.0.1 | 49.0.0 / 50.0.0 | 3 |
+| `aiohttp` | 3.14.1 | 3.14.2 | 1 |
+
+`cryptography`, `pillow` and `pyjwt` do not appear in `requirements-dev.txt` at all: they arrive transitively through `homeassistant`. `aiohttp` is listed directly as `>=3.9.0` but resolves to 3.14.1 because Home Assistant constrains it. Bumping any of them here would either be ignored by the resolver or conflict with Home Assistant's own pins.
+
+Note that the version of the Home Assistant pin is not the deciding factor. An earlier revision of this note claimed the blocker had lapsed because `pytest-homeassistant-custom-component` had moved from `homeassistant==2025.1.4` to `2026.7.1`; that inference was wrong. The pin moving forward does not imply the findings cleared, and they did not: only the package versions and advisory IDs changed.
+
+**When to revisit:** after a `pytest-homeassistant-custom-component` bump, read the `Dependency audit` job log (not the check's green tick, which `continue-on-error` guarantees). If it reports no findings, flip `continue-on-error: true` to `false` on the audit step in `dependency-audit.yml`. If findings persist but you want new disclosures to block, the alternative is to keep the step blocking and pass `--ignore-vuln` for each known-unfixable ID, accepting that the ignore list needs re-reviewing on every upstream bump. Keep the comment block at the top of that workflow in step with whatever is decided.
 
 `version-check.yml` enforces the version format per branch (`X.Y.Z` on `main`, `X.Y.Z-preN` on `dev`). `release.yml` triggers on tags and publishes via `gh release create --generate-notes`. All checks except `pip-audit` must pass before merging.
 
