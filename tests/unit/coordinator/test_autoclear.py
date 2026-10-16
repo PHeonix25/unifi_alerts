@@ -83,8 +83,8 @@ class TestAutoClear:
         hass.async_create_task = _create_task
         hass.async_create_background_task = _create_task
         coord = make_coordinator(hass=hass)
-        coord._store = MagicMock()
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_save = AsyncMock()
         coord.async_set_updated_data = MagicMock()
 
         alert = make_alert(CATEGORY_NETWORK_WAN)
@@ -121,14 +121,14 @@ class TestAutoClear:
 
         Regression: previously _auto_clear() called state.clear() (which
         advances last_cleared_at in memory) but never awaited
-        _async_persist_watermarks(). An HA restart immediately after a
+        WatermarkStore.save(). An HA restart immediately after a
         timer-triggered clear would lose the watermark and open_count
         would jump back to the lifetime total on the next poll.
         """
         coord = make_coordinator()
-        coord._store = MagicMock()
-        coord._store.async_load = AsyncMock(return_value=None)
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_load = AsyncMock(return_value=None)
+        coord._watermarks._store.async_save = AsyncMock()
         coord.async_set_updated_data = MagicMock()
 
         state = coord.get_category_state(CATEGORY_NETWORK_WAN)
@@ -137,10 +137,10 @@ class TestAutoClear:
         with patch("asyncio.sleep", new_callable=AsyncMock):
             await coord._auto_clear(CATEGORY_NETWORK_WAN, 0)
 
-        coord._store.async_save.assert_awaited_once()
+        coord._watermarks._store.async_save.assert_awaited_once()
         # The persisted payload should include the freshly advanced watermark
         # for this category.
-        saved = coord._store.async_save.await_args.args[0]
+        saved = coord._watermarks._store.async_save.await_args.args[0]
         assert CATEGORY_NETWORK_WAN in saved
 
     def test_schedule_clear_converts_minutes_to_seconds(self):
