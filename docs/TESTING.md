@@ -137,6 +137,7 @@ tests/
     __init__.py            # enables relative imports within the package
     conftest.py            # entry fixture, mock_unifi_client, get_coordinator(); real entry setup/teardown
     test_auto_clear.py     # auto-clear timeout resets binary sensors
+    test_discovery_flow.py # SSDP discovery through the real HA flow manager, end to end
     test_lifecycle.py      # entity creation, options flow, coordinator wiring
     test_multi_entry.py    # two config entries active simultaneously
     test_webhook.py        # webhook HTTP dispatch end-to-end
@@ -175,7 +176,7 @@ Key conventions:
 | `unifi_client/test_legacy.py` | `_classify`, `_headers`, `_login_userpass`; `fetch_alarms` (probe-chain fallback, archived filter, 401, ClientError, SSL fail-closed); `categorise_alarms` (grouping, skip unknown, empty); `authenticate`; `close` |
 | `unifi_client/test_v2.py` | `probe_system_log_endpoint` (cache, 404, transient-failure backoff); `fetch_system_log_alarms` (pagination, `timestampFrom` watermark, `status=NEW` filter, page-cap warning) |
 | `config_flow/test_setup.py` | Initial setup steps: user, categories, finish |
-| `config_flow/test_discovery.py` | SSDP discovery: URL pre-fill, dedup |
+| `config_flow/test_discovery.py` | SSDP discovery (mock-driven): URL pre-fill and form default, host extraction, missing-host abort, serial-based rediscovery, manifest SSDP matchers |
 | `config_flow/test_options_credentials.py` | Options flow credential/URL changes, verify_ssl toggle, duplicate-entry guard |
 | `config_flow/test_options_helpers.py` | Pure options-flow helper functions (form parsing, credential overrides, pending-data builders) |
 | `config_flow/test_options_rotation_validation.py` | Options flow secret rotation and controller-side validation paths |
@@ -215,6 +216,7 @@ Mark all integration tests with `@pytest.mark.integration`.
 | File | Scenarios |
 |---|---|
 | `test_lifecycle.py` | Entity creation for all categories; rollup sensor; count sensors; clear buttons; options flow disabling a category makes its sensor unavailable |
+| `test_discovery_flow.py` | SSDP discovery via `hass.config_entries.flow`: payload to created entry, pre-filled URL accepted or overridden, validation failures and retry, concurrent discoveries, `already_in_progress` / `already_configured` aborts, rediscovery at a new IP |
 | `test_auto_clear.py` | Push alert > sensor ON; auto-clear fires > sensor OFF; rollup also resets; push without clear keeps sensor ON |
 | `test_webhook.py` | Valid POST + correct token > sensor ON; missing token > 401; wrong token > 401; GET > no dispatch; no-secret config > POST accepted without token |
 

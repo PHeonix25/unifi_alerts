@@ -63,6 +63,7 @@ tests/
   integration/                    # full HA lifecycle tests using hass fixture
     conftest.py                   # entry fixture, mock_unifi_client, get_coordinator(); real entry setup/teardown
     test_auto_clear.py            # auto-clear timeout resets binary sensors
+    test_discovery_flow.py        # SSDP discovery through the real HA flow manager, end to end
     test_lifecycle.py             # entity creation, options flow, coordinator wiring
     test_multi_entry.py           # two config entries active simultaneously
     test_webhook.py               # webhook HTTP dispatch end-to-end
@@ -76,7 +77,7 @@ tests/
   dependency-audit.yml            # pip-audit dependency vulnerability scan; advisory only (continue-on-error on the audit step); runs on push/PR to dev and main plus a weekly Monday 06:00 UTC schedule
   copilot-setup-steps.yml         # provisions .venv (make setup) before the GitHub Copilot coding agent starts a session
 .github/
-  dependabot.yml                  # tracks the github-actions ecosystem only (weekly, Brisbane TZ); minor+patch grouped, major bumps individual. Required to keep the SHA pins fresh - do NOT remove. Python deps stay manual.
+  dependabot.yml                  # tracks the github-actions ecosystem only (weekly, Brisbane TZ; PRs target `dev`); minor+patch grouped, major bumps individual. Required to keep the SHA pins fresh - do NOT remove. Python deps stay manual.
   release.yml                     # release-notes categories file used by `gh release create --generate-notes` to group merged PRs by label (Security / Bug Fixes / Features / Documentation / Tests / CI / Other). DIFFERENT FILE from .github/workflows/release.yml.
   ISSUE_TEMPLATE/
     bug_report.yml                # required-field bug template; warns users to redact bearer secrets (Authorization header or legacy ?token=...) from logs.
