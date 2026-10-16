@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Internal
+
+- Closed the discovery-flow test-coverage gaps: the SSDP flow is now driven end to end through Home Assistant's real flow manager (payload to created entry), covering the pre-filled controller URL being accepted or overridden, validation failures (invalid API key, unreachable host, untrusted certificate, missing alarm endpoint) followed by a successful retry, concurrent discoveries of different hosts, `already_in_progress` and `already_configured` aborts for repeat discoveries, and IP-change rediscovery against the real config entry registry. Unit tests additionally pin the SSDP location parsing and the `manifest.json` SSDP matchers. No behaviour change. ([#388])
+
 ## [2.1.0] - 2026-09-18
 
 ### Added
@@ -427,3 +431,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#357]: https://github.com/PHeonix25/unifi_alerts/issues/357
 [#411]: https://github.com/PHeonix25/unifi_alerts/issues/411
 [#417]: https://github.com/PHeonix25/unifi_alerts/issues/417
+[#388]: https://github.com/PHeonix25/unifi_alerts/issues/388
