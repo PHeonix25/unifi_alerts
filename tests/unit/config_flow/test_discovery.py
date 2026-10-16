@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import contextlib
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers.service_info import ssdp
 
-from custom_components.unifi_alerts.const import CONF_CONTROLLER_URL, CONF_DEVICE_SERIAL
+from custom_components.unifi_alerts.const import (
+    CONF_API_KEY,
+    CONF_CONTROLLER_URL,
+    CONF_DEVICE_SERIAL,
+)
 
 from .conftest import _VALID_INPUT, make_flow, make_session_mock
 
@@ -241,3 +247,116 @@ async def test_user_step_carries_ssdp_serial_into_credentials() -> None:
         await flow.async_step_user(_VALID_INPUT)
 
     assert flow._credentials[CONF_DEVICE_SERIAL] == "aa:bb:cc:dd:ee:ff"
+
+
+@pytest.mark.asyncio
+async def test_ssdp_location_port_and_path_are_dropped_from_controller_url() -> None:
+    """Only the hostname of the SSDP location survives: its port and path are not carried over.
+
+    The SSDP location points at the UPnP description document (port 1900 in the
+    fixtures), not at the UniFi OS HTTPS console, so the pre-filled URL must be
+    the bare `https://{host}`.
+    """
+    flow = make_flow()
+    flow.async_step_user = AsyncMock(return_value={"type": "form", "step_id": "user"})
+
+    await flow.async_step_ssdp(make_ssdp_info("10.1.2.3"))
+
+    assert flow._controller_url == "https://10.1.2.3"
+    flow.async_set_unique_id.assert_called_once_with("https://10.1.2.3")
+
+
+@pytest.mark.asyncio
+async def test_ssdp_missing_host_aborts_before_any_state_is_touched() -> None:
+    """An unusable SSDP location aborts without claiming a unique_id or touching entries."""
+    flow = make_flow()
+    info = ssdp.SsdpServiceInfo(
+        ssdp_usn="uuid:abcd",
+        ssdp_st="urn:test",
+        ssdp_location="not-a-url",
+        upnp={ssdp.ATTR_UPNP_SERIAL: "aa:bb:cc:dd:ee:ff"},
+    )
+
+    result = await flow.async_step_ssdp(info)
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "cannot_connect"
+    assert flow._controller_url == ""
+    assert flow._device_serial == ""
+    flow.async_set_unique_id.assert_not_called()
+    flow.hass.config_entries.async_update_entry.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_discovered_form_accepts_api_key_only_and_keeps_prefilled_url() -> None:
+    """Submitting only the API key to the discovery-pre-filled form validates to the discovered URL.
+
+    Home Assistant runs submitted input through the form schema before calling
+    the step, so the schema default is what an untouched URL field becomes.
+    """
+    flow = make_flow()
+    await flow.async_step_ssdp(make_ssdp_info("10.0.0.8"))
+    result = await flow.async_step_user()
+
+    validated = result["data_schema"]({CONF_API_KEY: "k"})
+
+    assert validated[CONF_CONTROLLER_URL] == "https://10.0.0.8"
+    assert validated[CONF_API_KEY] == "k"
+
+
+@pytest.mark.asyncio
+async def test_discovery_then_user_submit_creates_credentials_for_discovered_host() -> None:
+    """SSDP then a valid user submit: the client is built for the discovered host and serial kept.
+
+    Drives the real `async_step_ssdp` and `async_step_user` back to back on one
+    flow object (rather than seeding `_device_serial` by hand) and asserts the
+    UniFiClient is constructed against the discovered URL.
+    """
+    flow = make_flow()
+    flow.async_step_categories = AsyncMock(return_value={"type": "form", "step_id": "categories"})
+
+    with (
+        patch(
+            "custom_components.unifi_alerts.config_flow.async_get_clientsession",
+            return_value=make_session_mock(),
+        ),
+        patch("custom_components.unifi_alerts.config_flow.UniFiClient") as mock_cls,
+    ):
+        instance = mock_cls.return_value
+        instance.authenticate = AsyncMock(return_value=None)
+        instance.validate_connectivity = AsyncMock(return_value="v2")
+
+        await flow.async_step_ssdp(make_ssdp_info("10.0.0.9", serial="de:ad:be:ef:00:01"))
+        # The step shown to the user pre-filled the URL; they submit it unchanged.
+        await flow.async_step_user({CONF_CONTROLLER_URL: "https://10.0.0.9", CONF_API_KEY: "k"})
+
+    assert mock_cls.call_args.args[1] == "https://10.0.0.9"
+    assert flow._controller_url == "https://10.0.0.9"
+    assert flow._credentials[CONF_DEVICE_SERIAL] == "de:ad:be:ef:00:01"
+    assert flow._credentials[CONF_API_KEY] == "k"
+
+
+def test_manifest_ssdp_matchers_cover_the_discovery_payload_shape() -> None:
+    """manifest.json declares SSDP matchers for Ubiquiti UniFi Dream Machine consoles.
+
+    SSDP is the only discovery mechanism the integration supports (no
+    zeroconf/dhcp entries), and `async_step_ssdp` only ever runs for payloads
+    Home Assistant matched against these entries. Every matcher must carry both
+    keys so a non-UniFi Ubiquiti device is not offered, and the payload shape
+    used throughout these tests must be matched by one of them.
+    """
+    manifest_path = (
+        Path(__file__).resolve().parents[3] / "custom_components" / "unifi_alerts" / "manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    matchers = manifest["ssdp"]
+    assert matchers, "manifest.json must declare at least one SSDP matcher"
+    assert all(
+        set(m) == {ssdp.ATTR_UPNP_MANUFACTURER, ssdp.ATTR_UPNP_MODEL_DESCRIPTION} for m in matchers
+    )
+    assert "zeroconf" not in manifest
+    assert "dhcp" not in manifest
+
+    upnp = make_ssdp_info().upnp
+    assert any(all(upnp.get(key) == value for key, value in m.items()) for m in matchers)

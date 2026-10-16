@@ -61,6 +61,7 @@ tests/
   integration/                    # full HA lifecycle tests using hass fixture
     conftest.py                   # entry fixture, mock_unifi_client, get_coordinator(); real entry setup/teardown
     test_auto_clear.py            # auto-clear timeout resets binary sensors
+    test_discovery_flow.py        # SSDP discovery through the real HA flow manager, end to end
     test_lifecycle.py             # entity creation, options flow, coordinator wiring
     test_multi_entry.py           # two config entries active simultaneously
     test_webhook.py               # webhook HTTP dispatch end-to-end
