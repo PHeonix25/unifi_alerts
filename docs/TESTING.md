@@ -129,6 +129,7 @@ tests/
     test_entities.py
     test_init.py
     test_models.py
+    test_persistence.py
     test_services.py
     test_unifi_auth.py
     test_webhook_handler.py
@@ -169,7 +170,8 @@ Key conventions:
 | `coordinator/test_polling.py` | `_async_update_data` / `_fetch_categorised`: v2-vs-legacy dispatch, open_count, already-alerting guard; polling error paths (`InvalidAuthError` re-auth, `UpdateFailed`); rollup properties |
 | `coordinator/test_push_dedup.py` | `push_alert`: `apply_alert`, webhook dedup window, optimistic `open_count` increment, unknown-category guard |
 | `coordinator/test_autoclear.py` | `_schedule_clear`, `cancel_clear`, `async_shutdown`, `_auto_clear` state transition |
-| `coordinator/test_persistence.py` | Watermark persist/restore (current and legacy string format), `_build_persist_data`, persist-failed repair issue |
+| `test_persistence.py` | `WatermarkStore` in isolation: `load()` (empty, current, legacy string, corrupt fields), `build_data()`, save/load round trip, `save()` persist-failed repair issue, `schedule_save()` debounce |
+| `coordinator/test_persistence.py` | Coordinator-level persistence wiring: clear paths persist immediately, pushes schedule a debounced write, persist-failed repair issue, background-task failure logging |
 | `unifi_client/test_legacy.py` | `_classify`, `_headers`, `_login_userpass`; `fetch_alarms` (probe-chain fallback, archived filter, 401, ClientError, SSL fail-closed); `categorise_alarms` (grouping, skip unknown, empty); `authenticate`; `close` |
 | `unifi_client/test_v2.py` | `probe_system_log_endpoint` (cache, 404, transient-failure backoff); `fetch_system_log_alarms` (pagination, `timestampFrom` watermark, `status=NEW` filter, page-cap warning) |
 | `config_flow/test_setup.py` | Initial setup steps: user, categories, finish |

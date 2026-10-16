@@ -11,7 +11,8 @@ custom_components/unifi_alerts/   # integration source
   entity_helpers.py               # device_info_for_entry(): single shared DeviceInfo builder used by all four entity platforms (#383) - do not reintroduce a local per-platform copy
   unifi_client.py                 # stateless async HTTP client (alarm fetch, pagination, system-log probe); composes a UniFiAuth instance (self._auth) for all auth concerns - does not proxy or duplicate its state; probe_system_log_endpoint() is a single stateless call (True/False/None) with no cache/backoff (#240) - see coordinator.py
   unifi_auth.py                   # UniFiAuth: API-key verification and X-API-Key header construction (the only supported auth method); also owns CannotConnectError/SslCertificateError/InvalidAuthError (unifi_client.py re-exports them, so existing `from .unifi_client import ...` call sites elsewhere in the integration are unaffected)
-  coordinator.py                  # DataUpdateCoordinator, owns all category state; polling path sets is_alerting/last_alert directly (does NOT call apply_alert, so alert_count is not incremented); open_count filtered by last_cleared_at watermark (alarms since last Clear only); async_clear_category()/async_clear_all() are the sole clear entry points - they cancel tasks, advance watermark, persist via Store, notify; cancel_clear(category) cancels pending auto-clear tasks; async_restore_watermarks() loads persisted watermarks from storage on startup; async_shutdown() cancels all pending clear tasks on unload; _probe_has_system_log() owns the v2 system-log-probe cache/backoff state moved out of UniFiClient (#240)
+  coordinator.py                  # DataUpdateCoordinator, owns all category state; polling path sets is_alerting/last_alert directly (does NOT call apply_alert, so alert_count is not incremented); open_count filtered by last_cleared_at watermark (alarms since last Clear only); async_clear_category()/async_clear_all() are the sole clear entry points - they cancel tasks, advance watermark, persist via WatermarkStore, notify; cancel_clear(category) cancels pending auto-clear tasks; async_restore_watermarks() delegates to WatermarkStore.load() on startup; holds all storage bookkeeping out of its own body (#386); async_shutdown() cancels all pending clear tasks on unload; _probe_has_system_log() owns the v2 system-log-probe cache/backoff state moved out of UniFiClient (#240)
+  persistence.py                  # WatermarkStore: all HA Store bookkeeping for one config entry (storage key `unifi_alerts_watermarks_<entry_id>` and version, load/restore incl. the pre-v1.6.0 bare-string format, build_data() snapshot, immediate save() with the watermark_persist_failed repair issue, debounced schedule_save() via Store.async_delay_save); holds a live reference to the coordinator's category_states dict, so that dict must never be reassigned; async_remove_watermarks() deletes the file on entry removal (#386)
   webhook_handler.py              # registers HA webhooks (POST-only), dispatches to coordinator; rejects requests missing/wrong Authorization: Bearer header or legacy ?token= with HTTP 401; bearer secret from CONF_WEBHOOK_SECRET; raises webhook_legacy_query_auth repair issue on query-param auth
   config_flow.py                  # three-step UI setup (credentials > categories > webhook URLs, secret shown separately for the Authorization header) + options flow; generates CONF_WEBHOOK_SECRET via secrets.token_urlsafe(32) on first auth; network_device and network_client default OFF; options flow reads entry.options first, falls back to entry.data
   diagnostics.py                  # HA diagnostics platform; redacts api_key/webhook_secret, exposes webhook URLs + coordinator state
@@ -41,7 +42,7 @@ tests/
       __init__.py
       conftest.py                 # shared coordinator fixtures
       test_autoclear.py           # auto-clear scheduling, cancellation, async_shutdown
-      test_persistence.py         # watermark persist/restore, legacy string format, persist-failed repair issue
+      test_persistence.py         # coordinator-level persistence wiring: clears persist immediately, pushes schedule a debounced write, persist-failed repair issue (WatermarkStore internals live in tests/unit/test_persistence.py)
       test_polling.py             # _async_update_data: v2/legacy dispatch, open_count, already-alerting guard, auth retry
       test_push_dedup.py          # push_alert: apply_alert, webhook dedup window, optimistic open_count increment
       test_system_log_probe.py    # _probe_has_system_log(): cache/backoff state moved out of UniFiClient (#240)
@@ -55,6 +56,7 @@ tests/
     test_entities.py              # all entity property methods: binary_sensor, sensor, event, button
     test_init.py                  # async_setup_entry / async_unload_entry lifecycle, teardown order, migration (v1->v2->v3)
     test_models.py
+    test_persistence.py           # WatermarkStore in isolation: load (current/legacy/corrupt), build_data, round trip, save + repair issue, schedule_save debounce (#386)
     test_services.py
     test_unifi_auth.py            # UniFiAuth in isolation via make_auth() - no full UniFiClient needed
     test_webhook_handler.py       # WebhookManager: register/unregister, token auth, alert dispatch

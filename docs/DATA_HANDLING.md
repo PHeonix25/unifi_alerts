@@ -12,7 +12,7 @@ Each config entry (one per UniFi controller/site) gets its own `Store` file at:
 .storage/unifi_alerts_watermarks_<entry_id>
 ```
 
-`<entry_id>` is the config entry's internal HA identifier, not anything UniFi-supplied. The file is created and written by `coordinator.py` (`_build_persist_data()`) via `homeassistant.helpers.storage.Store`.
+`<entry_id>` is the config entry's internal HA identifier, not anything UniFi-supplied. The file is created and written by `persistence.py` (`WatermarkStore.build_data()`) on behalf of the coordinator via `homeassistant.helpers.storage.Store`.
 
 Per enabled alert category, the following fields are written:
 
@@ -39,7 +39,7 @@ Credentials (`CONF_API_KEY`) and the webhook bearer secret (`CONF_WEBHOOK_SECRET
 
 ### Deletion
 
-Removing the config entry (Settings > Devices & Services > UniFi Alerts > three-dot menu > Delete) deletes the watermark file entirely. `async_remove_entry` in `__init__.py` calls `Store.async_remove()` on the same `unifi_alerts_watermarks_<entry_id>` path, so nothing about that controller/site is left behind.
+Removing the config entry (Settings > Devices & Services > UniFi Alerts > three-dot menu > Delete) deletes the watermark file entirely. `async_remove_entry` in `__init__.py` calls `persistence.async_remove_watermarks()`, which removes the same `unifi_alerts_watermarks_<entry_id>` path, so nothing about that controller/site is left behind.
 
 ## What's memory-only (lost on restart)
 

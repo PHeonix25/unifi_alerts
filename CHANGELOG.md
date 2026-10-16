@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Internal
+
+- Extracted the coordinator's storage bookkeeping (restore, snapshot, immediate and debounced saves, and the persist-failed repair issue) into a new `persistence.WatermarkStore`, and moved the `async_remove_entry` store deletion alongside it so the storage key and version are defined once. The storage key, on-disk format, write timing, and error handling are unchanged. No behaviour change. ([#386])
+
 ## [2.1.0] - 2026-09-18
 
 ### Added
@@ -427,3 +431,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#357]: https://github.com/PHeonix25/unifi_alerts/issues/357
 [#411]: https://github.com/PHeonix25/unifi_alerts/issues/411
 [#417]: https://github.com/PHeonix25/unifi_alerts/issues/417
+[#386]: https://github.com/PHeonix25/unifi_alerts/issues/386
