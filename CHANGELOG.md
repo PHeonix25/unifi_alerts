@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Internal
+
+- Closed the edge-case and failover test-coverage gaps: config-entry migration idempotency, partial-data and data-preservation cases; clock-skew handling end to end for past, present, and future-dated alerts and mixed UTC offsets (unit and real-HA integration); and multi-poll v2/legacy transport failover, including the rule that a confirmed-dead legacy endpoint is never used as a fallback. Two known gaps found along the way (a bare `TimeoutError` escaping the v2 probe, and a tz-less legacy alarm timestamp breaking polling after a Clear) are recorded as strict `xfail` tests rather than fixed here. No behaviour change. ([#387])
+
 ## [2.1.0] - 2026-09-18
 
 ### Added
@@ -427,3 +431,4 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#357]: https://github.com/PHeonix25/unifi_alerts/issues/357
 [#411]: https://github.com/PHeonix25/unifi_alerts/issues/411
 [#417]: https://github.com/PHeonix25/unifi_alerts/issues/417
+[#387]: https://github.com/PHeonix25/unifi_alerts/issues/387

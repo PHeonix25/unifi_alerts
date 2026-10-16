@@ -870,3 +870,245 @@ class TestAsyncMigrateEntryRepairIssue:
 
         assert result is True
         mock_create_issue.assert_not_called()
+
+
+class TestAsyncMigrateEntryEdgeCases:
+    """Idempotency, partial-data, data-preservation and chaining edge cases (#387)."""
+
+    @staticmethod
+    def _full_current_data() -> dict:
+        """Return a fully-populated current-version entry payload."""
+        return {
+            CONF_CONTROLLER_URL: "https://192.168.1.1",
+            CONF_API_KEY: "current-api-key",
+            CONF_ENABLED_CATEGORIES: ["network_wan", "security_threat"],
+            CONF_POLL_INTERVAL: 120,
+            CONF_CLEAR_TIMEOUT: 45,
+            CONF_VERIFY_SSL: False,
+            CONF_WEBHOOK_SECRET: "keep-this-secret",
+            CONF_WEBHOOK_ID_SUFFIX: "c0ffee01",
+        }
+
+    @pytest.mark.asyncio
+    async def test_terminal_migration_version_matches_config_flow_version(self):
+        """The version the migration chain stops at must equal ConfigFlow.VERSION.
+
+        Guards against bumping one without the other: entries would otherwise be
+        migrated to a version HA then considers out of date (or newer than the flow).
+        """
+        from custom_components.unifi_alerts import async_migrate_entry
+        from custom_components.unifi_alerts.config_flow import UniFiAlertsConfigFlow
+
+        hass = make_hass()
+        entry = make_entry(data={CONF_CONTROLLER_URL: "https://192.168.1.1"})
+        entry.version = 1
+        _capture_migrate_updates(hass)
+
+        with patch("custom_components.unifi_alerts.ir.async_create_issue"):
+            result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        assert entry.version == UniFiAlertsConfigFlow.VERSION
+
+    @pytest.mark.asyncio
+    async def test_current_version_to_current_version_is_idempotent(self):
+        """Migrating a current-version entry repeatedly changes nothing and raises no issue."""
+        from custom_components.unifi_alerts import async_migrate_entry
+        from custom_components.unifi_alerts.config_flow import UniFiAlertsConfigFlow
+
+        hass = make_hass()
+        data = self._full_current_data()
+        entry = make_entry(data=dict(data))
+        entry.version = UniFiAlertsConfigFlow.VERSION
+        update_calls = _capture_migrate_updates(hass)
+
+        with patch("custom_components.unifi_alerts.ir.async_create_issue") as create_issue:
+            first = await async_migrate_entry(hass, entry)
+            second = await async_migrate_entry(hass, entry)
+
+        assert first is True
+        assert second is True
+        assert update_calls == []
+        assert entry.version == UniFiAlertsConfigFlow.VERSION
+        assert entry.data == data
+        create_issue.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rerunning_migration_after_full_upgrade_is_a_noop(self):
+        """A v1 entry upgraded to current, then migrated again, gets no further updates."""
+        from custom_components.unifi_alerts import async_migrate_entry
+
+        hass = make_hass()
+        entry = make_entry(data={CONF_CONTROLLER_URL: "https://192.168.1.1"})
+        entry.version = 1
+        update_calls = _capture_migrate_updates(hass)
+
+        with patch("custom_components.unifi_alerts.ir.async_create_issue") as create_issue:
+            await async_migrate_entry(hass, entry)
+            calls_after_first_run = len(update_calls)
+            data_after_first_run = dict(entry.data)
+            result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        assert len(update_calls) == calls_after_first_run
+        assert entry.data == data_after_first_run
+        # The one repair issue is the first run's suffix backfill; the re-run adds none.
+        create_issue.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_v1_entry_with_only_controller_url_migrates_without_error(self):
+        """A v1 entry missing every optional field (creds, is_unifi_os, categories) still migrates.
+
+        Nothing the migration chain reads is mandatory: it must backfill the webhook
+        secret and suffix, add no API key, and not invent any other keys.
+        """
+        from custom_components.unifi_alerts import async_migrate_entry
+
+        hass = make_hass()
+        entry = make_entry(data={CONF_CONTROLLER_URL: "https://192.168.1.1"})
+        entry.version = 1
+        _capture_migrate_updates(hass)
+
+        with patch("custom_components.unifi_alerts.ir.async_create_issue"):
+            result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        assert entry.version == 4
+        assert set(entry.data) == {
+            CONF_CONTROLLER_URL,
+            CONF_WEBHOOK_SECRET,
+            CONF_WEBHOOK_ID_SUFFIX,
+        }
+        assert entry.data[CONF_WEBHOOK_SECRET]
+        assert len(entry.data[CONF_WEBHOOK_ID_SUFFIX]) == 8
+
+    @pytest.mark.asyncio
+    async def test_v3_entry_without_any_legacy_credential_keys_keeps_its_data(self):
+        """A v3 entry that never had username/password/auth_method keeps its data verbatim."""
+        from custom_components.unifi_alerts import async_migrate_entry
+
+        hass = make_hass()
+        data = self._full_current_data()
+        entry = make_entry(data=dict(data))
+        entry.version = 3
+        _capture_migrate_updates(hass)
+
+        result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        assert entry.version == 4
+        assert entry.data == data
+
+    @pytest.mark.asyncio
+    async def test_v3_blank_api_key_is_treated_as_missing_and_warns(self, caplog):
+        """An empty-string api_key is falsy: the migration warns that re-authentication is needed."""
+        import logging
+
+        from custom_components.unifi_alerts import async_migrate_entry
+
+        hass = make_hass()
+        entry = make_entry(
+            data={
+                CONF_CONTROLLER_URL: "https://192.168.1.1",
+                CONF_API_KEY: "",
+                "username": "admin",
+                "password": "password",
+                CONF_WEBHOOK_SECRET: "fake-secret",
+                CONF_WEBHOOK_ID_SUFFIX: "deadbeef",
+            }
+        )
+        entry.version = 3
+        _capture_migrate_updates(hass)
+
+        with caplog.at_level(logging.WARNING, logger="custom_components.unifi_alerts"):
+            result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        assert entry.version == 4
+        assert "username" not in entry.data
+        assert "password" not in entry.data
+        assert not entry.data.get(CONF_API_KEY)
+        assert any("no API key stored" in rec.getMessage() for rec in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_v2_blank_secret_and_suffix_are_backfilled(self):
+        """Empty-string webhook_secret/webhook_id_suffix count as missing and are regenerated."""
+        from custom_components.unifi_alerts import async_migrate_entry
+
+        hass = make_hass()
+        entry = make_entry(
+            data={
+                CONF_CONTROLLER_URL: "https://192.168.1.1",
+                CONF_WEBHOOK_SECRET: "",
+                CONF_WEBHOOK_ID_SUFFIX: "",
+            }
+        )
+        entry.version = 2
+        _capture_migrate_updates(hass)
+
+        with patch("custom_components.unifi_alerts.ir.async_create_issue") as create_issue:
+            result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        assert entry.version == 4
+        assert entry.data[CONF_WEBHOOK_SECRET]
+        assert entry.data[CONF_WEBHOOK_ID_SUFFIX]
+        create_issue.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_v2_with_secret_but_no_suffix_keeps_secret_and_backfills_suffix(self):
+        """Partial identity data: the existing secret survives, only the suffix is generated."""
+        from custom_components.unifi_alerts import async_migrate_entry
+
+        hass = make_hass()
+        entry = make_entry(
+            data={
+                CONF_CONTROLLER_URL: "https://192.168.1.1",
+                CONF_WEBHOOK_SECRET: "existing-secret",
+            }
+        )
+        entry.version = 2
+        _capture_migrate_updates(hass)
+
+        with patch("custom_components.unifi_alerts.ir.async_create_issue") as create_issue:
+            result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        assert entry.data[CONF_WEBHOOK_SECRET] == "existing-secret"
+        assert len(entry.data[CONF_WEBHOOK_ID_SUFFIX]) == 8
+        # The suffix is part of the webhook URL path, so the user must re-paste URLs.
+        create_issue.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_full_chain_preserves_all_unrelated_data(self):
+        """v1 -> current keeps every unrelated key and existing identity values untouched.
+
+        Only the legacy ``is_unifi_os``, ``username``, ``password`` and ``auth_method``
+        keys may disappear; the existing secret, suffix and API key must not be
+        regenerated, so no repair issue is raised either.
+        """
+        from custom_components.unifi_alerts import async_migrate_entry
+
+        preserved = self._full_current_data()
+        preserved.update({"site": "branch-office", "some_future_option": {"nested": [1, 2, 3]}})
+        legacy = {
+            "is_unifi_os": True,
+            "username": "admin",
+            "password": "password",
+            "auth_method": "apikey",
+        }
+        hass = make_hass()
+        entry = make_entry(data={**preserved, **legacy})
+        entry.version = 1
+        update_calls = _capture_migrate_updates(hass)
+
+        with patch("custom_components.unifi_alerts.ir.async_create_issue") as create_issue:
+            result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        assert entry.version == 4
+        assert entry.data == preserved
+        assert [c["version"] for c in update_calls] == [2, 3, 4]
+        # Secret and suffix were already present, so the v2 -> v3 step rewrites no data.
+        assert "data" not in update_calls[1]
+        create_issue.assert_not_called()

@@ -45,6 +45,8 @@ tests/
       test_polling.py             # _async_update_data: v2/legacy dispatch, open_count, already-alerting guard, auth retry
       test_push_dedup.py          # push_alert: apply_alert, webhook dedup window, optimistic open_count increment
       test_system_log_probe.py    # _probe_has_system_log(): cache/backoff state moved out of UniFiClient (#240)
+      test_clock_skew.py          # Clear watermark under controller/HA clock skew: past/present/future alerts, mixed UTC offsets (#268, #387)
+      test_transport_failover.py  # multi-poll v2/legacy failover: probe backoff, recovery, never falling back to a confirmed-dead legacy endpoint (#387)
     unifi_client/                 # UniFiClient tests (split from monolithic test_unifi_client.py)
       __init__.py
       conftest.py                 # shared client fixtures
@@ -53,7 +55,7 @@ tests/
     test_console_helper.py        # tests scripts/_console.py UTF-8 stdout forcing on Windows
     test_diagnostics.py           # diagnostics platform: redaction, webhook URL exposure, coordinator state
     test_entities.py              # all entity property methods: binary_sensor, sensor, event, button
-    test_init.py                  # async_setup_entry / async_unload_entry lifecycle, teardown order, migration (v1->v2->v3)
+    test_init.py                  # async_setup_entry / async_unload_entry lifecycle, teardown order, migration (v1->v2->v3->v4, idempotency, partial data)
     test_models.py
     test_services.py
     test_unifi_auth.py            # UniFiAuth in isolation via make_auth() - no full UniFiClient needed
@@ -61,6 +63,7 @@ tests/
   integration/                    # full HA lifecycle tests using hass fixture
     conftest.py                   # entry fixture, mock_unifi_client, get_coordinator(); real entry setup/teardown
     test_auto_clear.py            # auto-clear timeout resets binary sensors
+    test_clock_skew.py            # future-dated alerts, HA-stamped webhooks and the Clear watermark, seen through entity states (#387)
     test_lifecycle.py             # entity creation, options flow, coordinator wiring
     test_multi_entry.py           # two config entries active simultaneously
     test_webhook.py               # webhook HTTP dispatch end-to-end
