@@ -12,6 +12,12 @@ version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
+    # Two-branch model: all development happens on `dev` and `main` only
+    # receives changes via the dev>main release PR, so Dependabot PRs must
+    # target `dev`. Dependabot reads this file from the default branch
+    # (`main`), so this setting only takes effect once it reaches `main` at
+    # the next release promotion.
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
