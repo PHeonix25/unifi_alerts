@@ -26,9 +26,9 @@ from .conftest import make_alert, make_coordinator, make_full_coordinator, make_
 
 
 def _mock_store(coord) -> None:
-    coord._store = MagicMock()
-    coord._store.async_load = AsyncMock(return_value=None)
-    coord._store.async_save = AsyncMock()
+    coord._watermarks._store = MagicMock()
+    coord._watermarks._store.async_load = AsyncMock(return_value=None)
+    coord._watermarks._store.async_save = AsyncMock()
 
 
 class TestClockSkewAcrossClear:

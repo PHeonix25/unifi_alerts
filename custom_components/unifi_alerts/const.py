@@ -73,13 +73,13 @@ DEFAULT_SYSTEM_LOG_LOOKBACK_HOURS = 24  # hours to look back when no watermark e
 # ──────────────────────────────────────────────
 # Persisted storage & repair-issue identifiers
 # ──────────────────────────────────────────────
-# Version for the per-entry watermark Store file (coordinator.py). Shared with
-# __init__.py so async_remove_entry can address the same file for deletion
-# without duplicating the version number.
+# Version for the per-entry watermark Store file. Owned by persistence.py, which
+# builds the Store for both the coordinator's reads/writes and the
+# async_remove_entry deletion, so the version and key live in one place.
 STORAGE_VERSION_WATERMARKS: Final = 1
 
 # Repair-issue id bases. Each is suffixed with f"_{entry.entry_id}" at the
-# creation site (config_flow.py, coordinator.py, __init__.py) so multi-entry
+# creation site (config_flow.py, persistence.py, __init__.py) so multi-entry
 # installs get independent repair cards. Centralised here, instead of as
 # inline f-string literals, so the creation site and the async_remove_entry
 # cleanup site can never drift apart.

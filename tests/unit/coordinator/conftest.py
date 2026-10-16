@@ -41,10 +41,10 @@ def make_coordinator(hass: MagicMock | None = None, enabled: list[str] | None = 
     # Persistence is exercised in dedicated tests; default to a mock Store so
     # push_alert's debounced async_delay_save is a harmless no-op here (the
     # real Store needs a live event loop the MagicMock hass does not provide).
-    coord._store = MagicMock()
-    coord._store.async_load = AsyncMock(return_value=None)
-    coord._store.async_save = AsyncMock()
-    coord._store.async_delay_save = MagicMock()
+    coord._watermarks._store = MagicMock()
+    coord._watermarks._store.async_load = AsyncMock(return_value=None)
+    coord._watermarks._store.async_save = AsyncMock()
+    coord._watermarks._store.async_delay_save = MagicMock()
     return coord
 
 

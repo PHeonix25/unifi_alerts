@@ -12,8 +12,6 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -29,22 +27,15 @@ from .const import (
     DOMAIN,
     EXCEPTION_POLL_AUTH_FAILED,
     EXCEPTION_POLL_CANNOT_CONNECT,
-    ISSUE_ID_PERSIST_FAILED,
-    STORAGE_VERSION_WATERMARKS,
     WEBHOOK_DEDUP_WINDOW_SECONDS,
 )
 from .models import CategoryState, UniFiAlert, UniFiClientConfig, ensure_aware
+from .persistence import WatermarkStore
 from .severity import get_effective_min_severity, meets_minimum
 from .unifi_auth import CannotConnectError, InvalidAuthError
 from .unifi_client import AlarmEndpointUnavailableError, UniFiClient
 
 _LOGGER = logging.getLogger(__name__)
-
-# Debounce window for watermark persistence. push_alert is synchronous and can
-# fire in bursts; routing writes through Store.async_delay_save with this delay
-# coalesces a burst into a single durable write instead of one fire-and-forget
-# save per push.
-_PERSIST_DELAY_SECONDS = 1
 
 # After this many consecutive transient v2 system-log-probe outcomes, stop
 # re-probing every poll and fall back to the legacy path. A single network
@@ -88,15 +79,17 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         self._enabled_categories: list[str] = config.get(CONF_ENABLED_CATEGORIES, ALL_CATEGORIES)
         self._site: str = config.get(CONF_SITE, DEFAULT_SITE)
         self._entry_id: str = config_entry.entry_id
-        self._store: Store[dict[str, Any]] = Store(
-            hass, STORAGE_VERSION_WATERMARKS, f"{DOMAIN}_watermarks_{self._entry_id}"
-        )
 
         # Category state is long-lived; do NOT reset between coordinator refreshes
         self._category_states: dict[str, CategoryState] = {
             cat: CategoryState(category=cat, enabled=(cat in self._enabled_categories))
             for cat in ALL_CATEGORIES
         }
+
+        # All storage bookkeeping (load, immediate and debounced saves, the
+        # persist-failed repair issue) lives in WatermarkStore (#386). It holds
+        # a live reference to _category_states, which is never reassigned.
+        self._watermarks = WatermarkStore(hass, self._entry_id, self._category_states)
 
         # Tracks pending auto-clear tasks keyed by category
         self._clear_tasks: dict[str, asyncio.Task[None]] = {}
@@ -415,7 +408,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             )
             state.record_filtered(alert)
             state.last_webhook_at = alert.received_at
-            self._schedule_persist()
+            self._watermarks.schedule_save()
             return
 
         # Alerts without a key (e.g. the empty-body webhook ping) have no
@@ -463,7 +456,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         # Persist alert_count and last_alert so they survive a config-entry
         # reload triggered by an options change. Scheduled as a background
         # task because push_alert is synchronous.
-        self._schedule_persist()
+        self._watermarks.schedule_save()
 
         # Cancel any existing clear timer and start a fresh one
         self._schedule_clear(category)
@@ -527,109 +520,8 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
     # ── Watermark persistence ─────────────────────────────────────────────
 
     async def async_restore_watermarks(self) -> None:
-        """Load persisted category state from storage on startup.
-
-        Restores ``last_cleared_at``, ``alert_count``, and ``last_alert`` for
-        each category. Legacy payloads that only contain ``last_cleared_at``
-        (a plain ISO string, pre-v1.6.0) are handled transparently: the dict
-        branch runs when the stored value is a dict; the string branch handles
-        the old format so existing installs are not disrupted.
-        """
-        data: dict[str, Any] | None = await self._store.async_load()
-        if not data:
-            return
-        for cat, entry in data.items():
-            state = self._category_states.get(cat)
-            if state is None:
-                continue
-            if isinstance(entry, str):
-                # Legacy format: bare ISO string watermark only.
-                try:
-                    state.last_cleared_at = datetime.fromisoformat(entry)
-                except ValueError, TypeError:
-                    _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, entry)
-            elif isinstance(entry, dict):
-                ts_str = entry.get("last_cleared_at")
-                if ts_str is not None:
-                    try:
-                        state.last_cleared_at = datetime.fromisoformat(ts_str)
-                    except ValueError, TypeError:
-                        _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, ts_str)
-                state.alert_count = int(entry.get("alert_count", 0))
-                raw_alert = entry.get("last_alert")
-                if raw_alert is not None:
-                    try:
-                        state.last_alert = UniFiAlert.from_dict(raw_alert)
-                    except KeyError, TypeError, ValueError:
-                        _LOGGER.warning("Ignoring invalid stored last_alert for %s", cat)
-                webhook_ts = entry.get("last_webhook_at")
-                if webhook_ts is not None:
-                    try:
-                        state.last_webhook_at = datetime.fromisoformat(webhook_ts)
-                    except ValueError, TypeError:
-                        _LOGGER.warning(
-                            "Ignoring invalid stored last_webhook_at for %s: %r", cat, webhook_ts
-                        )
-
-    def _build_persist_data(self) -> dict[str, Any]:
-        """Build the JSON-serialisable snapshot of category state to persist.
-
-        Synchronous so it can be handed to ``Store.async_delay_save`` as the
-        data function, which calls it at write time to capture the latest
-        state after a burst of pushes has settled.
-        """
-        data: dict[str, Any] = {}
-        for cat, state in self._category_states.items():
-            entry: dict[str, Any] = {}
-            if state.last_cleared_at is not None:
-                entry["last_cleared_at"] = state.last_cleared_at.isoformat()
-            entry["alert_count"] = state.alert_count
-            entry["last_alert"] = (
-                state.last_alert.to_dict() if state.last_alert is not None else None
-            )
-            if state.last_webhook_at is not None:
-                entry["last_webhook_at"] = state.last_webhook_at.isoformat()
-            data[cat] = entry
-        return data
-
-    async def _async_persist_watermarks(self) -> None:
-        """Persist current category state immediately (awaited explicit-clear path).
-
-        On failure (disk full, I/O error) the in-memory clear has already
-        succeeded, so the user sees the alert cleared but the watermark never
-        reaches disk. On the next HA restart open_count jumps back to the
-        pre-clear value. Surface this as a repair issue so the loss is visible
-        instead of buried in the log, then re-raise so the caller's error path
-        (including the background-task done-callback) still runs. A subsequent
-        successful persist deletes the issue, so it self-heals.
-        """
-        try:
-            await self._store.async_save(self._build_persist_data())
-        except Exception:
-            self._create_persist_failed_issue()
-            raise
-        else:
-            self._delete_persist_failed_issue()
-
-    @property
-    def _persist_failed_issue_id(self) -> str:
-        """Per-entry issue-registry id for the watermark-persist-failed repair."""
-        return f"{ISSUE_ID_PERSIST_FAILED}_{self._entry_id}"
-
-    def _create_persist_failed_issue(self) -> None:
-        """Raise a repair issue telling the user a watermark write failed."""
-        ir.async_create_issue(
-            self.hass,
-            DOMAIN,
-            self._persist_failed_issue_id,
-            is_fixable=False,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key=ISSUE_ID_PERSIST_FAILED,
-        )
-
-    def _delete_persist_failed_issue(self) -> None:
-        """Clear the watermark-persist-failed repair once a write succeeds."""
-        ir.async_delete_issue(self.hass, DOMAIN, self._persist_failed_issue_id)
+        """Load persisted category state from storage on startup."""
+        await self._watermarks.load()
 
     # ── Clear entry points (called by buttons and services) ───────────────
 
@@ -640,7 +532,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             return
         self.cancel_clear(category)
         state.clear()
-        await self._async_persist_watermarks()
+        await self._watermarks.save()
         self.async_set_updated_data(self._category_states)
         _LOGGER.debug("Cleared category %s; watermark set to %s", category, state.last_cleared_at)
 
@@ -651,7 +543,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
                 continue
             self.cancel_clear(category)
             state.clear()
-        await self._async_persist_watermarks()
+        await self._watermarks.save()
         self.async_set_updated_data(self._category_states)
         _LOGGER.debug("Cleared all categories")
 
@@ -695,16 +587,6 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
         if exc is not None:
             _LOGGER.error("Background task %s failed: %s", task.get_name(), exc, exc_info=exc)
 
-    def _schedule_persist(self) -> None:
-        """Persist category state, coalescing bursts into one delayed write.
-
-        push_alert is synchronous and can fire rapidly. Routing through
-        ``Store.async_delay_save`` debounces a burst into a single durable
-        write (no lost-update race between overlapping fire-and-forget saves)
-        and lets HA's storage layer own the write and log any failure.
-        """
-        self._store.async_delay_save(self._build_persist_data, _PERSIST_DELAY_SECONDS)
-
     def cancel_clear(self, category: str) -> None:
         """Cancel any pending auto-clear task for the given category."""
         existing = self._clear_tasks.pop(category, None)
@@ -719,7 +601,7 @@ class UniFiAlertsCoordinator(DataUpdateCoordinator[dict[str, CategoryState]]):
             # Persist the watermark advanced by clear() so an HA restart
             # immediately after auto-clear does not lose it (which would
             # cause open_count to jump back to the lifetime total).
-            await self._async_persist_watermarks()
+            await self._watermarks.save()
             _LOGGER.debug("Auto-cleared category %s after timeout", category)
             self.async_set_updated_data(self._category_states)
 

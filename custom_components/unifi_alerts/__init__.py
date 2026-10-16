@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import Any, cast
+from typing import cast
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -15,7 +15,6 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.storage import Store
 
 from .const import (
     ALL_CATEGORIES,
@@ -34,10 +33,10 @@ from .const import (
     ISSUE_ID_WEBHOOK_LEGACY_QUERY_AUTH,
     ISSUE_ID_WEBHOOK_SECRET_ROTATED,
     ISSUE_ID_WEBHOOK_URLS_CHANGED,
-    STORAGE_VERSION_WATERMARKS,
 )
 from .coordinator import UniFiAlertsCoordinator
 from .models import RuntimeData, UniFiClientConfig
+from .persistence import async_remove_watermarks
 from .services import async_register_services, async_unregister_services
 from .unifi_auth import CannotConnectError, InvalidAuthError
 from .unifi_client import UniFiClient
@@ -322,10 +321,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     Store file and any open repair issues keyed to entry.entry_id would remain
     orphaned forever, since nothing else ever reads or clears them again.
     """
-    store: Store[dict[str, Any]] = Store(
-        hass, STORAGE_VERSION_WATERMARKS, f"{DOMAIN}_watermarks_{entry.entry_id}"
-    )
-    await store.async_remove()
+    await async_remove_watermarks(hass, entry.entry_id)
 
     for issue_id_base in (
         ISSUE_ID_AUTH_FAILED,

@@ -371,8 +371,8 @@ class TestWebhookMidPollRace:
         hass, client = make_hass_and_client()
         client.categorise_alarms = blocking_categorise_alarms
         coord = make_full_coordinator(hass, client)
-        coord._store = MagicMock()
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_save = AsyncMock()
 
         state = coord.get_category_state(CATEGORY_NETWORK_WAN)
         state.apply_alert(stale_alert)  # the alarm was already open before the poll started
@@ -384,7 +384,7 @@ class TestWebhookMidPollRace:
         await asyncio.sleep(0)
 
         # Manually clear the category while the poll is still suspended.
-        # async_clear_category awaits _async_persist_watermarks(), a genuine
+        # async_clear_category awaits WatermarkStore.save(), a genuine
         # yield point, so this interleaves with poll_task on the same loop.
         await coord.async_clear_category(CATEGORY_NETWORK_WAN)
         assert state.is_alerting is False
