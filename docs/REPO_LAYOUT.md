@@ -74,7 +74,7 @@ tests/
   dependency-audit.yml            # pip-audit dependency vulnerability scan; advisory only (continue-on-error on the audit step); runs on push/PR to dev and main plus a weekly Monday 06:00 UTC schedule
   copilot-setup-steps.yml         # provisions .venv (make setup) before the GitHub Copilot coding agent starts a session
 .github/
-  dependabot.yml                  # tracks the github-actions ecosystem only (weekly, Brisbane TZ); minor+patch grouped, major bumps individual. Required to keep the SHA pins fresh - do NOT remove. Python deps stay manual.
+  dependabot.yml                  # tracks the github-actions ecosystem only (weekly, Brisbane TZ; PRs target `dev`); minor+patch grouped, major bumps individual. Required to keep the SHA pins fresh - do NOT remove. Python deps stay manual.
   release.yml                     # release-notes categories file used by `gh release create --generate-notes` to group merged PRs by label (Security / Bug Fixes / Features / Documentation / Tests / CI / Other). DIFFERENT FILE from .github/workflows/release.yml.
   ISSUE_TEMPLATE/
     bug_report.yml                # required-field bug template; warns users to redact bearer secrets (Authorization header or legacy ?token=...) from logs.
