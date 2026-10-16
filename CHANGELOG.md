@@ -4,6 +4,7 @@
 
 ### Internal
 
+- Closed the discovery-flow test-coverage gaps: the SSDP flow is now driven end to end through Home Assistant's real flow manager (payload to created entry), covering the pre-filled controller URL being accepted or overridden, validation failures (invalid API key, unreachable host, untrusted certificate, missing alarm endpoint) followed by a successful retry, concurrent discoveries of different hosts, `already_in_progress` and `already_configured` aborts for repeat discoveries, and IP-change rediscovery against the real config entry registry. Unit tests additionally pin the SSDP location parsing and the `manifest.json` SSDP matchers. No behaviour change. ([#388])
 - Closed the edge-case and failover test-coverage gaps: config-entry migration idempotency, partial-data and data-preservation cases; clock-skew handling end to end for past, present, and future-dated alerts and mixed UTC offsets (unit and real-HA integration); and multi-poll v2/legacy transport failover, including the rule that a confirmed-dead legacy endpoint is never used as a fallback. Two known gaps found along the way (a bare `TimeoutError` escaping the v2 probe, and a tz-less legacy alarm timestamp breaking polling after a Clear) are recorded as strict `xfail` tests rather than fixed here. No behaviour change. ([#387])
 
 ## [2.1.0] - 2026-09-18
@@ -431,4 +432,5 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#357]: https://github.com/PHeonix25/unifi_alerts/issues/357
 [#411]: https://github.com/PHeonix25/unifi_alerts/issues/411
 [#417]: https://github.com/PHeonix25/unifi_alerts/issues/417
+[#388]: https://github.com/PHeonix25/unifi_alerts/issues/388
 [#387]: https://github.com/PHeonix25/unifi_alerts/issues/387
