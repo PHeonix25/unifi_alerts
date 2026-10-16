@@ -83,6 +83,37 @@ class TestProbeSystemLogEndpoint:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_probe_returns_none_on_connect_or_socket_timeout(
+        self, aioclient_mock: AiohttpClientMocker
+    ):
+        """aiohttp.ServerTimeoutError (a ClientError, raised for connect/socket timeouts)
+        must return None so the coordinator treats it as transient."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.post(probe_url(), exc=aiohttp.ServerTimeoutError("connect timed out"))
+        result = await client.probe_system_log_endpoint()
+        assert result is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        strict=True,
+        raises=TimeoutError,
+        reason=(
+            "Known gap (#387): when ClientTimeout(total=10) elapses aiohttp raises a bare "
+            "TimeoutError, which is not an aiohttp.ClientError, so the probe's except clause "
+            "misses it. The probe docstring promises None for any network error; instead the "
+            "timeout escapes the coordinator's legacy fallback and probe backoff."
+        ),
+    )
+    async def test_probe_returns_none_on_total_timeout(self, aioclient_mock: AiohttpClientMocker):
+        """A total-request timeout (bare TimeoutError) should return None like other network errors."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.post(probe_url(), exc=TimeoutError())
+        result = await client.probe_system_log_endpoint()
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_probe_makes_exactly_one_request_per_call(
         self, aioclient_mock: AiohttpClientMocker
     ):
@@ -263,6 +294,18 @@ class TestFetchSystemLogAlarms:
         client = make_client(aioclient_mock)
         client._auth._authenticated = True
         aioclient_mock.post(system_log_url(), exc=aiohttp.ClientConnectionError("unreachable"))
+        with pytest.raises(CannotConnectError):
+            await client.fetch_system_log_alarms()
+
+    @pytest.mark.asyncio
+    async def test_connect_or_socket_timeout_raises_cannot_connect(
+        self, aioclient_mock: AiohttpClientMocker
+    ):
+        """aiohttp.ServerTimeoutError during fetch must surface as CannotConnectError,
+        which the coordinator turns into UpdateFailed for that poll."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.post(system_log_url(), exc=aiohttp.ServerTimeoutError("read timed out"))
         with pytest.raises(CannotConnectError):
             await client.fetch_system_log_alarms()
 
