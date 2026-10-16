@@ -48,7 +48,7 @@ These are never written to disk and reset to their defaults on every Home Assist
 - **`open_count` per category** - recomputed from a live controller poll every update cycle (`coordinator.py`). Not persisted because it is only ever a snapshot of current controller state, not a fact about the past.
 - **Webhook dedup window state (`_last_push_at`)** - per category+alert-key monotonic timestamps used to drop duplicate pushes from a noisy controller within a short window. Bounded in size, held only in the coordinator instance.
 - **`unrecognised_keys`** - a diagnostic counter of UniFi v2 system-log event keys seen during polling that don't map to a known category. Used to help users report gaps in the category mapping; not meaningful across restarts.
-- **`filtered_count` and `last_filtered_at` per category** - how many alerts the category's minimum-severity gate dropped, and when it last dropped one. Written by both the webhook push path and the polling path, surfaced only in diagnostics. Not persisted by `_build_persist_data()`, so both reset on restart.
+- **`filtered_count` and `last_filtered_at` per category** - how many alerts the category's minimum-severity gate dropped, and when it last dropped one. Written by both the webhook push path and the polling path, surfaced only in diagnostics. Not persisted by `WatermarkStore.build_data()` (`persistence.py`), so both reset on restart.
 
 ## What's in a diagnostics download
 
