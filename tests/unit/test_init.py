@@ -459,7 +459,7 @@ class TestAsyncRemoveEntry:
 
         with (
             patch(
-                "custom_components.unifi_alerts.Store", return_value=mock_store
+                "custom_components.unifi_alerts.persistence.Store", return_value=mock_store
             ) as mock_store_cls,
             patch("custom_components.unifi_alerts.ir.async_delete_issue"),
         ):
@@ -482,7 +482,7 @@ class TestAsyncRemoveEntry:
         mock_store.async_remove = AsyncMock()
 
         with (
-            patch("custom_components.unifi_alerts.Store", return_value=mock_store),
+            patch("custom_components.unifi_alerts.persistence.Store", return_value=mock_store),
             patch("custom_components.unifi_alerts.ir.async_delete_issue") as mock_delete_issue,
         ):
             await async_remove_entry(hass, entry)

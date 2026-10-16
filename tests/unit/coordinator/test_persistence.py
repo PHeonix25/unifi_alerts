@@ -18,7 +18,7 @@ from custom_components.unifi_alerts.const import (
     CATEGORY_NETWORK_WAN,
     CATEGORY_SECURITY_THREAT,
 )
-from custom_components.unifi_alerts.coordinator import _PERSIST_DELAY_SECONDS
+from custom_components.unifi_alerts.persistence import _PERSIST_DELAY_SECONDS
 
 from .conftest import (
     make_alert,
@@ -35,16 +35,16 @@ class TestWatermarks:
     def _make_coord_with_mock_store(self):
         """Coordinator with a Store mock so async_load/async_save are controllable."""
         coord = make_coordinator()
-        coord._store = MagicMock()
-        coord._store.async_load = AsyncMock(return_value=None)
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_load = AsyncMock(return_value=None)
+        coord._watermarks._store.async_save = AsyncMock()
         return coord
 
     @pytest.mark.asyncio
     async def test_restore_watermarks_sets_last_cleared_at(self):
         coord = self._make_coord_with_mock_store()
         ts = "2024-06-01T10:00:00+00:00"
-        coord._store.async_load.return_value = {CATEGORY_NETWORK_WAN: ts}
+        coord._watermarks._store.async_load.return_value = {CATEGORY_NETWORK_WAN: ts}
 
         await coord.async_restore_watermarks()
 
@@ -55,7 +55,7 @@ class TestWatermarks:
     @pytest.mark.asyncio
     async def test_restore_watermarks_skips_invalid_timestamps(self):
         coord = self._make_coord_with_mock_store()
-        coord._store.async_load.return_value = {CATEGORY_NETWORK_WAN: "not-a-date"}
+        coord._watermarks._store.async_load.return_value = {CATEGORY_NETWORK_WAN: "not-a-date"}
 
         await coord.async_restore_watermarks()  # must not raise
 
@@ -65,7 +65,7 @@ class TestWatermarks:
     @pytest.mark.asyncio
     async def test_restore_watermarks_handles_empty_store(self):
         coord = self._make_coord_with_mock_store()
-        coord._store.async_load.return_value = None
+        coord._watermarks._store.async_load.return_value = None
 
         await coord.async_restore_watermarks()  # must not raise
 
@@ -83,15 +83,15 @@ class TestWatermarks:
 
         assert state.is_alerting is False
         assert state.last_cleared_at is not None
-        coord._store.async_save.assert_awaited_once()
+        coord._watermarks._store.async_save.assert_awaited_once()
         coord.async_set_updated_data.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_clear_category_cancels_auto_clear_task(self):
         coord, task_mock = make_coordinator_with_cancellable_task()
-        coord._store = MagicMock()
-        coord._store.async_load = AsyncMock(return_value=None)
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_load = AsyncMock(return_value=None)
+        coord._watermarks._store.async_save = AsyncMock()
 
         coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
         await coord.async_clear_category(CATEGORY_NETWORK_WAN)
@@ -108,7 +108,7 @@ class TestWatermarks:
         for cat in ALL_CATEGORIES:
             state = coord.get_category_state(cat)
             assert state.last_cleared_at is not None
-        coord._store.async_save.assert_awaited_once()
+        coord._watermarks._store.async_save.assert_awaited_once()
         coord.async_set_updated_data.assert_called_once()
 
     @pytest.mark.asyncio
@@ -159,9 +159,9 @@ class TestCounterPersistence:
     def _make_coord_with_mock_store(self):
         """Coordinator with a Store mock so async_load/async_save are controllable."""
         coord = make_coordinator()
-        coord._store = MagicMock()
-        coord._store.async_load = AsyncMock(return_value=None)
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_load = AsyncMock(return_value=None)
+        coord._watermarks._store.async_save = AsyncMock()
         return coord
 
     @pytest.mark.asyncio
@@ -178,15 +178,15 @@ class TestCounterPersistence:
             )
         assert coord.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 3
 
-        # Capture what was saved by the last _schedule_persist call.
-        # _schedule_persist is fire-and-forget via hass background tasks which
+        # Capture what was saved by the last schedule_save call.
+        # schedule_save is fire-and-forget via hass background tasks which
         # are mocked to no-ops in make_coordinator; call the save directly.
-        await coord._async_persist_watermarks()
-        saved = coord._store.async_save.await_args.args[0]
+        await coord._watermarks.save()
+        saved = coord._watermarks._store.async_save.await_args.args[0]
 
         # Simulate a reload: new coordinator, same store data.
         coord2 = self._make_coord_with_mock_store()
-        coord2._store.async_load.return_value = saved
+        coord2._watermarks._store.async_load.return_value = saved
         await coord2.async_restore_watermarks()
 
         assert coord2.get_category_state(CATEGORY_NETWORK_WAN).alert_count == 3
@@ -200,11 +200,11 @@ class TestCounterPersistence:
         alert = make_alert(CATEGORY_NETWORK_WAN, "persistent alert", key="EVT_PERSIST")
         coord.push_alert(CATEGORY_NETWORK_WAN, alert)
 
-        await coord._async_persist_watermarks()
-        saved = coord._store.async_save.await_args.args[0]
+        await coord._watermarks.save()
+        saved = coord._watermarks._store.async_save.await_args.args[0]
 
         coord2 = self._make_coord_with_mock_store()
-        coord2._store.async_load.return_value = saved
+        coord2._watermarks._store.async_load.return_value = saved
         await coord2.async_restore_watermarks()
 
         restored = coord2.get_category_state(CATEGORY_NETWORK_WAN).last_alert
@@ -222,12 +222,12 @@ class TestCounterPersistence:
         alert = make_alert(CATEGORY_NETWORK_WAN, "health probe", key="EVT_HEALTH")
         coord.push_alert(CATEGORY_NETWORK_WAN, alert)
 
-        await coord._async_persist_watermarks()
-        saved = coord._store.async_save.await_args.args[0]
+        await coord._watermarks.save()
+        saved = coord._watermarks._store.async_save.await_args.args[0]
         assert saved[CATEGORY_NETWORK_WAN]["last_webhook_at"] == alert.received_at.isoformat()
 
         coord2 = self._make_coord_with_mock_store()
-        coord2._store.async_load.return_value = saved
+        coord2._watermarks._store.async_load.return_value = saved
         await coord2.async_restore_watermarks()
 
         assert coord2.get_category_state(CATEGORY_NETWORK_WAN).last_webhook_at == alert.received_at
@@ -236,7 +236,7 @@ class TestCounterPersistence:
     async def test_restore_skips_invalid_last_webhook_at(self):
         """A corrupt last_webhook_at must be ignored, not raise."""
         coord = self._make_coord_with_mock_store()
-        coord._store.async_load.return_value = {
+        coord._watermarks._store.async_load.return_value = {
             CATEGORY_NETWORK_WAN: {"last_webhook_at": "not-a-timestamp", "alert_count": 1}
         }
 
@@ -253,7 +253,7 @@ class TestCounterPersistence:
         coord = self._make_coord_with_mock_store()
         # Old-format payload: bare ISO string per category.
         legacy_payload = {CATEGORY_NETWORK_WAN: "2024-06-01T10:00:00+00:00"}
-        coord._store.async_load.return_value = legacy_payload
+        coord._watermarks._store.async_load.return_value = legacy_payload
 
         await coord.async_restore_watermarks()
 
@@ -264,16 +264,16 @@ class TestCounterPersistence:
 
     @pytest.mark.asyncio
     async def test_apply_alert_triggers_save(self):
-        """push_alert must schedule a persist (via _schedule_persist) after apply_alert.
+        """push_alert must schedule a persist (via WatermarkStore.schedule_save) after apply_alert.
 
-        We verify by patching _schedule_persist and asserting it is called.
+        We verify by patching WatermarkStore.schedule_save and asserting it is called.
         """
         from unittest.mock import patch as _patch
 
         coord = self._make_coord_with_mock_store()
         coord.async_set_updated_data = MagicMock()
 
-        with _patch.object(coord, "_schedule_persist") as mock_persist:
+        with _patch.object(coord._watermarks, "schedule_save") as mock_persist:
             coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN))
 
         mock_persist.assert_called_once()
@@ -291,21 +291,21 @@ class TestWatermarkPersistFailureRepair:
 
     def _make_coord(self):
         coord = make_coordinator()
-        coord._entry_id = "abc123"
-        coord._store = MagicMock()
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._entry_id = "abc123"
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_save = AsyncMock()
         return coord
 
     @pytest.mark.asyncio
     async def test_persist_failure_creates_repair_issue(self):
         coord = self._make_coord()
-        coord._store.async_save = AsyncMock(side_effect=OSError("disk full"))
+        coord._watermarks._store.async_save = AsyncMock(side_effect=OSError("disk full"))
 
         with (
-            patch("custom_components.unifi_alerts.coordinator.ir") as mock_ir,
+            patch("custom_components.unifi_alerts.persistence.ir") as mock_ir,
             pytest.raises(OSError, match="disk full"),
         ):
-            await coord._async_persist_watermarks()
+            await coord._watermarks.save()
 
         mock_ir.async_create_issue.assert_called_once()
         # Issue id is the constant base suffixed with the entry id.
@@ -323,8 +323,8 @@ class TestWatermarkPersistFailureRepair:
     async def test_successful_persist_deletes_repair_issue(self):
         coord = self._make_coord()
 
-        with patch("custom_components.unifi_alerts.coordinator.ir") as mock_ir:
-            await coord._async_persist_watermarks()
+        with patch("custom_components.unifi_alerts.persistence.ir") as mock_ir:
+            await coord._watermarks.save()
 
         mock_ir.async_delete_issue.assert_called_once()
         args = mock_ir.async_delete_issue.call_args.args
@@ -336,16 +336,16 @@ class TestWatermarkPersistFailureRepair:
         """Fail once (issue created), then succeed (issue deleted) - end to end."""
         coord = self._make_coord()
 
-        with patch("custom_components.unifi_alerts.coordinator.ir") as mock_ir:
+        with patch("custom_components.unifi_alerts.persistence.ir") as mock_ir:
             # First save raises - repair issue created.
-            coord._store.async_save = AsyncMock(side_effect=OSError("disk full"))
+            coord._watermarks._store.async_save = AsyncMock(side_effect=OSError("disk full"))
             with pytest.raises(OSError, match="disk full"):
-                await coord._async_persist_watermarks()
+                await coord._watermarks.save()
             assert mock_ir.async_create_issue.call_count == 1
 
             # Next save succeeds - repair issue deleted (self-heal).
-            coord._store.async_save = AsyncMock()
-            await coord._async_persist_watermarks()
+            coord._watermarks._store.async_save = AsyncMock()
+            await coord._watermarks.save()
             assert mock_ir.async_delete_issue.call_count == 1
 
 
@@ -353,11 +353,11 @@ class TestCoordinatorUncoveredBranches:
     @pytest.mark.asyncio
     async def test_restore_watermarks_ignores_unknown_category(self):
         coord = make_coordinator()
-        coord._store = MagicMock()
-        coord._store.async_load = AsyncMock(
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_load = AsyncMock(
             return_value={"unknown_category": "2024-01-01T00:00:00+00:00"}
         )
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._store.async_save = AsyncMock()
 
         await coord.async_restore_watermarks()
 
@@ -367,13 +367,13 @@ class TestCoordinatorUncoveredBranches:
     @pytest.mark.asyncio
     async def test_restore_watermarks_invalid_dict_timestamp_is_ignored(self):
         coord = make_coordinator()
-        coord._store = MagicMock()
-        coord._store.async_load = AsyncMock(
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_load = AsyncMock(
             return_value={
                 CATEGORY_NETWORK_WAN: {"last_cleared_at": "bad-timestamp", "alert_count": 2}
             }
         )
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._store.async_save = AsyncMock()
 
         await coord.async_restore_watermarks()
 
@@ -385,14 +385,14 @@ class TestCoordinatorUncoveredBranches:
     async def test_restore_watermarks_skips_unparseable_last_alert(self):
         """A last_alert payload that UniFiAlert.from_dict cannot parse is dropped, not raised."""
         coord = make_coordinator()
-        coord._store = MagicMock()
-        coord._store.async_load = AsyncMock(
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_load = AsyncMock(
             return_value={CATEGORY_NETWORK_WAN: {"last_alert": {"message": "corrupt"}}}
         )
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._store.async_save = AsyncMock()
 
         with patch(
-            "custom_components.unifi_alerts.coordinator.UniFiAlert.from_dict",
+            "custom_components.unifi_alerts.persistence.UniFiAlert.from_dict",
             side_effect=KeyError("category"),
         ):
             await coord.async_restore_watermarks()  # must not raise
@@ -403,18 +403,18 @@ class TestCoordinatorUncoveredBranches:
     @pytest.mark.asyncio
     async def test_clear_unknown_category_is_noop(self):
         coord = make_coordinator()
-        coord._store = MagicMock()
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_save = AsyncMock()
 
         await coord.async_clear_category("unknown_category")
 
-        coord._store.async_save.assert_not_awaited()
+        coord._watermarks._store.async_save.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_clear_all_skips_disabled_categories(self):
         coord = make_coordinator(enabled=[CATEGORY_NETWORK_WAN])
-        coord._store = MagicMock()
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_save = AsyncMock()
         wan_state = coord.get_category_state(CATEGORY_NETWORK_WAN)
         threat_state = coord.get_category_state(CATEGORY_SECURITY_THREAT)
         wan_state.is_alerting = True
@@ -442,13 +442,13 @@ class TestCoordinatorUncoveredBranches:
     def test_schedule_persist_delegates_to_delay_save(self):
         """push persist must coalesce via Store.async_delay_save, not per-push tasks."""
         coord = make_coordinator()
-        coord._store = MagicMock()
-        coord._store.async_delay_save = MagicMock()
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_delay_save = MagicMock()
 
-        coord._schedule_persist()
+        coord._watermarks.schedule_save()
 
-        coord._store.async_delay_save.assert_called_once()
-        data_func, delay = coord._store.async_delay_save.call_args.args
+        coord._watermarks._store.async_delay_save.assert_called_once()
+        data_func, delay = coord._watermarks._store.async_delay_save.call_args.args
         assert callable(data_func)
         assert delay == _PERSIST_DELAY_SECONDS
         # The data function returns a live snapshot of every category, so the
@@ -465,15 +465,15 @@ class TestCoordinatorUncoveredBranches:
         the lost-update race.
         """
         coord = make_coordinator()
-        coord._store = MagicMock()
-        coord._store.async_delay_save = MagicMock()
-        coord._store.async_save = AsyncMock()
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_delay_save = MagicMock()
+        coord._watermarks._store.async_save = AsyncMock()
 
         for _ in range(5):
-            coord._schedule_persist()
+            coord._watermarks.schedule_save()
 
-        assert coord._store.async_delay_save.call_count == 5
-        coord._store.async_save.assert_not_called()
+        assert coord._watermarks._store.async_delay_save.call_count == 5
+        coord._watermarks._store.async_save.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_background_task_exception_is_logged(self, caplog):
@@ -498,10 +498,10 @@ class TestCoordinatorUncoveredBranches:
         hass = MagicMock()
         hass.async_create_background_task = lambda coro, name=None: asyncio.ensure_future(coro)
         coord = make_coordinator(hass=hass)
-        coord._store = MagicMock()
-        coord._store.async_save = AsyncMock(side_effect=OSError("disk full"))
+        coord._watermarks._store = MagicMock()
+        coord._watermarks._store.async_save = AsyncMock(side_effect=OSError("disk full"))
 
-        task = coord._run_background(coord._async_persist_watermarks(), name="persist")
+        task = coord._run_background(coord._watermarks.save(), name="persist")
         with caplog.at_level(logging.ERROR):
             await asyncio.gather(task, return_exceptions=True)
             await asyncio.sleep(0)
