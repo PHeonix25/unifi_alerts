@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-      - uses: home-assistant/actions/hassfest@e91ad1948e57189485b9c1ad608af0c303946f89  # master tip 2026-06-14
+      - uses: home-assistant/actions/hassfest@cd6f3635a740c84d8a14f6121a90068b8ece6bf6  # master tip 2026-06-14
 
   hacs-preflight:
     name: HACS manifest pre-flight (local rules)
