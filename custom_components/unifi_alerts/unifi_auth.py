@@ -136,5 +136,5 @@ class UniFiAuth:
             raise
         except aiohttp.ClientConnectorCertificateError as err:
             raise SslCertificateError(type(err).__name__) from err
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             raise CannotConnectError(type(err).__name__) from err

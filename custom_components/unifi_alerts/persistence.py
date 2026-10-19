@@ -19,7 +19,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN, ISSUE_ID_PERSIST_FAILED, STORAGE_VERSION_WATERMARKS
-from .models import CategoryState, UniFiAlert
+from .models import CategoryState, UniFiAlert, ensure_aware
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -80,14 +80,14 @@ class WatermarkStore:
             if isinstance(entry, str):
                 # Legacy format: bare ISO string watermark only.
                 try:
-                    state.last_cleared_at = datetime.fromisoformat(entry)
+                    state.last_cleared_at = ensure_aware(datetime.fromisoformat(entry))
                 except ValueError, TypeError:
                     _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, entry)
             elif isinstance(entry, dict):
                 ts_str = entry.get("last_cleared_at")
                 if ts_str is not None:
                     try:
-                        state.last_cleared_at = datetime.fromisoformat(ts_str)
+                        state.last_cleared_at = ensure_aware(datetime.fromisoformat(ts_str))
                     except ValueError, TypeError:
                         _LOGGER.warning("Ignoring invalid stored watermark for %s: %r", cat, ts_str)
                 state.alert_count = int(entry.get("alert_count", 0))
@@ -100,7 +100,7 @@ class WatermarkStore:
                 webhook_ts = entry.get("last_webhook_at")
                 if webhook_ts is not None:
                     try:
-                        state.last_webhook_at = datetime.fromisoformat(webhook_ts)
+                        state.last_webhook_at = ensure_aware(datetime.fromisoformat(webhook_ts))
                     except ValueError, TypeError:
                         _LOGGER.warning(
                             "Ignoring invalid stored last_webhook_at for %s: %r", cat, webhook_ts

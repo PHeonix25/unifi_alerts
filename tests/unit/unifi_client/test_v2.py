@@ -95,18 +95,9 @@ class TestProbeSystemLogEndpoint:
         assert result is None
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        raises=TimeoutError,
-        reason=(
-            "Known gap (#387): when ClientTimeout(total=10) elapses aiohttp raises a bare "
-            "TimeoutError, which is not an aiohttp.ClientError, so the probe's except clause "
-            "misses it. The probe docstring promises None for any network error; instead the "
-            "timeout escapes the coordinator's legacy fallback and probe backoff."
-        ),
-    )
     async def test_probe_returns_none_on_total_timeout(self, aioclient_mock: AiohttpClientMocker):
-        """A total-request timeout (bare TimeoutError) should return None like other network errors."""
+        """A total-request timeout (bare TimeoutError, not a ClientError) returns None like
+        other network errors, so the coordinator falls back to legacy for that poll (#440)."""
         client = make_client(aioclient_mock)
         client._auth._authenticated = True
         aioclient_mock.post(probe_url(), exc=TimeoutError())
@@ -308,6 +299,17 @@ class TestFetchSystemLogAlarms:
         aioclient_mock.post(system_log_url(), exc=aiohttp.ServerTimeoutError("read timed out"))
         with pytest.raises(CannotConnectError):
             await client.fetch_system_log_alarms()
+
+    @pytest.mark.asyncio
+    async def test_total_timeout_raises_cannot_connect(self, aioclient_mock: AiohttpClientMocker):
+        """A total-request timeout (bare TimeoutError) during fetch surfaces as
+        CannotConnectError, like a connect or socket timeout (#440)."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.post(system_log_url(), exc=TimeoutError())
+        with pytest.raises(CannotConnectError) as exc_info:
+            await client.fetch_system_log_alarms()
+        assert exc_info.value.args[0] == "TimeoutError"
 
     @pytest.mark.asyncio
     async def test_redirect_raises_cannot_connect(self, aioclient_mock: AiohttpClientMocker):

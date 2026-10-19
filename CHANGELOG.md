@@ -2,11 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A controller that is slow to respond no longer fails a poll outright or breaks setup. When a request hit its overall timeout, the resulting `TimeoutError` was not caught: the v2 system-log probe let it escape instead of falling back to the legacy alarm path for that poll, setup and reconfiguration reported an unhandled error instead of "cannot connect", and the best-effort controller-version lookup could block setup. Every controller request now treats a timeout like any other network error. ([#440])
+- A legacy alarm timestamp without a timezone offset no longer stops a category from polling after Clear. The offset-less time was compared against the timezone-aware Clear watermark, raising `TypeError` on every subsequent poll until the integration was reloaded. Such timestamps, and any restored from storage, are now treated as UTC. ([#441])
+
 ### Internal
 
 - Closed the discovery-flow test-coverage gaps: the SSDP flow is now driven end to end through Home Assistant's real flow manager (payload to created entry), covering the pre-filled controller URL being accepted or overridden, validation failures (invalid API key, unreachable host, untrusted certificate, missing alarm endpoint) followed by a successful retry, concurrent discoveries of different hosts, `already_in_progress` and `already_configured` aborts for repeat discoveries, and IP-change rediscovery against the real config entry registry. Unit tests additionally pin the SSDP location parsing and the `manifest.json` SSDP matchers. No behaviour change. ([#388])
 - Extracted the coordinator's storage bookkeeping (restore, snapshot, immediate and debounced saves, and the persist-failed repair issue) into a new `persistence.WatermarkStore`, and moved the `async_remove_entry` store deletion alongside it so the storage key and version are defined once. The storage key, on-disk format, write timing, and error handling are unchanged. No behaviour change. ([#386])
-- Closed the edge-case and failover test-coverage gaps: config-entry migration idempotency, partial-data and data-preservation cases; clock-skew handling end to end for past, present, and future-dated alerts and mixed UTC offsets (unit and real-HA integration); and multi-poll v2/legacy transport failover, including the rule that a confirmed-dead legacy endpoint is never used as a fallback. Two known gaps found along the way (a bare `TimeoutError` escaping the v2 probe, and a tz-less legacy alarm timestamp breaking polling after a Clear) are recorded as strict `xfail` tests rather than fixed here. No behaviour change. ([#387])
+- Closed the edge-case and failover test-coverage gaps: config-entry migration idempotency, partial-data and data-preservation cases; clock-skew handling end to end for past, present, and future-dated alerts and mixed UTC offsets (unit and real-HA integration); and multi-poll v2/legacy transport failover, including the rule that a confirmed-dead legacy endpoint is never used as a fallback. No behaviour change. ([#387])
 
 ## [2.1.0] - 2026-09-18
 
@@ -436,3 +441,5 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#388]: https://github.com/PHeonix25/unifi_alerts/issues/388
 [#386]: https://github.com/PHeonix25/unifi_alerts/issues/386
 [#387]: https://github.com/PHeonix25/unifi_alerts/issues/387
+[#440]: https://github.com/PHeonix25/unifi_alerts/issues/440
+[#441]: https://github.com/PHeonix25/unifi_alerts/issues/441

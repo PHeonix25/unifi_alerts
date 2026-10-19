@@ -243,6 +243,22 @@ class TestVerifyApiKey:
         assert "leaked" not in str(exc_info.value)
         assert exc_info.value.args[0] == "ClientConnectionError"
 
+    @pytest.mark.asyncio
+    async def test_verify_api_key_total_timeout_raises_cannot_connect(self):
+        """A total-request timeout (bare TimeoutError, not a ClientError) must raise
+        CannotConnectError so setup reports cannot_connect instead of an unhandled error (#440)."""
+        auth = make_auth({"api_key": "test-key", "verify_ssl": True})
+
+        @asynccontextmanager
+        async def _raise(*args, **kwargs):
+            raise TimeoutError
+            yield  # type: ignore[misc]
+
+        auth._session.get = _raise
+        with pytest.raises(CannotConnectError) as exc_info:
+            await auth._verify_api_key()
+        assert exc_info.value.args[0] == "TimeoutError"
+
 
 class TestAuthenticate:
     """Tests for UniFiAuth.authenticate — API-key verification.

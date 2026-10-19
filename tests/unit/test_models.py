@@ -632,6 +632,17 @@ class TestAlertSerialization:
         assert isinstance(restored.received_at, datetime)
         assert restored.received_at.tzinfo == UTC
 
+    def test_from_dict_naive_received_at_is_treated_as_utc(self):
+        """A tz-less stored timestamp restores as UTC-aware, never naive (#441)."""
+        restored = UniFiAlert.from_dict(
+            {
+                "category": CATEGORY_NETWORK_WAN,
+                "message": "naive-ts",
+                "received_at": "2026-06-01T10:00:00",
+            }
+        )
+        assert restored.received_at == datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
+
     def test_from_dict_severity_truncated_at_32(self):
         """from_dict() must apply the same [:32] truncation as the live constructors."""
         restored = UniFiAlert.from_dict(

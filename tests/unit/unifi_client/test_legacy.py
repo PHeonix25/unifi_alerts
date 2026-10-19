@@ -195,6 +195,18 @@ class TestFetchAlarms:
             await client.fetch_alarms()
 
     @pytest.mark.asyncio
+    async def test_total_timeout_raises_cannot_connect(self, aioclient_mock: AiohttpClientMocker):
+        """A total-request timeout (bare TimeoutError, not a ClientError) surfaces as
+        CannotConnectError so the config flow shows cannot_connect instead of an
+        unhandled error (#440)."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.get(list_alarm_url(), exc=TimeoutError())
+        with pytest.raises(CannotConnectError) as exc_info:
+            await client.fetch_alarms()
+        assert exc_info.value.args[0] == "TimeoutError"
+
+    @pytest.mark.asyncio
     async def test_client_error_message_is_class_name_not_url(
         self, aioclient_mock: AiohttpClientMocker
     ):
@@ -872,6 +884,14 @@ class TestSiteExists:
         assert await client._site_exists("anything") is True
 
     @pytest.mark.asyncio
+    async def test_true_on_total_timeout(self, aioclient_mock: AiohttpClientMocker):
+        """A total-request timeout on /api/self/sites must not escape or report a missing site (#440)."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.get(self_sites_url(), exc=TimeoutError())
+        assert await client._site_exists("anything") is True
+
+    @pytest.mark.asyncio
     async def test_true_on_non_200_status(self, aioclient_mock: AiohttpClientMocker):
         """A non-200 response from /api/self/sites must never be reported as a missing site."""
         client = make_client(aioclient_mock)
@@ -1006,6 +1026,20 @@ class TestFetchControllerVersion:
         client = make_client(aioclient_mock)
         client._auth._authenticated = True
         aioclient_mock.get(sysinfo_url(), exc=aiohttp.ClientError())
+
+        version = await client.fetch_controller_version()
+
+        assert version is None
+        assert client.controller_version is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_total_timeout_without_raising(
+        self, aioclient_mock: AiohttpClientMocker
+    ):
+        """A total-request timeout fetching sysinfo must never raise or block setup (#440)."""
+        client = make_client(aioclient_mock)
+        client._auth._authenticated = True
+        aioclient_mock.get(sysinfo_url(), exc=TimeoutError())
 
         version = await client.fetch_controller_version()
 
