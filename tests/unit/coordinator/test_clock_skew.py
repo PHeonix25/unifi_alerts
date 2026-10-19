@@ -198,3 +198,218 @@ class TestWatermarkSourceEdgeCases:
         UniFiAlertsCoordinator._track_newest_seen(state, [])
 
         assert state.last_alarm_received_at is None
+
+
+class TestFutureAndPastTimestamps:
+    """Alerts dated in the past, present and future (#387)."""
+
+    @pytest.mark.asyncio
+    async def test_polled_past_present_future_alarms_are_all_counted(self):
+        """Alarms an hour old, current, and an hour ahead of HA all count as open;
+        the future one becomes the active alert and the Clear watermark."""
+        now = datetime.now(UTC)
+        past = UniFiAlert(
+            category=CATEGORY_NETWORK_WAN, message="past", received_at=now - timedelta(hours=1)
+        )
+        present = UniFiAlert(category=CATEGORY_NETWORK_WAN, message="present", received_at=now)
+        future = UniFiAlert(
+            category=CATEGORY_NETWORK_WAN, message="future", received_at=now + timedelta(hours=1)
+        )
+        hass, client = make_hass_and_client()
+        client.categorise_alarms = AsyncMock(
+            return_value={CATEGORY_NETWORK_WAN: [past, future, present]}
+        )
+        coord = make_full_coordinator(hass, client)
+        _mock_store(coord)
+
+        await coord._async_update_data()
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.open_count == 3
+        assert state.is_alerting is True
+        assert state.last_alert is future
+        assert state.last_alarm_received_at == future.received_at
+
+        await coord.async_clear_category(CATEGORY_NETWORK_WAN)
+
+        assert state.last_cleared_at == future.received_at
+        await coord._async_update_data()
+        assert state.open_count == 0
+        assert state.is_alerting is False
+
+    @pytest.mark.asyncio
+    async def test_alarm_older_than_future_watermark_is_not_recounted(self):
+        """After Clear anchors to a future-dated alarm, a genuinely newer alarm still counts
+        while one a second older than the watermark does not."""
+        watermark = datetime.now(UTC) + timedelta(hours=1)
+        anchor = UniFiAlert(category=CATEGORY_NETWORK_WAN, message="anchor", received_at=watermark)
+        hass, client = make_hass_and_client()
+        client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: [anchor]})
+        coord = make_full_coordinator(hass, client)
+        _mock_store(coord)
+        await coord._async_update_data()
+        await coord.async_clear_category(CATEGORY_NETWORK_WAN)
+
+        just_older = UniFiAlert(
+            category=CATEGORY_NETWORK_WAN,
+            message="just older",
+            received_at=watermark - timedelta(seconds=1),
+        )
+        just_newer = UniFiAlert(
+            category=CATEGORY_NETWORK_WAN,
+            message="just newer",
+            received_at=watermark + timedelta(seconds=1),
+        )
+        client.categorise_alarms = AsyncMock(
+            return_value={CATEGORY_NETWORK_WAN: [anchor, just_older, just_newer]}
+        )
+        await coord._async_update_data()
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.open_count == 1
+        assert state.last_alert is just_newer
+
+    def test_push_alert_with_future_received_at_is_accepted(self):
+        """A webhook alert stamped one hour ahead still alerts, counts and is tracked as newest."""
+        coord = make_coordinator()
+        future = datetime.now(UTC) + timedelta(hours=1)
+        alert = UniFiAlert(
+            category=CATEGORY_NETWORK_WAN, message="future push", key="K1", received_at=future
+        )
+
+        coord.push_alert(CATEGORY_NETWORK_WAN, alert)
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.is_alerting is True
+        assert state.alert_count == 1
+        assert state.open_count == 1
+        assert state.last_alert is alert
+        assert state.last_alarm_received_at == future
+
+    def test_older_push_after_future_push_does_not_regress_newest_seen(self):
+        """A past-dated push arriving after a future-dated one is accepted but the
+        newest-seen time (the Clear watermark source) stays on the future value."""
+        coord = make_coordinator()
+        now = datetime.now(UTC)
+        future = now + timedelta(hours=1)
+        coord.push_alert(
+            CATEGORY_NETWORK_WAN,
+            UniFiAlert(category=CATEGORY_NETWORK_WAN, message="f", key="KF", received_at=future),
+        )
+        coord.push_alert(
+            CATEGORY_NETWORK_WAN,
+            UniFiAlert(
+                category=CATEGORY_NETWORK_WAN,
+                message="p",
+                key="KP",
+                received_at=now - timedelta(hours=1),
+            ),
+        )
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.alert_count == 2
+        assert state.last_alarm_received_at == future
+
+    @pytest.mark.asyncio
+    async def test_push_after_clear_with_future_watermark_still_alerts(self):
+        """A fast controller clock must not swallow later alerts: after Clear anchors to a
+        future time, a push stamped at the (earlier) HA time still turns the category on."""
+        coord = make_coordinator()
+        future = datetime.now(UTC) + timedelta(hours=1)
+        coord.push_alert(
+            CATEGORY_NETWORK_WAN,
+            UniFiAlert(category=CATEGORY_NETWORK_WAN, message="f", key="KF", received_at=future),
+        )
+        await coord.async_clear_category(CATEGORY_NETWORK_WAN)
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.is_alerting is False
+        assert state.last_cleared_at == future
+
+        coord.push_alert(CATEGORY_NETWORK_WAN, make_alert(CATEGORY_NETWORK_WAN, "later", key="KL"))
+
+        assert state.is_alerting is True
+        assert state.alert_count == 2
+        assert state.last_alert.message == "later"
+
+
+class TestTimezoneOffsets:
+    """Polled ISO timestamps carrying different UTC offsets are compared by instant (#387)."""
+
+    @pytest.mark.asyncio
+    async def test_watermark_comparison_is_by_instant_across_offsets(self):
+        """The same instant written as +10:00, -05:00 and +00:00 is equal for the watermark.
+
+        All three are 10:00 UTC. After Clear none re-count; an alarm one second later,
+        written in yet another offset, does.
+        """
+
+        def alarm(ts: str) -> UniFiAlert:
+            return UniFiAlert.from_api_alarm(CATEGORY_NETWORK_WAN, {"msg": ts, "datetime": ts})
+
+        same_instant = [
+            alarm("2026-06-01T20:00:00+10:00"),
+            alarm("2026-06-01T05:00:00-05:00"),
+            alarm("2026-06-01T10:00:00+00:00"),
+        ]
+        assert {a.received_at for a in same_instant} == {datetime(2026, 6, 1, 10, 0, tzinfo=UTC)}
+        assert len({a.received_at.utcoffset() for a in same_instant}) == 3
+
+        hass, client = make_hass_and_client()
+        client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: same_instant})
+        coord = make_full_coordinator(hass, client)
+        _mock_store(coord)
+        await coord._async_update_data()
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.open_count == 3
+
+        await coord.async_clear_category(CATEGORY_NETWORK_WAN)
+        assert state.last_cleared_at == datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
+        await coord._async_update_data()
+        assert state.open_count == 0
+
+        one_second_later = alarm("2026-06-01T01:00:01-09:00")  # 10:00:01 UTC
+        client.categorise_alarms = AsyncMock(
+            return_value={CATEGORY_NETWORK_WAN: [*same_instant, one_second_later]}
+        )
+        await coord._async_update_data()
+        assert state.open_count == 1
+        assert state.last_alert is one_second_later
+
+    def test_naive_iso_timestamp_from_controller_is_treated_as_utc_for_tracking(self):
+        """A tz-less ISO string parses naive; watermark tracking normalises it to UTC."""
+        naive = UniFiAlert.from_api_alarm(
+            CATEGORY_NETWORK_WAN, {"msg": "naive", "datetime": "2026-06-01T10:00:00"}
+        )
+        assert naive.received_at.tzinfo is None
+
+        state = CategoryState(category=CATEGORY_NETWORK_WAN)
+        state.apply_alert(naive)
+
+        assert state.last_alarm_received_at == datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        strict=True,
+        raises=TypeError,
+        reason=(
+            "Known gap (#387): UniFiAlert.from_api_alarm() keeps a tz-less ISO string naive, "
+            "and _async_update_data() compares received_at to the aware last_cleared_at "
+            "without ensure_aware(), so every poll after a Clear raises TypeError."
+        ),
+    )
+    async def test_naive_polled_timestamp_after_clear_does_not_break_polling(self):
+        """A tz-less ISO alarm timestamp should be treated as UTC when polled after a Clear."""
+        naive = UniFiAlert.from_api_alarm(
+            CATEGORY_NETWORK_WAN, {"msg": "naive", "datetime": "2026-06-01T10:00:00"}
+        )
+        hass, client = make_hass_and_client()
+        client.categorise_alarms = AsyncMock(return_value={CATEGORY_NETWORK_WAN: [naive]})
+        coord = make_full_coordinator(hass, client)
+        _mock_store(coord)
+        await coord._async_update_data()
+        await coord.async_clear_category(CATEGORY_NETWORK_WAN)
+
+        await coord._async_update_data()
+
+        state = coord.get_category_state(CATEGORY_NETWORK_WAN)
+        assert state.open_count == 0

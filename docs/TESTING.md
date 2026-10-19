@@ -170,6 +170,8 @@ Key conventions:
 | `test_models.py` | `UniFiAlert` construction from webhook, legacy API, and v2 system-log payloads, field fallback, 255-char truncation; `CategoryState` init, apply_alert, clear, `webhook_health` |
 | `coordinator/test_polling.py` | `_async_update_data` / `_fetch_categorised`: v2-vs-legacy dispatch, open_count, already-alerting guard; polling error paths (`InvalidAuthError` re-auth, `UpdateFailed`); rollup properties |
 | `coordinator/test_push_dedup.py` | `push_alert`: `apply_alert`, webhook dedup window, optimistic `open_count` increment, unknown-category guard |
+| `coordinator/test_clock_skew.py` | Clear watermark under controller/HA clock skew; polled and pushed alerts dated in the past, present, and future; mixed UTC offsets compared by instant |
+| `coordinator/test_transport_failover.py` | Multi-poll v2/legacy failover: transient probe failure falls back to legacy, stays on legacy through backoff, returns to v2 on recovery; a confirmed-dead legacy endpoint is never used as a fallback; a failing v2 fetch fails the poll (`UpdateFailed`) rather than switching transport |
 | `coordinator/test_autoclear.py` | `_schedule_clear`, `cancel_clear`, `async_shutdown`, `_auto_clear` state transition |
 | `test_persistence.py` | `WatermarkStore` in isolation: `load()` (empty, current, legacy string, corrupt fields), `build_data()`, save/load round trip, `save()` persist-failed repair issue, `schedule_save()` debounce |
 | `coordinator/test_persistence.py` | Coordinator-level persistence wiring: clear paths persist immediately, pushes schedule a debounced write, persist-failed repair issue, background-task failure logging |
@@ -183,7 +185,7 @@ Key conventions:
 | `config_flow/test_reauth.py` | Reauth flow: `async_step_reauth`, repair issue |
 | `test_diagnostics.py` | Redaction of sensitive fields; webhook URL exposure; coordinator state; missing-data handling |
 | `test_webhook_handler.py` | `register_all` (category filter, token URL, _registered list); `unregister_all` (cleanup, exception suppression); `_make_handler` (valid token, missing token > 401, wrong token > 401, no secret > 500, malformed JSON > 400, payload field mapping) |
-| `test_init.py` | `async_setup_entry` (happy path, auth failure, first-refresh failure, SSL warning, platform forwarding); `async_unload_entry` (teardown order, failed-unload guard); `_async_update_listener`; `async_migrate_entry` (v1->v2->v3); `async_remove_entry` |
+| `test_init.py` | `async_setup_entry` (happy path, auth failure, first-refresh failure, SSL warning, platform forwarding); `async_unload_entry` (teardown order, failed-unload guard); `_async_update_listener`; `async_migrate_entry` (v1->v2->v3->v4; current-to-current idempotency, partial data, data preservation); `async_remove_entry` |
 | `test_entities.py` | All entity property methods across binary_sensor, sensor, event, button; event-entity increment guard; button press / clear-all logic |
 
 ---
@@ -218,6 +220,7 @@ Mark all integration tests with `@pytest.mark.integration`.
 | `test_lifecycle.py` | Entity creation for all categories; rollup sensor; count sensors; clear buttons; options flow disabling a category makes its sensor unavailable |
 | `test_discovery_flow.py` | SSDP discovery via `hass.config_entries.flow`: payload to created entry, pre-filled URL accepted or overridden, validation failures and retry, concurrent discoveries, `already_in_progress` / `already_configured` aborts, rediscovery at a new IP |
 | `test_auto_clear.py` | Push alert > sensor ON; auto-clear fires > sensor OFF; rollup also resets; push without clear keeps sensor ON |
+| `test_clock_skew.py` | Webhook payload timestamps ignored (HA stamps receipt time); one-hour-future alert shown as UTC ISO; past/present/future alerts; Clear watermark anchored to a future-dated alert for later polls |
 | `test_webhook.py` | Valid POST + correct token > sensor ON; missing token > 401; wrong token > 401; GET > no dispatch; no-secret config > POST accepted without token |
 
 ---
