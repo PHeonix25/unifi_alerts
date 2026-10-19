@@ -376,11 +376,11 @@ class TestTimezoneOffsets:
         assert state.last_alert is one_second_later
 
     def test_naive_iso_timestamp_from_controller_is_treated_as_utc_for_tracking(self):
-        """A tz-less ISO string parses naive; watermark tracking normalises it to UTC."""
+        """A tz-less ISO string from the controller is parsed as UTC (#441)."""
         naive = UniFiAlert.from_api_alarm(
             CATEGORY_NETWORK_WAN, {"msg": "naive", "datetime": "2026-06-01T10:00:00"}
         )
-        assert naive.received_at.tzinfo is None
+        assert naive.received_at.tzinfo == UTC
 
         state = CategoryState(category=CATEGORY_NETWORK_WAN)
         state.apply_alert(naive)
@@ -388,17 +388,9 @@ class TestTimezoneOffsets:
         assert state.last_alarm_received_at == datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        raises=TypeError,
-        reason=(
-            "Known gap (#387): UniFiAlert.from_api_alarm() keeps a tz-less ISO string naive, "
-            "and _async_update_data() compares received_at to the aware last_cleared_at "
-            "without ensure_aware(), so every poll after a Clear raises TypeError."
-        ),
-    )
     async def test_naive_polled_timestamp_after_clear_does_not_break_polling(self):
-        """A tz-less ISO alarm timestamp should be treated as UTC when polled after a Clear."""
+        """A tz-less ISO alarm timestamp is treated as UTC when polled after a Clear,
+        instead of raising TypeError against the aware watermark (#441)."""
         naive = UniFiAlert.from_api_alarm(
             CATEGORY_NETWORK_WAN, {"msg": "naive", "datetime": "2026-06-01T10:00:00"}
         )

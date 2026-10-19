@@ -141,6 +141,28 @@ class TestLoad:
         assert state.last_alert is None
 
     @pytest.mark.asyncio
+    async def test_load_naive_timestamps_are_restored_as_utc(self):
+        """Tz-less stored timestamps restore as UTC-aware so later comparisons
+        against aware alarm times cannot raise TypeError (#441)."""
+        store, states, mock_store = _make_store()
+        mock_store.async_load.return_value = {
+            CATEGORY_NETWORK_WAN: {
+                "last_cleared_at": "2026-06-01T10:00:00",
+                "last_webhook_at": "2026-06-01T11:00:00",
+            },
+            CATEGORY_SECURITY_THREAT: "2026-06-01T12:00:00",
+        }
+
+        await store.load()
+
+        wan = states[CATEGORY_NETWORK_WAN]
+        assert wan.last_cleared_at == datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
+        assert wan.last_webhook_at == datetime(2026, 6, 1, 11, 0, tzinfo=UTC)
+        assert states[CATEGORY_SECURITY_THREAT].last_cleared_at == datetime(
+            2026, 6, 1, 12, 0, tzinfo=UTC
+        )
+
+    @pytest.mark.asyncio
     async def test_load_legacy_invalid_string_is_ignored_with_warning(self, caplog):
         store, states, mock_store = _make_store()
         mock_store.async_load.return_value = {CATEGORY_NETWORK_WAN: "not-a-date"}

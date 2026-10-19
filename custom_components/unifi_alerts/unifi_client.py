@@ -134,7 +134,7 @@ class UniFiClient:
                     )
                     return self._controller_version
                 body = await resp.json(content_type=None)
-        except (aiohttp.ClientError, json.JSONDecodeError, UnicodeDecodeError) as err:
+        except (aiohttp.ClientError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as err:
             _LOGGER.debug("Could not fetch controller version from %s: %s", url, err)
             return self._controller_version
 
@@ -206,7 +206,7 @@ class UniFiClient:
                 if resp.status != 200:
                     return True
                 data = await resp.json()
-        except aiohttp.ClientError, json.JSONDecodeError:
+        except aiohttp.ClientError, TimeoutError, json.JSONDecodeError:
             return True
         sites: list[dict[str, Any]] = data.get("data", [])
         return any(entry.get("name") == site for entry in sites)
@@ -327,7 +327,7 @@ class UniFiClient:
             # Include HTTP status so users (and logs) can tell a 404 from a 500.
             # Status-only — no URL — to avoid leaking creds that may be embedded in a URL.
             raise CannotConnectError(f"{type(err).__name__} {err.status}") from err
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             raise CannotConnectError(type(err).__name__) from err
 
     @staticmethod
@@ -399,7 +399,7 @@ class UniFiClient:
                     resp.status,
                 )
                 return None
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             _LOGGER.debug(
                 "v2 system-log probe failed with %s (transient); legacy path this poll",
                 type(err).__name__,
@@ -469,7 +469,7 @@ class UniFiClient:
                 raise SslCertificateError(type(err).__name__) from err
             except aiohttp.ClientResponseError as err:
                 raise CannotConnectError(f"{type(err).__name__} {err.status}") from err
-            except aiohttp.ClientError as err:
+            except (aiohttp.ClientError, TimeoutError) as err:
                 raise CannotConnectError(type(err).__name__) from err
 
             page_data: list[dict[str, Any]] = data.get("data") or []

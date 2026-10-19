@@ -41,10 +41,11 @@ class UniFiClientConfig(TypedDict, total=False):
 def ensure_aware(dt: datetime) -> datetime:
     """Treat a naive datetime as UTC.
 
-    Real alarms are always tz-aware (`from_api_alarm`, `from_system_log_event`,
-    and `from_webhook_payload` all stamp UTC-aware timestamps); this only
-    guards the `last_alarm_received_at` comparisons against a naive value
-    slipping in (e.g. from a test fixture) and raising on `>` comparison.
+    Every parse of a controller or stored timestamp goes through this so that
+    comparisons against the aware ``last_cleared_at`` watermark (and between
+    ``last_alarm_received_at`` values) can never raise on ``>``. A legacy
+    ``/list/alarm`` record or a restored Store value can carry a tz-less ISO
+    string, which ``datetime.fromisoformat`` returns naive (#441).
     """
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
@@ -141,7 +142,9 @@ class UniFiAlert:
                     received_at = datetime.fromtimestamp(epoch_ms / 1000, tz=UTC)
             else:
                 with suppress(ValueError, TypeError):
-                    received_at = datetime.fromisoformat(str(ts))
+                    # A tz-less ISO string is treated as UTC so it can be compared
+                    # with the aware last_cleared_at watermark (#441).
+                    received_at = ensure_aware(datetime.fromisoformat(str(ts)))
 
         return cls(
             category=category,
@@ -262,7 +265,7 @@ class UniFiAlert:
         """Deserialise an alert previously written by ``to_dict``."""
         received_at_raw = data.get("received_at", "")
         try:
-            received_at = datetime.fromisoformat(received_at_raw)
+            received_at = ensure_aware(datetime.fromisoformat(received_at_raw))
         except ValueError, TypeError:
             received_at = datetime.now(UTC)
         return cls(
