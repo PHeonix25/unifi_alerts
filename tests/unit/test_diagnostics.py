@@ -111,6 +111,20 @@ class TestDiagnosticsContent:
             assert cat in result["webhook_urls"]
 
     @pytest.mark.asyncio
+    async def test_webhook_url_query_and_fragment_stripped(self) -> None:
+        """A regression that re-adds ?token= to a webhook URL must not reach diagnostics."""
+        entry = _make_entry_with_runtime(_make_coordinator())
+        entry.runtime_data.webhook_urls = {
+            cat: f"{url}?token=SECRET#frag" for cat, url in _SAMPLE_WEBHOOK_URLS.items()
+        }
+        hass = MagicMock()
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        assert result["webhook_urls"] == _SAMPLE_WEBHOOK_URLS
+        assert "SECRET" not in str(result)
+
+    @pytest.mark.asyncio
     async def test_includes_coordinator_state(self) -> None:
         coordinator = _make_coordinator(
             any_alerting=True, rollup_alert_count=3, rollup_open_count=5

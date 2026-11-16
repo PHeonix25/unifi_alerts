@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from yarl import URL
 
 from .const import (
     CONF_API_KEY,
@@ -16,6 +17,11 @@ from .const import (
 )
 
 _TO_REDACT: set[str] = {CONF_API_KEY, CONF_WEBHOOK_SECRET}
+
+
+def _strip_query(url: str) -> str:
+    """Return ``url`` without its query string or fragment."""
+    return str(URL(url).with_query(None).with_fragment(None))
 
 
 async def async_get_config_entry_diagnostics(
@@ -31,10 +37,13 @@ async def async_get_config_entry_diagnostics(
     coordinator = runtime_data.coordinator if runtime_data is not None else None
     client = runtime_data.client if runtime_data is not None else None
     site = entry.data.get(CONF_SITE, DEFAULT_SITE)
-    # register_all() no longer embeds the bearer secret in these URLs (#176),
-    # so no redaction is needed before including them in shared diagnostics.
+    # register_all() no longer embeds the bearer secret in these URLs (#176).
+    # Query strings are stripped anyway so a future regression that put a
+    # ``?token=`` back in the URL cannot leak into a shared diagnostics file.
     webhook_urls: dict[str, str] = (
-        dict(runtime_data.webhook_urls) if runtime_data is not None else {}
+        {cat: _strip_query(url) for cat, url in runtime_data.webhook_urls.items()}
+        if runtime_data is not None
+        else {}
     )
 
     coordinator_info: dict[str, Any]

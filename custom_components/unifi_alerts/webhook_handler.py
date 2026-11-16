@@ -157,6 +157,10 @@ class WebhookManager:
             webhook_id: str,
             request: Request,
         ) -> Response | None:
+            # Fail closed on an empty secret. This is NOT redundant with config-flow
+            # validation: hmac.compare_digest("", "") is True, so an entry that
+            # somehow lacked a secret would otherwise authorise every request
+            # that omits a token (the pre-v1.7 bypass).
             if not secret:
                 _LOGGER.error(
                     "Webhook for category %s has no bearer secret configured; rejecting request. "
@@ -183,6 +187,19 @@ class WebhookManager:
                     category,
                 )
                 return Response(status=401)
+
+            # Reject on the declared Content-Length before touching the body so
+            # an oversized request is never buffered. Chunked requests declare
+            # no length (None), so the bounded read below remains the backstop.
+            declared_length = request.content_length
+            if isinstance(declared_length, int) and declared_length > WEBHOOK_MAX_BODY_BYTES:
+                _LOGGER.warning(
+                    "Webhook Content-Length %d for category %s exceeds %d bytes, rejecting",
+                    declared_length,
+                    category,
+                    WEBHOOK_MAX_BODY_BYTES,
+                )
+                return Response(status=413)
 
             raw = b""
             try:

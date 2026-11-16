@@ -37,6 +37,10 @@ Per enabled alert category, the following fields are written:
 
 Credentials (`CONF_API_KEY`) and the webhook bearer secret (`CONF_WEBHOOK_SECRET`) live in HA's own config entry storage (`.storage/core.config_entries`), governed by HA core, not by this integration's watermark file. (Username/password authentication was removed; `CONF_USERNAME`/`CONF_PASSWORD` no longer exist.)
 
+### Privacy of the watermark file
+
+`last_alert.message` and `last_alert.device_name` are controller-supplied strings stored verbatim (truncated to 255 characters). Depending on the alert they can contain client hostnames, MAC addresses, or IP addresses. The file lives only on the HA host's local filesystem, but it is included in HA backups. Do not attach `.storage/unifi_alerts_watermarks_<entry_id>` (or a backup containing it) to support requests or bug reports; use the diagnostics download instead, which deliberately excludes alert content.
+
 ### Deletion
 
 Removing the config entry (Settings > Devices & Services > UniFi Alerts > three-dot menu > Delete) deletes the watermark file entirely. `async_remove_entry` in `__init__.py` calls `persistence.async_remove_watermarks()`, which removes the same `unifi_alerts_watermarks_<entry_id>` path, so nothing about that controller/site is left behind.
@@ -56,7 +60,7 @@ Settings > Devices & Services > UniFi Alerts > Download diagnostics produces a J
 
 **Redacted before inclusion:** `CONF_API_KEY`, `CONF_WEBHOOK_SECRET` (the `_TO_REDACT` set), applied via `homeassistant.components.diagnostics.async_redact_data` to both `entry.data` and `entry.options`.
 
-**Included:** webhook URLs are included (so a shared diagnostics file still shows what was configured). They no longer embed the bearer secret (breaking change, issue #176), so no stripping is required before inclusion.
+**Included:** webhook URLs are included (so a shared diagnostics file still shows what was configured). They no longer embed the bearer secret (breaking change, issue #176). Any query string or fragment is stripped before inclusion as a safeguard against a future regression reintroducing a token in the URL.
 
 **Included, coordinator state only:** per-category `enabled`, `is_alerting`, `open_count`, `alert_count`, `filtered_count`, `last_cleared_at`, `last_webhook_at`, `last_filtered_at`, `webhook_health()`, plus the rollup counters (`any_alerting`, `rollup_alert_count`, `rollup_open_count`), the `unrecognised_keys` counts, and `resolved_transport` (`v2`, `legacy`, or `unknown`: which alarm transport this site resolved to, added because early reports of the UniFi Network 10.6+ setup failure had no way to show it).
 
