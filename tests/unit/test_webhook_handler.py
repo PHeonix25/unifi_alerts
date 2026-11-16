@@ -401,6 +401,43 @@ class TestMakeHandler:
         push_cb.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_oversized_content_length_rejected_before_body_read(self):
+        """A declared Content-Length over the limit is rejected without reading the body."""
+        manager, push_cb = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="tok")
+        req.content_length = WEBHOOK_MAX_BODY_BYTES + 1
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is not None
+        assert response.status == 413
+        req.content.read.assert_not_called()
+        push_cb.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unauthenticated_oversized_content_length_still_401(self):
+        """Auth runs before the size check, so a bad token never learns the size limit."""
+        manager, _ = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="wrong")
+        req.content_length = WEBHOOK_MAX_BODY_BYTES + 1
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is not None
+        assert response.status == 401
+        req.content.read.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_content_length_at_limit_is_read(self):
+        """A declared length exactly at the limit is accepted for reading."""
+        manager, push_cb = make_manager(secret="tok")
+        handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")
+        req = make_request(token="tok")
+        req.content_length = WEBHOOK_MAX_BODY_BYTES
+        response = await handler(manager._hass, "wh-id", req)
+        assert response is None
+        req.content.read.assert_called_once()
+        push_cb.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_alert_fields_populated_from_payload(self):
         manager, push_cb = make_manager(secret="tok")
         handler = manager._make_handler(CATEGORY_NETWORK_WAN, "tok")

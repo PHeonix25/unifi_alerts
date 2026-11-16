@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Security
+
+- Webhook requests that declare an oversized `Content-Length` are now rejected with HTTP 413 before the body is read, instead of after buffering it. Chunked requests without a declared length remain bounded by the existing capped read. Authentication still runs first, so an unauthenticated sender still receives 401. ([#389])
+- The diagnostics download now strips any query string or fragment from the webhook URLs it includes, so a future regression that put a token back in the URL could not leak into a shared diagnostics file. ([#389])
+
 ### Fixed
 
 - A controller that is slow to respond no longer fails a poll outright or breaks setup. When a request hit its overall timeout, the resulting `TimeoutError` was not caught: the v2 system-log probe let it escape instead of falling back to the legacy alarm path for that poll, setup and reconfiguration reported an unhandled error instead of "cannot connect", and the best-effort controller-version lookup could block setup. Every controller request now treats a timeout like any other network error. ([#440])
@@ -438,6 +443,7 @@ Internal critical-review pass. No user-visible changes; the audit findings were 
 [#357]: https://github.com/PHeonix25/unifi_alerts/issues/357
 [#411]: https://github.com/PHeonix25/unifi_alerts/issues/411
 [#417]: https://github.com/PHeonix25/unifi_alerts/issues/417
+[#389]: https://github.com/PHeonix25/unifi_alerts/issues/389
 [#388]: https://github.com/PHeonix25/unifi_alerts/issues/388
 [#386]: https://github.com/PHeonix25/unifi_alerts/issues/386
 [#387]: https://github.com/PHeonix25/unifi_alerts/issues/387
